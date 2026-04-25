@@ -1,0 +1,27 @@
+{
+  "example_command": "python -m phystabmol.experiment --data data/molecules.csv --smiles-column smiles --backend auto --run-name pubchem_pilot --samples-per-condition 32 --decode-top-k 5",
+  "recommended_server_settings": {
+    "backend": "auto",
+    "timesteps": 100,
+    "noise_repeats": 16,
+    "torch_epochs": 100,
+    "torch_batch_size": 512,
+    "torch_hidden_dim": 384,
+    "torch_layers": 4,
+    "samples_per_condition": 32,
+    "decode_top_k": 5
+  },
+  "saved_artifacts": [
+    "config.json",
+    "environment.json",
+    "metrics.json",
+    "summary.txt",
+    "models/contrastive_aligner.pkl",
+    "models/diffusion.pt or models/diffusion.pkl",
+    "tables/train_table.csv",
+    "tables/test_table.csv",
+    "tables/generated_table_rows.csv",
+    "tables/decoded_candidates.csv"
+  ]
+}
+
