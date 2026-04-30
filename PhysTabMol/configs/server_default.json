@@ -4,12 +4,20 @@
     "backend": "auto",
     "timesteps": 100,
     "noise_repeats": 16,
-    "torch_epochs": 100,
-    "torch_batch_size": 512,
-    "torch_hidden_dim": 384,
-    "torch_layers": 4,
+    "torch_epochs": 200,
+    "torch_batch_size": 1024,
+    "torch_hidden_dim": 1024,
+    "torch_layers": 6,
+    "understanding_backbone": "clip",
+    "understanding_model": "openai/clip-vit-base-patch32",
+    "run_sketchmol_benchmark": true,
+    "benchmark_samples_per_condition": 1000,
+    "benchmark_multi_conditions": 1000,
+    "benchmark_optimization_conditions": 100,
+    "enable_3d": true,
     "samples_per_condition": 32,
-    "decode_top_k": 5
+    "decode_top_k": 5,
+    "understanding_stream": true
   },
   "saved_artifacts": [
     "config.json",
@@ -20,8 +28,11 @@
     "models/diffusion.pt or models/diffusion.pkl",
     "tables/train_table.csv",
     "tables/test_table.csv",
+    "tables/understanding_stream_train.csv",
+    "tables/understanding_stream_eval.csv",
     "tables/generated_table_rows.csv",
-    "tables/decoded_candidates.csv"
+    "tables/decoded_candidates.csv",
+    "tables/sketchmol_benchmark/sketchmol_benchmark_summary.csv",
+    "tables/sketchmol_benchmark/sketchmol_benchmark_decoded.csv"
   ]
 }
-

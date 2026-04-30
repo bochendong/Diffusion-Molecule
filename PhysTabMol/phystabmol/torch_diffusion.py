@@ -46,8 +46,8 @@ if TORCH_AVAILABLE:  # pragma: no cover - exercised on torch servers.
 class TorchTabularDiffusion:
     timesteps: int = 100
     noise_repeats: int = 12
-    hidden_dim: int = 256
-    layers: int = 4
+    hidden_dim: int = 1024
+    layers: int = 6
     dropout: float = 0.05
     epochs: int = 80
     batch_size: int = 256

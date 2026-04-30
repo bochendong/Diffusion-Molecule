@@ -17,8 +17,12 @@ from .decoder import decode_table_row
 from .diffusion import TabularDiffusion
 from .evaluate import evaluate_decoded_table
 from .features import IMAGE_FEATURE_COLUMNS, extract_image_features
+from .geometry3d import add_3d_metrics
 from .io import make_run_dir, save_json, save_text, set_seed
+from .pretrained_understanding import PretrainedImageUnderstanding
 from .schema import TARGET_COLUMNS
+from .sketchmol_benchmark import SketchMolBenchmarkConfig, run_sketchmol_benchmark
+from .understanding import UnderstandingStream, understanding_matrix
 
 
 def main() -> None:
@@ -37,8 +41,9 @@ def main() -> None:
     train_df.to_csv(run_dir / "tables" / "train_table.csv", index=False)
     test_df.to_csv(run_dir / "tables" / "test_table.csv", index=False)
 
-    train_image_x, _, train_condition_x, train_table_y = arrays_from_dataframe(train_df)
-    test_image_x, _, test_condition_x, _ = arrays_from_dataframe(test_df if not test_df.empty else train_df)
+    eval_df = test_df if not test_df.empty else train_df
+    train_image_x, _, train_base_condition_x, train_table_y = arrays_from_dataframe(train_df)
+    eval_image_x, _, eval_base_condition_x, _ = arrays_from_dataframe(eval_df)
 
     aligner = ContrastiveAligner(
         embedding_dim=args.embedding_dim,
@@ -49,22 +54,45 @@ def main() -> None:
     ).fit(train_image_x, train_table_y)
     aligner.save(run_dir / "models" / "contrastive_aligner.pkl")
 
-    train_condition = _with_alignment(train_condition_x, aligner.transform_image(train_image_x))
-    test_condition = _with_alignment(test_condition_x, aligner.transform_image(test_image_x))
-    if args.reference_smiles or args.reference_image or args.intent != "default":
-        test_condition = _build_in_context_conditions(test_df if not test_df.empty else train_df, aligner, args)
+    train_condition, train_understanding_df = _compose_conditions(
+        train_df,
+        train_base_condition_x,
+        train_image_x,
+        aligner,
+        args,
+        intent="default",
+        reference_smiles=None,
+        use_in_context=False,
+    )
+    eval_condition, eval_understanding_df = _compose_conditions(
+        eval_df,
+        eval_base_condition_x,
+        eval_image_x,
+        aligner,
+        args,
+        intent=args.intent,
+        reference_smiles=args.reference_smiles,
+        use_in_context=bool(args.reference_smiles or args.reference_image or args.intent != "default"),
+    )
+    train_understanding_df.to_csv(run_dir / "tables" / "understanding_stream_train.csv", index=False)
+    eval_understanding_df.to_csv(run_dir / "tables" / "understanding_stream_eval.csv", index=False)
 
     diffusion, backend = _fit_diffusion(args, train_table_y, train_condition)
     model_path = run_dir / "models" / ("diffusion.pt" if backend == "torch" else "diffusion.pkl")
     diffusion.save(model_path)
 
-    generated_df = _sample_tables(diffusion, test_condition, args.samples_per_condition)
+    generated_df = _sample_tables(diffusion, eval_condition, args.samples_per_condition)
     generated_df.to_csv(run_dir / "tables" / "generated_table_rows.csv", index=False)
 
     decoded_df = _decode_generated(generated_df, top_k=args.decode_top_k)
+    if args.enable_3d:
+        sdf_path = run_dir / "tables" / "decoded_candidates_3d.sdf" if args.save_3d_sdf else None
+        decoded_df = add_3d_metrics(decoded_df, sdf_path=sdf_path, max_sdf=args.max_3d_sdf)
     decoded_df.to_csv(run_dir / "tables" / "decoded_candidates.csv", index=False)
 
     metrics = evaluate_decoded_table(decoded_df, train_smiles=train_df["smiles"].tolist())
+    if args.enable_3d and "3d_embed_success" in decoded_df:
+        metrics["3d_embed_success_rate"] = float(decoded_df["3d_embed_success"].mean())
     metrics.update(
         {
             "backend": backend,
@@ -74,6 +102,33 @@ def main() -> None:
             "run_dir": str(run_dir),
         }
     )
+    if args.run_sketchmol_benchmark:
+        benchmark_dir = run_dir / "tables" / "sketchmol_benchmark"
+        benchmark_decoded, benchmark_summary = run_sketchmol_benchmark(
+            diffusion=diffusion,
+            train_df=train_df,
+            eval_df=eval_df,
+            aligner=aligner,
+            args=args,
+            compose_conditions_fn=_compose_conditions,
+            output_dir=benchmark_dir,
+            config=SketchMolBenchmarkConfig(
+                samples_per_condition=args.benchmark_samples_per_condition,
+                decode_top_k=args.benchmark_decode_top_k,
+                multi_conditions=args.benchmark_multi_conditions,
+                optimization_conditions=args.benchmark_optimization_conditions,
+                seed=args.seed,
+            ),
+        )
+        if args.enable_3d and not benchmark_decoded.empty:
+            benchmark_3d = add_3d_metrics(
+                benchmark_decoded,
+                sdf_path=benchmark_dir / "sketchmol_benchmark_3d.sdf" if args.save_3d_sdf else None,
+                max_sdf=args.max_3d_sdf,
+            )
+            benchmark_3d.to_csv(benchmark_dir / "sketchmol_benchmark_decoded_3d.csv", index=False)
+        if not benchmark_summary.empty:
+            metrics["sketchmol_benchmark_mean_success"] = float(benchmark_summary["success_rate_in_valid_mols"].dropna().mean())
     save_json(metrics, run_dir / "metrics.json")
     save_text(_summary(metrics, args), run_dir / "summary.txt")
     save_json(_environment(), run_dir / "environment.json")
@@ -101,16 +156,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--contrastive-temperature", type=float, default=0.1)
     parser.add_argument("--timesteps", type=int, default=100)
     parser.add_argument("--noise-repeats", type=int, default=16)
-    parser.add_argument("--torch-epochs", type=int, default=100)
-    parser.add_argument("--torch-batch-size", type=int, default=512)
-    parser.add_argument("--torch-hidden-dim", type=int, default=384)
-    parser.add_argument("--torch-layers", type=int, default=4)
+    parser.add_argument("--torch-epochs", type=int, default=200)
+    parser.add_argument("--torch-batch-size", type=int, default=1024)
+    parser.add_argument("--torch-hidden-dim", type=int, default=1024)
+    parser.add_argument("--torch-layers", type=int, default=6)
     parser.add_argument("--torch-lr", type=float, default=2e-4)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--sklearn-hidden", type=int, nargs=2, default=(160, 160))
     parser.add_argument("--reference-image", type=str, default=None)
     parser.add_argument("--reference-smiles", type=str, default=None)
     parser.add_argument("--intent", choices=sorted(INTENT_DELTAS), default="default")
+    parser.add_argument("--disable-understanding-stream", action="store_true")
+    parser.add_argument("--understanding-backbone", choices=["handcrafted", "clip"], default="handcrafted")
+    parser.add_argument("--understanding-model", type=str, default="openai/clip-vit-base-patch32")
+    parser.add_argument("--understanding-batch-size", type=int, default=64)
+    parser.add_argument("--run-sketchmol-benchmark", action="store_true")
+    parser.add_argument("--benchmark-samples-per-condition", type=int, default=100)
+    parser.add_argument("--benchmark-decode-top-k", type=int, default=1)
+    parser.add_argument("--benchmark-multi-conditions", type=int, default=200)
+    parser.add_argument("--benchmark-optimization-conditions", type=int, default=100)
+    parser.add_argument("--enable-3d", action="store_true")
+    parser.add_argument("--save-3d-sdf", action="store_true")
+    parser.add_argument("--max-3d-sdf", type=int, default=500)
     return parser.parse_args()
 
 
@@ -179,27 +246,81 @@ def _decode_generated(generated_df: pd.DataFrame, top_k: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _build_in_context_conditions(df: pd.DataFrame, aligner: ContrastiveAligner, args) -> np.ndarray:
+def _compose_conditions(
+    df: pd.DataFrame,
+    base_condition_x: np.ndarray,
+    image_x: np.ndarray,
+    aligner: ContrastiveAligner,
+    args,
+    intent: str,
+    reference_smiles: str | None,
+    use_in_context: bool,
+) -> tuple[np.ndarray, pd.DataFrame]:
+    if use_in_context:
+        base_condition_x, targets_df = _build_in_context_base(df, args, intent, reference_smiles)
+    else:
+        targets_df = df[TARGET_COLUMNS].reset_index(drop=True)
+
+    stream = UnderstandingStream(enabled=not args.disable_understanding_stream)
+    understanding_df = stream.describe_dataframe(
+        df,
+        targets_df=targets_df,
+        intent=intent if not args.disable_understanding_stream else "default",
+        reference_smiles=reference_smiles if not args.disable_understanding_stream else None,
+    )
+    condition_parts = [base_condition_x]
+    if not args.disable_understanding_stream:
+        condition_parts.append(understanding_matrix(understanding_df))
+    condition_parts.append(aligner.transform_image(image_x))
+    condition = np.concatenate(condition_parts, axis=1)
+    if args.understanding_backbone != "handcrafted":
+        encoder = _get_pretrained_understanding_encoder(args)
+        condition = np.concatenate([condition, encoder.encode_dataframe(df, image_column=args.image_column)], axis=1)
+    return condition, understanding_df
+
+
+def _build_in_context_base(
+    df: pd.DataFrame,
+    args,
+    intent: str,
+    reference_smiles: str | None,
+) -> tuple[np.ndarray, pd.DataFrame]:
     conditioner = InContextConditioner()
     conditions = []
+    targets = []
     reference_features = extract_image_features(args.reference_image) if args.reference_image else None
     for _, row in df.iterrows():
         query_features = {col: float(row[col]) for col in IMAGE_FEATURE_COLUMNS}
         default_targets = {col: float(row[col]) for col in TARGET_COLUMNS}
-        base, _ = conditioner.build(
+        base, readable_targets = conditioner.build(
             query_image_features=query_features,
             default_targets=default_targets,
             reference_image_features=reference_features,
-            reference_smiles=args.reference_smiles,
-            intent=args.intent,
+            reference_smiles=reference_smiles,
+            intent=intent,
         )
-        image_row = base[:, : len(IMAGE_FEATURE_COLUMNS)]
-        conditions.append(_with_alignment(base, aligner.transform_image(image_row))[0])
-    return np.asarray(conditions, dtype=float)
+        conditions.append(base[0])
+        targets.append(readable_targets)
+    return np.asarray(conditions, dtype=float), pd.DataFrame(targets)
 
 
 def _with_alignment(condition_x: np.ndarray, image_embed: np.ndarray) -> np.ndarray:
     return np.concatenate([condition_x, image_embed], axis=1)
+
+
+def _get_pretrained_understanding_encoder(args):
+    cached = getattr(args, "_pretrained_understanding_encoder", None)
+    if cached is not None:
+        return cached
+    if args.understanding_backbone == "clip":
+        encoder = PretrainedImageUnderstanding(
+            model_name=args.understanding_model,
+            device=args.device,
+            batch_size=args.understanding_batch_size,
+        )
+        setattr(args, "_pretrained_understanding_encoder", encoder)
+        return encoder
+    raise ValueError(f"Unsupported understanding backbone: {args.understanding_backbone}")
 
 
 def _summary(metrics: dict, args: argparse.Namespace) -> str:
@@ -218,7 +339,13 @@ def _summary(metrics: dict, args: argparse.Namespace) -> str:
         "QED_mae",
         "TPSA_mae",
     ]
-    lines = ["PhysTabMol experiment complete", f"intent={args.intent}", f"reference_smiles={args.reference_smiles}"]
+    lines = [
+        "PhysTabMol experiment complete",
+        f"intent={args.intent}",
+        f"reference_smiles={args.reference_smiles}",
+        f"understanding_stream={not args.disable_understanding_stream}",
+        f"understanding_backbone={args.understanding_backbone}",
+    ]
     for key in keys:
         if key in metrics:
             value = metrics[key]
@@ -251,4 +378,3 @@ def _environment() -> dict:
 
 if __name__ == "__main__":
     main()
-

@@ -3,4 +3,4 @@ pandas
 pillow
 scikit-learn
 torch
-
+transformers

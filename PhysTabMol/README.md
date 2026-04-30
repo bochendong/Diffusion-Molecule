@@ -48,8 +48,14 @@ runs/YYYYMMDD_HHMMSS_run_name/
   tables/
     train_table.csv
     test_table.csv
+    understanding_stream_train.csv
+    understanding_stream_eval.csv
     generated_table_rows.csv
     decoded_candidates.csv
+    sketchmol_benchmark/
+      sketchmol_benchmark_summary.csv
+      sketchmol_benchmark_decoded.csv
+      sketchmol_distribution_matching.json
 ```
 
 在 GPU 服务器上，`--backend auto` 会优先使用 PyTorch；如果想强制使用 PyTorch：
@@ -74,6 +80,47 @@ COc1ccncc1
 smiles,image_path
 CC(=O)Nc1ccccc1,/abs/path/mol_001.png
 COc1ccncc1,/abs/path/mol_002.png
+```
+
+## 自动下载数据
+
+第一次建议直接在服务器下载 ChEMBL：
+
+```bash
+cd PhysTabMol
+bash scripts/download_chembl_100k.sh
+```
+
+默认会生成：
+
+```text
+data/molecules.csv
+data/molecules.manifest.txt
+```
+
+`data/` 下的大型下载文件默认会被 `.gitignore` 排除，适合 push 代码后直接在服务器上运行下载脚本。
+
+也可以手动选择数据源：
+
+```bash
+# ChEMBL，默认推荐
+python3 scripts/download_dataset.py --source chembl --limit 100000 --out data/molecules_chembl.csv
+
+# PubChem，官方 CID-SMILES，先抽 100k
+python3 scripts/download_dataset.py --source pubchem --limit 100000 --out data/molecules_pubchem_100k.csv
+
+# ZINC20 ML smiles chunks，文件较大
+python3 scripts/download_dataset.py --source zinc20 --zinc-chunks 1 --limit 100000 --out data/molecules_zinc20_100k.csv
+```
+
+如果服务器装了 RDKit，可以加过滤：
+
+```bash
+python3 scripts/download_dataset.py \
+  --source chembl \
+  --limit 100000 \
+  --rdkit-filter \
+  --out data/molecules.csv
 ```
 
 ## 快速冒烟测试
@@ -114,6 +161,91 @@ python3 -m phystabmol.run_demo \
 - `more_polar`
 - `less_polar`
 
+## Understanding Stream
+
+PhysTabMol 现在显式包含一条受 UniVideo 启发的 **understanding stream**：
+
+```text
+query/reference/intent
+  -> understanding_stream
+  -> structured semantic tags + summary + numeric understanding embedding
+  -> tabular diffusion condition
+  -> physics-aware decoding
+```
+
+它会为每个样本保存：
+
+- `understanding_summary`：可读的语义理解结果；
+- `understanding_tags`：如 `high_visual_contrast`、`druglike_window`、`reference_guided`、`increase_qed`；
+- `u_*` 数值列：拼接进 diffusion 条件向量。
+
+输出文件：
+
+```text
+tables/understanding_stream_train.csv
+tables/understanding_stream_eval.csv
+```
+
+如果要做 ablation，可以关闭这条流：
+
+```bash
+python3 -m phystabmol.experiment \
+  --data /path/to/molecules.csv \
+  --disable-understanding-stream
+```
+
+## SketchMol-Aligned Benchmark
+
+因为主要比较对象是 SketchMol，服务器实验可以直接打开对齐 benchmark：
+
+```bash
+python3 -m phystabmol.experiment \
+  --data /path/to/molecules.csv \
+  --backend torch \
+  --understanding-backbone clip \
+  --run-sketchmol-benchmark \
+  --benchmark-samples-per-condition 1000 \
+  --benchmark-multi-conditions 1000 \
+  --benchmark-optimization-conditions 100
+```
+
+当前 benchmark 对齐 SketchMol 的这些实验口径：
+
+- 单属性约束：LogP、QED、MW、TPSA、HBD、HBA、RB；
+- OOD 约束：LogP/TPSA/HBA/RB/MW 的外推 target；
+- 多属性约束：2 到 7 个属性同时约束；
+- 性质优化：LogP +2.5、QED +0.3、TPSA -45；
+- 分布匹配：LogP、QED、MW、TPSA 的 1D Wasserstein 近似；
+- 基础指标：Validity、Uniqueness、Novelty、Success Rate in Valid Mols、MAE。
+
+SketchMol 的 EP4/AKT1/ROCK1 activity 与 docking 实验需要额外的 activity predictor 和 docking workflow；当前框架先把属性约束、优化和 3D conformer 评估打通，activity/docking scorer 应作为下一步外部模块接入。
+
+输出位置：
+
+```text
+tables/sketchmol_benchmark/
+```
+
+## 3D Molecule Support
+
+虽然不做视频，项目已经预留 3D 分子评估。若安装 RDKit，可开启：
+
+```bash
+python3 -m phystabmol.experiment \
+  --data /path/to/molecules.csv \
+  --enable-3d \
+  --save-3d-sdf
+```
+
+它会用 ETKDG 生成 conformer，并保存：
+
+- `3d_embed_success`
+- `3d_radius_gyration`
+- `3d_asphericity`
+- `3d_eccentricity`
+- `3d_npr1 / 3d_npr2`
+- 可选 SDF 文件
+
 ## 依赖
 
 本地冒烟测试使用：
@@ -136,12 +268,15 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 
 - `features.py`：图像统计与表格行构造。
 - `context.py`：受 UniVideo 启发的查询/参考/指令条件。
+- `understanding.py`：受 UniVideo 启发的显式理解流，输出语义摘要、标签和 understanding embedding。
 - `contrastive.py`：NumPy 版 InfoNCE 风格图像/表格对齐。
 - `diffusion.py`：基于 `sklearn.neural_network.MLPRegressor` 的条件表格扩散。
 - `torch_diffusion.py`：用于 GPU 服务器训练的 PyTorch 后端。
 - `experiment.py`：保存配置、模型、表格结果和指标的服务器实验入口。
 - `decoder.py`：具备物理先验的骨架与官能团模板解码器。
 - `evaluate.py`：有效性、唯一性、新颖性、类药性、性质误差与多样性等指标。
+- `sketchmol_benchmark.py`：对齐 SketchMol 的单属性、多属性、OOD 与优化 benchmark。
+- `geometry3d.py`：RDKit-backed 3D conformer 与形状指标。
 - `run_demo.py`：端到端冒烟实验。
 
 ## 论文实验建议

@@ -1,6 +1,11 @@
 # PhysTabMol artifacts
 outputs/
 runs/
+data/raw/
+data/*.csv
+data/*.gz
+data/*.sdf
+data/*.manifest.txt
 
 # Python
 __pycache__/
