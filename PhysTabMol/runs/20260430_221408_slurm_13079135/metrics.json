@@ -1,0 +1,23 @@
+{
+  "HBA_mae": 3.1375253125,
+  "HBD_mae": 0.8695409375,
+  "LogP_mae": 1.754998660093752,
+  "MW_mae": 206.7369786144454,
+  "QED_mae": 0.17816740815065313,
+  "RB_mae": 3.998608125,
+  "SA_mae": 1.1737261687499998,
+  "TPSA_mae": 41.181978987499996,
+  "backend": "torch",
+  "conditions": 20000.0,
+  "contrastive_train_retrieval_accuracy": 0.005859375,
+  "druglike_rate": 1.0,
+  "mean_candidates_per_condition": 160.0,
+  "mean_pairwise_tanimoto": 0.14820161309050933,
+  "n": 3200000.0,
+  "novelty": 0.9228070175438596,
+  "run_dir": "runs/20260430_221408_slurm_13079135",
+  "test_size": 20000.0,
+  "train_size": 80000.0,
+  "uniqueness": 8.90625e-05,
+  "validity": 1.0
+}

@@ -1,0 +1,32 @@
+{
+  "backend": "auto",
+  "contrastive_epochs": 600,
+  "contrastive_lr": 0.04,
+  "contrastive_temperature": 0.1,
+  "data": null,
+  "decode_top_k": 5,
+  "device": "auto",
+  "embedding_dim": 16,
+  "image_column": null,
+  "intent": "default",
+  "limit": null,
+  "noise_repeats": 16,
+  "output_dir": "runs",
+  "reference_image": null,
+  "reference_smiles": null,
+  "run_name": "slurm_13028789",
+  "samples_per_condition": 32,
+  "seed": 7,
+  "sklearn_hidden": [
+    160,
+    160
+  ],
+  "smiles_column": "smiles",
+  "test_fraction": 0.2,
+  "timesteps": 100,
+  "torch_batch_size": 512,
+  "torch_epochs": 100,
+  "torch_hidden_dim": 384,
+  "torch_layers": 4,
+  "torch_lr": 0.0002
+}

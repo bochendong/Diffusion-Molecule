@@ -1,0 +1,16 @@
+PhysTabMol experiment complete
+intent=default
+reference_smiles=None
+backend=sklearn
+train_size=24.0000
+test_size=6.0000
+n=48.0000
+validity=1.0000
+uniqueness=0.3333
+novelty=0.9375
+druglike_rate=1.0000
+mean_pairwise_tanimoto=0.2486
+MW_mae=11.3213
+LogP_mae=0.3890
+QED_mae=0.0542
+TPSA_mae=13.3546

@@ -1,0 +1,7 @@
+{
+  "cuda_available": false,
+  "platform": "Linux-5.14.0-570.44.1.el9_6.x86_64-x86_64-Intel-R-_Xeon-R-_Platinum_8480+-with-glibc2.34",
+  "python": "3.11.15 | packaged by conda-forge | (main, Mar  5 2026, 16:45:40) [GCC 14.3.0]",
+  "rdkit": "2026.03.1",
+  "torch": null
+}

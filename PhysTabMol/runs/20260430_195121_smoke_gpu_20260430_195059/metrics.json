@@ -1,0 +1,23 @@
+{
+  "HBA_mae": 3.884375,
+  "HBD_mae": 1.4755208333333334,
+  "LogP_mae": 1.4352100833333348,
+  "MW_mae": 235.15224662083347,
+  "QED_mae": 0.21715330740665048,
+  "RB_mae": 2.7552083333333335,
+  "SA_mae": 1.4805208333333335,
+  "TPSA_mae": 66.55694791666667,
+  "backend": "torch",
+  "conditions": 80.0,
+  "contrastive_train_retrieval_accuracy": 0.0,
+  "druglike_rate": 1.0,
+  "mean_candidates_per_condition": 24.0,
+  "mean_pairwise_tanimoto": 0.16732642229899672,
+  "n": 1920.0,
+  "novelty": 1.0,
+  "run_dir": "runs/20260430_195121_smoke_gpu_20260430_195059",
+  "test_size": 80.0,
+  "train_size": 320.0,
+  "uniqueness": 0.030208333333333334,
+  "validity": 1.0
+}

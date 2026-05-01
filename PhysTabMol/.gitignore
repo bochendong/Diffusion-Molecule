@@ -1,6 +1,8 @@
 # PhysTabMol artifacts
 outputs/
-runs/
+# runs: version metrics/tables; exclude checkpoints and CSVs that exceed GitHub's 100MB limit
+runs/**/models/
+runs/**/tables/decoded_candidates.csv
 
 # Downloaded datasets (e.g. scripts/download_chembl_100k.sh → data/molecules.csv, data/raw/)
 data/

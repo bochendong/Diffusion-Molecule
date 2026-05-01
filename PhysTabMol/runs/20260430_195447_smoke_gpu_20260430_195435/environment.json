@@ -1,0 +1,8 @@
+{
+  "cuda_available": true,
+  "cuda_device_count": 1,
+  "platform": "Linux-5.14.0-570.44.1.el9_6.x86_64-x86_64-INTEL-R-_XEON-R-_PLATINUM_8570-with-glibc2.37",
+  "python": "3.11.5 (main, Sep 19 2023, 16:07:22) [GCC 12.3.1 20230526]",
+  "rdkit": "2025.09.4",
+  "torch": "2.11.0"
+}
