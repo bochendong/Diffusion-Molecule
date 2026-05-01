@@ -22,7 +22,14 @@ if [[ -f ".venv/bin/activate" ]]; then
   source ".venv/bin/activate"
 fi
 
+DATA_PATH="${PHYSTABMOL_DATA:-data/molecules.csv}"
+if [[ ! -s "${DATA_PATH}" ]]; then
+  echo "Dataset not found at ${DATA_PATH}; downloading ChEMBL first."
+  PHYSTABMOL_OUT="${DATA_PATH}" bash scripts/download_chembl_100k.sh --rdkit-filter
+fi
+
 exec python3 -m phystabmol.experiment \
+  --data "${DATA_PATH}" \
   --backend torch \
   --device cuda \
   --run-name "slurm_${SLURM_JOB_ID}" \
