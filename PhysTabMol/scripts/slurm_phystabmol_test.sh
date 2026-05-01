@@ -7,7 +7,14 @@ set -euo pipefail
 unset LD_LIBRARY_PATH
 unset PYTHONPATH
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [[ -n "${SLURM_JOB_ID:-}" && -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+  PHYSTABMOL_ROOT="$SLURM_SUBMIT_DIR"
+else
+  PHYSTABMOL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+SCRIPT_DIR="$PHYSTABMOL_ROOT/scripts"
+cd "$PHYSTABMOL_ROOT"
+
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/env_module_venv.sh"
 

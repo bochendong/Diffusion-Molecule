@@ -14,10 +14,19 @@ set -euo pipefail
 unset LD_LIBRARY_PATH
 unset PYTHONPATH
 
+# Slurm copies this script to /var/spool/slurmd/.../slurm_script — dirname(BASH_SOURCE) is not the repo.
+# Submit from PhysTabMol repo root: cd .../PhysTabMol && sbatch scripts/run_phystabmol_gpu.slurm.sh
+if [[ -n "${SLURM_JOB_ID:-}" && -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+  PHYSTABMOL_ROOT="$SLURM_SUBMIT_DIR"
+else
+  PHYSTABMOL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+SCRIPT_DIR="$PHYSTABMOL_ROOT/scripts"
+cd "$PHYSTABMOL_ROOT"
+
 # Align system CUDA libs with PyTorch cu124 wheel; override with MODULE_CUDA=... if needed.
 export MODULE_CUDA="${MODULE_CUDA:-cuda/12.6}"
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 source "$SCRIPT_DIR/env_module_venv.sh"
 
