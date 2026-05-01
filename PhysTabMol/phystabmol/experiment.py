@@ -167,6 +167,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--torch-hidden-dim", type=int, default=1024)
     parser.add_argument("--torch-layers", type=int, default=6)
     parser.add_argument("--torch-lr", type=float, default=2e-4)
+    parser.add_argument("--target-anchor", type=float, default=1.0)
+    parser.add_argument("--anchor-neighbors", type=int, default=128)
+    parser.add_argument("--count-anchor-weight", type=float, default=0.8)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--sklearn-hidden", type=int, nargs=2, default=(160, 160))
     parser.add_argument("--reference-image", type=str, default=None)
@@ -204,6 +207,9 @@ def _fit_diffusion(args, train_table_y: np.ndarray, train_condition: np.ndarray)
                     lr=args.torch_lr,
                     seed=args.seed,
                     device=args.device,
+                    target_anchor=args.target_anchor,
+                    anchor_neighbors=args.anchor_neighbors,
+                    count_anchor_weight=args.count_anchor_weight,
                 ).fit(train_table_y, train_condition)
                 return model, "torch"
             if backend == "torch":
@@ -217,6 +223,9 @@ def _fit_diffusion(args, train_table_y: np.ndarray, train_condition: np.ndarray)
         noise_repeats=args.noise_repeats,
         hidden=tuple(args.sklearn_hidden),
         seed=args.seed,
+        target_anchor=args.target_anchor,
+        anchor_neighbors=args.anchor_neighbors,
+        count_anchor_weight=args.count_anchor_weight,
     ).fit(train_table_y, train_condition)
     return model, "sklearn"
 
@@ -237,7 +246,8 @@ def _decode_generated(generated_df: pd.DataFrame, top_k: int) -> pd.DataFrame:
     table_cols = [col for col in generated_df.columns if col not in {"condition_idx", "sample_idx"}]
     for _, source in generated_df.iterrows():
         row = {col: float(source[col]) for col in table_cols}
-        for rank, candidate in enumerate(decode_table_row(row, top_k=top_k), start=1):
+        decode_seed = int(source["condition_idx"]) * 1009 + int(source["sample_idx"])
+        for rank, candidate in enumerate(decode_table_row(row, top_k=top_k, seed=decode_seed), start=1):
             out = {
                 "condition_idx": int(source["condition_idx"]),
                 "sample_idx": int(source["sample_idx"]),

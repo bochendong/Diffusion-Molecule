@@ -41,6 +41,9 @@ exec python3 -m phystabmol.experiment \
   --torch-batch-size 1024 \
   --torch-hidden-dim 1024 \
   --torch-layers 6 \
+  --target-anchor 1.0 \
+  --anchor-neighbors 128 \
+  --count-anchor-weight 0.8 \
   --understanding-backbone clip \
   --understanding-model openai/clip-vit-base-patch32 \
   --timesteps 100 \

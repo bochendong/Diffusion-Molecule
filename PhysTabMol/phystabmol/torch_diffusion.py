@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 import numpy as np
+from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
 from .diffusion import clip_table_row
-from .schema import TABLE_COLUMNS
+from .schema import BOUNDS, INTEGER_COLUMNS, TABLE_COLUMNS
+
+
+TARGET_SCALES = np.asarray([120.0, 3.0, 0.35, 60.0, 3.0, 5.0, 5.0, 2.5], dtype=np.float32)
 
 try:  # pragma: no cover - this workstation has no torch; server path uses it.
     import torch
@@ -78,6 +82,8 @@ class TorchTabularDiffusion:
     device: str = "auto"
     target_condition_start: int = 12
     target_anchor: float = 1.0
+    anchor_neighbors: int = 128
+    count_anchor_weight: float = 0.8
 
     def fit(self, table_y: np.ndarray, condition_x: np.ndarray) -> "TorchTabularDiffusion":
         if not TORCH_AVAILABLE:
@@ -85,6 +91,10 @@ class TorchTabularDiffusion:
 
         self.y_scaler = StandardScaler().fit(table_y)
         self.c_scaler = StandardScaler().fit(condition_x)
+        self.train_table_y_ = np.asarray(table_y, dtype=np.float32)
+        self.train_targets_ = self.train_table_y_[:, : len(TARGET_SCALES)]
+        self.anchor_nn_ = NearestNeighbors(n_neighbors=min(self.anchor_neighbors, len(self.train_targets_)))
+        self.anchor_nn_.fit(self.train_targets_ / TARGET_SCALES)
         y = self.y_scaler.transform(table_y).astype(np.float32)
         c = self.c_scaler.transform(condition_x).astype(np.float32)
         self.device_ = self._resolve_device()
@@ -117,7 +127,7 @@ class TorchTabularDiffusion:
         return self
 
     @torch.no_grad() if TORCH_AVAILABLE else (lambda fn: fn)
-    def sample(self, condition_x: np.ndarray, n: int = 32, guidance_noise: float = 0.55) -> list[dict[str, float]]:
+    def sample(self, condition_x: np.ndarray, n: int = 32, guidance_noise: float = 0.25) -> list[dict[str, float]]:
         if not TORCH_AVAILABLE:
             raise RuntimeError("PyTorch is not installed.")
         if condition_x.ndim == 1:
@@ -145,18 +155,45 @@ class TorchTabularDiffusion:
             if condition_x.shape[1] >= self.target_condition_start + 8:
                 target_values = condition_x[idx % len(condition_x), self.target_condition_start : self.target_condition_start + 8]
                 raw[:8] = (1.0 - self.target_anchor) * raw[:8] + self.target_anchor * target_values
+                raw = self._calibrate_counts(raw, target_values, sample_idx=idx, rng=rng)
             rows.append(clip_table_row(dict(zip(TABLE_COLUMNS, raw))))
         return rows
+
+    def _calibrate_counts(
+        self,
+        raw: np.ndarray,
+        target_values: np.ndarray,
+        sample_idx: int,
+        rng: np.random.Generator,
+    ) -> np.ndarray:
+        if not hasattr(self, "anchor_nn_"):
+            return raw
+        _, indices = self.anchor_nn_.kneighbors((target_values / TARGET_SCALES)[None, :], return_distance=True)
+        choices = indices[0]
+        anchor = self.train_table_y_[choices[(sample_idx * 9973 + self.seed) % len(choices)]]
+        out = np.array(raw, copy=True)
+        for col_idx, col in enumerate(TABLE_COLUMNS[8:], start=8):
+            lo, hi = BOUNDS[col]
+            value = out[col_idx]
+            if value < lo - 0.5 or value > hi + 0.5:
+                value = anchor[col_idx]
+            else:
+                value = self.count_anchor_weight * anchor[col_idx] + (1.0 - self.count_anchor_weight) * value
+            if col in INTEGER_COLUMNS and rng.random() < 0.18:
+                value += rng.choice([-1.0, 1.0])
+            out[col_idx] = value
+        return out
 
     def save(self, path: str | Path) -> None:
         if not TORCH_AVAILABLE:
             raise RuntimeError("PyTorch is not installed.")
         torch.save(
             {
-                "config": self.__dict__ | {"model": None},
+                "config": {field.name: getattr(self, field.name) for field in fields(self)},
                 "state_dict": self.model.state_dict(),
                 "y_scaler": self.y_scaler,
                 "c_scaler": self.c_scaler,
+                "train_table_y": getattr(self, "train_table_y_", None),
                 "history": getattr(self, "history_", []),
             },
             path,
