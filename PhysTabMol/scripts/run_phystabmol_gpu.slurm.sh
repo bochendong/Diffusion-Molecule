@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --account=rrg-hup
-#SBATCH --gpus=h100_2g.20gb:1
+# 10GB H100 MIG（Nibi）；整卡用 #SBATCH --gpus=h100:1
+#SBATCH --gpus=nvidia_h100_80gb_hbm3_1g.10gb:1
 #SBATCH --mem-per-cpu=4G
 #SBATCH --time=10:00:00
 #SBATCH --cpus-per-task=16
@@ -24,10 +25,20 @@ echo "jobid=${SLURM_JOB_ID:-} node=$(hostname) cwd=$(pwd)"
 nvidia-smi || true
 python -c "import torch; print('cuda=', torch.cuda.is_available())" || true
 
+# Defaults match ChEMBL download → data/molecules.csv (single "smiles" column).
+# Override when submitting, e.g.:
+#   PHYSTABMOL_DATA=/path/to.csv PHYSTABMOL_RUN_NAME=my_run sbatch scripts/run_phystabmol_gpu.slurm.sh
+PHYSTABMOL_DATA="${PHYSTABMOL_DATA:-data/molecules.csv}"
+PHYSTABMOL_BACKEND="${PHYSTABMOL_BACKEND:-torch}"
+PHYSTABMOL_RUN_NAME="${PHYSTABMOL_RUN_NAME:-slurm_${SLURM_JOB_ID:-manual}}"
+PHYSTABMOL_SAMPLES="${PHYSTABMOL_SAMPLES:-32}"
+PHYSTABMOL_DECODE_TOP_K="${PHYSTABMOL_DECODE_TOP_K:-5}"
+
 python -m phystabmol.experiment \
-  --backend auto \
-  --run-name "slurm_${SLURM_JOB_ID:-manual}" \
-  --samples-per-condition 32 \
-  --decode-top-k 5
+  --data "$PHYSTABMOL_DATA" \
+  --backend "$PHYSTABMOL_BACKEND" \
+  --run-name "$PHYSTABMOL_RUN_NAME" \
+  --samples-per-condition "$PHYSTABMOL_SAMPLES" \
+  --decode-top-k "$PHYSTABMOL_DECODE_TOP_K"
 
 echo "PhysTabMol job finished at $(date -Is)"

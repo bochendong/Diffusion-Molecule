@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH --job-name=phystabmol-h100
 #SBATCH --account=rrg-hup
-#SBATCH --gpus=h100_2g.20gb:1
+# 10GB H100 MIG；整卡: #SBATCH --gpus=h100:1。CLIP+3D 若 OOM 可改更大 slice 或减 batch
+#SBATCH --gpus=nvidia_h100_80gb_hbm3_1g.10gb:1
 #SBATCH --mem-per-cpu=4G
 #SBATCH --time=10:00:00
 #SBATCH --cpus-per-task=16

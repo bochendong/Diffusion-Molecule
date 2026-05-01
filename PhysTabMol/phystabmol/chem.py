@@ -17,6 +17,17 @@ try:  # pragma: no cover - exercised only when RDKit is installed.
     from rdkit.Chem import AllChem, Crippen, Descriptors, Lipinski, QED, rdMolDescriptors
     from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
 
+    try:
+        from rdkit.Chem import rdFingerprintGenerator
+
+        _MORGAN_FP_GEN = rdFingerprintGenerator.GetMorganGenerator(
+            radius=2,
+            fpSize=1024,
+            useCountSimulation=False,
+        )
+    except Exception:  # pragma: no cover - old RDKit without rdFingerprintGenerator
+        _MORGAN_FP_GEN = None
+
     RDKIT_AVAILABLE = True
 except Exception:  # pragma: no cover - fallback is covered in this environment.
     Chem = None
@@ -29,6 +40,7 @@ except Exception:  # pragma: no cover - fallback is covered in this environment.
     rdMolDescriptors = None
     FilterCatalog = None
     FilterCatalogParams = None
+    _MORGAN_FP_GEN = None
     RDKIT_AVAILABLE = False
 
 ATOM_WEIGHTS = {
@@ -72,8 +84,12 @@ def tanimoto(smiles_a: str, smiles_b: str) -> float:
         mol_b = Chem.MolFromSmiles(smiles_b)
         if mol_a is None or mol_b is None:
             return 0.0
-        fp_a = AllChem.GetMorganFingerprintAsBitVect(mol_a, 2, nBits=1024)
-        fp_b = AllChem.GetMorganFingerprintAsBitVect(mol_b, 2, nBits=1024)
+        if _MORGAN_FP_GEN is not None:
+            fp_a = _MORGAN_FP_GEN.GetFingerprint(mol_a)
+            fp_b = _MORGAN_FP_GEN.GetFingerprint(mol_b)
+        else:
+            fp_a = AllChem.GetMorganFingerprintAsBitVect(mol_a, 2, nBits=1024)
+            fp_b = AllChem.GetMorganFingerprintAsBitVect(mol_b, 2, nBits=1024)
         return float(DataStructs.TanimotoSimilarity(fp_a, fp_b))
 
     set_a = _char_ngrams(smiles_a)

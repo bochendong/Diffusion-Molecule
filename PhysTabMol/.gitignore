@@ -1,11 +1,9 @@
 # PhysTabMol artifacts
 outputs/
 runs/
-data/raw/
-data/*.csv
-data/*.gz
-data/*.sdf
-data/*.manifest.txt
+
+# Downloaded datasets (e.g. scripts/download_chembl_100k.sh → data/molecules.csv, data/raw/)
+data/
 
 # Python
 __pycache__/
