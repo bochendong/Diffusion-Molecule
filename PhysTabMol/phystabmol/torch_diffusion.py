@@ -14,14 +14,14 @@ from .schema import TABLE_COLUMNS
 try:  # pragma: no cover - this workstation has no torch; server path uses it.
     import torch
     from torch import nn
-    from torch.utils.data import DataLoader, TensorDataset
+    from torch.utils.data import DataLoader, Dataset
 
     TORCH_AVAILABLE = True
 except Exception:  # pragma: no cover
     torch = None
     nn = None
     DataLoader = None
-    TensorDataset = None
+    Dataset = None
     TORCH_AVAILABLE = False
 
 
@@ -40,6 +40,28 @@ if TORCH_AVAILABLE:  # pragma: no cover - exercised on torch servers.
 
         def forward(self, x):
             return self.net(x)
+
+
+    class _NoisyDiffusionDataset(Dataset):
+        def __init__(self, y: np.ndarray, c: np.ndarray, timesteps: int, noise_repeats: int):
+            self.y = torch.tensor(y, dtype=torch.float32)
+            self.c = torch.tensor(c, dtype=torch.float32)
+            self.timesteps = int(timesteps)
+            self.noise_repeats = int(noise_repeats)
+            steps = np.arange(self.timesteps + 1, dtype=np.float32) / self.timesteps
+            self.alpha_bars = torch.tensor(np.cos((steps + 0.008) / 1.008 * np.pi / 2) ** 2, dtype=torch.float32)
+
+        def __len__(self) -> int:
+            return int(len(self.y) * self.noise_repeats)
+
+        def __getitem__(self, idx: int):
+            row_idx = idx // self.noise_repeats
+            t = int(torch.randint(1, self.timesteps + 1, (1,)).item())
+            alpha_bar = self.alpha_bars[t]
+            eps = torch.randn_like(self.y[row_idx])
+            noisy = torch.sqrt(alpha_bar) * self.y[row_idx] + torch.sqrt(1.0 - alpha_bar) * eps
+            x = torch.cat([noisy, self.c[row_idx], torch.tensor([t / self.timesteps], dtype=torch.float32)])
+            return x, eps
 
 
 @dataclass
@@ -67,20 +89,7 @@ class TorchTabularDiffusion:
         c = self.c_scaler.transform(condition_x).astype(np.float32)
         self.device_ = self._resolve_device()
         torch.manual_seed(self.seed)
-        rng = np.random.default_rng(self.seed)
-
-        train_x = []
-        train_eps = []
-        for row_idx in range(len(y)):
-            for _ in range(self.noise_repeats):
-                t = rng.integers(1, self.timesteps + 1)
-                alpha_bar = self._alpha_bar(t)
-                eps = rng.normal(size=y.shape[1]).astype(np.float32)
-                noisy = np.sqrt(alpha_bar) * y[row_idx] + np.sqrt(1.0 - alpha_bar) * eps
-                train_x.append(np.concatenate([noisy, c[row_idx], [t / self.timesteps]], dtype=np.float32))
-                train_eps.append(eps)
-
-        dataset = TensorDataset(torch.tensor(np.asarray(train_x)), torch.tensor(np.asarray(train_eps)))
+        dataset = _NoisyDiffusionDataset(y, c, timesteps=self.timesteps, noise_repeats=self.noise_repeats)
         loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True, drop_last=False)
         self.model = _Denoiser(
             in_dim=len(TABLE_COLUMNS) + c.shape[1] + 1,

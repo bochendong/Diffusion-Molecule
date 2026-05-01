@@ -50,6 +50,9 @@ def main() -> None:
         temperature=args.contrastive_temperature,
         lr=args.contrastive_lr,
         epochs=args.contrastive_epochs,
+        batch_size=args.contrastive_batch_size,
+        max_pairs=args.contrastive_max_pairs if args.contrastive_max_pairs > 0 else None,
+        retrieval_eval_size=args.contrastive_retrieval_samples,
         seed=args.seed,
     ).fit(train_image_x, train_table_y)
     aligner.save(run_dir / "models" / "contrastive_aligner.pkl")
@@ -152,6 +155,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--decode-top-k", type=int, default=5)
     parser.add_argument("--embedding-dim", type=int, default=16)
     parser.add_argument("--contrastive-epochs", type=int, default=600)
+    parser.add_argument("--contrastive-batch-size", type=int, default=512)
+    parser.add_argument("--contrastive-max-pairs", type=int, default=20000)
+    parser.add_argument("--contrastive-retrieval-samples", type=int, default=2048)
     parser.add_argument("--contrastive-lr", type=float, default=0.04)
     parser.add_argument("--contrastive-temperature", type=float, default=0.1)
     parser.add_argument("--timesteps", type=int, default=100)

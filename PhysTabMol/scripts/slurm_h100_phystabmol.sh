@@ -3,7 +3,7 @@
 #SBATCH --account=rrg-hup
 # 10GB H100 MIG；整卡: #SBATCH --gpus=h100:1。CLIP+3D 若 OOM 可改更大 slice 或减 batch
 #SBATCH --gpus=nvidia_h100_80gb_hbm3_1g.10gb:1
-#SBATCH --mem-per-cpu=4G
+#SBATCH --mem=96G
 #SBATCH --time=10:00:00
 #SBATCH --cpus-per-task=16
 #SBATCH --output=./slurm-%j.log
@@ -34,6 +34,9 @@ exec python3 -m phystabmol.experiment \
   --device cuda \
   --run-name "slurm_${SLURM_JOB_ID}" \
   --contrastive-epochs 600 \
+  --contrastive-batch-size 512 \
+  --contrastive-max-pairs 20000 \
+  --contrastive-retrieval-samples 2048 \
   --torch-epochs 200 \
   --torch-batch-size 1024 \
   --torch-hidden-dim 1024 \
