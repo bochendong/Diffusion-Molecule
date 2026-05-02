@@ -270,6 +270,104 @@ sbatch --gpus=h100:1 --mem=160G scripts/run_phystabmol_gpu.slurm.sh
 `cuda_max_memory_reserved_mb`，用来判断显存是否真的吃满。注意：molecular decoding/evaluation 主要是
 CPU/RDKit 工作，增加显存只能加速/放大训练阶段，不能直接解决解码超时。
 
+## Verified Instruction-Guided Editing
+
+项目现在也包含一个**无人工标注**的 instruction-guided molecular editing benchmark：
+
+```text
+source molecule + natural-language instruction
+  -> edited molecule candidates
+  -> RDKit / deterministic verifier
+```
+
+LLM 只允许用于把结构化 spec 改写成自然语言；化学事实是否完成，全部由 `instruction_spec_json`
+里的可执行规则验证。RDKit 验不了的模糊药化目标不进入主表。
+
+本地自检：
+
+```bash
+bash scripts/smoke_instruction_editing.sh
+```
+
+构建 verified instruction dataset：
+
+```bash
+cd PhysTabMol
+bash scripts/build_instruction_dataset.sh
+```
+
+默认读取 `data/molecules.csv`，输出：
+
+```text
+data/instruction_editing.csv
+data/instruction_editing.jsonl
+```
+
+每条样本包含：
+
+```text
+source_smiles,target_smiles,instruction_text,instruction_spec_json,
+property_delta_json,edit_tags,split
+```
+
+先跑 deterministic baselines：
+
+```bash
+bash scripts/evaluate_instruction_baselines.sh
+```
+
+会评估：
+
+- `no_edit`
+- `random_target`
+- `rule_retrieval`
+- `oracle_target`
+
+主指标：
+
+- `validity`
+- `goal_success_rate`
+- `constraint_success_rate`
+- `edit_success_rate`
+- `overall_instruction_success_rate`
+- `similarity_to_source`
+- `novelty`
+- `druglike_rate`
+
+训练 instruction-guided tabular diffusion edit planner：
+
+```bash
+python3 -m phystabmol.instruction_experiment \
+  --dataset data/instruction_editing.csv \
+  --backend torch \
+  --run-name instruction_pilot \
+  --samples-per-instruction 8 \
+  --decode-top-k 2
+```
+
+或直接提交 Slurm：
+
+```bash
+sbatch scripts/run_instruction_editing_gpu.slurm.sh
+```
+
+LLM paraphrase 工作流是离线的。先导出 prompt：
+
+```bash
+bash scripts/export_instruction_paraphrase_prompts.sh
+```
+
+外部 LLM 返回 `pair_id,instruction_text` 后，用确定性语言/spec consistency check 过滤：
+
+```bash
+python3 -m phystabmol.instruction_paraphrases filter \
+  --dataset data/instruction_editing.csv \
+  --paraphrases llm_paraphrases.jsonl \
+  --out data/instruction_editing_llm_verified.csv
+```
+
+这一步只检查语言是否引入了 spec 外目标，不做化学裁判；最终化学评估仍由 verifier 完成。
+
 ## 3D Molecule Support
 
 虽然不做视频，项目已经预留 3D 分子评估。若安装 RDKit，可开启：
@@ -321,6 +419,12 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `evaluate.py`：有效性、唯一性、新颖性、类药性、性质误差与多样性等指标。
 - `sketchmol_benchmark.py`：对齐 SketchMol 的单属性、多属性、OOD 与优化 benchmark。
 - `geometry3d.py`：RDKit-backed 3D conformer 与形状指标。
+- `instruction_dataset.py`：自动构建 source/target/edit spec instruction 数据。
+- `instruction_verifier.py`：RDKit/规则验证 goal、constraint、edit 是否完成。
+- `instruction_evaluate.py`：instruction editing 主指标评估。
+- `instruction_baselines.py`：no-edit、random、rule-retrieval、oracle baselines。
+- `instruction_experiment.py`：instruction-guided tabular diffusion edit planner。
+- `instruction_paraphrases.py`：LLM paraphrase prompt 导出与 deterministic consistency 过滤。
 - `run_demo.py`：端到端冒烟实验。
 
 ## 论文实验建议
@@ -329,6 +433,10 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 
 建议消融：
 
+- template-only instructions vs verified LLM paraphrases；
+- unseen paraphrase test 与 unseen edit-combination test；
+- no edit / random / rule retrieval / no-instruction planner；
+- tabular diffusion without instruction vs instruction-guided tabular diffusion；
 - 扩散 + 物理先验解码器 + 对比对齐；
 - 扩散但无对比对齐；
 - 扩散但无物理先验解码器；
