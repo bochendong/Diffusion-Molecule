@@ -47,7 +47,12 @@ class DecodedCandidate:
     source: str
 
 
-def decode_table_row(row: dict[str, float], top_k: int = 5, seed: int = 0) -> list[DecodedCandidate]:
+def decode_table_row(
+    row: dict[str, float],
+    top_k: int = 5,
+    seed: int = 0,
+    include_dynamic: bool = True,
+) -> list[DecodedCandidate]:
     scaffold_class = int(row.get("scaffold_class", 1))
     scaffolds = SCAFFOLDS.get(scaffold_class, SCAFFOLDS[1])
     candidates = set(scaffolds)
@@ -66,23 +71,24 @@ def decode_table_row(row: dict[str, float], top_k: int = 5, seed: int = 0) -> li
             source=candidate.source,
         )
 
-    for smi in candidates:
-        rec = molecular_descriptors(smi)
-        if not rec.valid:
-            continue
-        score = _rank_score(row, rec.descriptors, rec.smiles, seed)
-        existing = decoded_by_smiles.get(rec.smiles)
-        if existing is not None and existing.score <= score:
-            continue
-        decoded_by_smiles[rec.smiles] = (
-            DecodedCandidate(
-                smiles=rec.smiles,
-                score=float(score),
-                valid=rec.valid,
-                descriptors=rec.descriptors,
-                source="physics_aware_dynamic_decoder",
+    if include_dynamic:
+        for smi in candidates:
+            rec = molecular_descriptors(smi)
+            if not rec.valid:
+                continue
+            score = _rank_score(row, rec.descriptors, rec.smiles, seed)
+            existing = decoded_by_smiles.get(rec.smiles)
+            if existing is not None and existing.score <= score:
+                continue
+            decoded_by_smiles[rec.smiles] = (
+                DecodedCandidate(
+                    smiles=rec.smiles,
+                    score=float(score),
+                    valid=rec.valid,
+                    descriptors=rec.descriptors,
+                    source="physics_aware_dynamic_decoder",
+                )
             )
-        )
     decoded = list(decoded_by_smiles.values())
     decoded.sort(key=lambda c: c.score)
     return decoded[:top_k]

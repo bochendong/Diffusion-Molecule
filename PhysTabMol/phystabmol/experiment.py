@@ -87,7 +87,7 @@ def main() -> None:
     generated_df = _sample_tables(diffusion, eval_condition, args.samples_per_condition)
     generated_df.to_csv(run_dir / "tables" / "generated_table_rows.csv", index=False)
 
-    decoded_df = _decode_generated(generated_df, top_k=args.decode_top_k)
+    decoded_df = _decode_generated(generated_df, top_k=args.decode_top_k, dynamic_decoder=args.dynamic_decoder)
     if args.enable_3d:
         sdf_path = run_dir / "tables" / "decoded_candidates_3d.sdf" if args.save_3d_sdf else None
         decoded_df = add_3d_metrics(decoded_df, sdf_path=sdf_path, max_sdf=args.max_3d_sdf)
@@ -153,6 +153,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backend", choices=["auto", "torch", "sklearn"], default="auto")
     parser.add_argument("--samples-per-condition", type=int, default=16)
     parser.add_argument("--decode-top-k", type=int, default=5)
+    parser.add_argument("--dynamic-decoder", action="store_true")
     parser.add_argument("--embedding-dim", type=int, default=16)
     parser.add_argument("--contrastive-epochs", type=int, default=600)
     parser.add_argument("--contrastive-batch-size", type=int, default=512)
@@ -241,13 +242,16 @@ def _sample_tables(diffusion, conditions: np.ndarray, samples_per_condition: int
     return pd.DataFrame(rows)
 
 
-def _decode_generated(generated_df: pd.DataFrame, top_k: int) -> pd.DataFrame:
+def _decode_generated(generated_df: pd.DataFrame, top_k: int, dynamic_decoder: bool = False) -> pd.DataFrame:
     rows = []
     table_cols = [col for col in generated_df.columns if col not in {"condition_idx", "sample_idx"}]
     for _, source in generated_df.iterrows():
         row = {col: float(source[col]) for col in table_cols}
         decode_seed = int(source["condition_idx"]) * 1009 + int(source["sample_idx"])
-        for rank, candidate in enumerate(decode_table_row(row, top_k=top_k, seed=decode_seed), start=1):
+        for rank, candidate in enumerate(
+            decode_table_row(row, top_k=top_k, seed=decode_seed, include_dynamic=dynamic_decoder),
+            start=1,
+        ):
             out = {
                 "condition_idx": int(source["condition_idx"]),
                 "sample_idx": int(source["sample_idx"]),

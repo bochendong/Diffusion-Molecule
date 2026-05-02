@@ -226,6 +226,28 @@ SketchMol 的 EP4/AKT1/ROCK1 activity 与 docking 实验需要额外的 activity
 tables/sketchmol_benchmark/
 ```
 
+## 恢复未完成的 Slurm Run
+
+如果作业已经生成了 `tables/generated_table_rows.csv`，但因为 time limit 没来得及生成
+`decoded_candidates.csv / metrics.json / summary.txt`，可以不用重训，直接恢复解码评估：
+
+```bash
+python3 -m phystabmol.decode_run \
+  --run-dir runs/20260501_145202_slurm_13110897 \
+  --max-conditions 5000 \
+  --samples-per-condition 8 \
+  --decode-top-k 2
+```
+
+默认会写回：
+
+```text
+tables/decoded_candidates.csv
+metrics.json
+summary.txt
+postprocess_config.json
+```
+
 ## 3D Molecule Support
 
 虽然不做视频，项目已经预留 3D 分子评估。若安装 RDKit，可开启：

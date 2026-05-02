@@ -48,8 +48,25 @@ def evaluate_decoded_table(decoded: pd.DataFrame, train_smiles: list[str] | None
     return metrics
 
 
-def _mean_pairwise_tanimoto(smiles: list[str]) -> float:
-    pairs = list(itertools.combinations(smiles, 2))
-    if not pairs:
+def _mean_pairwise_tanimoto(smiles: list[str], max_pairs: int = 20000) -> float:
+    n = len(smiles)
+    if n < 2:
         return 0.0
+    total_pairs = n * (n - 1) // 2
+    if total_pairs <= max_pairs:
+        pairs = list(itertools.combinations(smiles, 2))
+    else:
+        rng = np.random.default_rng(17)
+        pairs = []
+        seen = set()
+        while len(pairs) < max_pairs:
+            i = int(rng.integers(0, n))
+            j = int(rng.integers(0, n - 1))
+            if j >= i:
+                j += 1
+            a, b = sorted((i, j))
+            if (a, b) in seen:
+                continue
+            seen.add((a, b))
+            pairs.append((smiles[a], smiles[b]))
     return float(np.mean([tanimoto(a, b) for a, b in pairs]))
