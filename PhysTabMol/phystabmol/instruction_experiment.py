@@ -13,7 +13,13 @@ import pandas as pd
 from .decoder import decode_table_row
 from .diffusion import TabularDiffusion
 from .instruction_evaluate import evaluate_instruction_candidates
-from .instruction_features import condition_from_source_and_spec, target_table_from_smiles
+from .instruction_features import (
+    INSTRUCTION_SPEC_FEATURE_END,
+    INSTRUCTION_SPEC_FEATURE_START,
+    condition_from_source_and_spec,
+    target_table_from_smiles,
+)
+from .instruction_multimodal import MULTIMODAL_CONTEXT_MODES, multimodal_context_from_row, multimodal_feature_names
 from .io import make_run_dir, save_json, save_text, set_seed
 from .schema import TABLE_COLUMNS
 
@@ -34,8 +40,18 @@ def main() -> None:
     if train_df.empty or eval_df.empty:
         raise ValueError("Instruction dataset must contain non-empty train and eval splits.")
 
-    train_x, train_y = _build_arrays(train_df, disable_instruction_features=args.disable_instruction_features)
-    eval_x, _ = _build_arrays(eval_df, disable_instruction_features=args.disable_instruction_features)
+    train_x, train_y = _build_arrays(
+        train_df,
+        multimodal_context=args.multimodal_context,
+        allow_target_reference=args.allow_target_reference,
+        disable_instruction_features=args.disable_instruction_features,
+    )
+    eval_x, _ = _build_arrays(
+        eval_df,
+        multimodal_context=args.multimodal_context,
+        allow_target_reference=args.allow_target_reference,
+        disable_instruction_features=args.disable_instruction_features,
+    )
     train_df.to_csv(run_dir / "tables" / "instruction_train.csv", index=False)
     eval_df.to_csv(run_dir / "tables" / "instruction_eval.csv", index=False)
 
@@ -51,7 +67,16 @@ def main() -> None:
     train_smiles = set(train_df["source_smiles"].astype(str)) | set(train_df["target_smiles"].astype(str))
     metrics, detailed = evaluate_instruction_candidates(decoded_df, train_smiles=train_smiles)
     detailed.to_csv(run_dir / "tables" / "verified_instruction_candidates.csv", index=False)
-    metrics.update({"backend": backend, "train_size": float(len(train_df)), "eval_size": float(len(eval_df)), "run_dir": str(run_dir)})
+    metrics.update(
+        {
+            "backend": backend,
+            "train_size": float(len(train_df)),
+            "eval_size": float(len(eval_df)),
+            "condition_dim": float(train_x.shape[1]),
+            "multimodal_feature_dim": float(len(multimodal_feature_names(args.multimodal_context))),
+            "run_dir": str(run_dir),
+        }
+    )
     save_json(metrics, run_dir / "metrics.json")
     save_json(_environment(), run_dir / "environment.json")
     save_text(_summary(metrics, args), run_dir / "summary.txt")
@@ -73,6 +98,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--decode-top-k", type=int, default=2)
     parser.add_argument("--dynamic-decoder", action="store_true")
     parser.add_argument("--disable-instruction-features", action="store_true", help="Ablation: keep source/target hints but zero goal/edit/constraint features.")
+    parser.add_argument("--multimodal-context", choices=MULTIMODAL_CONTEXT_MODES, default="none")
+    parser.add_argument(
+        "--allow-target-reference",
+        action="store_true",
+        help="Use target_smiles as reference_smiles when a dataset lacks reference_smiles. This is an oracle-reference setting.",
+    )
     parser.add_argument("--timesteps", type=int, default=80)
     parser.add_argument("--noise-repeats", type=int, default=8)
     parser.add_argument("--torch-epochs", type=int, default=80)
@@ -88,14 +119,25 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _build_arrays(df: pd.DataFrame, disable_instruction_features: bool = False) -> tuple[np.ndarray, np.ndarray]:
+def _build_arrays(
+    df: pd.DataFrame,
+    multimodal_context: str = "none",
+    allow_target_reference: bool = False,
+    disable_instruction_features: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
     conditions = []
     targets = []
     for _, row in df.iterrows():
         condition = condition_from_source_and_spec(row["source_smiles"], row["instruction_spec_json"])
         if disable_instruction_features:
-            # Keep source table + target hints; zero categorical spec and threshold features.
-            condition[len(TABLE_COLUMNS) + 8 :] = 0.0
+            condition[INSTRUCTION_SPEC_FEATURE_START:INSTRUCTION_SPEC_FEATURE_END] = 0.0
+        multimodal = multimodal_context_from_row(
+            row,
+            mode=multimodal_context,
+            allow_target_reference=allow_target_reference,
+        )
+        if len(multimodal):
+            condition = np.concatenate([condition, multimodal])
         conditions.append(condition)
         targets.append(target_table_from_smiles(row["target_smiles"]))
     return np.asarray(conditions, dtype=np.float32), np.asarray(targets, dtype=np.float32)
@@ -200,6 +242,7 @@ def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
         "novelty",
     ]
     lines = ["PhysTabMol instruction-editing experiment complete", f"dataset={args.dataset}"]
+    lines.append(f"multimodal_context={args.multimodal_context}")
     for key in keys:
         if key in metrics:
             value = metrics[key]

@@ -307,7 +307,7 @@ data/instruction_editing.jsonl
 
 ```text
 source_smiles,target_smiles,instruction_text,instruction_spec_json,
-property_delta_json,edit_tags,split
+reference_smiles,reference_role,property_delta_json,edit_tags,split
 ```
 
 先跑 deterministic baselines：
@@ -344,6 +344,33 @@ python3 -m phystabmol.instruction_experiment \
   --samples-per-instruction 8 \
   --decode-top-k 2
 ```
+
+多模态输入 ablation：
+
+```bash
+python3 -m phystabmol.instruction_experiment \
+  --dataset data/instruction_editing.csv \
+  --backend torch \
+  --run-name instruction_full_multimodal \
+  --multimodal-context full
+```
+
+支持的 `--multimodal-context`：
+
+- `none`：只用 source structure + instruction spec；
+- `source_image`：追加 source molecule 的 2D rendered/proxy image features；
+- `source_reference`：追加 source image、reference image 与 visual delta；
+- `source_3d`：追加 source 的 RDKit 3D conformer descriptors；
+- `full`：source/reference image + source/reference 3D descriptors。
+
+跑完整对照：
+
+```bash
+bash scripts/run_instruction_multimodal_ablation.sh
+```
+
+`source_reference/full` 需要新数据集里的 `reference_smiles` 列。若想用 `target_smiles` 当显式 reference，
+可以加 `--allow-target-reference`，但这应标注为 oracle-reference setting。
 
 或直接提交 Slurm：
 
@@ -422,6 +449,7 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `instruction_dataset.py`：自动构建 source/target/edit spec instruction 数据。
 - `instruction_verifier.py`：RDKit/规则验证 goal、constraint、edit 是否完成。
 - `instruction_evaluate.py`：instruction editing 主指标评估。
+- `instruction_multimodal.py`：source/reference molecule image 与可选 3D context 特征。
 - `instruction_baselines.py`：no-edit、random、rule-retrieval、oracle baselines。
 - `instruction_experiment.py`：instruction-guided tabular diffusion edit planner。
 - `instruction_paraphrases.py`：LLM paraphrase prompt 导出与 deterministic consistency 过滤。

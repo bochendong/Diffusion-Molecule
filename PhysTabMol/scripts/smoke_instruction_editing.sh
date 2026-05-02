@@ -38,6 +38,7 @@ python3 -m phystabmol.instruction_dataset \
   --max-pairs 30 \
   --pairs-per-source 10 \
   --instructions-per-spec 2 \
+  --reference-pool-size 8 \
   --min-similarity 0.05 \
   --max-similarity 0.99 \
   --seed 5
@@ -61,6 +62,7 @@ python3 -m phystabmol.instruction_experiment \
   --eval-limit 8 \
   --samples-per-instruction 2 \
   --decode-top-k 1 \
+  --multimodal-context source_reference \
   --timesteps 8 \
   --noise-repeats 2 \
   --sklearn-hidden 32 32

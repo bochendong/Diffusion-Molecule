@@ -81,6 +81,8 @@ def generate_baseline_candidates(
                 "pair_id",
                 "source_smiles",
                 "target_smiles",
+                "reference_smiles",
+                "reference_role",
                 "instruction_text",
                 "instruction_spec_json",
                 "edit_tags",

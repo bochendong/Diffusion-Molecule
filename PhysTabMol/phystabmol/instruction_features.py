@@ -27,6 +27,8 @@ THRESHOLD_FEATURES = (
     "similarity_min",
 )
 
+INSTRUCTION_SPEC_FEATURE_START = len(TABLE_COLUMNS) + len(TARGET_COLUMNS)
+
 
 def instruction_feature_names() -> list[str]:
     return (
@@ -37,6 +39,9 @@ def instruction_feature_names() -> list[str]:
         + [f"edit_{name}" for name in EDIT_NAMES]
         + [f"threshold_{name}" for name in THRESHOLD_FEATURES]
     )
+
+
+INSTRUCTION_SPEC_FEATURE_END = len(instruction_feature_names())
 
 
 def condition_from_source_and_spec(source_smiles: str, spec: str | dict[str, Any]) -> np.ndarray:

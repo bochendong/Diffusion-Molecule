@@ -40,6 +40,22 @@ if [[ ! -s "$DATASET" ]]; then
   bash scripts/build_instruction_dataset.sh
 fi
 
+MULTIMODAL_CONTEXT="${PHYSTABMOL_MULTIMODAL_CONTEXT:-none}"
+EXTRA_ARGS=()
+if [[ "${PHYSTABMOL_ALLOW_TARGET_REFERENCE:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--allow-target-reference)
+fi
+if [[ "$MULTIMODAL_CONTEXT" == "source_reference" || "$MULTIMODAL_CONTEXT" == "full" ]]; then
+  if ! head -n 1 "$DATASET" | tr ',' '\n' | grep -qx 'reference_smiles'; then
+    if [[ "${PHYSTABMOL_ALLOW_TARGET_REFERENCE:-0}" != "1" ]]; then
+      echo "Dataset $DATASET has no reference_smiles column." >&2
+      echo "Rebuild it with: bash scripts/build_instruction_dataset.sh" >&2
+      echo "Or set PHYSTABMOL_ALLOW_TARGET_REFERENCE=1 for an oracle-reference run." >&2
+      exit 2
+    fi
+  fi
+fi
+
 python3 -m phystabmol.instruction_experiment \
   --dataset "$DATASET" \
   --backend "${PHYSTABMOL_BACKEND:-torch}" \
@@ -48,11 +64,13 @@ python3 -m phystabmol.instruction_experiment \
   --eval-limit "${PHYSTABMOL_EVAL_LIMIT:-2000}" \
   --samples-per-instruction "${PHYSTABMOL_SAMPLES:-8}" \
   --decode-top-k "${PHYSTABMOL_DECODE_TOP_K:-2}" \
+  --multimodal-context "$MULTIMODAL_CONTEXT" \
   --torch-epochs "${PHYSTABMOL_TORCH_EPOCHS:-80}" \
   --torch-batch-size "${PHYSTABMOL_TORCH_BATCH_SIZE:-1024}" \
   --torch-hidden-dim "${PHYSTABMOL_TORCH_HIDDEN_DIM:-1024}" \
   --torch-layers "${PHYSTABMOL_TORCH_LAYERS:-6}" \
   --timesteps "${PHYSTABMOL_TIMESTEPS:-80}" \
-  --noise-repeats "${PHYSTABMOL_NOISE_REPEATS:-8}"
+  --noise-repeats "${PHYSTABMOL_NOISE_REPEATS:-8}" \
+  "${EXTRA_ARGS[@]}"
 
 echo "Instruction editing job finished at $(date -Is)"

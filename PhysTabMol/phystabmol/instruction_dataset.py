@@ -15,7 +15,7 @@ import pandas as pd
 from .chem import canonicalize_smiles, molecular_descriptors, passes_druglike_filters, tanimoto
 from .instruction_schema import DEFAULT_THRESHOLDS, normalize_spec, spec_to_json
 from .instruction_templates import generate_instruction_texts
-from .instruction_verifier import preserves_scaffold, property_delta, verify_instruction
+from .instruction_verifier import preserves_scaffold, property_delta, score_verification, verify_instruction
 
 
 def main() -> None:
@@ -29,6 +29,7 @@ def main() -> None:
         min_similarity=args.min_similarity,
         max_similarity=args.max_similarity,
         instructions_per_spec=args.instructions_per_spec,
+        reference_pool_size=args.reference_pool_size,
         seed=args.seed,
     )
     out = Path(args.out)
@@ -56,6 +57,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-pairs", type=int, default=50000)
     parser.add_argument("--pairs-per-source", type=int, default=12)
     parser.add_argument("--instructions-per-spec", type=int, default=5)
+    parser.add_argument("--reference-pool-size", type=int, default=24)
     parser.add_argument("--min-similarity", type=float, default=0.6)
     parser.add_argument("--max-similarity", type=float, default=0.95)
     parser.add_argument("--seed", type=int, default=7)
@@ -71,6 +73,7 @@ def build_instruction_dataset(
     min_similarity: float = 0.6,
     max_similarity: float = 0.95,
     instructions_per_spec: int = 5,
+    reference_pool_size: int = 24,
     seed: int = 7,
 ) -> list[dict[str, Any]]:
     records = _load_records(data_path, smiles_column=smiles_column, limit=limit)
@@ -105,6 +108,15 @@ def build_instruction_dataset(
             check = verify_instruction(source["smiles"], target["smiles"], spec)
             if not check["overall_success"]:
                 continue
+            reference_smiles, reference_role = _select_reference_smiles(
+                source=source,
+                target=target,
+                records=records,
+                candidate_indices=candidates,
+                spec=spec,
+                rng=rng,
+                reference_pool_size=reference_pool_size,
+            )
             pair_seen.add(pair_key)
             delta = property_delta(source["descriptors"], target["descriptors"])
             templates = generate_instruction_texts(spec, max_variants=instructions_per_spec)
@@ -115,6 +127,8 @@ def build_instruction_dataset(
                         "pair_id": pair_key,
                         "source_smiles": source["smiles"],
                         "target_smiles": target["smiles"],
+                        "reference_smiles": reference_smiles,
+                        "reference_role": reference_role,
                         "instruction_text": template["instruction_text"],
                         "instruction_spec_json": spec_to_json(spec),
                         "property_delta_json": json.dumps(delta, sort_keys=True),
@@ -220,6 +234,41 @@ def _edit_candidates(source: dict[str, float], target: dict[str, float]) -> list
         elif -diff >= DEFAULT_THRESHOLDS["delta_fg_min"]:
             edits.append(remove_tag)
     return edits
+
+
+def _select_reference_smiles(
+    source: dict[str, Any],
+    target: dict[str, Any],
+    records: list[dict[str, Any]],
+    candidate_indices: list[int],
+    spec: dict[str, Any],
+    rng: np.random.Generator,
+    reference_pool_size: int,
+) -> tuple[str, str]:
+    pool = list(dict.fromkeys(candidate_indices))[:reference_pool_size]
+    if len(pool) < reference_pool_size:
+        extra = rng.choice(len(records), size=min(len(records), reference_pool_size * 2), replace=False).tolist()
+        pool.extend(extra)
+    best_smiles = source["smiles"]
+    best_score = -1.0
+    excluded = {source["smiles"], target["smiles"]}
+    for idx in dict.fromkeys(pool):
+        candidate = records[int(idx)]
+        smiles = candidate["smiles"]
+        if smiles in excluded:
+            continue
+        result = verify_instruction(source["smiles"], smiles, spec)
+        if not result.get("valid"):
+            continue
+        score = score_verification(result) + tanimoto(smiles, target["smiles"])
+        if result.get("overall_success"):
+            score += 20.0
+        if score > best_score:
+            best_score = score
+            best_smiles = smiles
+    if best_smiles == source["smiles"]:
+        return best_smiles, "source_fallback"
+    return best_smiles, "verified_neighbor"
 
 
 def _bucket_records(records: list[dict[str, Any]]) -> dict[tuple[int, int, int], list[int]]:

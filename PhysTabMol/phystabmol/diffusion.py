@@ -48,6 +48,7 @@ class TabularDiffusion:
                 noisy = np.sqrt(alpha_bar) * y[row_idx] + np.sqrt(1.0 - alpha_bar) * eps
                 train_x.append(np.concatenate([noisy, c[row_idx], [t / self.timesteps]]))
                 train_eps.append(eps)
+        use_early_stopping = len(train_x) >= 50
         self.model = MLPRegressor(
             hidden_layer_sizes=self.hidden,
             activation="relu",
@@ -55,7 +56,7 @@ class TabularDiffusion:
             learning_rate_init=2e-3,
             max_iter=900,
             random_state=self.seed,
-            early_stopping=True,
+            early_stopping=use_early_stopping,
             n_iter_no_change=30,
         )
         self.model.fit(np.asarray(train_x), np.asarray(train_eps))

@@ -43,6 +43,13 @@ def add_3d_metrics(decoded_df: pd.DataFrame, sdf_path: str | Path | None = None,
     return pd.concat([out.reset_index(drop=True), metrics_df.reset_index(drop=True)], axis=1)
 
 
+def molecule_3d_metrics(smiles: str) -> dict[str, float]:
+    """Return RDKit 3D descriptors for a single molecule, or unavailable flags."""
+
+    metrics, _ = _embed_and_measure(smiles)
+    return metrics
+
+
 def _embed_and_measure(smiles: str):
     empty = {
         "3d_available": float(RDKIT_3D_AVAILABLE),
