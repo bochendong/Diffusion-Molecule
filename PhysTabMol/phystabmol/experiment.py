@@ -384,6 +384,10 @@ def _environment() -> dict:
         env["torch"] = torch.__version__
         env["cuda_available"] = bool(torch.cuda.is_available())
         env["cuda_device_count"] = int(torch.cuda.device_count()) if torch.cuda.is_available() else 0
+        if torch.cuda.is_available():
+            env["cuda_device_name"] = torch.cuda.get_device_name(0)
+            env["cuda_max_memory_allocated_mb"] = round(torch.cuda.max_memory_allocated() / 1024**2, 2)
+            env["cuda_max_memory_reserved_mb"] = round(torch.cuda.max_memory_reserved() / 1024**2, 2)
     except Exception:
         env["torch"] = None
         env["cuda_available"] = False

@@ -248,6 +248,28 @@ summary.txt
 postprocess_config.json
 ```
 
+## GPU 使用率调节
+
+默认 Slurm 脚本申请的是 10GB H100 MIG，不是整张 80GB H100。若 allocation 允许，可以在提交时覆盖
+GPU slice，并放大 PyTorch batch/model：
+
+```bash
+PHYSTABMOL_TORCH_BATCH_SIZE=2048 \
+PHYSTABMOL_TORCH_HIDDEN_DIM=1536 \
+PHYSTABMOL_TORCH_LAYERS=8 \
+sbatch scripts/run_phystabmol_gpu.slurm.sh
+```
+
+如果使用更大的 MIG/整卡，可以用 Slurm 命令行覆盖脚本里的 `#SBATCH --gpus=...`：
+
+```bash
+sbatch --gpus=h100:1 --mem=160G scripts/run_phystabmol_gpu.slurm.sh
+```
+
+每次 run 的 `environment.json` 会记录 `cuda_max_memory_allocated_mb` 和
+`cuda_max_memory_reserved_mb`，用来判断显存是否真的吃满。注意：molecular decoding/evaluation 主要是
+CPU/RDKit 工作，增加显存只能加速/放大训练阶段，不能直接解决解码超时。
+
 ## 3D Molecule Support
 
 虽然不做视频，项目已经预留 3D 分子评估。若安装 RDKit，可开启：

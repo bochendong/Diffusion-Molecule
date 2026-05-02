@@ -34,9 +34,12 @@ echo "jobid=${SLURM_JOB_ID:-} node=$(hostname) cwd=$(pwd)"
 nvidia-smi || true
 python -c "import torch; print('cuda=', torch.cuda.is_available())" || true
 
-# Defaults match ChEMBL download → data/molecules.csv (single "smiles" column).
+# Defaults match ChEMBL download -> data/molecules.csv (single "smiles" column).
 # Override when submitting, e.g.:
 #   PHYSTABMOL_DATA=/path/to.csv PHYSTABMOL_RUN_NAME=my_run sbatch scripts/run_phystabmol_gpu.slurm.sh
+# Larger GPU/MIG runs can use larger torch knobs, e.g.:
+#   PHYSTABMOL_TORCH_BATCH_SIZE=2048 PHYSTABMOL_TORCH_HIDDEN_DIM=1536 PHYSTABMOL_TORCH_LAYERS=8 sbatch scripts/run_phystabmol_gpu.slurm.sh
+# Command-line sbatch options can also override the MIG slice requested above if your allocation allows it.
 PHYSTABMOL_DATA="${PHYSTABMOL_DATA:-data/molecules.csv}"
 PHYSTABMOL_BACKEND="${PHYSTABMOL_BACKEND:-torch}"
 PHYSTABMOL_RUN_NAME="${PHYSTABMOL_RUN_NAME:-slurm_${SLURM_JOB_ID:-manual}}"
@@ -49,7 +52,10 @@ PHYSTABMOL_CONTRASTIVE_BATCH_SIZE="${PHYSTABMOL_CONTRASTIVE_BATCH_SIZE:-512}"
 PHYSTABMOL_CONTRASTIVE_MAX_PAIRS="${PHYSTABMOL_CONTRASTIVE_MAX_PAIRS:-20000}"
 PHYSTABMOL_CONTRASTIVE_RETRIEVAL="${PHYSTABMOL_CONTRASTIVE_RETRIEVAL:-2048}"
 PHYSTABMOL_TORCH_EPOCHS="${PHYSTABMOL_TORCH_EPOCHS:-80}"
-PHYSTABMOL_TORCH_BATCH_SIZE="${PHYSTABMOL_TORCH_BATCH_SIZE:-512}"
+PHYSTABMOL_TORCH_BATCH_SIZE="${PHYSTABMOL_TORCH_BATCH_SIZE:-1024}"
+PHYSTABMOL_TORCH_HIDDEN_DIM="${PHYSTABMOL_TORCH_HIDDEN_DIM:-1024}"
+PHYSTABMOL_TORCH_LAYERS="${PHYSTABMOL_TORCH_LAYERS:-6}"
+PHYSTABMOL_TORCH_LR="${PHYSTABMOL_TORCH_LR:-0.0002}"
 PHYSTABMOL_TIMESTEPS="${PHYSTABMOL_TIMESTEPS:-80}"
 PHYSTABMOL_NOISE_REPEATS="${PHYSTABMOL_NOISE_REPEATS:-8}"
 PHYSTABMOL_TARGET_ANCHOR="${PHYSTABMOL_TARGET_ANCHOR:-1.0}"
@@ -79,6 +85,9 @@ python -m phystabmol.experiment \
   --contrastive-retrieval-samples "$PHYSTABMOL_CONTRASTIVE_RETRIEVAL" \
   --torch-epochs "$PHYSTABMOL_TORCH_EPOCHS" \
   --torch-batch-size "$PHYSTABMOL_TORCH_BATCH_SIZE" \
+  --torch-hidden-dim "$PHYSTABMOL_TORCH_HIDDEN_DIM" \
+  --torch-layers "$PHYSTABMOL_TORCH_LAYERS" \
+  --torch-lr "$PHYSTABMOL_TORCH_LR" \
   --timesteps "$PHYSTABMOL_TIMESTEPS" \
   --noise-repeats "$PHYSTABMOL_NOISE_REPEATS" \
   --target-anchor "$PHYSTABMOL_TARGET_ANCHOR" \
