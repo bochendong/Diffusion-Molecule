@@ -7,9 +7,18 @@ from pathlib import Path
 import pickle
 
 import numpy as np
-from sklearn.neural_network import MLPRegressor
-from sklearn.neighbors import NearestNeighbors
-from sklearn.preprocessing import StandardScaler
+
+try:  # pragma: no cover - server path has sklearn; local macOS wheels can be broken.
+    from sklearn.neural_network import MLPRegressor
+    from sklearn.neighbors import NearestNeighbors
+    from sklearn.preprocessing import StandardScaler
+
+    SKLEARN_AVAILABLE = True
+except Exception:  # pragma: no cover
+    MLPRegressor = None
+    NearestNeighbors = None
+    StandardScaler = None
+    SKLEARN_AVAILABLE = False
 
 from .schema import BOUNDS, INTEGER_COLUMNS, TABLE_COLUMNS
 
@@ -29,6 +38,8 @@ class TabularDiffusion:
     count_anchor_weight: float = 0.8
 
     def fit(self, table_y: np.ndarray, condition_x: np.ndarray) -> "TabularDiffusion":
+        if not SKLEARN_AVAILABLE:
+            raise RuntimeError("scikit-learn is not available. Use --backend torch or install a working sklearn/scipy stack.")
         self.y_scaler = StandardScaler().fit(table_y)
         self.c_scaler = StandardScaler().fit(condition_x)
         self.train_table_y_ = np.asarray(table_y, dtype=np.float32)

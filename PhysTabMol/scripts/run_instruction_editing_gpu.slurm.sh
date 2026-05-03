@@ -35,24 +35,23 @@ nvidia-smi || true
 python3 -c "import torch; print('cuda=', torch.cuda.is_available())" || true
 
 DATASET="${PHYSTABMOL_INSTRUCTION_DATASET:-data/instruction_editing.csv}"
+MULTIMODAL_CONTEXT="${PHYSTABMOL_MULTIMODAL_CONTEXT:-source_reference}"
 if [[ ! -s "$DATASET" ]]; then
   echo "Instruction dataset not found at $DATASET; building it first."
   bash scripts/build_instruction_dataset.sh
 fi
 
-MULTIMODAL_CONTEXT="${PHYSTABMOL_MULTIMODAL_CONTEXT:-none}"
 EXTRA_ARGS=()
+if [[ "${PHYSTABMOL_DISABLE_SOURCE_AWARE_DECODER:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--disable-source-aware-decoder)
+fi
 if [[ "${PHYSTABMOL_ALLOW_TARGET_REFERENCE:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--allow-target-reference)
 fi
 if [[ "$MULTIMODAL_CONTEXT" == "source_reference" || "$MULTIMODAL_CONTEXT" == "full" ]]; then
   if ! head -n 1 "$DATASET" | tr ',' '\n' | grep -qx 'reference_smiles'; then
-    if [[ "${PHYSTABMOL_ALLOW_TARGET_REFERENCE:-0}" != "1" ]]; then
-      echo "Dataset $DATASET has no reference_smiles column." >&2
-      echo "Rebuild it with: bash scripts/build_instruction_dataset.sh" >&2
-      echo "Or set PHYSTABMOL_ALLOW_TARGET_REFERENCE=1 for an oracle-reference run." >&2
-      exit 2
-    fi
+    echo "Dataset $DATASET has no reference_smiles column; rebuilding for multimodal source_reference/full."
+    bash scripts/build_instruction_dataset.sh
   fi
 fi
 
@@ -65,6 +64,8 @@ python3 -m phystabmol.instruction_experiment \
   --samples-per-instruction "${PHYSTABMOL_SAMPLES:-8}" \
   --decode-top-k "${PHYSTABMOL_DECODE_TOP_K:-2}" \
   --multimodal-context "$MULTIMODAL_CONTEXT" \
+  --source-aware-pool-size "${PHYSTABMOL_SOURCE_AWARE_POOL_SIZE:-256}" \
+  --source-aware-verify-candidates "${PHYSTABMOL_SOURCE_AWARE_VERIFY_CANDIDATES:-192}" \
   --torch-epochs "${PHYSTABMOL_TORCH_EPOCHS:-80}" \
   --torch-batch-size "${PHYSTABMOL_TORCH_BATCH_SIZE:-1024}" \
   --torch-hidden-dim "${PHYSTABMOL_TORCH_HIDDEN_DIM:-1024}" \

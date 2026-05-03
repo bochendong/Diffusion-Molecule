@@ -20,6 +20,7 @@ from .instruction_features import (
     target_table_from_smiles,
 )
 from .instruction_multimodal import MULTIMODAL_CONTEXT_MODES, multimodal_context_from_row, multimodal_feature_names
+from .instruction_source_decoder import SourceAwareCandidateIndex, SourceAwareDecoderConfig, decode_source_aware
 from .io import make_run_dir, save_json, save_text, set_seed
 from .schema import TABLE_COLUMNS
 
@@ -66,6 +67,11 @@ def main() -> None:
     print(f"Fit done ({backend}).", flush=True)
     model_path = run_dir / "models" / ("instruction_diffusion.pt" if backend == "torch" else "instruction_diffusion.pkl")
     diffusion.save(model_path)
+    source_index = None
+    if args.source_aware_decoder:
+        print("Building source-aware retrieval index from the train split...", flush=True)
+        source_index = SourceAwareCandidateIndex.from_dataframe(train_df)
+        print(f"Source-aware index size={len(source_index.candidates)} molecules.", flush=True)
 
     n_gen = len(eval_df) * args.samples_per_instruction
     print(
@@ -76,7 +82,20 @@ def main() -> None:
     generated_df = _sample_edit_plans(diffusion, eval_x, eval_df, args.samples_per_instruction)
     generated_df.to_csv(run_dir / "tables" / "generated_edit_plans.csv", index=False)
     print(f"Decoding {len(generated_df)} rows to SMILES (RDKit; often the slowest step)...", flush=True)
-    decoded_df = _decode_and_attach(generated_df, eval_df, top_k=args.decode_top_k, dynamic_decoder=args.dynamic_decoder)
+    decoded_df = _decode_and_attach(
+        generated_df,
+        eval_df,
+        top_k=args.decode_top_k,
+        dynamic_decoder=args.dynamic_decoder,
+        source_index=source_index,
+        source_aware_config=SourceAwareDecoderConfig(
+            pool_size=args.source_aware_pool_size,
+            plan_neighbors=args.source_aware_plan_neighbors,
+            source_neighbors=args.source_aware_source_neighbors,
+            reference_neighbors=args.source_aware_reference_neighbors,
+            verify_candidates=args.source_aware_verify_candidates,
+        ),
+    )
     decoded_df.to_csv(run_dir / "tables" / "decoded_instruction_candidates.csv", index=False)
 
     train_smiles = set(train_df["source_smiles"].astype(str)) | set(train_df["target_smiles"].astype(str))
@@ -89,6 +108,7 @@ def main() -> None:
             "eval_size": float(len(eval_df)),
             "condition_dim": float(train_x.shape[1]),
             "multimodal_feature_dim": float(len(multimodal_feature_names(args.multimodal_context))),
+            "source_aware_decoder": bool(args.source_aware_decoder),
             "run_dir": str(run_dir),
         }
     )
@@ -112,6 +132,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--samples-per-instruction", type=int, default=8)
     parser.add_argument("--decode-top-k", type=int, default=2)
     parser.add_argument("--dynamic-decoder", action="store_true")
+    parser.add_argument("--disable-source-aware-decoder", dest="source_aware_decoder", action="store_false")
+    parser.set_defaults(source_aware_decoder=True)
+    parser.add_argument("--source-aware-pool-size", type=int, default=256)
+    parser.add_argument("--source-aware-plan-neighbors", type=int, default=128)
+    parser.add_argument("--source-aware-source-neighbors", type=int, default=128)
+    parser.add_argument("--source-aware-reference-neighbors", type=int, default=64)
+    parser.add_argument("--source-aware-verify-candidates", type=int, default=192)
     parser.add_argument("--disable-instruction-features", action="store_true", help="Ablation: keep source/target hints but zero goal/edit/constraint features.")
     parser.add_argument("--multimodal-context", choices=MULTIMODAL_CONTEXT_MODES, default="none")
     parser.add_argument(
@@ -214,14 +241,42 @@ def _sample_edit_plans(diffusion, conditions: np.ndarray, eval_df: pd.DataFrame,
     return pd.DataFrame(rows)
 
 
-def _decode_and_attach(generated_df: pd.DataFrame, eval_df: pd.DataFrame, top_k: int, dynamic_decoder: bool = False) -> pd.DataFrame:
+def _decode_and_attach(
+    generated_df: pd.DataFrame,
+    eval_df: pd.DataFrame,
+    top_k: int,
+    dynamic_decoder: bool = False,
+    source_index: SourceAwareCandidateIndex | None = None,
+    source_aware_config: SourceAwareDecoderConfig | None = None,
+) -> pd.DataFrame:
     rows = []
     for _, source in generated_df.iterrows():
         instruction_idx = int(source["instruction_id"])
         instruction = eval_df.iloc[instruction_idx]
         table_row = {col: float(source[col]) for col in TABLE_COLUMNS}
         decode_seed = instruction_idx * 1009 + int(source["sample_idx"])
-        for rank, candidate in enumerate(decode_table_row(table_row, top_k=top_k, seed=decode_seed, include_dynamic=dynamic_decoder), start=1):
+        candidates = []
+        if source_index is not None:
+            candidates.extend(
+                decode_source_aware(
+                    table_row,
+                    instruction,
+                    source_index,
+                    top_k=top_k,
+                    seed=decode_seed,
+                    config=source_aware_config,
+                )
+            )
+        if len(candidates) < top_k:
+            candidates.extend(
+                decode_table_row(
+                    table_row,
+                    top_k=top_k - len(candidates),
+                    seed=decode_seed,
+                    include_dynamic=dynamic_decoder,
+                )
+            )
+        for rank, candidate in enumerate(_dedupe_candidates(candidates)[:top_k], start=1):
             out = {
                 "instruction_id": instruction_idx,
                 "pair_id": source["pair_id"],
@@ -234,11 +289,23 @@ def _decode_and_attach(generated_df: pd.DataFrame, eval_df: pd.DataFrame, top_k:
                 "instruction_spec_json": instruction["instruction_spec_json"],
                 "decoder_score": candidate.score,
                 "decoder_valid": candidate.valid,
+                "candidate_source": candidate.source,
             }
             out.update({f"plan_{key}": value for key, value in table_row.items()})
             out.update({f"actual_{key}": value for key, value in candidate.descriptors.items() if isinstance(value, (int, float))})
             rows.append(out)
     return pd.DataFrame(rows)
+
+
+def _dedupe_candidates(candidates):
+    out = []
+    seen = set()
+    for candidate in candidates:
+        if candidate.smiles in seen:
+            continue
+        out.append(candidate)
+        seen.add(candidate.smiles)
+    return out
 
 
 def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
@@ -258,6 +325,7 @@ def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
     ]
     lines = ["PhysTabMol instruction-editing experiment complete", f"dataset={args.dataset}"]
     lines.append(f"multimodal_context={args.multimodal_context}")
+    lines.append(f"source_aware_decoder={args.source_aware_decoder}")
     for key in keys:
         if key in metrics:
             value = metrics[key]

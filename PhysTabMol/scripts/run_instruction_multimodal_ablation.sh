@@ -30,6 +30,9 @@ EXTRA_ARGS=()
 if [[ "${PHYSTABMOL_ALLOW_TARGET_REFERENCE:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--allow-target-reference)
 fi
+if [[ "${PHYSTABMOL_DISABLE_SOURCE_AWARE_DECODER:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--disable-source-aware-decoder)
+fi
 
 for mode in $MODES; do
   echo "=== multimodal_context=$mode ==="
@@ -41,6 +44,8 @@ for mode in $MODES; do
     --samples-per-instruction "$SAMPLES" \
     --decode-top-k "$DECODE_TOP_K" \
     --multimodal-context "$mode" \
+    --source-aware-pool-size "${PHYSTABMOL_SOURCE_AWARE_POOL_SIZE:-256}" \
+    --source-aware-verify-candidates "${PHYSTABMOL_SOURCE_AWARE_VERIFY_CANDIDATES:-192}" \
     --torch-epochs "${PHYSTABMOL_TORCH_EPOCHS:-20}" \
     --torch-batch-size "${PHYSTABMOL_TORCH_BATCH_SIZE:-1024}" \
     --torch-hidden-dim "${PHYSTABMOL_TORCH_HIDDEN_DIM:-1024}" \

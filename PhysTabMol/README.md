@@ -341,8 +341,22 @@ python3 -m phystabmol.instruction_experiment \
   --dataset data/instruction_editing.csv \
   --backend torch \
   --run-name instruction_pilot \
+  --multimodal-context source_reference \
   --samples-per-instruction 8 \
   --decode-top-k 2
+```
+
+默认会启用 **source-aware decoder**：先由 diffusion 生成 edit plan，再从训练分子库中检索接近
+`source molecule / reference molecule / generated plan` 的候选，并用 verifier 重新排序。这样主任务更像
+“编辑原分子”，而不是无条件生成一个新分子。
+
+如果要做旧 decoder 的 ablation：
+
+```bash
+python3 -m phystabmol.instruction_experiment \
+  --dataset data/instruction_editing.csv \
+  --backend torch \
+  --disable-source-aware-decoder
 ```
 
 多模态输入 ablation：
@@ -377,6 +391,15 @@ bash scripts/run_instruction_multimodal_ablation.sh
 ```bash
 sbatch scripts/run_instruction_editing_gpu.slurm.sh
 ```
+
+Slurm 默认使用：
+
+```text
+PHYSTABMOL_MULTIMODAL_CONTEXT=source_reference
+source-aware decoder enabled
+```
+
+若已有旧 `data/instruction_editing.csv` 缺少 `reference_smiles`，脚本会自动重建 instruction dataset。
 
 LLM paraphrase 工作流是离线的。先导出 prompt：
 
@@ -450,6 +473,7 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `instruction_verifier.py`：RDKit/规则验证 goal、constraint、edit 是否完成。
 - `instruction_evaluate.py`：instruction editing 主指标评估。
 - `instruction_multimodal.py`：source/reference molecule image 与可选 3D context 特征。
+- `instruction_source_decoder.py`：source-aware retrieval/repair decoder，用 verifier 重排候选。
 - `instruction_baselines.py`：no-edit、random、rule-retrieval、oracle baselines。
 - `instruction_experiment.py`：instruction-guided tabular diffusion edit planner。
 - `instruction_paraphrases.py`：LLM paraphrase prompt 导出与 deterministic consistency 过滤。
