@@ -1,0 +1,12 @@
+{
+  "decode_top_k": 2,
+  "dynamic_decoder": false,
+  "enable_3d": false,
+  "max_3d_sdf": 500,
+  "max_conditions": 5000,
+  "max_rows": 0,
+  "output_name": "decoded_candidates.csv",
+  "run_dir": "runs/20260501_145202_slurm_13110897",
+  "samples_per_condition": 8,
+  "save_3d_sdf": false
+}

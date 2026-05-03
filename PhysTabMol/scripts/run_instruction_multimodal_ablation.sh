@@ -6,6 +6,8 @@ set -euo pipefail
 
 PHYSTABMOL_ROOT="${PHYSTABMOL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$PHYSTABMOL_ROOT"
+# shellcheck source=/dev/null
+source "$PHYSTABMOL_ROOT/scripts/ensure_phystabmol_venv.sh"
 
 DATASET="${PHYSTABMOL_INSTRUCTION_DATASET:-data/instruction_editing.csv}"
 BACKEND="${PHYSTABMOL_BACKEND:-sklearn}"

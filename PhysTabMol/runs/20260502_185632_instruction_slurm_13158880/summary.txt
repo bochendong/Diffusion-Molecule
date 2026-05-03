@@ -1,0 +1,15 @@
+PhysTabMol instruction-editing experiment complete
+dataset=data/instruction_editing.csv
+multimodal_context=none
+backend=torch
+train_size=26100.0000
+eval_size=2000.0000
+n=32000.0000
+validity=1.0000
+goal_success_rate=0.3507
+constraint_success_rate=0.0013
+edit_success_rate=0.4863
+overall_instruction_success_rate=0.0000
+similarity_to_source=0.1451
+druglike_rate=1.0000
+novelty=0.9534

@@ -56,6 +56,8 @@ htmlcov/
 
 # Slurm / batch logs (experiment uses ./slurm-%j.log)
 slurm-*.log
+instruction-*.log
+decode-*.log
 *.out
 
 # Editors & OS

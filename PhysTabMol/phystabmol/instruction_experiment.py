@@ -30,6 +30,7 @@ def main() -> None:
     run_dir = make_run_dir(args.output_dir, args.run_name)
     save_json(vars(args), run_dir / "config.json")
 
+    print(f"Loading dataset {args.dataset}...", flush=True)
     dataset = pd.read_csv(args.dataset)
     if args.limit:
         dataset = dataset.head(args.limit).reset_index(drop=True)
@@ -40,6 +41,11 @@ def main() -> None:
     if train_df.empty or eval_df.empty:
         raise ValueError("Instruction dataset must contain non-empty train and eval splits.")
 
+    print(
+        f"Building feature arrays: train={len(train_df)} eval={len(eval_df)} "
+        f"(RDKit per row; may take several minutes)...",
+        flush=True,
+    )
     train_x, train_y = _build_arrays(
         train_df,
         multimodal_context=args.multimodal_context,
@@ -55,12 +61,21 @@ def main() -> None:
     train_df.to_csv(run_dir / "tables" / "instruction_train.csv", index=False)
     eval_df.to_csv(run_dir / "tables" / "instruction_eval.csv", index=False)
 
+    print(f"Fitting diffusion (backend may be sklearn MLP on ~{len(train_df) * args.noise_repeats} synthetic steps)...", flush=True)
     diffusion, backend = _fit_diffusion(args, train_y, train_x)
+    print(f"Fit done ({backend}).", flush=True)
     model_path = run_dir / "models" / ("instruction_diffusion.pt" if backend == "torch" else "instruction_diffusion.pkl")
     diffusion.save(model_path)
 
+    n_gen = len(eval_df) * args.samples_per_instruction
+    print(
+        f"Sampling {len(eval_df)} instructions x {args.samples_per_instruction} = {n_gen} plans "
+        f"({args.timesteps} denoise steps each)...",
+        flush=True,
+    )
     generated_df = _sample_edit_plans(diffusion, eval_x, eval_df, args.samples_per_instruction)
     generated_df.to_csv(run_dir / "tables" / "generated_edit_plans.csv", index=False)
+    print(f"Decoding {len(generated_df)} rows to SMILES (RDKit; often the slowest step)...", flush=True)
     decoded_df = _decode_and_attach(generated_df, eval_df, top_k=args.decode_top_k, dynamic_decoder=args.dynamic_decoder)
     decoded_df.to_csv(run_dir / "tables" / "decoded_instruction_candidates.csv", index=False)
 
