@@ -3,22 +3,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import pickle
 
 import numpy as np
 
-try:  # pragma: no cover - server path has sklearn; local macOS wheels can be broken.
-    from sklearn.neural_network import MLPRegressor
-    from sklearn.neighbors import NearestNeighbors
-    from sklearn.preprocessing import StandardScaler
-
-    SKLEARN_AVAILABLE = True
-except Exception:  # pragma: no cover
+if os.environ.get("PHYSTABMOL_DISABLE_SKLEARN", "0") == "1":  # pragma: no cover - local smoke path.
     MLPRegressor = None
     NearestNeighbors = None
     StandardScaler = None
     SKLEARN_AVAILABLE = False
+else:
+    try:  # pragma: no cover - server path has sklearn; local macOS wheels can be broken.
+        from sklearn.neural_network import MLPRegressor
+        from sklearn.neighbors import NearestNeighbors
+        from sklearn.preprocessing import StandardScaler
+
+        SKLEARN_AVAILABLE = True
+    except Exception:  # pragma: no cover
+        MLPRegressor = None
+        NearestNeighbors = None
+        StandardScaler = None
+        SKLEARN_AVAILABLE = False
 
 from .schema import BOUNDS, INTEGER_COLUMNS, TABLE_COLUMNS
 

@@ -62,10 +62,11 @@ def main() -> None:
     train_df.to_csv(run_dir / "tables" / "instruction_train.csv", index=False)
     eval_df.to_csv(run_dir / "tables" / "instruction_eval.csv", index=False)
 
-    print(f"Fitting diffusion (backend may be sklearn MLP on ~{len(train_df) * args.noise_repeats} synthetic steps)...", flush=True)
+    fit_name = "latent VAE diffusion" if args.latent_vae else "diffusion"
+    print(f"Fitting {fit_name} (backend may be sklearn MLP on ~{len(train_df) * args.noise_repeats} synthetic steps)...", flush=True)
     diffusion, backend = _fit_diffusion(args, train_y, train_x)
     print(f"Fit done ({backend}).", flush=True)
-    model_path = run_dir / "models" / ("instruction_diffusion.pt" if backend == "torch" else "instruction_diffusion.pkl")
+    model_path = run_dir / "models" / ("instruction_diffusion.pt" if backend.startswith("torch") else "instruction_diffusion.pkl")
     diffusion.save(model_path)
     source_index = None
     if args.source_aware_decoder:
@@ -109,6 +110,8 @@ def main() -> None:
             "condition_dim": float(train_x.shape[1]),
             "multimodal_feature_dim": float(len(multimodal_feature_names(args.multimodal_context))),
             "source_aware_decoder": bool(args.source_aware_decoder),
+            "latent_vae": bool(args.latent_vae),
+            "vae_latent_dim": float(args.vae_latent_dim) if args.latent_vae else 0.0,
             "run_dir": str(run_dir),
         }
     )
@@ -129,6 +132,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-splits", nargs="+", default=["valid", "test"])
     parser.add_argument("--eval-limit", type=int, default=2000)
     parser.add_argument("--backend", choices=["auto", "torch", "sklearn"], default="auto")
+    parser.add_argument("--latent-vae", action="store_true", help="Train a table/molecule VAE and run diffusion in its latent space.")
     parser.add_argument("--samples-per-instruction", type=int, default=8)
     parser.add_argument("--decode-top-k", type=int, default=2)
     parser.add_argument("--dynamic-decoder", action="store_true")
@@ -139,7 +143,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-aware-source-neighbors", type=int, default=128)
     parser.add_argument("--source-aware-reference-neighbors", type=int, default=64)
     parser.add_argument("--source-aware-verify-candidates", type=int, default=192)
-    parser.add_argument("--disable-instruction-features", action="store_true", help="Ablation: keep source/target hints but zero goal/edit/constraint features.")
+    parser.add_argument(
+        "--disable-instruction-features",
+        action="store_true",
+        help="Ablation: keep source/target hints but zero goal/edit/constraint features.",
+    )
     parser.add_argument("--multimodal-context", choices=MULTIMODAL_CONTEXT_MODES, default="none")
     parser.add_argument(
         "--allow-target-reference",
@@ -154,6 +162,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--torch-layers", type=int, default=6)
     parser.add_argument("--torch-lr", type=float, default=2e-4)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--vae-latent-dim", type=int, default=16)
+    parser.add_argument("--vae-hidden-dim", type=int, default=512)
+    parser.add_argument("--vae-layers", type=int, default=3)
+    parser.add_argument("--vae-epochs", type=int, default=60)
+    parser.add_argument("--vae-batch-size", type=int, default=1024)
+    parser.add_argument("--vae-lr", type=float, default=1e-3)
+    parser.add_argument("--vae-beta", type=float, default=1e-3)
     parser.add_argument("--sklearn-hidden", type=int, nargs=2, default=(160, 160))
     parser.add_argument("--target-anchor", type=float, default=1.0)
     parser.add_argument("--anchor-neighbors", type=int, default=128)
@@ -187,6 +202,39 @@ def _build_arrays(
 
 def _fit_diffusion(args, train_y: np.ndarray, train_x: np.ndarray):
     target_start = len(TABLE_COLUMNS)
+    if args.latent_vae:
+        if args.backend not in {"auto", "torch"}:
+            raise ValueError("--latent-vae requires --backend auto or --backend torch.")
+        try:
+            from .torch_latent_vae import TORCH_AVAILABLE, TorchLatentVAEDiffusion
+
+            if not TORCH_AVAILABLE:
+                raise RuntimeError("Requested --latent-vae but PyTorch is not installed.")
+            model = TorchLatentVAEDiffusion(
+                timesteps=args.timesteps,
+                noise_repeats=args.noise_repeats,
+                hidden_dim=args.torch_hidden_dim,
+                layers=args.torch_layers,
+                epochs=args.torch_epochs,
+                batch_size=args.torch_batch_size,
+                lr=args.torch_lr,
+                seed=args.seed,
+                device=args.device,
+                target_condition_start=target_start,
+                target_anchor=args.target_anchor,
+                anchor_neighbors=args.anchor_neighbors,
+                count_anchor_weight=args.count_anchor_weight,
+                vae_latent_dim=args.vae_latent_dim,
+                vae_hidden_dim=args.vae_hidden_dim,
+                vae_layers=args.vae_layers,
+                vae_epochs=args.vae_epochs,
+                vae_batch_size=args.vae_batch_size,
+                vae_lr=args.vae_lr,
+                vae_beta=args.vae_beta,
+            ).fit(train_y, train_x)
+            return model, "torch_latent_vae"
+        except Exception:
+            raise
     if args.backend in {"auto", "torch"}:
         try:
             from .torch_diffusion import TORCH_AVAILABLE, TorchTabularDiffusion
@@ -319,13 +367,22 @@ def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
         "constraint_success_rate",
         "edit_success_rate",
         "overall_instruction_success_rate",
+        "overall_success_at_1_by_instruction",
+        "overall_success_at_5_by_instruction",
+        "overall_success_at_10_by_instruction",
+        "sketchmol_local_edit_success_rate",
+        "local_edit_success_at_5_by_instruction",
         "similarity_to_source",
+        "target_similarity",
         "druglike_rate",
         "novelty",
     ]
     lines = ["PhysTabMol instruction-editing experiment complete", f"dataset={args.dataset}"]
     lines.append(f"multimodal_context={args.multimodal_context}")
     lines.append(f"source_aware_decoder={args.source_aware_decoder}")
+    lines.append(f"latent_vae={args.latent_vae}")
+    if args.latent_vae:
+        lines.append(f"vae_latent_dim={args.vae_latent_dim}")
     for key in keys:
         if key in metrics:
             value = metrics[key]

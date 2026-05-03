@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from .chem import molecular_descriptors, passes_druglike_filters
+from .instruction_local_edit import local_edit_metrics
 from .instruction_verifier import verify_instruction
 from .io import save_json
 
@@ -65,6 +66,9 @@ def evaluate_instruction_candidates(
         result = verify_instruction(source, candidate, row[spec_col])
         out = row.to_dict()
         out.update({f"verify_{key}": value for key, value in result.items()})
+        if "target_smiles" in candidates.columns:
+            local = local_edit_metrics(source, str(row["target_smiles"]), candidate)
+            out.update({f"local_{key}": value for key, value in local.items()})
         out["instruction_row"] = int(idx)
         details.append(out)
         if result["valid"]:
@@ -92,6 +96,8 @@ def evaluate_instruction_candidates(
         "uniqueness": float(len(unique_valid) / max(1, len(valid_smiles))),
         "novelty": float(len([s for s in unique_valid if s not in train]) / max(1, len(unique_valid))),
     }
+    if "local_target_candidate_similarity" in detailed.columns:
+        metrics.update(_local_edit_summary(detailed, valid))
     if not valid.empty:
         metrics.update(
             {
@@ -104,9 +110,15 @@ def evaluate_instruction_candidates(
     if "pair_id" in detailed.columns:
         metrics["conditions"] = float(detailed["pair_id"].nunique())
         metrics["mean_candidates_per_condition"] = float(detailed.groupby("pair_id").size().mean())
-    elif "instruction_id" in detailed.columns:
-        metrics["conditions"] = float(detailed["instruction_id"].nunique())
-        metrics["mean_candidates_per_condition"] = float(detailed.groupby("instruction_id").size().mean())
+        metrics["pairs"] = float(detailed["pair_id"].nunique())
+        metrics["mean_candidates_per_pair"] = float(detailed.groupby("pair_id").size().mean())
+    if "instruction_id" in detailed.columns:
+        metrics["instructions"] = float(detailed["instruction_id"].nunique())
+        metrics["mean_candidates_per_instruction"] = float(detailed.groupby("instruction_id").size().mean())
+        if "conditions" not in metrics:
+            metrics["conditions"] = metrics["instructions"]
+            metrics["mean_candidates_per_condition"] = metrics["mean_candidates_per_instruction"]
+    metrics.update(_topk_metrics(detailed))
     return metrics, detailed
 
 
@@ -135,6 +147,72 @@ def _druglike_rate(smiles: list[str]) -> float:
     records = [molecular_descriptors(s) for s in smiles]
     valid = [r for r in records if r.valid]
     return float(np.mean([passes_druglike_filters(r.descriptors) for r in valid])) if valid else 0.0
+
+
+def _local_edit_summary(detailed: pd.DataFrame, valid: pd.DataFrame) -> dict[str, float]:
+    frame = valid if not valid.empty else detailed
+    return {
+        "target_similarity": float(frame["local_target_candidate_similarity"].mean()) if not frame.empty else 0.0,
+        "source_preservation_core_fraction": float(frame["local_source_candidate_core_fraction"].mean()) if not frame.empty else 0.0,
+        "local_preservation_success_rate": _mean_bool(detailed["local_local_preservation_success"]),
+        "target_recovery_success_rate": _mean_bool(detailed["local_target_recovery_success"]),
+        "sketchmol_local_edit_success_rate": _mean_bool(detailed["local_sketchmol_local_edit_success"]),
+        "candidate_equals_source_rate": _mean_bool(detailed["local_candidate_equals_source"]),
+        "candidate_equals_target_rate": _mean_bool(detailed["local_candidate_equals_target"]),
+    }
+
+
+def _topk_metrics(detailed: pd.DataFrame) -> dict[str, float]:
+    metrics: dict[str, float] = {}
+    group_cols = []
+    if "instruction_id" in detailed.columns:
+        group_cols.append(("instruction", "instruction_id"))
+    if "pair_id" in detailed.columns:
+        group_cols.append(("pair", "pair_id"))
+    success_cols = {
+        "overall": "verify_overall_success",
+        "goal": "verify_goal_success",
+        "constraint": "verify_constraint_success",
+        "edit": "verify_edit_success",
+    }
+    if "local_sketchmol_local_edit_success" in detailed.columns:
+        success_cols["local_edit"] = "local_sketchmol_local_edit_success"
+    if not group_cols:
+        return metrics
+
+    for label, group_col in group_cols:
+        ordered = _sort_for_topk(detailed)
+        group_sizes = ordered.groupby(group_col).size()
+        for k in (1, 5, 10, 20):
+            if group_sizes.empty or int(group_sizes.max()) < k:
+                continue
+            top = ordered.groupby(group_col, sort=False).head(k)
+            for metric_name, success_col in success_cols.items():
+                if success_col not in top.columns:
+                    continue
+                value = top.groupby(group_col)[success_col].any().mean()
+                metrics[f"{metric_name}_success_at_{k}_by_{label}"] = float(value)
+        for metric_name, success_col in success_cols.items():
+            if success_col not in ordered.columns:
+                continue
+            value = ordered.groupby(group_col)[success_col].any().mean()
+            metrics[f"{metric_name}_success_at_all_by_{label}"] = float(value)
+    return metrics
+
+
+def _sort_for_topk(detailed: pd.DataFrame) -> pd.DataFrame:
+    sort_cols = []
+    ascending = []
+    if "decoder_score" in detailed.columns:
+        sort_cols.append("decoder_score")
+        ascending.append(True)
+    for col in ("sample_idx", "rank", "instruction_row"):
+        if col in detailed.columns:
+            sort_cols.append(col)
+            ascending.append(True)
+    if not sort_cols:
+        return detailed
+    return detailed.sort_values(sort_cols, ascending=ascending, kind="mergesort")
 
 
 if __name__ == "__main__":

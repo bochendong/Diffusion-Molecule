@@ -48,6 +48,9 @@ fi
 if [[ "${PHYSTABMOL_ALLOW_TARGET_REFERENCE:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--allow-target-reference)
 fi
+if [[ "${PHYSTABMOL_LATENT_VAE:-1}" == "1" ]]; then
+  EXTRA_ARGS+=(--latent-vae)
+fi
 if [[ "$MULTIMODAL_CONTEXT" == "source_reference" || "$MULTIMODAL_CONTEXT" == "full" ]]; then
   if ! head -n 1 "$DATASET" | tr ',' '\n' | grep -qx 'reference_smiles'; then
     echo "Dataset $DATASET has no reference_smiles column; rebuilding for multimodal source_reference/full."
@@ -70,6 +73,13 @@ python3 -m phystabmol.instruction_experiment \
   --torch-batch-size "${PHYSTABMOL_TORCH_BATCH_SIZE:-1024}" \
   --torch-hidden-dim "${PHYSTABMOL_TORCH_HIDDEN_DIM:-1024}" \
   --torch-layers "${PHYSTABMOL_TORCH_LAYERS:-6}" \
+  --vae-latent-dim "${PHYSTABMOL_VAE_LATENT_DIM:-16}" \
+  --vae-hidden-dim "${PHYSTABMOL_VAE_HIDDEN_DIM:-512}" \
+  --vae-layers "${PHYSTABMOL_VAE_LAYERS:-3}" \
+  --vae-epochs "${PHYSTABMOL_VAE_EPOCHS:-60}" \
+  --vae-batch-size "${PHYSTABMOL_VAE_BATCH_SIZE:-1024}" \
+  --vae-lr "${PHYSTABMOL_VAE_LR:-0.001}" \
+  --vae-beta "${PHYSTABMOL_VAE_BETA:-0.001}" \
   --timesteps "${PHYSTABMOL_TIMESTEPS:-80}" \
   --noise-repeats "${PHYSTABMOL_NOISE_REPEATS:-8}" \
   "${EXTRA_ARGS[@]}"

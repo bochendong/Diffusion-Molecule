@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 
 from .chem import canonicalize_smiles, molecular_descriptors, passes_druglike_filters, tanimoto
+from .instruction_local_edit import edit_region_summary
 from .instruction_schema import DEFAULT_THRESHOLDS, normalize_spec, spec_to_json
 from .instruction_templates import generate_instruction_texts
 from .instruction_verifier import preserves_scaffold, property_delta, score_verification, verify_instruction
@@ -119,6 +120,7 @@ def build_instruction_dataset(
             )
             pair_seen.add(pair_key)
             delta = property_delta(source["descriptors"], target["descriptors"])
+            edit_region = edit_region_summary(source["smiles"], target["smiles"])
             templates = generate_instruction_texts(spec, max_variants=instructions_per_spec)
             for template in templates:
                 split = _split_for_key(pair_key, seed=seed)
@@ -132,7 +134,11 @@ def build_instruction_dataset(
                         "instruction_text": template["instruction_text"],
                         "instruction_spec_json": spec_to_json(spec),
                         "property_delta_json": json.dumps(delta, sort_keys=True),
+                        "edit_region_json": json.dumps(edit_region, sort_keys=True),
                         "edit_tags": "|".join(spec["goals"] + spec["constraints"] + spec["edits"]),
+                        "task_family": "verified_instruction_local_edit",
+                        "univideo_task": "i+i2i_edit" if reference_role == "verified_neighbor" else "i2i_edit",
+                        "sketchmol_task": "molecule_inpainting_analog",
                         "template_id": template["template_id"],
                         "split": split,
                         "similarity_to_source": float(sim),

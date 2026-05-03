@@ -10,21 +10,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from functools import lru_cache
 import hashlib
+import os
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
-try:  # pragma: no cover - server path; fallback below covers minimal environments.
-    from sklearn.neighbors import NearestNeighbors
-
-    SKLEARN_NN_AVAILABLE = True
-except Exception:  # pragma: no cover
+if os.environ.get("PHYSTABMOL_DISABLE_SKLEARN_NN", "0") == "1":  # pragma: no cover - local smoke path.
     NearestNeighbors = None
     SKLEARN_NN_AVAILABLE = False
+else:
+    try:  # pragma: no cover - server path; fallback below covers minimal environments.
+        from sklearn.neighbors import NearestNeighbors
+
+        SKLEARN_NN_AVAILABLE = True
+    except Exception:  # pragma: no cover
+        NearestNeighbors = None
+        SKLEARN_NN_AVAILABLE = False
 
 from .chem import canonicalize_smiles, molecular_descriptors, passes_druglike_filters, tanimoto
 from .decoder import DRUGLIKE_SOFT_PENALTY, DecodedCandidate
+from .instruction_schema import normalize_spec
 from .instruction_verifier import verify_instruction
 from .schema import TABLE_COLUMNS, TARGET_COLUMNS
 
@@ -67,6 +73,11 @@ class SourceAwareDecoderConfig:
     reference_neighbors: int = 64
     verify_candidates: int = 192
     include_source_fallback: bool = True
+    source_copy_penalty: float = 8.0
+    failed_goal_penalty: float = 4.0
+    failed_constraint_penalty: float = 6.0
+    failed_edit_penalty: float = 3.0
+    reference_similarity_bonus: float = 2.0
 
 
 class SourceAwareCandidateIndex:
@@ -137,6 +148,9 @@ class SourceAwareCandidateIndex:
                 verification=result,
                 seed=seed,
                 source_smiles=source_smiles,
+                reference_smiles=reference_smiles,
+                spec_json=spec_json,
+                config=config,
             )
             ranked.append(
                 DecodedCandidate(
@@ -216,18 +230,37 @@ def _source_aware_score(
     verification: dict[str, Any],
     seed: int,
     source_smiles: str,
+    reference_smiles: str | None,
+    spec_json: str,
+    config: SourceAwareDecoderConfig,
 ) -> float:
     plan_distance = float(np.mean(np.abs(_table_vector(table_row) - _candidate_vector(candidate)) / TABLE_SCALES))
     score = plan_distance
     score -= 30.0 if verification.get("overall_success") else 0.0
-    score -= 6.0 if verification.get("constraint_success") else 0.0
-    score -= 4.0 if verification.get("goal_success") else 0.0
-    score -= 3.0 if verification.get("edit_success") else 0.0
+    if verification.get("constraint_success"):
+        score -= 8.0
+    else:
+        score += config.failed_constraint_penalty
+    if verification.get("goal_success"):
+        score -= 6.0
+    else:
+        score += config.failed_goal_penalty
+    if verification.get("edit_success"):
+        score -= 4.0
+    else:
+        score += config.failed_edit_penalty
     score -= 0.8 * float(verification.get("similarity_to_source", 0.0))
-    if candidate.smiles == source_smiles:
-        score += 2.0
+    if reference_smiles:
+        score -= config.reference_similarity_bonus * tanimoto(candidate.smiles, reference_smiles)
+    source_can = canonicalize_smiles(source_smiles) or source_smiles
+    if candidate.smiles == source_can:
+        score += config.source_copy_penalty
+    normalized = normalize_spec(spec_json)
+    needs_druglike = "keep_druglike" in normalized["constraints"]
     if not passes_druglike_filters(candidate.descriptors):
         score += DRUGLIKE_SOFT_PENALTY
+        if needs_druglike:
+            score += 2.0 * DRUGLIKE_SOFT_PENALTY
     score += 0.015 * _stable_noise(candidate.smiles, seed)
     return float(score)
 

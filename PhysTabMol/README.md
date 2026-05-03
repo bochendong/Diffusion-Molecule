@@ -307,8 +307,14 @@ data/instruction_editing.jsonl
 
 ```text
 source_smiles,target_smiles,instruction_text,instruction_spec_json,
-reference_smiles,reference_role,property_delta_json,edit_tags,split
+reference_smiles,reference_role,property_delta_json,edit_region_json,
+edit_tags,task_family,univideo_task,sketchmol_task,split
 ```
+
+`reference_smiles` 是 UniVideo-style in-context reference：source + reference + text instruction
+共同定义编辑方向。`edit_region_json` 是 SketchMol-style inpainting 的分子空间等价物：用
+source/target 的最大公共子结构作为保留区域，把其余部分视为编辑区域。它只用于评估和分析，
+不作为默认模型输入，避免 target leakage。
 
 先跑 deterministic baselines：
 
@@ -330,7 +336,11 @@ bash scripts/evaluate_instruction_baselines.sh
 - `constraint_success_rate`
 - `edit_success_rate`
 - `overall_instruction_success_rate`
+- `overall_success_at_1/5/10_by_instruction`
+- `sketchmol_local_edit_success_rate`
+- `local_edit_success_at_1/5/10_by_instruction`
 - `similarity_to_source`
+- `target_similarity`
 - `novelty`
 - `druglike_rate`
 
@@ -344,6 +354,29 @@ python3 -m phystabmol.instruction_experiment \
   --multimodal-context source_reference \
   --samples-per-instruction 8 \
   --decode-top-k 2
+```
+
+启用 UniVideo/SketchMol-style latent path：
+
+```bash
+python3 -m phystabmol.instruction_experiment \
+  --dataset data/instruction_editing.csv \
+  --backend torch \
+  --latent-vae \
+  --run-name instruction_latent_vae \
+  --multimodal-context source_reference \
+  --vae-latent-dim 16 \
+  --vae-epochs 60 \
+  --samples-per-instruction 8 \
+  --decode-top-k 2
+```
+
+这个路径会先训练 molecular/table VAE，把 target design table 压缩成 latent，再训练 conditional diffusion
+去生成这个 latent。它对应：
+
+```text
+SketchMol / UniVideo: visual VAE latent diffusion
+PhysTabMol: molecular table VAE latent diffusion
 ```
 
 默认会启用 **source-aware decoder**：先由 diffusion 生成 edit plan，再从训练分子库中检索接近
@@ -396,6 +429,7 @@ Slurm 默认使用：
 
 ```text
 PHYSTABMOL_MULTIMODAL_CONTEXT=source_reference
+PHYSTABMOL_LATENT_VAE=1
 source-aware decoder enabled
 ```
 
@@ -464,6 +498,7 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `contrastive.py`：NumPy 版 InfoNCE 风格图像/表格对齐。
 - `diffusion.py`：基于 `sklearn.neural_network.MLPRegressor` 的条件表格扩散。
 - `torch_diffusion.py`：用于 GPU 服务器训练的 PyTorch 后端。
+- `torch_latent_vae.py`：molecular/table VAE + latent diffusion 后端，对齐 UniVideo/SketchMol 的 latent denoising 思路。
 - `experiment.py`：保存配置、模型、表格结果和指标的服务器实验入口。
 - `decoder.py`：具备物理先验的骨架与官能团模板解码器。
 - `evaluate.py`：有效性、唯一性、新颖性、类药性、性质误差与多样性等指标。
@@ -472,6 +507,7 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `instruction_dataset.py`：自动构建 source/target/edit spec instruction 数据。
 - `instruction_verifier.py`：RDKit/规则验证 goal、constraint、edit 是否完成。
 - `instruction_evaluate.py`：instruction editing 主指标评估。
+- `instruction_local_edit.py`：SketchMol inpainting 对应的 MCS 保留区/编辑区分析与 top-k 局部编辑指标。
 - `instruction_multimodal.py`：source/reference molecule image 与可选 3D context 特征。
 - `instruction_source_decoder.py`：source-aware retrieval/repair decoder，用 verifier 重排候选。
 - `instruction_baselines.py`：no-edit、random、rule-retrieval、oracle baselines。
@@ -501,5 +537,8 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - 有效性、唯一性、新颖性；
 - Lipinski / Veber / SA 过滤通过率；
 - MW、LogP、QED、TPSA 等目标性质的 MAE；
+- instruction top-k 成功率：`overall_success_at_1/5/10_by_instruction`；
+- 局部编辑成功率：`sketchmol_local_edit_success_rate` 与 `local_edit_success_at_k_by_instruction`；
+- source 保留与 target 靠近：`source_preservation_core_fraction`、`target_similarity`；
 - 成对 Tanimoto 多样性；
 - 小幅图像扰动下的稳定性。
