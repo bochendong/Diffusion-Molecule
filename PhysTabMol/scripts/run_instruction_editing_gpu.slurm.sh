@@ -45,6 +45,9 @@ EXTRA_ARGS=()
 if [[ "${PHYSTABMOL_DISABLE_SOURCE_AWARE_DECODER:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--disable-source-aware-decoder)
 fi
+if [[ "${PHYSTABMOL_DISABLE_MMP_DECODER:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--disable-mmp-decoder)
+fi
 if [[ "${PHYSTABMOL_ALLOW_TARGET_REFERENCE:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--allow-target-reference)
 fi
@@ -67,6 +70,12 @@ python3 -m phystabmol.instruction_experiment \
   --samples-per-instruction "${PHYSTABMOL_SAMPLES:-8}" \
   --decode-top-k "${PHYSTABMOL_DECODE_TOP_K:-2}" \
   --multimodal-context "$MULTIMODAL_CONTEXT" \
+  --mmp-pool-size "${PHYSTABMOL_MMP_POOL_SIZE:-768}" \
+  --mmp-source-neighbors "${PHYSTABMOL_MMP_SOURCE_NEIGHBORS:-256}" \
+  --mmp-delta-neighbors "${PHYSTABMOL_MMP_DELTA_NEIGHBORS:-256}" \
+  --mmp-tag-neighbors "${PHYSTABMOL_MMP_TAG_NEIGHBORS:-384}" \
+  --mmp-reference-neighbors "${PHYSTABMOL_MMP_REFERENCE_NEIGHBORS:-128}" \
+  --mmp-verify-candidates "${PHYSTABMOL_MMP_VERIFY_CANDIDATES:-512}" \
   --source-aware-pool-size "${PHYSTABMOL_SOURCE_AWARE_POOL_SIZE:-512}" \
   --source-aware-verify-candidates "${PHYSTABMOL_SOURCE_AWARE_VERIFY_CANDIDATES:-384}" \
   --torch-epochs "${PHYSTABMOL_TORCH_EPOCHS:-80}" \

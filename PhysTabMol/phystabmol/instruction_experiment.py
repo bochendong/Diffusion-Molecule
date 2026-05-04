@@ -19,6 +19,7 @@ from .instruction_features import (
     condition_from_source_and_spec,
     target_table_from_smiles,
 )
+from .instruction_mmp_decoder import MMPDecoderConfig, MMPTransformationIndex, decode_mmp_transform
 from .instruction_multimodal import MULTIMODAL_CONTEXT_MODES, multimodal_context_from_row, multimodal_feature_names
 from .instruction_source_decoder import SourceAwareCandidateIndex, SourceAwareDecoderConfig, decode_source_aware
 from .io import make_run_dir, save_json, save_text, set_seed
@@ -68,6 +69,11 @@ def main() -> None:
     print(f"Fit done ({backend}).", flush=True)
     model_path = run_dir / "models" / ("instruction_diffusion.pt" if backend.startswith("torch") else "instruction_diffusion.pkl")
     diffusion.save(model_path)
+    mmp_index = None
+    if args.mmp_decoder:
+        print("Building MMP-style transformation index from verified train pairs...", flush=True)
+        mmp_index = MMPTransformationIndex.from_dataframe(train_df)
+        print(f"MMP transformation index size={len(mmp_index.transforms)} verified pair transformations.", flush=True)
     source_index = None
     if args.source_aware_decoder:
         print("Building source-aware retrieval index from the train split...", flush=True)
@@ -88,6 +94,15 @@ def main() -> None:
         eval_df,
         top_k=args.decode_top_k,
         dynamic_decoder=args.dynamic_decoder,
+        mmp_index=mmp_index,
+        mmp_config=MMPDecoderConfig(
+            pool_size=args.mmp_pool_size,
+            source_neighbors=args.mmp_source_neighbors,
+            delta_neighbors=args.mmp_delta_neighbors,
+            tag_neighbors=args.mmp_tag_neighbors,
+            reference_neighbors=args.mmp_reference_neighbors,
+            verify_candidates=args.mmp_verify_candidates,
+        ),
         source_index=source_index,
         source_aware_config=SourceAwareDecoderConfig(
             pool_size=args.source_aware_pool_size,
@@ -109,6 +124,7 @@ def main() -> None:
             "eval_size": float(len(eval_df)),
             "condition_dim": float(train_x.shape[1]),
             "multimodal_feature_dim": float(len(multimodal_feature_names(args.multimodal_context))),
+            "mmp_decoder": bool(args.mmp_decoder),
             "source_aware_decoder": bool(args.source_aware_decoder),
             "latent_vae": bool(args.latent_vae),
             "vae_latent_dim": float(args.vae_latent_dim) if args.latent_vae else 0.0,
@@ -136,6 +152,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--samples-per-instruction", type=int, default=8)
     parser.add_argument("--decode-top-k", type=int, default=2)
     parser.add_argument("--dynamic-decoder", action="store_true")
+    parser.add_argument("--disable-mmp-decoder", dest="mmp_decoder", action="store_false")
+    parser.set_defaults(mmp_decoder=True)
+    parser.add_argument("--mmp-pool-size", type=int, default=768)
+    parser.add_argument("--mmp-source-neighbors", type=int, default=256)
+    parser.add_argument("--mmp-delta-neighbors", type=int, default=256)
+    parser.add_argument("--mmp-tag-neighbors", type=int, default=384)
+    parser.add_argument("--mmp-reference-neighbors", type=int, default=128)
+    parser.add_argument("--mmp-verify-candidates", type=int, default=512)
     parser.add_argument("--disable-source-aware-decoder", dest="source_aware_decoder", action="store_false")
     parser.set_defaults(source_aware_decoder=True)
     parser.add_argument("--source-aware-pool-size", type=int, default=256)
@@ -300,6 +324,8 @@ def _decode_and_attach(
     eval_df: pd.DataFrame,
     top_k: int,
     dynamic_decoder: bool = False,
+    mmp_index: MMPTransformationIndex | None = None,
+    mmp_config: MMPDecoderConfig | None = None,
     source_index: SourceAwareCandidateIndex | None = None,
     source_aware_config: SourceAwareDecoderConfig | None = None,
 ) -> pd.DataFrame:
@@ -309,18 +335,30 @@ def _decode_and_attach(
         instruction = eval_df.iloc[instruction_idx]
         table_row = {col: float(source[col]) for col in TABLE_COLUMNS}
         decode_seed = instruction_idx * 1009 + int(source["sample_idx"])
-        candidates = []
+        verified_candidates = []
+        if mmp_index is not None:
+            verified_candidates.extend(
+                decode_mmp_transform(
+                    table_row,
+                    instruction,
+                    mmp_index,
+                    top_k=max(top_k * 2, top_k),
+                    seed=decode_seed,
+                    config=mmp_config,
+                )
+            )
         if source_index is not None:
-            candidates.extend(
+            verified_candidates.extend(
                 decode_source_aware(
                     table_row,
                     instruction,
                     source_index,
-                    top_k=top_k,
+                    top_k=max(top_k * 2, top_k),
                     seed=decode_seed,
                     config=source_aware_config,
                 )
             )
+        candidates = sorted(_dedupe_candidates(verified_candidates), key=lambda candidate: candidate.score)[:top_k]
         if len(candidates) < top_k:
             candidates.extend(
                 decode_table_row(
@@ -352,14 +390,17 @@ def _decode_and_attach(
 
 
 def _dedupe_candidates(candidates):
-    out = []
+    best = {}
+    order = []
     seen = set()
     for candidate in candidates:
-        if candidate.smiles in seen:
-            continue
-        out.append(candidate)
-        seen.add(candidate.smiles)
-    return out
+        if candidate.smiles not in seen:
+            best[candidate.smiles] = candidate
+            order.append(candidate.smiles)
+            seen.add(candidate.smiles)
+        elif candidate.score < best[candidate.smiles].score:
+            best[candidate.smiles] = candidate
+    return [best[smiles] for smiles in order]
 
 
 def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
@@ -385,6 +426,7 @@ def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
     ]
     lines = ["PhysTabMol instruction-editing experiment complete", f"dataset={args.dataset}"]
     lines.append(f"multimodal_context={args.multimodal_context}")
+    lines.append(f"mmp_decoder={args.mmp_decoder}")
     lines.append(f"source_aware_decoder={args.source_aware_decoder}")
     lines.append(f"latent_vae={args.latent_vae}")
     if args.latent_vae:

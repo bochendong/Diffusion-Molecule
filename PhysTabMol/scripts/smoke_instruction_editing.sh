@@ -70,6 +70,8 @@ then
     --samples-per-instruction 2 \
     --decode-top-k 1 \
     --multimodal-context source_reference \
+    --mmp-pool-size 48 \
+    --mmp-verify-candidates 32 \
     --source-aware-pool-size 32 \
     --source-aware-verify-candidates 24 \
     --timesteps 8 \
@@ -82,6 +84,7 @@ import pandas as pd
 import sys
 
 from phystabmol.features import table_row_from_smiles
+from phystabmol.instruction_mmp_decoder import MMPDecoderConfig, MMPTransformationIndex, decode_mmp_transform
 from phystabmol.instruction_source_decoder import SourceAwareCandidateIndex, SourceAwareDecoderConfig, decode_source_aware
 from phystabmol.instruction_verifier import verify_instruction
 
@@ -89,20 +92,32 @@ df = pd.read_csv(sys.argv[1])
 train = df[df["split"] == "train"] if "split" in df else df
 if train.empty:
     train = df
+mmp_index = MMPTransformationIndex.from_dataframe(train)
 index = SourceAwareCandidateIndex.from_dataframe(train)
 row = df.iloc[0]
 plan = table_row_from_smiles(row["target_smiles"])
-candidates = decode_source_aware(
+mmp_candidates = decode_mmp_transform(
+    plan,
+    row,
+    mmp_index,
+    top_k=3,
+    config=MMPDecoderConfig(pool_size=48, verify_candidates=32),
+)
+if not mmp_candidates:
+    raise SystemExit("MMP decoder returned no candidates")
+source_candidates = decode_source_aware(
     plan,
     row,
     index,
     top_k=3,
     config=SourceAwareDecoderConfig(pool_size=32, verify_candidates=24),
 )
-if not candidates:
+if not source_candidates:
     raise SystemExit("source-aware decoder returned no candidates")
-result = verify_instruction(row["source_smiles"], candidates[0].smiles, row["instruction_spec_json"])
-print("top_candidate=", candidates[0].smiles, "constraint_success=", result["constraint_success"])
+result = verify_instruction(row["source_smiles"], source_candidates[0].smiles, row["instruction_spec_json"])
+mmp_result = verify_instruction(row["source_smiles"], mmp_candidates[0].smiles, row["instruction_spec_json"])
+print("mmp_top_candidate=", mmp_candidates[0].smiles, "valid=", mmp_result["valid"])
+print("source_top_candidate=", source_candidates[0].smiles, "constraint_success=", result["constraint_success"])
 if not result["constraint_success"]:
     raise SystemExit("source-aware decoder failed the source-preserving constraint smoke")
 PY

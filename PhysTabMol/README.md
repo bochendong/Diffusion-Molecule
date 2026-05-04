@@ -384,9 +384,15 @@ PhysTabMol: molecular table VAE latent diffusion
 ring/scaffold 与部分 atom-count plan 会轻量拉回 source；source-aware decoder 也会用 eval source 的
 descriptor vector 去训练池里检索 source-nearest 候选，即使这个 source 本身不在 train index 中。
 
-默认会启用 **source-aware decoder**：先由 diffusion 生成 edit plan，再从训练分子库中检索接近
-`source molecule / reference molecule / generated plan` 的候选，并用 verifier 重新排序。这样主任务更像
-“编辑原分子”，而不是无条件生成一个新分子。
+默认会启用两层 verified decoder：
+
+- **MMP transformation decoder**：从训练集 verified `source -> target` pairs 中抽取类似 matched molecular pair 的
+  transformation memory，按当前 source、instruction tags、generated descriptor delta 和 reference molecule
+  检索候选，再用 RDKit verifier 重排。
+- **source-aware decoder**：从训练分子库中检索接近 `source molecule / reference molecule / generated plan`
+  的候选，并用 verifier 重新排序。
+
+这样主任务更像“编辑原分子”，而不是无条件生成一个新分子。
 
 如果要做旧 decoder 的 ablation：
 
@@ -394,6 +400,7 @@ descriptor vector 去训练池里检索 source-nearest 候选，即使这个 sou
 python3 -m phystabmol.instruction_experiment \
   --dataset data/instruction_editing.csv \
   --backend torch \
+  --disable-mmp-decoder \
   --disable-source-aware-decoder
 ```
 
@@ -514,6 +521,7 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `instruction_evaluate.py`：instruction editing 主指标评估。
 - `instruction_local_edit.py`：SketchMol inpainting 对应的 MCS 保留区/编辑区分析与 top-k 局部编辑指标。
 - `instruction_multimodal.py`：source/reference molecule image 与可选 3D context 特征。
+- `instruction_mmp_decoder.py`：MMP-style verified transformation retrieval decoder，用训练 pair 的编辑 delta 和 instruction tags 检索候选。
 - `instruction_source_decoder.py`：source-aware retrieval/repair decoder，用 verifier 重排候选。
 - `instruction_baselines.py`：no-edit、random、rule-retrieval、oracle baselines。
 - `instruction_experiment.py`：instruction-guided tabular diffusion edit planner。
