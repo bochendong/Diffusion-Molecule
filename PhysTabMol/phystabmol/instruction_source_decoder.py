@@ -67,11 +67,11 @@ TABLE_SCALES = np.asarray(
 
 @dataclass(frozen=True)
 class SourceAwareDecoderConfig:
-    pool_size: int = 256
-    plan_neighbors: int = 128
-    source_neighbors: int = 128
-    reference_neighbors: int = 64
-    verify_candidates: int = 192
+    pool_size: int = 512
+    plan_neighbors: int = 192
+    source_neighbors: int = 192
+    reference_neighbors: int = 128
+    verify_candidates: int = 384
     include_source_fallback: bool = True
     source_copy_penalty: float = 8.0
     failed_goal_penalty: float = 4.0
@@ -137,9 +137,10 @@ class SourceAwareCandidateIndex:
             config=config,
         )
         ranked = []
+        source_can = canonicalize_smiles(source_smiles) or source_smiles
         for idx in candidate_indices[: config.verify_candidates]:
             candidate = self.candidates[int(idx)]
-            if candidate.smiles == source_smiles and not config.include_source_fallback:
+            if candidate.smiles == source_can and not config.include_source_fallback:
                 continue
             result = _cached_verify(source_smiles, candidate.smiles, spec_json)
             score = _source_aware_score(
@@ -152,19 +153,23 @@ class SourceAwareCandidateIndex:
                 spec_json=spec_json,
                 config=config,
             )
+            decoded = DecodedCandidate(
+                smiles=candidate.smiles,
+                score=score,
+                valid=candidate.valid,
+                descriptors=candidate.descriptors,
+                source="source_aware_retrieval_decoder",
+            )
             ranked.append(
-                DecodedCandidate(
-                    smiles=candidate.smiles,
-                    score=score,
-                    valid=candidate.valid,
-                    descriptors=candidate.descriptors,
-                    source="source_aware_retrieval_decoder",
+                (
+                    _verification_rank_key(result, decoded, source_can, spec_json, score),
+                    decoded,
                 )
             )
-        ranked.sort(key=lambda item: item.score)
+        ranked.sort(key=lambda item: item[0])
         deduped = []
         seen = set()
-        for candidate in ranked:
+        for _, candidate in ranked:
             if candidate.smiles in seen:
                 continue
             deduped.append(candidate)
@@ -182,16 +187,20 @@ class SourceAwareCandidateIndex:
     ) -> list[int]:
         plan_vec = _table_vector(table_row)
         indices: list[int] = []
-        indices.extend(self._nearest(plan_vec, config.plan_neighbors))
         source_idx = self.by_smiles.get(canonicalize_smiles(source_smiles) or source_smiles)
+        source_vec = self.table_x[source_idx] if source_idx is not None else _smiles_vector(source_smiles)
+        if source_vec is not None:
+            indices.extend(self._nearest(source_vec, config.source_neighbors))
         if source_idx is not None:
-            indices.extend(self._nearest(self.table_x[source_idx], config.source_neighbors))
             indices.append(source_idx)
         if reference_smiles:
             ref_idx = self.by_smiles.get(canonicalize_smiles(reference_smiles) or reference_smiles)
+            ref_vec = self.table_x[ref_idx] if ref_idx is not None else _smiles_vector(reference_smiles)
+            if ref_vec is not None:
+                indices.extend(self._nearest(ref_vec, config.reference_neighbors))
             if ref_idx is not None:
-                indices.extend(self._nearest(self.table_x[ref_idx], config.reference_neighbors))
                 indices.append(ref_idx)
+        indices.extend(self._nearest(plan_vec, config.plan_neighbors))
         return list(dict.fromkeys(indices))[: config.pool_size]
 
     def _nearest(self, raw_vec: np.ndarray, n: int) -> list[int]:
@@ -271,6 +280,36 @@ def _table_vector(table_row: dict[str, float]) -> np.ndarray:
 
 def _candidate_vector(candidate: DecodedCandidate) -> np.ndarray:
     return np.asarray([float(candidate.descriptors.get(col, 0.0)) for col in TABLE_COLUMNS], dtype=np.float32)
+
+
+def _smiles_vector(smiles: str | None) -> np.ndarray | None:
+    if not smiles:
+        return None
+    rec = molecular_descriptors(smiles)
+    if not rec.valid:
+        return None
+    return np.asarray([float(rec.descriptors.get(col, 0.0)) for col in TABLE_COLUMNS], dtype=np.float32)
+
+
+def _verification_rank_key(
+    verification: dict[str, Any],
+    candidate: DecodedCandidate,
+    source_smiles: str,
+    spec_json: str,
+    score: float,
+) -> tuple[float, ...]:
+    normalized = normalize_spec(spec_json)
+    source_copy = candidate.smiles == source_smiles
+    nontrivial_edit = bool(normalized["goals"] or normalized["edits"])
+    return (
+        0.0 if verification.get("overall_success") else 1.0,
+        0.0 if verification.get("constraint_success") else 1.0,
+        0.0 if verification.get("goal_success") else 1.0,
+        0.0 if verification.get("edit_success") else 1.0,
+        1.0 if source_copy and nontrivial_edit else 0.0,
+        -float(verification.get("similarity_to_source", 0.0)),
+        float(score),
+    )
 
 
 @lru_cache(maxsize=300000)

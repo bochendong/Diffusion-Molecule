@@ -47,8 +47,8 @@ for mode in $MODES; do
     --samples-per-instruction "$SAMPLES" \
     --decode-top-k "$DECODE_TOP_K" \
     --multimodal-context "$mode" \
-    --source-aware-pool-size "${PHYSTABMOL_SOURCE_AWARE_POOL_SIZE:-256}" \
-    --source-aware-verify-candidates "${PHYSTABMOL_SOURCE_AWARE_VERIFY_CANDIDATES:-192}" \
+    --source-aware-pool-size "${PHYSTABMOL_SOURCE_AWARE_POOL_SIZE:-512}" \
+    --source-aware-verify-candidates "${PHYSTABMOL_SOURCE_AWARE_VERIFY_CANDIDATES:-384}" \
     --torch-epochs "${PHYSTABMOL_TORCH_EPOCHS:-20}" \
     --torch-batch-size "${PHYSTABMOL_TORCH_BATCH_SIZE:-1024}" \
     --torch-hidden-dim "${PHYSTABMOL_TORCH_HIDDEN_DIM:-1024}" \
@@ -60,6 +60,9 @@ for mode in $MODES; do
     --vae-batch-size "${PHYSTABMOL_VAE_BATCH_SIZE:-1024}" \
     --vae-lr "${PHYSTABMOL_VAE_LR:-0.001}" \
     --vae-beta "${PHYSTABMOL_VAE_BETA:-0.001}" \
+    --source-anchor-weight "${PHYSTABMOL_SOURCE_ANCHOR_WEIGHT:-0.35}" \
+    --source-count-anchor-weight "${PHYSTABMOL_SOURCE_COUNT_ANCHOR_WEIGHT:-0.15}" \
+    --source-anchor-neighbors "${PHYSTABMOL_SOURCE_ANCHOR_NEIGHBORS:-32}" \
     --timesteps "${PHYSTABMOL_TIMESTEPS:-40}" \
     --noise-repeats "${PHYSTABMOL_NOISE_REPEATS:-4}" \
     "${EXTRA_ARGS[@]}"

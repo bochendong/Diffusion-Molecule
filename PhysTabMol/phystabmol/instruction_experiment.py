@@ -169,6 +169,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--vae-batch-size", type=int, default=1024)
     parser.add_argument("--vae-lr", type=float, default=1e-3)
     parser.add_argument("--vae-beta", type=float, default=1e-3)
+    parser.add_argument("--source-anchor-weight", type=float, default=0.35)
+    parser.add_argument("--source-count-anchor-weight", type=float, default=0.15)
+    parser.add_argument("--source-anchor-neighbors", type=int, default=32)
     parser.add_argument("--sklearn-hidden", type=int, nargs=2, default=(160, 160))
     parser.add_argument("--target-anchor", type=float, default=1.0)
     parser.add_argument("--anchor-neighbors", type=int, default=128)
@@ -231,6 +234,9 @@ def _fit_diffusion(args, train_y: np.ndarray, train_x: np.ndarray):
                 vae_batch_size=args.vae_batch_size,
                 vae_lr=args.vae_lr,
                 vae_beta=args.vae_beta,
+                source_anchor_weight=args.source_anchor_weight,
+                source_count_anchor_weight=args.source_count_anchor_weight,
+                source_anchor_neighbors=args.source_anchor_neighbors,
             ).fit(train_y, train_x)
             return model, "torch_latent_vae"
         except Exception:

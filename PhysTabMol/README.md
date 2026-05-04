@@ -367,6 +367,7 @@ python3 -m phystabmol.instruction_experiment \
   --multimodal-context source_reference \
   --vae-latent-dim 16 \
   --vae-epochs 60 \
+  --source-anchor-weight 0.35 \
   --samples-per-instruction 8 \
   --decode-top-k 2
 ```
@@ -378,6 +379,10 @@ python3 -m phystabmol.instruction_experiment \
 SketchMol / UniVideo: visual VAE latent diffusion
 PhysTabMol: molecular table VAE latent diffusion
 ```
+
+为了避免 latent VAE 过度偏离原分子，默认会启用 source-preserving anchor：VAE decode 出来的
+ring/scaffold 与部分 atom-count plan 会轻量拉回 source；source-aware decoder 也会用 eval source 的
+descriptor vector 去训练池里检索 source-nearest 候选，即使这个 source 本身不在 train index 中。
 
 默认会启用 **source-aware decoder**：先由 diffusion 生成 edit plan，再从训练分子库中检索接近
 `source molecule / reference molecule / generated plan` 的候选，并用 verifier 重新排序。这样主任务更像

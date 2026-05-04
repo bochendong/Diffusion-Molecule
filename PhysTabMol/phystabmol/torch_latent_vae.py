@@ -23,6 +23,37 @@ from .schema import BOUNDS, INTEGER_COLUMNS, TABLE_COLUMNS
 
 
 TARGET_SCALES = np.asarray([120.0, 3.0, 0.35, 60.0, 3.0, 5.0, 5.0, 2.5], dtype=np.float32)
+TABLE_SCALES = np.asarray(
+    [
+        120.0,
+        3.0,
+        0.35,
+        60.0,
+        3.0,
+        5.0,
+        5.0,
+        2.5,
+        8.0,
+        3.0,
+        3.0,
+        2.0,
+        3.0,
+        2.0,
+        2.0,
+        1.0,
+        3.0,
+        4.0,
+        3.0,
+        3.0,
+        3.0,
+        4.0,
+        3.0,
+    ],
+    dtype=np.float32,
+)
+STRUCTURAL_ANCHOR_COLUMNS = ("ring_count", "scaffold_class")
+ATOM_ANCHOR_COLUMNS = ("C", "N", "O", "S")
+HALOGEN_ANCHOR_COLUMNS = ("F", "Cl", "Br", "I")
 
 try:  # pragma: no cover - exercised on GPU servers.
     import torch
@@ -139,6 +170,9 @@ class TorchLatentVAEDiffusion:
     vae_batch_size: int = 1024
     vae_lr: float = 1e-3
     vae_beta: float = 1e-3
+    source_anchor_weight: float = 0.35
+    source_count_anchor_weight: float = 0.15
+    source_anchor_neighbors: int = 32
 
     def fit(self, table_y: np.ndarray, condition_x: np.ndarray) -> "TorchLatentVAEDiffusion":
         if not TORCH_AVAILABLE:
@@ -274,13 +308,17 @@ class TorchLatentVAEDiffusion:
                 else:
                     z = z0
             raw = self._decode_latent_row(z)
+            source_values = None
+            if condition_x.shape[1] >= len(TABLE_COLUMNS):
+                source_values = condition_x[idx % len(condition_x), : len(TABLE_COLUMNS)]
+                raw = self._preserve_source_structure(raw, source_values)
             if condition_x.shape[1] >= self.target_condition_start + len(TARGET_SCALES):
                 target_values = condition_x[
                     idx % len(condition_x),
                     self.target_condition_start : self.target_condition_start + len(TARGET_SCALES),
                 ]
                 raw[: len(TARGET_SCALES)] = (1.0 - self.target_anchor) * raw[: len(TARGET_SCALES)] + self.target_anchor * target_values
-                raw = self._calibrate_counts(raw, target_values, sample_idx=idx, rng=rng)
+                raw = self._calibrate_counts(raw, target_values, source_values=source_values, sample_idx=idx, rng=rng)
             rows.append(clip_table_row(dict(zip(TABLE_COLUMNS, raw))))
         return rows
 
@@ -294,13 +332,21 @@ class TorchLatentVAEDiffusion:
         self,
         raw: np.ndarray,
         target_values: np.ndarray,
+        source_values: np.ndarray | None,
         sample_idx: int,
         rng: np.random.Generator,
     ) -> np.ndarray:
         if not hasattr(self, "anchor_nn_"):
             return raw
-        _, indices = self.anchor_nn_.kneighbors((target_values / TARGET_SCALES)[None, :], return_distance=True)
+        target_distances, indices = self.anchor_nn_.kneighbors((target_values / TARGET_SCALES)[None, :], return_distance=True)
         choices = indices[0]
+        if source_values is not None and len(choices) > 1:
+            source_scaled = source_values[len(TARGET_SCALES) :] / TABLE_SCALES[len(TARGET_SCALES) :]
+            choice_scaled = self.train_table_y_[choices, len(TARGET_SCALES) :] / TABLE_SCALES[len(TARGET_SCALES) :]
+            source_distances = np.mean(np.abs(choice_scaled - source_scaled[None, :]), axis=1)
+            combined = target_distances[0] + self.source_anchor_weight * source_distances
+            keep = max(1, min(self.source_anchor_neighbors, len(choices)))
+            choices = choices[np.argsort(combined)[:keep]]
         anchor = self.train_table_y_[choices[(sample_idx * 9973 + self.seed) % len(choices)]]
         out = np.array(raw, copy=True)
         for col_idx, col in enumerate(TABLE_COLUMNS[len(TARGET_SCALES) :], start=len(TARGET_SCALES)):
@@ -313,6 +359,21 @@ class TorchLatentVAEDiffusion:
             if col in INTEGER_COLUMNS and rng.random() < 0.18:
                 value += rng.choice([-1.0, 1.0])
             out[col_idx] = value
+        return out
+
+    def _preserve_source_structure(self, raw: np.ndarray, source_values: np.ndarray) -> np.ndarray:
+        out = np.array(raw, copy=True)
+        for col in STRUCTURAL_ANCHOR_COLUMNS:
+            idx = TABLE_COLUMNS.index(col)
+            out[idx] = self.source_anchor_weight * source_values[idx] + (1.0 - self.source_anchor_weight) * out[idx]
+        atom_weight = self.source_count_anchor_weight
+        for col in ATOM_ANCHOR_COLUMNS:
+            idx = TABLE_COLUMNS.index(col)
+            out[idx] = atom_weight * source_values[idx] + (1.0 - atom_weight) * out[idx]
+        halogen_weight = 0.5 * atom_weight
+        for col in HALOGEN_ANCHOR_COLUMNS:
+            idx = TABLE_COLUMNS.index(col)
+            out[idx] = halogen_weight * source_values[idx] + (1.0 - halogen_weight) * out[idx]
         return out
 
     def save(self, path: str | Path) -> None:
