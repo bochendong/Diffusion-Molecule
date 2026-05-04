@@ -202,6 +202,7 @@ python3 -m phystabmol.experiment \
 python3 -m phystabmol.experiment \
   --data /path/to/molecules.csv \
   --backend torch \
+  --property-mask-conditioning \
   --understanding-backbone clip \
   --run-sketchmol-benchmark \
   --benchmark-samples-per-condition 1000 \
@@ -218,13 +219,47 @@ python3 -m phystabmol.experiment \
 - 分布匹配：LogP、QED、MW、TPSA 的 1D Wasserstein 近似；
 - 基础指标：Validity、Uniqueness、Novelty、Success Rate in Valid Mols、MAE。
 
+为了和 SketchMol 的 `None` token 条件更接近，`--property-mask-conditioning` 会在条件向量里追加
+每个性质是否被约束的 mask。训练时随机暴露 1-7 个性质；benchmark 时单属性任务只打开一个 mask，
+多属性任务只打开被抽中的性质。benchmark 同时保存两套成功率：
+
+- `success_rate_strict_in_valid_mols`：PhysTabMol 较严格 tolerance；
+- `success_rate_sketchmol_tolerance_in_valid_mols`：按 SketchMol evaluation code 的 20% property-range tolerance。
+
+每个性质还会输出 `*_generated_table_mae` 和最终 `*_mae`，用于区分 diffusion plan 误差和 decoder 误差。
+
+Slurm 入口：
+
+```bash
+PHYSTABMOL_RUN_NAME=sketchmol_comparable_structure_v1 \
+PHYSTABMOL_PROPERTY_MASK_CONDITIONING=1 \
+PHYSTABMOL_RUN_SKETCHMOL_BENCHMARK=1 \
+PHYSTABMOL_RUN_STRUCTURE_PROMPT_BENCHMARK=1 \
+PHYSTABMOL_BENCHMARK_SAMPLES=1000 \
+PHYSTABMOL_BENCHMARK_MULTI_CONDITIONS=1000 \
+PHYSTABMOL_BENCHMARK_OPTIMIZATION_CONDITIONS=100 \
+PHYSTABMOL_STRUCTURE_PROMPT_CONDITIONS=1000 \
+PHYSTABMOL_STRUCTURE_PROMPT_SAMPLES=8 \
+sbatch scripts/run_phystabmol_gpu.slurm.sh
+```
+
 SketchMol 的 EP4/AKT1/ROCK1 activity 与 docking 实验需要额外的 activity predictor 和 docking workflow；当前框架先把属性约束、优化和 3D conformer 评估打通，activity/docking scorer 应作为下一步外部模块接入。
 
 输出位置：
 
 ```text
 tables/sketchmol_benchmark/
+tables/structure_prompt_benchmark/
 ```
+
+`structure_prompt_benchmark` 对齐 SketchMol 的 partial image / fragment growing / mask inpainting 场景，
+但用 RDKit 可验证的结构 prompt：Murcko scaffold、ring/fragment prompt 和 source-core local optimization。
+主指标包括：
+
+- `structure_prompt_success_rate`：候选是否保留 prompt scaffold/fragment；
+- `property_success_*_in_valid_mols`：性质是否达标；
+- `joint_success_*`：结构保留与性质目标同时达成；
+- `prompt_candidate_similarity`：prompt 与候选的结构相似度。
 
 ## 恢复未完成的 Slurm Run
 
@@ -523,6 +558,7 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `instruction_multimodal.py`：source/reference molecule image 与可选 3D context 特征。
 - `instruction_mmp_decoder.py`：MMP-style verified transformation retrieval decoder，用训练 pair 的编辑 delta 和 instruction tags 检索候选。
 - `instruction_source_decoder.py`：source-aware retrieval/repair decoder，用 verifier 重排候选。
+- `structure_prompt_benchmark.py`：对齐 SketchMol partial-image prompt 的 scaffold/fragment/local-optimization benchmark。
 - `instruction_baselines.py`：no-edit、random、rule-retrieval、oracle baselines。
 - `instruction_experiment.py`：instruction-guided tabular diffusion edit planner。
 - `instruction_paraphrases.py`：LLM paraphrase prompt 导出与 deterministic consistency 过滤。

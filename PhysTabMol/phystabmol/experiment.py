@@ -22,6 +22,7 @@ from .io import make_run_dir, save_json, save_text, set_seed
 from .pretrained_understanding import PretrainedImageUnderstanding
 from .schema import TARGET_COLUMNS
 from .sketchmol_benchmark import SketchMolBenchmarkConfig, run_sketchmol_benchmark
+from .structure_prompt_benchmark import StructurePromptBenchmarkConfig, run_structure_prompt_benchmark
 from .understanding import UnderstandingStream, understanding_matrix
 
 
@@ -38,6 +39,8 @@ def main() -> None:
         limit=args.limit,
     )
     train_df, test_df = train_test_split_df(df, test_fraction=args.test_fraction, seed=args.seed)
+    if args.property_mask_conditioning:
+        setattr(args, "_property_mask_unset_values", {col: float(train_df[col].median()) for col in TARGET_COLUMNS})
     train_df.to_csv(run_dir / "tables" / "train_table.csv", index=False)
     test_df.to_csv(run_dir / "tables" / "test_table.csv", index=False)
 
@@ -66,6 +69,7 @@ def main() -> None:
         intent="default",
         reference_smiles=None,
         use_in_context=False,
+        property_mask_mode="train",
     )
     eval_condition, eval_understanding_df = _compose_conditions(
         eval_df,
@@ -76,6 +80,7 @@ def main() -> None:
         intent=args.intent,
         reference_smiles=args.reference_smiles,
         use_in_context=bool(args.reference_smiles or args.reference_image or args.intent != "default"),
+        property_mask_mode="full",
     )
     train_understanding_df.to_csv(run_dir / "tables" / "understanding_stream_train.csv", index=False)
     eval_understanding_df.to_csv(run_dir / "tables" / "understanding_stream_eval.csv", index=False)
@@ -101,6 +106,8 @@ def main() -> None:
             "backend": backend,
             "train_size": float(len(train_df)),
             "test_size": float(len(test_df)),
+            "property_mask_conditioning": bool(args.property_mask_conditioning),
+            "property_mask_dim": float(len(TARGET_COLUMNS)) if args.property_mask_conditioning else 0.0,
             "contrastive_train_retrieval_accuracy": aligner.retrieval_accuracy(train_image_x, train_table_y),
             "run_dir": str(run_dir),
         }
@@ -132,6 +139,32 @@ def main() -> None:
             benchmark_3d.to_csv(benchmark_dir / "sketchmol_benchmark_decoded_3d.csv", index=False)
         if not benchmark_summary.empty:
             metrics["sketchmol_benchmark_mean_success"] = float(benchmark_summary["success_rate_in_valid_mols"].dropna().mean())
+            if "success_rate_sketchmol_tolerance_in_valid_mols" in benchmark_summary:
+                metrics["sketchmol_benchmark_mean_success_sketchmol_tolerance"] = float(
+                    benchmark_summary["success_rate_sketchmol_tolerance_in_valid_mols"].dropna().mean()
+                )
+    if args.run_structure_prompt_benchmark:
+        structure_dir = run_dir / "tables" / "structure_prompt_benchmark"
+        _, structure_summary = run_structure_prompt_benchmark(
+            diffusion=diffusion,
+            train_df=train_df,
+            eval_df=eval_df,
+            aligner=aligner,
+            args=args,
+            compose_conditions_fn=_compose_conditions,
+            output_dir=structure_dir,
+            config=StructurePromptBenchmarkConfig(
+                conditions_per_task=args.structure_prompt_conditions,
+                samples_per_prompt=args.structure_prompt_samples,
+                decode_top_k=args.structure_prompt_decode_top_k,
+                seed=args.seed,
+            ),
+        )
+        if not structure_summary.empty:
+            metrics["structure_prompt_mean_joint_success_strict"] = float(structure_summary["joint_success_strict"].dropna().mean())
+            metrics["structure_prompt_mean_joint_success_sketchmol_tolerance"] = float(
+                structure_summary["joint_success_sketchmol_tolerance"].dropna().mean()
+            )
     save_json(metrics, run_dir / "metrics.json")
     save_text(_summary(metrics, args), run_dir / "summary.txt")
     save_json(_environment(), run_dir / "environment.json")
@@ -173,6 +206,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--count-anchor-weight", type=float, default=0.8)
     parser.add_argument("--device", type=str, default="auto")
     parser.add_argument("--sklearn-hidden", type=int, nargs=2, default=(160, 160))
+    parser.add_argument(
+        "--property-mask-conditioning",
+        action="store_true",
+        help="Append property-present mask bits and randomly hide target properties during training, matching SketchMol None-token style conditioning.",
+    )
+    parser.add_argument("--property-mask-min-properties", type=int, default=1)
+    parser.add_argument("--property-mask-max-properties", type=int, default=7)
     parser.add_argument("--reference-image", type=str, default=None)
     parser.add_argument("--reference-smiles", type=str, default=None)
     parser.add_argument("--intent", choices=sorted(INTENT_DELTAS), default="default")
@@ -185,6 +225,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--benchmark-decode-top-k", type=int, default=1)
     parser.add_argument("--benchmark-multi-conditions", type=int, default=200)
     parser.add_argument("--benchmark-optimization-conditions", type=int, default=100)
+    parser.add_argument("--run-structure-prompt-benchmark", action="store_true")
+    parser.add_argument("--structure-prompt-conditions", type=int, default=200)
+    parser.add_argument("--structure-prompt-samples", type=int, default=8)
+    parser.add_argument("--structure-prompt-decode-top-k", type=int, default=2)
     parser.add_argument("--enable-3d", action="store_true")
     parser.add_argument("--save-3d-sdf", action="store_true")
     parser.add_argument("--max-3d-sdf", type=int, default=500)
@@ -275,11 +319,14 @@ def _compose_conditions(
     intent: str,
     reference_smiles: str | None,
     use_in_context: bool,
+    property_mask_mode: str = "full",
 ) -> tuple[np.ndarray, pd.DataFrame]:
     if use_in_context:
         base_condition_x, targets_df = _build_in_context_base(df, args, intent, reference_smiles)
     else:
         targets_df = df[TARGET_COLUMNS].reset_index(drop=True)
+
+    base_condition_x = _apply_property_mask_conditioning(df, base_condition_x, args, property_mask_mode)
 
     stream = UnderstandingStream(enabled=not args.disable_understanding_stream)
     understanding_df = stream.describe_dataframe(
@@ -297,6 +344,46 @@ def _compose_conditions(
         encoder = _get_pretrained_understanding_encoder(args)
         condition = np.concatenate([condition, encoder.encode_dataframe(df, image_column=args.image_column)], axis=1)
     return condition, understanding_df
+
+
+def _apply_property_mask_conditioning(
+    df: pd.DataFrame,
+    base_condition_x: np.ndarray,
+    args,
+    mode: str,
+) -> np.ndarray:
+    if not getattr(args, "property_mask_conditioning", False):
+        return base_condition_x
+    base = np.asarray(base_condition_x, dtype=float).copy()
+    mask = _property_mask_matrix(df, args, mode=mode)
+    unset_values = getattr(args, "_property_mask_unset_values", None)
+    if unset_values is None:
+        unset_values = {col: float(df[col].median()) if col in df else 0.0 for col in TARGET_COLUMNS}
+    target_start = len(IMAGE_FEATURE_COLUMNS)
+    for idx, col in enumerate(TARGET_COLUMNS):
+        base[:, target_start + idx] = np.where(
+            mask[:, idx] > 0.5,
+            base[:, target_start + idx],
+            float(unset_values.get(col, 0.0)),
+        )
+    return np.concatenate([base, mask], axis=1)
+
+
+def _property_mask_matrix(df: pd.DataFrame, args, mode: str) -> np.ndarray:
+    mask_cols = [f"condition_mask_{col}" for col in TARGET_COLUMNS]
+    if all(col in df.columns for col in mask_cols):
+        return df[mask_cols].to_numpy(dtype=float)
+    if mode == "train":
+        min_props = max(1, min(len(TARGET_COLUMNS), int(args.property_mask_min_properties)))
+        max_props = max(min_props, min(len(TARGET_COLUMNS), int(args.property_mask_max_properties)))
+        rng = np.random.default_rng(int(args.seed) + 4049)
+        mask = np.zeros((len(df), len(TARGET_COLUMNS)), dtype=float)
+        for row_idx in range(len(df)):
+            n_props = int(rng.integers(min_props, max_props + 1))
+            chosen = rng.choice(len(TARGET_COLUMNS), size=n_props, replace=False)
+            mask[row_idx, chosen] = 1.0
+        return mask
+    return np.ones((len(df), len(TARGET_COLUMNS)), dtype=float)
 
 
 def _build_in_context_base(
@@ -358,6 +445,8 @@ def _summary(metrics: dict, args: argparse.Namespace) -> str:
         "LogP_mae",
         "QED_mae",
         "TPSA_mae",
+        "sketchmol_benchmark_mean_success_sketchmol_tolerance",
+        "structure_prompt_mean_joint_success_sketchmol_tolerance",
     ]
     lines = [
         "PhysTabMol experiment complete",
@@ -365,6 +454,7 @@ def _summary(metrics: dict, args: argparse.Namespace) -> str:
         f"reference_smiles={args.reference_smiles}",
         f"understanding_stream={not args.disable_understanding_stream}",
         f"understanding_backbone={args.understanding_backbone}",
+        f"property_mask_conditioning={args.property_mask_conditioning}",
     ]
     for key in keys:
         if key in metrics:
