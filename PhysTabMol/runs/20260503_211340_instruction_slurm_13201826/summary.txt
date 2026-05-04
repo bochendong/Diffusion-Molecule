@@ -1,0 +1,24 @@
+PhysTabMol instruction-editing experiment complete
+dataset=data/instruction_editing.csv
+multimodal_context=source_reference
+source_aware_decoder=True
+latent_vae=True
+vae_latent_dim=16
+backend=torch_latent_vae
+train_size=26100.0000
+eval_size=2000.0000
+n=32000.0000
+validity=1.0000
+goal_success_rate=0.4869
+constraint_success_rate=0.6281
+edit_success_rate=0.6030
+overall_instruction_success_rate=0.0775
+overall_success_at_1_by_instruction=0.1125
+overall_success_at_5_by_instruction=0.1125
+overall_success_at_10_by_instruction=0.1125
+sketchmol_local_edit_success_rate=0.2353
+local_edit_success_at_5_by_instruction=0.3190
+similarity_to_source=0.6001
+target_similarity=0.4650
+druglike_rate=0.6517
+novelty=0.2156
