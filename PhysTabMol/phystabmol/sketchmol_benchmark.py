@@ -65,6 +65,7 @@ OPTIMIZATION_TASKS = {
 
 @dataclass
 class SketchMolBenchmarkConfig:
+    single_conditions: int = 125
     samples_per_condition: int = 100
     decode_top_k: int = 1
     multi_conditions: int = 200
@@ -119,7 +120,7 @@ def _single_property(diffusion, train_df, eval_df, aligner, args, compose_condit
     summary_rows = []
     for prop, values in targets_by_property.items():
         for value in values:
-            cond_df = _condition_frame(eval_df, config.samples_per_condition, config.seed)
+            cond_df = _condition_frame(eval_df, config.single_conditions, config.seed)
             _set_neutral_image_features(cond_df, train_df)
             for col in TARGET_COLUMNS:
                 cond_df[col] = float(train_df[col].median())
@@ -202,14 +203,19 @@ def _generate_decode(diffusion, cond_df, aligner, args, compose_conditions_fn, s
         property_mask_mode="benchmark",
     )
     rows = []
-    for condition_idx, condition in enumerate(conditions):
-        samples = diffusion.sample(condition[None, :], n=samples_per_condition)
-        for sample_idx, row in enumerate(samples):
-            for rank, candidate in enumerate(decode_table_row(row, top_k=top_k), start=1):
-                out = {"condition_idx": condition_idx, "sample_idx": sample_idx, "rank": rank, "smiles": candidate.smiles, "valid": candidate.valid, "decoder_score": candidate.score}
-                out.update({f"target_{k}": v for k, v in row.items()})
-                out.update({f"actual_{k}": v for k, v in candidate.descriptors.items() if isinstance(v, (int, float))})
-                rows.append(out)
+    if hasattr(diffusion, "sample_batch"):
+        sampled_rows = diffusion.sample_batch(conditions, samples_per_condition=samples_per_condition)
+    else:
+        sampled_rows = []
+        for condition_idx, condition in enumerate(conditions):
+            for sample_idx, row in enumerate(diffusion.sample(condition[None, :], n=samples_per_condition)):
+                sampled_rows.append((condition_idx, sample_idx, row))
+    for condition_idx, sample_idx, row in sampled_rows:
+        for rank, candidate in enumerate(decode_table_row(row, top_k=top_k), start=1):
+            out = {"condition_idx": condition_idx, "sample_idx": sample_idx, "rank": rank, "smiles": candidate.smiles, "valid": candidate.valid, "decoder_score": candidate.score}
+            out.update({f"target_{k}": v for k, v in row.items()})
+            out.update({f"actual_{k}": v for k, v in candidate.descriptors.items() if isinstance(v, (int, float))})
+            rows.append(out)
     return pd.DataFrame(rows)
 
 

@@ -225,38 +225,43 @@ def _generate_decode(
         property_mask_mode="benchmark",
     )
     rows = []
-    for condition_idx, condition in enumerate(conditions):
+    if hasattr(diffusion, "sample_batch"):
+        sampled_rows = diffusion.sample_batch(conditions, samples_per_condition=samples_per_prompt)
+    else:
+        sampled_rows = []
+        for condition_idx, condition in enumerate(conditions):
+            for sample_idx, table_row in enumerate(diffusion.sample(condition[None, :], n=samples_per_prompt)):
+                sampled_rows.append((condition_idx, sample_idx, table_row))
+    for condition_idx, sample_idx, table_row in sampled_rows:
         condition_row = cond_df.iloc[int(condition_idx)]
-        samples = diffusion.sample(condition[None, :], n=samples_per_prompt)
-        for sample_idx, table_row in enumerate(samples):
-            candidates = _decode_prompt_candidates(
-                table_row=table_row,
-                prompt_smiles=str(condition_row["prompt_smiles"]),
-                top_k=top_k,
-                seed=int(condition_idx) * 1009 + int(sample_idx),
-            )
-            for rank, candidate in enumerate(candidates, start=1):
-                out = {
-                    "condition_idx": int(condition_idx),
-                    "sample_idx": int(sample_idx),
-                    "rank": int(rank),
-                    "benchmark_task": condition_row["benchmark_task"],
-                    "source_smiles": condition_row["source_smiles"],
-                    "prompt_smiles": condition_row["prompt_smiles"],
-                    "constraint_properties": condition_row["constraint_properties"],
-                    "target_json": condition_row["target_json"],
-                    "smiles": candidate.smiles,
-                    "valid": candidate.valid,
-                    "decoder_score": candidate.score,
-                    "candidate_source": candidate.source,
-                }
-                for optional_col in ("optimization_property", "requested_delta", "before_property", "fragment_growth_mw_min"):
-                    if optional_col in condition_row:
-                        out[optional_col] = condition_row[optional_col]
-                out.update({f"target_{key}": value for key, value in table_row.items()})
-                out.update({f"actual_{key}": value for key, value in candidate.descriptors.items() if isinstance(value, (int, float))})
-                out.update(_verify_structure_prompt(condition_row, candidate.smiles))
-                rows.append(out)
+        candidates = _decode_prompt_candidates(
+            table_row=table_row,
+            prompt_smiles=str(condition_row["prompt_smiles"]),
+            top_k=top_k,
+            seed=int(condition_idx) * 1009 + int(sample_idx),
+        )
+        for rank, candidate in enumerate(candidates, start=1):
+            out = {
+                "condition_idx": int(condition_idx),
+                "sample_idx": int(sample_idx),
+                "rank": int(rank),
+                "benchmark_task": condition_row["benchmark_task"],
+                "source_smiles": condition_row["source_smiles"],
+                "prompt_smiles": condition_row["prompt_smiles"],
+                "constraint_properties": condition_row["constraint_properties"],
+                "target_json": condition_row["target_json"],
+                "smiles": candidate.smiles,
+                "valid": candidate.valid,
+                "decoder_score": candidate.score,
+                "candidate_source": candidate.source,
+            }
+            for optional_col in ("optimization_property", "requested_delta", "before_property", "fragment_growth_mw_min"):
+                if optional_col in condition_row:
+                    out[optional_col] = condition_row[optional_col]
+            out.update({f"target_{key}": value for key, value in table_row.items()})
+            out.update({f"actual_{key}": value for key, value in candidate.descriptors.items() if isinstance(value, (int, float))})
+            out.update(_verify_structure_prompt(condition_row, candidate.smiles))
+            rows.append(out)
     return pd.DataFrame(rows)
 
 

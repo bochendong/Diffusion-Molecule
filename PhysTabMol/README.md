@@ -235,10 +235,13 @@ bash scripts/run_sketchmol_structure_benchmark.sh
 ```
 
 这个脚本会自动打开 property mask conditioning、SketchMol-style benchmark 和 structure prompt benchmark。
+它也会使用更大的 torch batch size 和 batched diffusion sampling；单属性 benchmark 默认是
+`125 conditions × 8 samples = 1000 molecules / target`，避免把 `1000` 误展开成
+`1000 conditions × 1000 samples`。
 如果需要改 run 名或样本数，可以用环境变量覆盖：
 
 ```bash
-PHYSTABMOL_RUN_NAME=my_structure_run PHYSTABMOL_BENCHMARK_SAMPLES=500 \
+PHYSTABMOL_RUN_NAME=my_structure_run PHYSTABMOL_BENCHMARK_SINGLE_CONDITIONS=64 \
 bash scripts/run_sketchmol_structure_benchmark.sh
 ```
 
@@ -249,12 +252,14 @@ PHYSTABMOL_RUN_NAME=sketchmol_comparable_structure_v1 \
 PHYSTABMOL_PROPERTY_MASK_CONDITIONING=1 \
 PHYSTABMOL_RUN_SKETCHMOL_BENCHMARK=1 \
 PHYSTABMOL_RUN_STRUCTURE_PROMPT_BENCHMARK=1 \
-PHYSTABMOL_BENCHMARK_SAMPLES=1000 \
+PHYSTABMOL_TORCH_BATCH_SIZE=4096 \
+PHYSTABMOL_BENCHMARK_SINGLE_CONDITIONS=125 \
+PHYSTABMOL_BENCHMARK_SAMPLES=8 \
 PHYSTABMOL_BENCHMARK_MULTI_CONDITIONS=1000 \
 PHYSTABMOL_BENCHMARK_OPTIMIZATION_CONDITIONS=100 \
 PHYSTABMOL_STRUCTURE_PROMPT_CONDITIONS=1000 \
 PHYSTABMOL_STRUCTURE_PROMPT_SAMPLES=8 \
-sbatch scripts/run_phystabmol_gpu.slurm.sh
+sbatch --time=20:00:00 scripts/run_phystabmol_gpu.slurm.sh
 ```
 
 SketchMol 的 EP4/AKT1/ROCK1 activity 与 docking 实验需要额外的 activity predictor 和 docking workflow；当前框架先把属性约束、优化和 3D conformer 评估打通，activity/docking scorer 应作为下一步外部模块接入。

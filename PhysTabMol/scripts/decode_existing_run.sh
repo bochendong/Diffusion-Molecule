@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=phystabmol-decode
-#SBATCH --account=rrg-hup
+#SBATCH --account=def-hup-ab
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --time=3:00:00

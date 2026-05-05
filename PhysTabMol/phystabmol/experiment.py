@@ -123,6 +123,7 @@ def main() -> None:
             compose_conditions_fn=_compose_conditions,
             output_dir=benchmark_dir,
             config=SketchMolBenchmarkConfig(
+                single_conditions=args.benchmark_single_conditions,
                 samples_per_condition=args.benchmark_samples_per_condition,
                 decode_top_k=args.benchmark_decode_top_k,
                 multi_conditions=args.benchmark_multi_conditions,
@@ -201,6 +202,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--torch-hidden-dim", type=int, default=1024)
     parser.add_argument("--torch-layers", type=int, default=6)
     parser.add_argument("--torch-lr", type=float, default=2e-4)
+    parser.add_argument("--sample-chunk-size", type=int, default=8192)
     parser.add_argument("--target-anchor", type=float, default=1.0)
     parser.add_argument("--anchor-neighbors", type=int, default=128)
     parser.add_argument("--count-anchor-weight", type=float, default=0.8)
@@ -221,6 +223,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--understanding-model", type=str, default="openai/clip-vit-base-patch32")
     parser.add_argument("--understanding-batch-size", type=int, default=64)
     parser.add_argument("--run-sketchmol-benchmark", action="store_true")
+    parser.add_argument("--benchmark-single-conditions", type=int, default=125)
     parser.add_argument("--benchmark-samples-per-condition", type=int, default=100)
     parser.add_argument("--benchmark-decode-top-k", type=int, default=1)
     parser.add_argument("--benchmark-multi-conditions", type=int, default=200)
@@ -255,6 +258,7 @@ def _fit_diffusion(args, train_table_y: np.ndarray, train_condition: np.ndarray)
                     target_anchor=args.target_anchor,
                     anchor_neighbors=args.anchor_neighbors,
                     count_anchor_weight=args.count_anchor_weight,
+                    sample_chunk_size=args.sample_chunk_size,
                 ).fit(train_table_y, train_condition)
                 return model, "torch"
             if backend == "torch":
@@ -277,6 +281,12 @@ def _fit_diffusion(args, train_table_y: np.ndarray, train_condition: np.ndarray)
 
 def _sample_tables(diffusion, conditions: np.ndarray, samples_per_condition: int) -> pd.DataFrame:
     rows = []
+    if hasattr(diffusion, "sample_batch"):
+        for condition_idx, sample_idx, row in diffusion.sample_batch(conditions, samples_per_condition=samples_per_condition):
+            out = {"condition_idx": condition_idx, "sample_idx": sample_idx}
+            out.update(row)
+            rows.append(out)
+        return pd.DataFrame(rows)
     for condition_idx, condition in enumerate(conditions):
         samples = diffusion.sample(condition[None, :], n=samples_per_condition)
         for sample_idx, row in enumerate(samples):

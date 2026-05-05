@@ -84,6 +84,7 @@ class TorchTabularDiffusion:
     target_anchor: float = 1.0
     anchor_neighbors: int = 128
     count_anchor_weight: float = 0.8
+    sample_chunk_size: int = 8192
 
     def fit(self, table_y: np.ndarray, condition_x: np.ndarray) -> "TorchTabularDiffusion":
         if not TORCH_AVAILABLE:
@@ -99,8 +100,15 @@ class TorchTabularDiffusion:
         c = self.c_scaler.transform(condition_x).astype(np.float32)
         self.device_ = self._resolve_device()
         torch.manual_seed(self.seed)
-        dataset = _NoisyDiffusionDataset(y, c, timesteps=self.timesteps, noise_repeats=self.noise_repeats)
-        loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True, drop_last=False)
+        if str(self.device_).startswith("cuda"):
+            torch.backends.cuda.matmul.allow_tf32 = True
+            if hasattr(torch, "set_float32_matmul_precision"):
+                torch.set_float32_matmul_precision("high")
+        y_tensor = torch.tensor(y, dtype=torch.float32, device=self.device_)
+        c_tensor = torch.tensor(c, dtype=torch.float32, device=self.device_)
+        steps = torch.arange(self.timesteps + 1, dtype=torch.float32, device=self.device_) / self.timesteps
+        alpha_bars = torch.cos((steps + 0.008) / 1.008 * np.pi / 2) ** 2
+        steps_per_epoch = max(1, int(np.ceil(len(y) * self.noise_repeats / self.batch_size)))
         self.model = _Denoiser(
             in_dim=len(TABLE_COLUMNS) + c.shape[1] + 1,
             out_dim=len(TABLE_COLUMNS),
@@ -114,11 +122,17 @@ class TorchTabularDiffusion:
         self.model.train()
         for epoch in range(self.epochs):
             losses = []
-            for xb, yb in loader:
-                xb = xb.to(self.device_)
-                yb = yb.to(self.device_)
+            for _ in range(steps_per_epoch):
+                row_idx = torch.randint(0, len(y_tensor), (self.batch_size,), device=self.device_)
+                t = torch.randint(1, self.timesteps + 1, (self.batch_size, 1), device=self.device_)
+                clean = y_tensor[row_idx]
+                cond = c_tensor[row_idx]
+                eps = torch.randn_like(clean)
+                alpha_bar = alpha_bars[t].expand_as(clean)
+                noisy = torch.sqrt(alpha_bar) * clean + torch.sqrt(1.0 - alpha_bar) * eps
+                xb = torch.cat([noisy, cond, t.float() / self.timesteps], dim=1)
                 opt.zero_grad(set_to_none=True)
-                loss = loss_fn(self.model(xb), yb)
+                loss = loss_fn(self.model(xb), eps)
                 loss.backward()
                 nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 opt.step()
@@ -132,31 +146,70 @@ class TorchTabularDiffusion:
             raise RuntimeError("PyTorch is not installed.")
         if condition_x.ndim == 1:
             condition_x = condition_x[None, :]
+        condition_indices = np.arange(n, dtype=int) % len(condition_x)
+        samples = self._sample_for_condition_indices(
+            condition_x=condition_x,
+            condition_indices=condition_indices,
+            sample_indices=np.arange(n, dtype=int),
+            guidance_noise=guidance_noise,
+        )
+        return [row for _, _, row in samples]
+
+    @torch.no_grad() if TORCH_AVAILABLE else (lambda fn: fn)
+    def sample_batch(self, condition_x: np.ndarray, samples_per_condition: int = 1, guidance_noise: float = 0.25) -> list[tuple[int, int, dict[str, float]]]:
+        if not TORCH_AVAILABLE:
+            raise RuntimeError("PyTorch is not installed.")
+        if condition_x.ndim == 1:
+            condition_x = condition_x[None, :]
+        condition_indices = np.repeat(np.arange(len(condition_x), dtype=int), int(samples_per_condition))
+        sample_indices = np.tile(np.arange(int(samples_per_condition), dtype=int), len(condition_x))
+        return self._sample_for_condition_indices(
+            condition_x=condition_x,
+            condition_indices=condition_indices,
+            sample_indices=sample_indices,
+            guidance_noise=guidance_noise,
+        )
+
+    def _sample_for_condition_indices(
+        self,
+        condition_x: np.ndarray,
+        condition_indices: np.ndarray,
+        sample_indices: np.ndarray,
+        guidance_noise: float,
+    ) -> list[tuple[int, int, dict[str, float]]]:
         rng = np.random.default_rng(self.seed + 101)
-        cond_scaled = self.c_scaler.transform(condition_x).astype(np.float32)
         rows = []
         self.model.eval()
-        for idx in range(n):
-            c_np = cond_scaled[idx % len(cond_scaled)]
-            y = rng.normal(size=len(TABLE_COLUMNS)).astype(np.float32)
+        chunk_size = max(1, int(self.sample_chunk_size))
+        for start in range(0, len(condition_indices), chunk_size):
+            end = min(start + chunk_size, len(condition_indices))
+            chunk_condition_idx = condition_indices[start:end]
+            chunk_sample_idx = sample_indices[start:end]
+            chunk_conditions = condition_x[chunk_condition_idx]
+            c_np = self.c_scaler.transform(chunk_conditions).astype(np.float32)
+            y = rng.normal(size=(len(chunk_condition_idx), len(TABLE_COLUMNS))).astype(np.float32)
             for t in range(self.timesteps, 0, -1):
                 alpha_bar = self._alpha_bar(t)
-                model_x = np.concatenate([y, c_np, [t / self.timesteps]], dtype=np.float32)
-                xb = torch.tensor(model_x[None, :], device=self.device_)
-                eps_hat = self.model(xb).detach().cpu().numpy()[0]
+                t_col = np.full((len(chunk_condition_idx), 1), t / self.timesteps, dtype=np.float32)
+                model_x = np.concatenate([y, c_np, t_col], axis=1).astype(np.float32, copy=False)
+                xb = torch.tensor(model_x, device=self.device_)
+                eps_hat = self.model(xb).detach().cpu().numpy()
                 y0 = (y - np.sqrt(1.0 - alpha_bar) * eps_hat) / max(1e-6, np.sqrt(alpha_bar))
                 if t > 1:
                     next_alpha = self._alpha_bar(t - 1)
-                    z = rng.normal(size=len(TABLE_COLUMNS)).astype(np.float32)
+                    z = rng.normal(size=y.shape).astype(np.float32)
                     y = np.sqrt(next_alpha) * y0 + guidance_noise * np.sqrt(1.0 - next_alpha) * z
                 else:
                     y = y0
-            raw = self.y_scaler.inverse_transform(y[None, :])[0]
-            if condition_x.shape[1] >= self.target_condition_start + 8:
-                target_values = condition_x[idx % len(condition_x), self.target_condition_start : self.target_condition_start + 8]
-                raw[:8] = (1.0 - self.target_anchor) * raw[:8] + self.target_anchor * target_values
-                raw = self._calibrate_counts(raw, target_values, sample_idx=idx, rng=rng)
-            rows.append(clip_table_row(dict(zip(TABLE_COLUMNS, raw))))
+            raw_rows = self.y_scaler.inverse_transform(y)
+            for local_idx, raw in enumerate(raw_rows):
+                condition_idx = int(chunk_condition_idx[local_idx])
+                sample_idx = int(chunk_sample_idx[local_idx])
+                if condition_x.shape[1] >= self.target_condition_start + 8:
+                    target_values = condition_x[condition_idx, self.target_condition_start : self.target_condition_start + 8]
+                    raw[:8] = (1.0 - self.target_anchor) * raw[:8] + self.target_anchor * target_values
+                    raw = self._calibrate_counts(raw, target_values, sample_idx=sample_idx, rng=rng)
+                rows.append((condition_idx, sample_idx, clip_table_row(dict(zip(TABLE_COLUMNS, raw)))))
         return rows
 
     def _calibrate_counts(
