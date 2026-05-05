@@ -13,9 +13,11 @@ set -euo pipefail
 #   runs/<run>/tables/generated_table_rows.csv
 #
 # Direct run inside an allocation:
+#   bash scripts/decode_existing_run.sh
 #   bash scripts/decode_existing_run.sh runs/20260501_145202_slurm_13110897
 #
 # Or submit as a CPU Slurm job:
+#   sbatch scripts/decode_existing_run.sh
 #   PHYSTABMOL_RUN_DIR=runs/20260501_145202_slurm_13110897 sbatch scripts/decode_existing_run.sh
 
 if [[ -n "${SLURM_JOB_ID:-}" && -n "${SLURM_SUBMIT_DIR:-}" ]]; then
@@ -39,7 +41,8 @@ if [[ "${PHYSTABMOL_SKIP_ENV:-0}" != "1" ]]; then
   fi
 fi
 
-RUN_DIR="${PHYSTABMOL_RUN_DIR:-${1:-}}"
+DEFAULT_RUN_DIR="runs/20260505_002855_sketchmol_comparable_structure_v1"
+RUN_DIR="${PHYSTABMOL_RUN_DIR:-${1:-$DEFAULT_RUN_DIR}}"
 if [[ -z "$RUN_DIR" ]]; then
   RUN_DIR="$(
     find runs -path 'runs/*/tables/generated_table_rows.csv' -print 2>/dev/null \

@@ -4,6 +4,7 @@ outputs/
 runs/**/models/
 runs/**/tables/decoded_candidates.csv
 runs/**/tables/verified_instruction_candidates.csv
+runs/*smoke*/
 
 # Downloaded datasets (e.g. scripts/download_chembl_100k.sh → data/molecules.csv, data/raw/)
 data/
