@@ -228,7 +228,21 @@ python3 -m phystabmol.experiment \
 
 每个性质还会输出 `*_generated_table_mae` 和最终 `*_mae`，用于区分 diffusion plan 误差和 decoder 误差。
 
-Slurm 入口：
+推荐 Slurm 入口：
+
+```bash
+bash scripts/run_sketchmol_structure_benchmark.sh
+```
+
+这个脚本会自动打开 property mask conditioning、SketchMol-style benchmark 和 structure prompt benchmark。
+如果需要改 run 名或样本数，可以用环境变量覆盖：
+
+```bash
+PHYSTABMOL_RUN_NAME=my_structure_run PHYSTABMOL_BENCHMARK_SAMPLES=500 \
+bash scripts/run_sketchmol_structure_benchmark.sh
+```
+
+等价的展开命令是：
 
 ```bash
 PHYSTABMOL_RUN_NAME=sketchmol_comparable_structure_v1 \
