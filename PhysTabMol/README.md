@@ -238,6 +238,9 @@ bash scripts/run_sketchmol_structure_benchmark.sh
 它也会使用更大的 torch batch size 和 batched diffusion sampling；单属性 benchmark 默认是
 `125 conditions × 8 samples = 1000 molecules / target`，避免把 `1000` 误展开成
 `1000 conditions × 1000 samples`。
+默认 decoder 是 `hybrid`：保留原来的 physics/template decoder，同时增加真实训练分子检索和
+RDKit-valid MMP-style 局部编辑，再按目标性质、结构 prompt、druglike filter 重排。做 ablation 时可以设
+`PHYSTABMOL_DECODER_MODE=physics` 或 `PHYSTABMOL_DECODER_MODE=retrieval`。
 如果需要改 run 名或样本数，可以用环境变量覆盖：
 
 ```bash
@@ -249,6 +252,7 @@ bash scripts/run_sketchmol_structure_benchmark.sh
 
 ```bash
 PHYSTABMOL_RUN_NAME=sketchmol_comparable_structure_v1 \
+PHYSTABMOL_DECODER_MODE=hybrid \
 PHYSTABMOL_PROPERTY_MASK_CONDITIONING=1 \
 PHYSTABMOL_RUN_SKETCHMOL_BENCHMARK=1 \
 PHYSTABMOL_RUN_STRUCTURE_PROMPT_BENCHMARK=1 \
@@ -567,6 +571,7 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `torch_latent_vae.py`：molecular/table VAE + latent diffusion 后端，对齐 UniVideo/SketchMol 的 latent denoising 思路。
 - `experiment.py`：保存配置、模型、表格结果和指标的服务器实验入口。
 - `decoder.py`：具备物理先验的骨架与官能团模板解码器。
+- `retrieval_decoder.py`：真实分子库检索 + RDKit-valid MMP-style 局部编辑 + hybrid 重排 decoder。
 - `evaluate.py`：有效性、唯一性、新颖性、类药性、性质误差与多样性等指标。
 - `sketchmol_benchmark.py`：对齐 SketchMol 的单属性、多属性、OOD 与优化 benchmark。
 - `geometry3d.py`：RDKit-backed 3D conformer 与形状指标。

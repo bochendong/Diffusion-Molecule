@@ -13,13 +13,13 @@ import pandas as pd
 from .contrastive import ContrastiveAligner
 from .context import INTENT_DELTAS, InContextConditioner
 from .dataset import arrays_from_dataframe, load_experiment_dataframe, train_test_split_df
-from .decoder import decode_table_row
 from .diffusion import TabularDiffusion
 from .evaluate import evaluate_decoded_table
 from .features import IMAGE_FEATURE_COLUMNS, extract_image_features
 from .geometry3d import add_3d_metrics
 from .io import make_run_dir, save_json, save_text, set_seed
 from .pretrained_understanding import PretrainedImageUnderstanding
+from .retrieval_decoder import RetrievalCandidateIndex, RetrievalDecoderConfig, decode_retrieval_table_row
 from .schema import TARGET_COLUMNS
 from .sketchmol_benchmark import SketchMolBenchmarkConfig, run_sketchmol_benchmark
 from .structure_prompt_benchmark import StructurePromptBenchmarkConfig, run_structure_prompt_benchmark
@@ -88,11 +88,20 @@ def main() -> None:
     diffusion, backend = _fit_diffusion(args, train_table_y, train_condition)
     model_path = run_dir / "models" / ("diffusion.pt" if backend == "torch" else "diffusion.pkl")
     diffusion.save(model_path)
+    retrieval_index = _build_retrieval_index(train_df, args)
+    retrieval_config = _retrieval_config(args)
 
     generated_df = _sample_tables(diffusion, eval_condition, args.samples_per_condition)
     generated_df.to_csv(run_dir / "tables" / "generated_table_rows.csv", index=False)
 
-    decoded_df = _decode_generated(generated_df, top_k=args.decode_top_k, dynamic_decoder=args.dynamic_decoder)
+    decoded_df = _decode_generated(
+        generated_df,
+        top_k=args.decode_top_k,
+        dynamic_decoder=args.dynamic_decoder,
+        decoder_mode=args.decoder_mode,
+        retrieval_index=retrieval_index,
+        retrieval_config=retrieval_config,
+    )
     if args.enable_3d:
         sdf_path = run_dir / "tables" / "decoded_candidates_3d.sdf" if args.save_3d_sdf else None
         decoded_df = add_3d_metrics(decoded_df, sdf_path=sdf_path, max_sdf=args.max_3d_sdf)
@@ -106,6 +115,8 @@ def main() -> None:
             "backend": backend,
             "train_size": float(len(train_df)),
             "test_size": float(len(test_df)),
+            "decoder_mode": args.decoder_mode,
+            "retrieval_candidates": float(len(retrieval_index.candidates)) if retrieval_index is not None else 0.0,
             "property_mask_conditioning": bool(args.property_mask_conditioning),
             "property_mask_dim": float(len(TARGET_COLUMNS)) if args.property_mask_conditioning else 0.0,
             "contrastive_train_retrieval_accuracy": aligner.retrieval_accuracy(train_image_x, train_table_y),
@@ -130,6 +141,8 @@ def main() -> None:
                 optimization_conditions=args.benchmark_optimization_conditions,
                 seed=args.seed,
             ),
+            retrieval_index=retrieval_index,
+            retrieval_config=retrieval_config,
         )
         if args.enable_3d and not benchmark_decoded.empty:
             benchmark_3d = add_3d_metrics(
@@ -160,6 +173,8 @@ def main() -> None:
                 decode_top_k=args.structure_prompt_decode_top_k,
                 seed=args.seed,
             ),
+            retrieval_index=retrieval_index,
+            retrieval_config=retrieval_config,
         )
         if not structure_summary.empty:
             metrics["structure_prompt_mean_joint_success_strict"] = float(structure_summary["joint_success_strict"].dropna().mean())
@@ -188,6 +203,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--samples-per-condition", type=int, default=16)
     parser.add_argument("--decode-top-k", type=int, default=5)
     parser.add_argument("--dynamic-decoder", action="store_true")
+    parser.add_argument(
+        "--decoder-mode",
+        choices=["physics", "retrieval", "hybrid"],
+        default="physics",
+        help="SMILES decoder to use after tabular diffusion: old physics templates, retrieval/MMP edits, or both.",
+    )
+    parser.add_argument("--retrieval-neighbors", type=int, default=256)
+    parser.add_argument("--retrieval-edit-neighbors", type=int, default=12)
+    parser.add_argument("--retrieval-max-candidates", type=int, default=100000)
+    parser.add_argument("--retrieval-exact-penalty", type=float, default=0.08)
+    parser.add_argument("--retrieval-edit-bonus", type=float, default=0.08)
+    parser.add_argument("--retrieval-prompt-match-bonus", type=float, default=1.5)
+    parser.add_argument("--retrieval-prompt-miss-penalty", type=float, default=4.0)
     parser.add_argument("--embedding-dim", type=int, default=16)
     parser.add_argument("--contrastive-epochs", type=int, default=600)
     parser.add_argument("--contrastive-batch-size", type=int, default=512)
@@ -296,14 +324,29 @@ def _sample_tables(diffusion, conditions: np.ndarray, samples_per_condition: int
     return pd.DataFrame(rows)
 
 
-def _decode_generated(generated_df: pd.DataFrame, top_k: int, dynamic_decoder: bool = False) -> pd.DataFrame:
+def _decode_generated(
+    generated_df: pd.DataFrame,
+    top_k: int,
+    dynamic_decoder: bool = False,
+    decoder_mode: str = "physics",
+    retrieval_index: RetrievalCandidateIndex | None = None,
+    retrieval_config: RetrievalDecoderConfig | None = None,
+) -> pd.DataFrame:
     rows = []
     table_cols = [col for col in generated_df.columns if col not in {"condition_idx", "sample_idx"}]
     for _, source in generated_df.iterrows():
         row = {col: float(source[col]) for col in table_cols}
         decode_seed = int(source["condition_idx"]) * 1009 + int(source["sample_idx"])
         for rank, candidate in enumerate(
-            decode_table_row(row, top_k=top_k, seed=decode_seed, include_dynamic=dynamic_decoder),
+            decode_retrieval_table_row(
+                row,
+                top_k=top_k,
+                seed=decode_seed,
+                mode=decoder_mode,
+                index=retrieval_index,
+                config=retrieval_config,
+                include_dynamic=dynamic_decoder,
+            ),
             start=1,
         ):
             out = {
@@ -313,11 +356,30 @@ def _decode_generated(generated_df: pd.DataFrame, top_k: int, dynamic_decoder: b
                 "smiles": candidate.smiles,
                 "decoder_score": candidate.score,
                 "valid": candidate.valid,
+                "candidate_source": candidate.source,
             }
             out.update({f"target_{k}": v for k, v in row.items()})
             out.update({f"actual_{k}": v for k, v in candidate.descriptors.items() if isinstance(v, (int, float))})
             rows.append(out)
     return pd.DataFrame(rows)
+
+
+def _build_retrieval_index(train_df: pd.DataFrame, args) -> RetrievalCandidateIndex | None:
+    if args.decoder_mode not in {"retrieval", "hybrid"}:
+        return None
+    return RetrievalCandidateIndex.from_dataframe(train_df, max_candidates=args.retrieval_max_candidates)
+
+
+def _retrieval_config(args) -> RetrievalDecoderConfig:
+    return RetrievalDecoderConfig(
+        neighbors=args.retrieval_neighbors,
+        edit_neighbors=args.retrieval_edit_neighbors,
+        max_candidates=args.retrieval_max_candidates,
+        exact_train_penalty=args.retrieval_exact_penalty,
+        edit_bonus=args.retrieval_edit_bonus,
+        prompt_match_bonus=args.retrieval_prompt_match_bonus,
+        prompt_miss_penalty=args.retrieval_prompt_miss_penalty,
+    )
 
 
 def _compose_conditions(
@@ -445,6 +507,7 @@ def _summary(metrics: dict, args: argparse.Namespace) -> str:
         "backend",
         "train_size",
         "test_size",
+        "retrieval_candidates",
         "n",
         "validity",
         "uniqueness",
@@ -465,6 +528,7 @@ def _summary(metrics: dict, args: argparse.Namespace) -> str:
         f"understanding_stream={not args.disable_understanding_stream}",
         f"understanding_backbone={args.understanding_backbone}",
         f"property_mask_conditioning={args.property_mask_conditioning}",
+        f"decoder_mode={args.decoder_mode}",
     ]
     for key in keys:
         if key in metrics:

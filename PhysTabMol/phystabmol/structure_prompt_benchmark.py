@@ -24,9 +24,10 @@ import pandas as pd
 from . import chem as chem_mod
 from .chem import canonicalize_smiles, molecular_descriptors, passes_druglike_filters, tanimoto
 from .dataset import arrays_from_dataframe
-from .decoder import DRUGLIKE_SOFT_PENALTY, DecodedCandidate, decode_table_row
+from .decoder import DRUGLIKE_SOFT_PENALTY, DecodedCandidate
 from .evaluate import evaluate_smiles
 from .features import IMAGE_FEATURE_COLUMNS, descriptor_image, image_array_features
+from .retrieval_decoder import RetrievalCandidateIndex, RetrievalDecoderConfig, decode_retrieval_table_row
 from .schema import TARGET_COLUMNS, TABLE_COLUMNS
 from .sketchmol_benchmark import SKETCHMOL_SUCCESS_TOLERANCE, STRICT_SUCCESS_TOLERANCE
 
@@ -55,6 +56,8 @@ def run_structure_prompt_benchmark(
     compose_conditions_fn,
     output_dir: str | Path,
     config: StructurePromptBenchmarkConfig,
+    retrieval_index: RetrievalCandidateIndex | None = None,
+    retrieval_config: RetrievalDecoderConfig | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -77,6 +80,8 @@ def run_structure_prompt_benchmark(
             compose_conditions_fn=compose_conditions_fn,
             samples_per_prompt=config.samples_per_prompt,
             top_k=config.decode_top_k,
+            retrieval_index=retrieval_index,
+            retrieval_config=retrieval_config,
         )
         decoded_parts.append(decoded)
         summary_parts.append(_summarize(decoded, train_df, task_name))
@@ -211,6 +216,8 @@ def _generate_decode(
     compose_conditions_fn,
     samples_per_prompt: int,
     top_k: int,
+    retrieval_index: RetrievalCandidateIndex | None = None,
+    retrieval_config: RetrievalDecoderConfig | None = None,
 ) -> pd.DataFrame:
     image_x, _, base_condition_x, _ = arrays_from_dataframe(cond_df)
     conditions, _ = compose_conditions_fn(
@@ -239,6 +246,9 @@ def _generate_decode(
             prompt_smiles=str(condition_row["prompt_smiles"]),
             top_k=top_k,
             seed=int(condition_idx) * 1009 + int(sample_idx),
+            decoder_mode=getattr(args, "decoder_mode", "physics"),
+            retrieval_index=retrieval_index,
+            retrieval_config=retrieval_config,
         )
         for rank, candidate in enumerate(candidates, start=1):
             out = {
@@ -265,9 +275,28 @@ def _generate_decode(
     return pd.DataFrame(rows)
 
 
-def _decode_prompt_candidates(table_row: dict[str, float], prompt_smiles: str, top_k: int, seed: int) -> list[DecodedCandidate]:
+def _decode_prompt_candidates(
+    table_row: dict[str, float],
+    prompt_smiles: str,
+    top_k: int,
+    seed: int,
+    decoder_mode: str = "physics",
+    retrieval_index: RetrievalCandidateIndex | None = None,
+    retrieval_config: RetrievalDecoderConfig | None = None,
+) -> list[DecodedCandidate]:
     candidates = []
-    candidates.extend(decode_table_row(table_row, top_k=max(8, top_k * 4), seed=seed))
+    candidates.extend(
+        decode_retrieval_table_row(
+            table_row,
+            top_k=max(8, top_k * 4),
+            seed=seed,
+            mode=decoder_mode,
+            index=retrieval_index,
+            config=retrieval_config,
+            include_dynamic=True,
+            prompt_smiles=prompt_smiles,
+        )
+    )
     candidates.extend(_prompt_assembly_candidates(prompt_smiles, table_row, seed=seed))
     by_smiles = {}
     for candidate in candidates:

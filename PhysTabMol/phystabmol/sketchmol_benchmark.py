@@ -10,9 +10,9 @@ import numpy as np
 import pandas as pd
 
 from .dataset import arrays_from_dataframe
-from .decoder import decode_table_row
 from .evaluate import evaluate_smiles
 from .features import IMAGE_FEATURE_COLUMNS
+from .retrieval_decoder import RetrievalCandidateIndex, RetrievalDecoderConfig, decode_retrieval_table_row
 from .schema import TARGET_COLUMNS
 
 SINGLE_PROPERTY_TARGETS = {
@@ -82,25 +82,31 @@ def run_sketchmol_benchmark(
     compose_conditions_fn,
     output_dir: str | Path,
     config: SketchMolBenchmarkConfig,
+    retrieval_index: RetrievalCandidateIndex | None = None,
+    retrieval_config: RetrievalDecoderConfig | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     decoded_parts = []
     summary_parts = []
 
-    decoded, summary = _single_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, "single_property", SINGLE_PROPERTY_TARGETS)
+    decoded, summary = _single_property(
+        diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, "single_property", SINGLE_PROPERTY_TARGETS, retrieval_index, retrieval_config
+    )
     decoded_parts.append(decoded)
     summary_parts.append(summary)
 
-    decoded, summary = _single_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, "ood_property", OOD_TARGETS)
+    decoded, summary = _single_property(
+        diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, "ood_property", OOD_TARGETS, retrieval_index, retrieval_config
+    )
     decoded_parts.append(decoded)
     summary_parts.append(summary)
 
-    decoded, summary = _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config)
+    decoded, summary = _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config)
     decoded_parts.append(decoded)
     summary_parts.append(summary)
 
-    decoded, summary = _optimization(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config)
+    decoded, summary = _optimization(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config)
     decoded_parts.append(decoded)
     summary_parts.append(summary)
 
@@ -115,7 +121,7 @@ def run_sketchmol_benchmark(
     return all_decoded, all_summary
 
 
-def _single_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, task_name, targets_by_property):
+def _single_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, task_name, targets_by_property, retrieval_index, retrieval_config):
     decoded_rows = []
     summary_rows = []
     for prop, values in targets_by_property.items():
@@ -126,7 +132,17 @@ def _single_property(diffusion, train_df, eval_df, aligner, args, compose_condit
                 cond_df[col] = float(train_df[col].median())
             cond_df[prop] = float(value)
             _assign_condition_masks(cond_df, [prop])
-            decoded = _generate_decode(diffusion, cond_df, aligner, args, compose_conditions_fn, config.samples_per_condition, config.decode_top_k)
+            decoded = _generate_decode(
+                diffusion,
+                cond_df,
+                aligner,
+                args,
+                compose_conditions_fn,
+                config.samples_per_condition,
+                config.decode_top_k,
+                retrieval_index=retrieval_index,
+                retrieval_config=retrieval_config,
+            )
             decoded["benchmark_task"] = task_name
             decoded["constraint_properties"] = prop
             decoded["target_json"] = json.dumps({prop: value})
@@ -135,7 +151,7 @@ def _single_property(diffusion, train_df, eval_df, aligner, args, compose_condit
     return _concat(decoded_rows), pd.DataFrame(summary_rows)
 
 
-def _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config):
+def _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config):
     rng = np.random.default_rng(config.seed)
     props = list(SINGLE_PROPERTY_TARGETS)
     decoded_rows = []
@@ -148,7 +164,17 @@ def _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditi
             selected = sorted(rng.choice(props, size=n_props, replace=False).tolist())
             selected_sets.append(selected)
         _assign_condition_masks(cond_df, selected_sets)
-        decoded = _generate_decode(diffusion, cond_df, aligner, args, compose_conditions_fn, 1, config.decode_top_k)
+        decoded = _generate_decode(
+            diffusion,
+            cond_df,
+            aligner,
+            args,
+            compose_conditions_fn,
+            1,
+            config.decode_top_k,
+            retrieval_index=retrieval_index,
+            retrieval_config=retrieval_config,
+        )
         decoded["benchmark_task"] = "multi_property"
         decoded["constraint_properties"] = [",".join(selected_sets[int(row.condition_idx)]) for row in decoded.itertuples()]
         decoded["target_json"] = [
@@ -160,7 +186,7 @@ def _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditi
     return _concat(decoded_rows), pd.DataFrame(summary_rows)
 
 
-def _optimization(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config):
+def _optimization(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config):
     decoded_rows = []
     summary_rows = []
     for prop, delta in OPTIMIZATION_TASKS.items():
@@ -169,7 +195,17 @@ def _optimization(diffusion, train_df, eval_df, aligner, args, compose_condition
         before = cond_df[prop].astype(float).to_numpy()
         cond_df[prop] = np.clip(cond_df[prop].astype(float) + delta, 0.0 if prop in {"QED", "TPSA"} else -10.0, 700.0)
         _assign_condition_masks(cond_df, [prop])
-        decoded = _generate_decode(diffusion, cond_df, aligner, args, compose_conditions_fn, 1, config.decode_top_k)
+        decoded = _generate_decode(
+            diffusion,
+            cond_df,
+            aligner,
+            args,
+            compose_conditions_fn,
+            1,
+            config.decode_top_k,
+            retrieval_index=retrieval_index,
+            retrieval_config=retrieval_config,
+        )
         decoded["benchmark_task"] = "property_optimization"
         decoded["constraint_properties"] = prop
         decoded["target_json"] = [
@@ -189,7 +225,17 @@ def _optimization(diffusion, train_df, eval_df, aligner, args, compose_condition
     return _concat(decoded_rows), pd.DataFrame(summary_rows)
 
 
-def _generate_decode(diffusion, cond_df, aligner, args, compose_conditions_fn, samples_per_condition, top_k):
+def _generate_decode(
+    diffusion,
+    cond_df,
+    aligner,
+    args,
+    compose_conditions_fn,
+    samples_per_condition,
+    top_k,
+    retrieval_index: RetrievalCandidateIndex | None = None,
+    retrieval_config: RetrievalDecoderConfig | None = None,
+):
     image_x, _, base_condition_x, _ = arrays_from_dataframe(cond_df)
     conditions, _ = compose_conditions_fn(
         cond_df,
@@ -211,8 +257,25 @@ def _generate_decode(diffusion, cond_df, aligner, args, compose_conditions_fn, s
             for sample_idx, row in enumerate(diffusion.sample(condition[None, :], n=samples_per_condition)):
                 sampled_rows.append((condition_idx, sample_idx, row))
     for condition_idx, sample_idx, row in sampled_rows:
-        for rank, candidate in enumerate(decode_table_row(row, top_k=top_k), start=1):
-            out = {"condition_idx": condition_idx, "sample_idx": sample_idx, "rank": rank, "smiles": candidate.smiles, "valid": candidate.valid, "decoder_score": candidate.score}
+        candidates = decode_retrieval_table_row(
+            row,
+            top_k=top_k,
+            seed=int(condition_idx) * 1009 + int(sample_idx),
+            mode=getattr(args, "decoder_mode", "physics"),
+            index=retrieval_index,
+            config=retrieval_config,
+            include_dynamic=bool(getattr(args, "dynamic_decoder", False)),
+        )
+        for rank, candidate in enumerate(candidates, start=1):
+            out = {
+                "condition_idx": condition_idx,
+                "sample_idx": sample_idx,
+                "rank": rank,
+                "smiles": candidate.smiles,
+                "valid": candidate.valid,
+                "decoder_score": candidate.score,
+                "candidate_source": candidate.source,
+            }
             out.update({f"target_{k}": v for k, v in row.items()})
             out.update({f"actual_{k}": v for k, v in candidate.descriptors.items() if isinstance(v, (int, float))})
             rows.append(out)
