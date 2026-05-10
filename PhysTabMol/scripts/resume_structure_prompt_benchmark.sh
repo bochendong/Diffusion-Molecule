@@ -9,7 +9,14 @@
 
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# Slurm copies this script to /var/spool/slurmd/.../slurm_script, so
+# dirname(BASH_SOURCE) is only reliable before submission.
+if [[ -n "${SLURM_JOB_ID:-}" && -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+  ROOT="$SLURM_SUBMIT_DIR"
+else
+  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+SCRIPT_DIR="$ROOT/scripts"
 cd "$ROOT"
 
 if [[ -z "${SLURM_JOB_ID:-}" && "${PHYSTABMOL_SUBMIT:-1}" == "1" ]]; then
@@ -24,7 +31,7 @@ unset PYTHONPATH
 
 export MODULE_CUDA="${MODULE_CUDA:-cuda/12.6}"
 # shellcheck source=/dev/null
-source "$ROOT/scripts/env_module_venv.sh"
+source "$SCRIPT_DIR/env_module_venv.sh"
 
 RUN_DIR="${PHYSTABMOL_RUN_DIR:-$(find runs -maxdepth 1 -mindepth 1 -type d | sort | tail -n 1)}"
 CONDITIONS="${PHYSTABMOL_STRUCTURE_PROMPT_CONDITIONS:-0}"
