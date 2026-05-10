@@ -282,6 +282,15 @@ decoder ablation 可以一次提交四组：
 bash scripts/run_decoder_ablation.sh
 ```
 
+如果 Slurm 超时但已经写出 `tables/sketchmol_benchmark/`，可以只补跑 structure prompt，不重新训练：
+
+```bash
+PHYSTABMOL_RUN_DIR=runs/20260510_014937_sketchmol_comparable_structure_v1 \
+bash scripts/resume_structure_prompt_benchmark.sh
+```
+
+这个脚本会自动 `sbatch`，并使用更轻的 structure-prompt decoder 候选池与 RDKit substructure cache。
+
 SketchMol 的 EP4/AKT1/ROCK1 activity 与 docking 实验需要额外的 activity predictor 和 docking workflow；当前框架先把属性约束、优化和 3D conformer 评估打通，activity/docking scorer 应作为下一步外部模块接入。
 
 输出位置：

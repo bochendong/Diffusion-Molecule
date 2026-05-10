@@ -8,6 +8,7 @@ space with real training molecules plus simple RDKit-verified local edits.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 import hashlib
 import os
 
@@ -384,6 +385,7 @@ def _fallback_group_variants(smiles: str, group: str) -> set[str]:
     return {smiles + suffix} if suffix else set()
 
 
+@lru_cache(maxsize=500000)
 def _contains_prompt(prompt_smiles: str, candidate_smiles: str) -> bool:
     prompt = canonicalize_smiles(prompt_smiles)
     candidate = canonicalize_smiles(candidate_smiles)

@@ -252,6 +252,42 @@ class TorchTabularDiffusion:
             path,
         )
 
+    @staticmethod
+    def load(path: str | Path, device: str | None = None) -> "TorchTabularDiffusion":
+        if not TORCH_AVAILABLE:
+            raise RuntimeError("PyTorch is not installed.")
+        try:
+            checkpoint = torch.load(path, map_location=device or "cpu", weights_only=False)
+        except TypeError:  # Older PyTorch does not expose weights_only.
+            checkpoint = torch.load(path, map_location=device or "cpu")
+        config = dict(checkpoint["config"])
+        if device is not None:
+            config["device"] = device
+        model = TorchTabularDiffusion(**config)
+        model.y_scaler = checkpoint["y_scaler"]
+        model.c_scaler = checkpoint["c_scaler"]
+        model.train_table_y_ = checkpoint.get("train_table_y")
+        if model.train_table_y_ is not None:
+            model.train_table_y_ = np.asarray(model.train_table_y_, dtype=np.float32)
+            model.train_targets_ = model.train_table_y_[:, : len(TARGET_SCALES)]
+            model.anchor_nn_ = NearestNeighbors(n_neighbors=min(model.anchor_neighbors, len(model.train_targets_)))
+            model.anchor_nn_.fit(model.train_targets_ / TARGET_SCALES)
+        model.history_ = checkpoint.get("history", [])
+        model.device_ = model._resolve_device()
+        state_dict = checkpoint["state_dict"]
+        first_weight = next(value for key, value in state_dict.items() if key.endswith("0.weight"))
+        in_dim = int(first_weight.shape[1])
+        model.model = _Denoiser(
+            in_dim=in_dim,
+            out_dim=len(TABLE_COLUMNS),
+            hidden_dim=model.hidden_dim,
+            layers=model.layers,
+            dropout=model.dropout,
+        ).to(model.device_)
+        model.model.load_state_dict(state_dict)
+        model.model.eval()
+        return model
+
     def _resolve_device(self) -> str:
         if self.device != "auto":
             return self.device

@@ -15,6 +15,8 @@ from __future__ import annotations
 import json
 import hashlib
 from dataclasses import dataclass
+from dataclasses import replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +66,8 @@ def run_structure_prompt_benchmark(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+    retrieval_config = _light_retrieval_config(retrieval_config)
+    mmp_config = _light_mmp_config(mmp_config)
     decoded_parts = []
     summary_parts = []
 
@@ -296,10 +300,11 @@ def _decode_prompt_candidates(
     mmp_config: MMPTransformConfig | None = None,
 ) -> list[DecodedCandidate]:
     candidates = []
+    decoder_pool_k = max(top_k, min(4, top_k * 2))
     candidates.extend(
         decode_retrieval_table_row(
             table_row,
-            top_k=max(8, top_k * 4),
+            top_k=decoder_pool_k,
             seed=seed,
             mode=decoder_mode,
             index=retrieval_index,
@@ -480,6 +485,7 @@ def fragment_prompt(smiles: str) -> str | None:
     return None
 
 
+@lru_cache(maxsize=500000)
 def contains_prompt(prompt_smiles: str, candidate_smiles: str) -> bool:
     prompt = canonicalize_smiles(prompt_smiles)
     candidate = canonicalize_smiles(candidate_smiles)
@@ -524,3 +530,30 @@ def _mean_bool(series) -> float:
 def _stable_noise(smiles: str, seed: int) -> float:
     digest = hashlib.sha256(f"structure-prompt:{seed}:{smiles}".encode("utf-8")).digest()
     return int.from_bytes(digest[:4], "big") / 2**32
+
+
+def _light_retrieval_config(config: RetrievalDecoderConfig | None) -> RetrievalDecoderConfig | None:
+    if config is None:
+        return None
+    return replace(
+        config,
+        neighbors=min(config.neighbors, 64),
+        edit_neighbors=min(config.edit_neighbors, 4),
+        prompt_match_bonus=max(config.prompt_match_bonus, 2.0),
+        prompt_miss_penalty=max(config.prompt_miss_penalty, 7.0),
+    )
+
+
+def _light_mmp_config(config: MMPTransformConfig | None) -> MMPTransformConfig | None:
+    if config is None:
+        return None
+    return replace(
+        config,
+        target_neighbors=min(config.target_neighbors, 96),
+        delta_neighbors=min(config.delta_neighbors, 64),
+        source_neighbors=min(config.source_neighbors, 64),
+        fragment_neighbors=min(config.fragment_neighbors, 6),
+        attachment_limit=min(config.attachment_limit, 3),
+        prompt_match_bonus=max(config.prompt_match_bonus, 3.0),
+        prompt_miss_penalty=max(config.prompt_miss_penalty, 10.0),
+    )
