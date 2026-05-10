@@ -27,6 +27,7 @@ from .dataset import arrays_from_dataframe
 from .decoder import DRUGLIKE_SOFT_PENALTY, DecodedCandidate
 from .evaluate import evaluate_smiles
 from .features import IMAGE_FEATURE_COLUMNS, descriptor_image, image_array_features
+from .mmp_transform_decoder import MMPTransformConfig, MMPTransformIndex
 from .retrieval_decoder import RetrievalCandidateIndex, RetrievalDecoderConfig, decode_retrieval_table_row
 from .schema import TARGET_COLUMNS, TABLE_COLUMNS
 from .sketchmol_benchmark import SKETCHMOL_SUCCESS_TOLERANCE, STRICT_SUCCESS_TOLERANCE
@@ -58,6 +59,8 @@ def run_structure_prompt_benchmark(
     config: StructurePromptBenchmarkConfig,
     retrieval_index: RetrievalCandidateIndex | None = None,
     retrieval_config: RetrievalDecoderConfig | None = None,
+    mmp_index: MMPTransformIndex | None = None,
+    mmp_config: MMPTransformConfig | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -82,6 +85,8 @@ def run_structure_prompt_benchmark(
             top_k=config.decode_top_k,
             retrieval_index=retrieval_index,
             retrieval_config=retrieval_config,
+            mmp_index=mmp_index,
+            mmp_config=mmp_config,
         )
         decoded_parts.append(decoded)
         summary_parts.append(_summarize(decoded, train_df, task_name))
@@ -218,6 +223,8 @@ def _generate_decode(
     top_k: int,
     retrieval_index: RetrievalCandidateIndex | None = None,
     retrieval_config: RetrievalDecoderConfig | None = None,
+    mmp_index: MMPTransformIndex | None = None,
+    mmp_config: MMPTransformConfig | None = None,
 ) -> pd.DataFrame:
     image_x, _, base_condition_x, _ = arrays_from_dataframe(cond_df)
     conditions, _ = compose_conditions_fn(
@@ -249,6 +256,8 @@ def _generate_decode(
             decoder_mode=getattr(args, "decoder_mode", "physics"),
             retrieval_index=retrieval_index,
             retrieval_config=retrieval_config,
+            mmp_index=mmp_index,
+            mmp_config=mmp_config,
         )
         for rank, candidate in enumerate(candidates, start=1):
             out = {
@@ -283,6 +292,8 @@ def _decode_prompt_candidates(
     decoder_mode: str = "physics",
     retrieval_index: RetrievalCandidateIndex | None = None,
     retrieval_config: RetrievalDecoderConfig | None = None,
+    mmp_index: MMPTransformIndex | None = None,
+    mmp_config: MMPTransformConfig | None = None,
 ) -> list[DecodedCandidate]:
     candidates = []
     candidates.extend(
@@ -295,6 +306,8 @@ def _decode_prompt_candidates(
             config=retrieval_config,
             include_dynamic=True,
             prompt_smiles=prompt_smiles,
+            mmp_index=mmp_index,
+            mmp_config=mmp_config,
         )
     )
     candidates.extend(_prompt_assembly_candidates(prompt_smiles, table_row, seed=seed))

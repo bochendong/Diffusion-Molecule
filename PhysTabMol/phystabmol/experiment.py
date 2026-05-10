@@ -18,6 +18,7 @@ from .evaluate import evaluate_decoded_table
 from .features import IMAGE_FEATURE_COLUMNS, extract_image_features
 from .geometry3d import add_3d_metrics
 from .io import make_run_dir, save_json, save_text, set_seed
+from .mmp_transform_decoder import MMPTransformConfig, MMPTransformIndex
 from .pretrained_understanding import PretrainedImageUnderstanding
 from .retrieval_decoder import RetrievalCandidateIndex, RetrievalDecoderConfig, decode_retrieval_table_row
 from .schema import TARGET_COLUMNS
@@ -90,6 +91,8 @@ def main() -> None:
     diffusion.save(model_path)
     retrieval_index = _build_retrieval_index(train_df, args)
     retrieval_config = _retrieval_config(args)
+    mmp_config = _mmp_transform_config(args)
+    mmp_index = _build_mmp_transform_index(train_df, args, mmp_config)
 
     generated_df = _sample_tables(diffusion, eval_condition, args.samples_per_condition)
     generated_df.to_csv(run_dir / "tables" / "generated_table_rows.csv", index=False)
@@ -101,6 +104,8 @@ def main() -> None:
         decoder_mode=args.decoder_mode,
         retrieval_index=retrieval_index,
         retrieval_config=retrieval_config,
+        mmp_index=mmp_index,
+        mmp_config=mmp_config,
     )
     if args.enable_3d:
         sdf_path = run_dir / "tables" / "decoded_candidates_3d.sdf" if args.save_3d_sdf else None
@@ -117,6 +122,8 @@ def main() -> None:
             "test_size": float(len(test_df)),
             "decoder_mode": args.decoder_mode,
             "retrieval_candidates": float(len(retrieval_index.candidates)) if retrieval_index is not None else 0.0,
+            "mmp_transform_pairs": float(len(mmp_index.pairs)) if mmp_index is not None else 0.0,
+            "mmp_transform_fragments": float(len(mmp_index.fragments)) if mmp_index is not None else 0.0,
             "property_mask_conditioning": bool(args.property_mask_conditioning),
             "property_mask_dim": float(len(TARGET_COLUMNS)) if args.property_mask_conditioning else 0.0,
             "contrastive_train_retrieval_accuracy": aligner.retrieval_accuracy(train_image_x, train_table_y),
@@ -143,6 +150,8 @@ def main() -> None:
             ),
             retrieval_index=retrieval_index,
             retrieval_config=retrieval_config,
+            mmp_index=mmp_index,
+            mmp_config=mmp_config,
         )
         if args.enable_3d and not benchmark_decoded.empty:
             benchmark_3d = add_3d_metrics(
@@ -175,6 +184,8 @@ def main() -> None:
             ),
             retrieval_index=retrieval_index,
             retrieval_config=retrieval_config,
+            mmp_index=mmp_index,
+            mmp_config=mmp_config,
         )
         if not structure_summary.empty:
             metrics["structure_prompt_mean_joint_success_strict"] = float(structure_summary["joint_success_strict"].dropna().mean())
@@ -205,9 +216,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dynamic-decoder", action="store_true")
     parser.add_argument(
         "--decoder-mode",
-        choices=["physics", "retrieval", "hybrid"],
+        choices=["physics", "retrieval", "hybrid", "mmp", "hybrid_mmp"],
         default="physics",
-        help="SMILES decoder to use after tabular diffusion: old physics templates, retrieval/MMP edits, or both.",
+        help="SMILES decoder to use after tabular diffusion.",
     )
     parser.add_argument("--retrieval-neighbors", type=int, default=256)
     parser.add_argument("--retrieval-edit-neighbors", type=int, default=12)
@@ -216,6 +227,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--retrieval-edit-bonus", type=float, default=0.08)
     parser.add_argument("--retrieval-prompt-match-bonus", type=float, default=1.5)
     parser.add_argument("--retrieval-prompt-miss-penalty", type=float, default=4.0)
+    parser.add_argument("--mmp-transform-library", type=str, default=None)
+    parser.add_argument("--mmp-max-pairs", type=int, default=80000)
+    parser.add_argument("--mmp-pairs-per-source", type=int, default=6)
+    parser.add_argument("--mmp-min-pair-similarity", type=float, default=0.25)
+    parser.add_argument("--mmp-max-pair-similarity", type=float, default=0.98)
+    parser.add_argument("--mmp-target-neighbors", type=int, default=384)
+    parser.add_argument("--mmp-delta-neighbors", type=int, default=256)
+    parser.add_argument("--mmp-source-neighbors", type=int, default=128)
+    parser.add_argument("--mmp-fragment-neighbors", type=int, default=12)
+    parser.add_argument("--mmp-attachment-limit", type=int, default=4)
+    parser.add_argument("--mmp-max-fragments", type=int, default=12000)
+    parser.add_argument("--mmp-max-fragment-atoms", type=int, default=8)
+    parser.add_argument("--mmp-exact-penalty", type=float, default=0.30)
+    parser.add_argument("--mmp-transform-bonus", type=float, default=0.10)
+    parser.add_argument("--mmp-fragment-bonus", type=float, default=0.16)
+    parser.add_argument("--mmp-prompt-match-bonus", type=float, default=2.5)
+    parser.add_argument("--mmp-prompt-miss-penalty", type=float, default=8.0)
     parser.add_argument("--embedding-dim", type=int, default=16)
     parser.add_argument("--contrastive-epochs", type=int, default=600)
     parser.add_argument("--contrastive-batch-size", type=int, default=512)
@@ -331,6 +359,8 @@ def _decode_generated(
     decoder_mode: str = "physics",
     retrieval_index: RetrievalCandidateIndex | None = None,
     retrieval_config: RetrievalDecoderConfig | None = None,
+    mmp_index: MMPTransformIndex | None = None,
+    mmp_config: MMPTransformConfig | None = None,
 ) -> pd.DataFrame:
     rows = []
     table_cols = [col for col in generated_df.columns if col not in {"condition_idx", "sample_idx"}]
@@ -346,6 +376,8 @@ def _decode_generated(
                 index=retrieval_index,
                 config=retrieval_config,
                 include_dynamic=dynamic_decoder,
+                mmp_index=mmp_index,
+                mmp_config=mmp_config,
             ),
             start=1,
         ):
@@ -365,7 +397,7 @@ def _decode_generated(
 
 
 def _build_retrieval_index(train_df: pd.DataFrame, args) -> RetrievalCandidateIndex | None:
-    if args.decoder_mode not in {"retrieval", "hybrid"}:
+    if args.decoder_mode not in {"retrieval", "hybrid", "hybrid_mmp"}:
         return None
     return RetrievalCandidateIndex.from_dataframe(train_df, max_candidates=args.retrieval_max_candidates)
 
@@ -379,6 +411,37 @@ def _retrieval_config(args) -> RetrievalDecoderConfig:
         edit_bonus=args.retrieval_edit_bonus,
         prompt_match_bonus=args.retrieval_prompt_match_bonus,
         prompt_miss_penalty=args.retrieval_prompt_miss_penalty,
+    )
+
+
+def _build_mmp_transform_index(train_df: pd.DataFrame, args, config: MMPTransformConfig) -> MMPTransformIndex | None:
+    if args.decoder_mode not in {"mmp", "hybrid_mmp"}:
+        return None
+    if args.mmp_transform_library:
+        path = Path(args.mmp_transform_library)
+        if path.exists():
+            return MMPTransformIndex.from_library_csv(path)
+    return MMPTransformIndex.from_dataframe(train_df, config=config)
+
+
+def _mmp_transform_config(args) -> MMPTransformConfig:
+    return MMPTransformConfig(
+        max_pairs=args.mmp_max_pairs,
+        pairs_per_source=args.mmp_pairs_per_source,
+        min_pair_similarity=args.mmp_min_pair_similarity,
+        max_pair_similarity=args.mmp_max_pair_similarity,
+        target_neighbors=args.mmp_target_neighbors,
+        delta_neighbors=args.mmp_delta_neighbors,
+        source_neighbors=args.mmp_source_neighbors,
+        fragment_neighbors=args.mmp_fragment_neighbors,
+        attachment_limit=args.mmp_attachment_limit,
+        max_fragments=args.mmp_max_fragments,
+        max_fragment_atoms=args.mmp_max_fragment_atoms,
+        exact_train_penalty=args.mmp_exact_penalty,
+        transform_bonus=args.mmp_transform_bonus,
+        fragment_bonus=args.mmp_fragment_bonus,
+        prompt_match_bonus=args.mmp_prompt_match_bonus,
+        prompt_miss_penalty=args.mmp_prompt_miss_penalty,
     )
 
 
@@ -508,6 +571,8 @@ def _summary(metrics: dict, args: argparse.Namespace) -> str:
         "train_size",
         "test_size",
         "retrieval_candidates",
+        "mmp_transform_pairs",
+        "mmp_transform_fragments",
         "n",
         "validity",
         "uniqueness",

@@ -238,9 +238,10 @@ bash scripts/run_sketchmol_structure_benchmark.sh
 它也会使用更大的 torch batch size 和 batched diffusion sampling；单属性 benchmark 默认是
 `125 conditions × 8 samples = 1000 molecules / target`，避免把 `1000` 误展开成
 `1000 conditions × 1000 samples`。
-默认 decoder 是 `hybrid`：保留原来的 physics/template decoder，同时增加真实训练分子检索和
-RDKit-valid MMP-style 局部编辑，再按目标性质、结构 prompt、druglike filter 重排。做 ablation 时可以设
-`PHYSTABMOL_DECODER_MODE=physics` 或 `PHYSTABMOL_DECODER_MODE=retrieval`。
+默认 decoder 是 `hybrid_mmp`：保留原来的 physics/template decoder 和真实分子检索，同时增加
+mined MMP/CReM-style transform library 与 RDKit-valid learned fragment growing，再按目标性质、
+structure prompt、druglike filter 重排。做 ablation 时可以设
+`PHYSTABMOL_DECODER_MODE=physics`、`retrieval`、`hybrid` 或 `hybrid_mmp`。
 如果需要改 run 名或样本数，可以用环境变量覆盖：
 
 ```bash
@@ -252,7 +253,7 @@ bash scripts/run_sketchmol_structure_benchmark.sh
 
 ```bash
 PHYSTABMOL_RUN_NAME=sketchmol_comparable_structure_v1 \
-PHYSTABMOL_DECODER_MODE=hybrid \
+PHYSTABMOL_DECODER_MODE=hybrid_mmp \
 PHYSTABMOL_PROPERTY_MASK_CONDITIONING=1 \
 PHYSTABMOL_RUN_SKETCHMOL_BENCHMARK=1 \
 PHYSTABMOL_RUN_STRUCTURE_PROMPT_BENCHMARK=1 \
@@ -264,6 +265,21 @@ PHYSTABMOL_BENCHMARK_OPTIMIZATION_CONDITIONS=100 \
 PHYSTABMOL_STRUCTURE_PROMPT_CONDITIONS=1000 \
 PHYSTABMOL_STRUCTURE_PROMPT_SAMPLES=8 \
 sbatch --time=20:00:00 scripts/run_phystabmol_gpu.slurm.sh
+```
+
+如果想把 MMP/CReM-style transform library 预先挖好，避免每个 run 里重新构建：
+
+```bash
+bash scripts/build_mmp_transform_library.sh
+
+PHYSTABMOL_MMP_TRANSFORM_LIBRARY=data/mmp_transform_library.csv \
+bash scripts/run_sketchmol_structure_benchmark.sh
+```
+
+decoder ablation 可以一次提交四组：
+
+```bash
+bash scripts/run_decoder_ablation.sh
 ```
 
 SketchMol 的 EP4/AKT1/ROCK1 activity 与 docking 实验需要额外的 activity predictor 和 docking workflow；当前框架先把属性约束、优化和 3D conformer 评估打通，activity/docking scorer 应作为下一步外部模块接入。
@@ -572,6 +588,8 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `experiment.py`：保存配置、模型、表格结果和指标的服务器实验入口。
 - `decoder.py`：具备物理先验的骨架与官能团模板解码器。
 - `retrieval_decoder.py`：真实分子库检索 + RDKit-valid MMP-style 局部编辑 + hybrid 重排 decoder。
+- `mmp_transform_decoder.py`：mined MMP pair transform + learned fragment grow/link decoder。
+- `mmp_transform_library.py`：离线构建可复用 MMP/CReM-style transform library。
 - `evaluate.py`：有效性、唯一性、新颖性、类药性、性质误差与多样性等指标。
 - `sketchmol_benchmark.py`：对齐 SketchMol 的单属性、多属性、OOD 与优化 benchmark。
 - `geometry3d.py`：RDKit-backed 3D conformer 与形状指标。

@@ -12,6 +12,7 @@ import pandas as pd
 from .dataset import arrays_from_dataframe
 from .evaluate import evaluate_smiles
 from .features import IMAGE_FEATURE_COLUMNS
+from .mmp_transform_decoder import MMPTransformConfig, MMPTransformIndex
 from .retrieval_decoder import RetrievalCandidateIndex, RetrievalDecoderConfig, decode_retrieval_table_row
 from .schema import TARGET_COLUMNS
 
@@ -84,6 +85,8 @@ def run_sketchmol_benchmark(
     config: SketchMolBenchmarkConfig,
     retrieval_index: RetrievalCandidateIndex | None = None,
     retrieval_config: RetrievalDecoderConfig | None = None,
+    mmp_index: MMPTransformIndex | None = None,
+    mmp_config: MMPTransformConfig | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -91,22 +94,46 @@ def run_sketchmol_benchmark(
     summary_parts = []
 
     decoded, summary = _single_property(
-        diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, "single_property", SINGLE_PROPERTY_TARGETS, retrieval_index, retrieval_config
+        diffusion,
+        train_df,
+        eval_df,
+        aligner,
+        args,
+        compose_conditions_fn,
+        config,
+        "single_property",
+        SINGLE_PROPERTY_TARGETS,
+        retrieval_index,
+        retrieval_config,
+        mmp_index,
+        mmp_config,
     )
     decoded_parts.append(decoded)
     summary_parts.append(summary)
 
     decoded, summary = _single_property(
-        diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, "ood_property", OOD_TARGETS, retrieval_index, retrieval_config
+        diffusion,
+        train_df,
+        eval_df,
+        aligner,
+        args,
+        compose_conditions_fn,
+        config,
+        "ood_property",
+        OOD_TARGETS,
+        retrieval_index,
+        retrieval_config,
+        mmp_index,
+        mmp_config,
     )
     decoded_parts.append(decoded)
     summary_parts.append(summary)
 
-    decoded, summary = _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config)
+    decoded, summary = _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config, mmp_index, mmp_config)
     decoded_parts.append(decoded)
     summary_parts.append(summary)
 
-    decoded, summary = _optimization(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config)
+    decoded, summary = _optimization(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config, mmp_index, mmp_config)
     decoded_parts.append(decoded)
     summary_parts.append(summary)
 
@@ -121,7 +148,21 @@ def run_sketchmol_benchmark(
     return all_decoded, all_summary
 
 
-def _single_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, task_name, targets_by_property, retrieval_index, retrieval_config):
+def _single_property(
+    diffusion,
+    train_df,
+    eval_df,
+    aligner,
+    args,
+    compose_conditions_fn,
+    config,
+    task_name,
+    targets_by_property,
+    retrieval_index,
+    retrieval_config,
+    mmp_index,
+    mmp_config,
+):
     decoded_rows = []
     summary_rows = []
     for prop, values in targets_by_property.items():
@@ -142,6 +183,8 @@ def _single_property(diffusion, train_df, eval_df, aligner, args, compose_condit
                 config.decode_top_k,
                 retrieval_index=retrieval_index,
                 retrieval_config=retrieval_config,
+                mmp_index=mmp_index,
+                mmp_config=mmp_config,
             )
             decoded["benchmark_task"] = task_name
             decoded["constraint_properties"] = prop
@@ -151,7 +194,7 @@ def _single_property(diffusion, train_df, eval_df, aligner, args, compose_condit
     return _concat(decoded_rows), pd.DataFrame(summary_rows)
 
 
-def _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config):
+def _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config, mmp_index, mmp_config):
     rng = np.random.default_rng(config.seed)
     props = list(SINGLE_PROPERTY_TARGETS)
     decoded_rows = []
@@ -174,6 +217,8 @@ def _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditi
             config.decode_top_k,
             retrieval_index=retrieval_index,
             retrieval_config=retrieval_config,
+            mmp_index=mmp_index,
+            mmp_config=mmp_config,
         )
         decoded["benchmark_task"] = "multi_property"
         decoded["constraint_properties"] = [",".join(selected_sets[int(row.condition_idx)]) for row in decoded.itertuples()]
@@ -186,7 +231,7 @@ def _multi_property(diffusion, train_df, eval_df, aligner, args, compose_conditi
     return _concat(decoded_rows), pd.DataFrame(summary_rows)
 
 
-def _optimization(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config):
+def _optimization(diffusion, train_df, eval_df, aligner, args, compose_conditions_fn, config, retrieval_index, retrieval_config, mmp_index, mmp_config):
     decoded_rows = []
     summary_rows = []
     for prop, delta in OPTIMIZATION_TASKS.items():
@@ -205,6 +250,8 @@ def _optimization(diffusion, train_df, eval_df, aligner, args, compose_condition
             config.decode_top_k,
             retrieval_index=retrieval_index,
             retrieval_config=retrieval_config,
+            mmp_index=mmp_index,
+            mmp_config=mmp_config,
         )
         decoded["benchmark_task"] = "property_optimization"
         decoded["constraint_properties"] = prop
@@ -235,6 +282,8 @@ def _generate_decode(
     top_k,
     retrieval_index: RetrievalCandidateIndex | None = None,
     retrieval_config: RetrievalDecoderConfig | None = None,
+    mmp_index: MMPTransformIndex | None = None,
+    mmp_config: MMPTransformConfig | None = None,
 ):
     image_x, _, base_condition_x, _ = arrays_from_dataframe(cond_df)
     conditions, _ = compose_conditions_fn(
@@ -265,6 +314,8 @@ def _generate_decode(
             index=retrieval_index,
             config=retrieval_config,
             include_dynamic=bool(getattr(args, "dynamic_decoder", False)),
+            mmp_index=mmp_index,
+            mmp_config=mmp_config,
         )
         for rank, candidate in enumerate(candidates, start=1):
             out = {

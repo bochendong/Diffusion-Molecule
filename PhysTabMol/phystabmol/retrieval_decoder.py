@@ -29,6 +29,7 @@ else:
 from . import chem as chem_mod
 from .chem import canonicalize_smiles, molecular_descriptors, passes_druglike_filters, tanimoto
 from .decoder import DRUGLIKE_SOFT_PENALTY, DecodedCandidate, decode_table_row
+from .mmp_transform_decoder import MMPTransformConfig, MMPTransformIndex, decode_mmp_table_row
 from .schema import INTEGER_COLUMNS, TABLE_COLUMNS, TARGET_COLUMNS
 
 
@@ -175,12 +176,25 @@ def decode_retrieval_table_row(
     config: RetrievalDecoderConfig | None = None,
     include_dynamic: bool = True,
     prompt_smiles: str | None = None,
+    mmp_index: MMPTransformIndex | None = None,
+    mmp_config: MMPTransformConfig | None = None,
 ) -> list[DecodedCandidate]:
     config = config or RetrievalDecoderConfig()
     candidates: list[DecodedCandidate] = []
-    if mode in {"retrieval", "hybrid"} and index is not None:
+    if mode in {"mmp", "hybrid_mmp"} and mmp_index is not None:
+        candidates.extend(
+            decode_mmp_table_row(
+                row,
+                top_k=max(top_k * 8, (mmp_config or MMPTransformConfig()).target_neighbors // 4),
+                seed=seed,
+                index=mmp_index,
+                config=mmp_config,
+                prompt_smiles=prompt_smiles,
+            )
+        )
+    if mode in {"retrieval", "hybrid", "hybrid_mmp"} and index is not None:
         candidates.extend(index.decode(row, top_k=max(top_k * 8, config.neighbors // 4), seed=seed, config=config, prompt_smiles=prompt_smiles))
-    if mode in {"physics", "hybrid"}:
+    if mode in {"physics", "hybrid", "hybrid_mmp"}:
         candidates.extend(decode_table_row(row, top_k=max(top_k * 8, top_k), seed=seed, include_dynamic=include_dynamic))
     if not candidates:
         candidates.extend(decode_table_row(row, top_k=top_k, seed=seed, include_dynamic=include_dynamic))
