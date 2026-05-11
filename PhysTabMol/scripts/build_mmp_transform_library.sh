@@ -8,8 +8,16 @@ set -euo pipefail
 
 PHYSTABMOL_ROOT="${PHYSTABMOL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$PHYSTABMOL_ROOT"
-# shellcheck source=/dev/null
-source "$PHYSTABMOL_ROOT/scripts/ensure_phystabmol_venv.sh"
+if command -v module >/dev/null 2>&1 && [[ "${PHYSTABMOL_USE_MODULE_ENV:-1}" == "1" ]]; then
+  # Compute Canada/Nibi path: load Python/RDKit modules before activating the venv.
+  # shellcheck source=/dev/null
+  source "$PHYSTABMOL_ROOT/scripts/env_module_venv.sh"
+else
+  # Local fallback for machines without environment modules.
+  # shellcheck source=/dev/null
+  source "$PHYSTABMOL_ROOT/scripts/ensure_phystabmol_venv.sh"
+fi
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 DATA="${PHYSTABMOL_DATA:-data/molecules.csv}"
 OUT="${PHYSTABMOL_MMP_TRANSFORM_LIBRARY:-data/mmp_transform_library.csv}"
@@ -26,7 +34,14 @@ if [[ ! -s "$DATA" ]]; then
   PHYSTABMOL_OUT="$DATA" bash scripts/download_chembl_100k.sh --rdkit-filter
 fi
 
-python3 -m phystabmol.mmp_transform_library \
+"$PYTHON_BIN" - <<'PY'
+from phystabmol import chem
+print(f"rdkit_available={chem.RDKIT_AVAILABLE}")
+if not chem.RDKIT_AVAILABLE:
+    raise SystemExit("RDKit is required to mine fragment rows; source the module/venv environment first.")
+PY
+
+"$PYTHON_BIN" -m phystabmol.mmp_transform_library \
   --data "$DATA" \
   --out "$OUT" \
   --limit "$LIMIT" \
@@ -36,5 +51,16 @@ python3 -m phystabmol.mmp_transform_library \
   --max-pair-similarity "$MAX_SIM" \
   --max-fragments "$MAX_FRAGMENTS" \
   --max-fragment-atoms "$MAX_FRAGMENT_ATOMS"
+
+if [[ "${PHYSTABMOL_REQUIRE_MMP_FRAGMENTS:-1}" == "1" ]]; then
+  if ! awk -F',' 'NR > 1 && $1 == "fragment" { found = 1; exit } END { exit found ? 0 : 1 }' "$OUT"; then
+    cat <<EOF
+No fragment rows were written to $OUT.
+This benchmark needs fragment rows to avoid pair-only retrieval.
+Try increasing PHYSTABMOL_MMP_MAX_FRAGMENT_ATOMS, or send this output back for debugging.
+EOF
+    exit 2
+  fi
+fi
 
 echo "MMP transform library written to $OUT"
