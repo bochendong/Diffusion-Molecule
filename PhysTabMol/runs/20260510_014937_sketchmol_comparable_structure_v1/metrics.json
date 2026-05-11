@@ -1,0 +1,12 @@
+{
+  "decoder_mode": "hybrid_mmp",
+  "mmp_transform_fragments": 0.0,
+  "mmp_transform_pairs": 80000.0,
+  "postprocess_run_dir": "runs/20260510_014937_sketchmol_comparable_structure_v1",
+  "postprocess_structure_prompt": true,
+  "retrieval_candidates": 95000.0,
+  "sketchmol_benchmark_mean_success": 0.6236551724137932,
+  "sketchmol_benchmark_mean_success_sketchmol_tolerance": 0.7515,
+  "structure_prompt_mean_joint_success_sketchmol_tolerance": 0.5215442799751874,
+  "structure_prompt_mean_joint_success_strict": 0.29598968409075066
+}
