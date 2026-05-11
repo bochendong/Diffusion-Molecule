@@ -40,6 +40,16 @@ LOCAL_OPTIMIZATION_TASKS = {
     "QED": 0.3,
     "TPSA": -45.0,
 }
+DIRECT_TRAIN_DECODER_SOURCES = {
+    "retrieval_train_pool_decoder",
+    "mmp_transform_target_decoder",
+}
+SOURCE_AWARE_EDIT_DECODER_SOURCES = {
+    "mmp_learned_fragment_grow_decoder",
+    "retrieval_mmp_edit_decoder",
+    "structure_prompt_assembly_decoder",
+    "physics_aware_dynamic_decoder",
+}
 
 
 @dataclass
@@ -92,6 +102,7 @@ def run_structure_prompt_benchmark(
             mmp_index=mmp_index,
             mmp_config=mmp_config,
         )
+        decoded = _annotate_train_overlap(decoded, train_df)
         decoded_parts.append(decoded)
         summary_parts.append(_summarize(decoded, train_df, task_name))
 
@@ -418,8 +429,11 @@ def _summarize(decoded: pd.DataFrame, train_df: pd.DataFrame, task_name: str) ->
     if decoded.empty:
         return pd.DataFrame()
     rows = []
+    train_smiles = _canonical_smiles_set(train_df["smiles"].dropna().astype(str).tolist())
     for label, frame in decoded.groupby("benchmark_task", dropna=False):
-        metrics = evaluate_smiles(frame["smiles"].dropna().astype(str).tolist(), train_smiles=train_df["smiles"].astype(str).tolist())
+        metrics = evaluate_smiles(frame["smiles"].dropna().astype(str).tolist(), train_smiles=list(train_smiles))
+        source_series = frame["candidate_source"].astype(str) if "candidate_source" in frame else pd.Series([], dtype=str)
+        sampled_train_overlap = _sampled_train_overlap_metrics(frame["smiles"].dropna().astype(str).tolist(), train_smiles)
         row = {
             "benchmark_task": task_name,
             "benchmark_label": str(label),
@@ -431,10 +445,77 @@ def _summarize(decoded: pd.DataFrame, train_df: pd.DataFrame, task_name: str) ->
             "fragment_growth_success_rate": _mean_bool(frame["fragment_growth_success"]),
             "optimization_delta_success_rate": _mean_bool(frame["optimization_delta_success"]),
             "prompt_candidate_similarity": float(frame["prompt_candidate_similarity"].mean()) if "prompt_candidate_similarity" in frame else 0.0,
+            "exact_train_hit_rate": _mean_bool(frame["exact_train_hit"]) if "exact_train_hit" in frame else 0.0,
+            "direct_train_decoder_fraction": float(source_series.isin(DIRECT_TRAIN_DECODER_SOURCES).mean()) if len(source_series) else 0.0,
+            "source_aware_edit_decoder_fraction": float(source_series.isin(SOURCE_AWARE_EDIT_DECODER_SOURCES).mean()) if len(source_series) else 0.0,
+            "mmp_target_decoder_fraction": float((source_series == "mmp_transform_target_decoder").mean()) if len(source_series) else 0.0,
+            "mmp_fragment_decoder_fraction": float((source_series == "mmp_learned_fragment_grow_decoder").mean()) if len(source_series) else 0.0,
         }
         row.update(metrics)
+        row.update(sampled_train_overlap)
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def _annotate_train_overlap(decoded: pd.DataFrame, train_df: pd.DataFrame) -> pd.DataFrame:
+    if decoded.empty or "smiles" not in decoded:
+        return decoded
+    train_smiles = _canonical_smiles_set(train_df["smiles"].dropna().astype(str).tolist())
+    out = decoded.copy()
+    canonical = []
+    exact = []
+    for smiles in out["smiles"].fillna("").astype(str):
+        can = canonicalize_smiles(smiles)
+        canonical.append(can or "")
+        exact.append(bool(can and can in train_smiles))
+    out["canonical_smiles"] = canonical
+    out["exact_train_hit"] = exact
+    out["direct_train_decoder"] = out["candidate_source"].astype(str).isin(DIRECT_TRAIN_DECODER_SOURCES) if "candidate_source" in out else False
+    out["source_aware_edit_decoder"] = out["candidate_source"].astype(str).isin(SOURCE_AWARE_EDIT_DECODER_SOURCES) if "candidate_source" in out else False
+    return out
+
+
+def _canonical_smiles_set(smiles: list[str]) -> set[str]:
+    out = set()
+    for smi in smiles:
+        can = canonicalize_smiles(str(smi))
+        if can:
+            out.add(can)
+    return out
+
+
+def _sampled_train_overlap_metrics(candidate_smiles: list[str], train_smiles: set[str], max_candidates: int = 256, max_train: int = 1024) -> dict[str, float]:
+    candidate_set = set()
+    for smi in candidate_smiles:
+        can = canonicalize_smiles(smi)
+        if can:
+            candidate_set.add(can)
+    candidates = sorted(candidate_set)
+    train = sorted(train_smiles)
+    if not candidates or not train:
+        return {
+            "sampled_nearest_train_tanimoto": 0.0,
+            "sampled_nearest_train_tanimoto_ge_0_90": 0.0,
+            "sampled_novelty_at_tanimoto_0_90": 0.0,
+        }
+    rng = np.random.default_rng(23)
+    if len(candidates) > max_candidates:
+        candidates = [candidates[int(i)] for i in rng.choice(len(candidates), size=max_candidates, replace=False)]
+    if len(train) > max_train:
+        train = [train[int(i)] for i in rng.choice(len(train), size=max_train, replace=False)]
+    nearest = []
+    for candidate in candidates:
+        if candidate in train_smiles:
+            nearest.append(1.0)
+            continue
+        sims = [tanimoto(candidate, train_smi) for train_smi in train if train_smi != candidate]
+        nearest.append(max(sims) if sims else 1.0)
+    ge_090 = float(np.mean([sim >= 0.90 for sim in nearest])) if nearest else 0.0
+    return {
+        "sampled_nearest_train_tanimoto": float(np.mean(nearest)) if nearest else 0.0,
+        "sampled_nearest_train_tanimoto_ge_0_90": ge_090,
+        "sampled_novelty_at_tanimoto_0_90": float(1.0 - ge_090),
+    }
 
 
 def scaffold_prompt(smiles: str) -> str | None:

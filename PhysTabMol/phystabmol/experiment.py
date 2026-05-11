@@ -192,6 +192,15 @@ def main() -> None:
             metrics["structure_prompt_mean_joint_success_sketchmol_tolerance"] = float(
                 structure_summary["joint_success_sketchmol_tolerance"].dropna().mean()
             )
+            for col in [
+                "exact_train_hit_rate",
+                "direct_train_decoder_fraction",
+                "source_aware_edit_decoder_fraction",
+                "sampled_nearest_train_tanimoto",
+                "sampled_novelty_at_tanimoto_0_90",
+            ]:
+                if col in structure_summary:
+                    metrics[f"structure_prompt_mean_{col}"] = float(structure_summary[col].dropna().mean())
     save_json(metrics, run_dir / "metrics.json")
     save_text(_summary(metrics, args), run_dir / "summary.txt")
     save_json(_environment(), run_dir / "environment.json")
@@ -242,6 +251,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mmp-exact-penalty", type=float, default=0.30)
     parser.add_argument("--mmp-transform-bonus", type=float, default=0.10)
     parser.add_argument("--mmp-fragment-bonus", type=float, default=0.16)
+    parser.add_argument("--mmp-fragment-exact-penalty", type=float, default=0.18)
     parser.add_argument("--mmp-prompt-match-bonus", type=float, default=2.5)
     parser.add_argument("--mmp-prompt-miss-penalty", type=float, default=8.0)
     parser.add_argument("--embedding-dim", type=int, default=16)
@@ -440,6 +450,7 @@ def _mmp_transform_config(args) -> MMPTransformConfig:
         exact_train_penalty=args.mmp_exact_penalty,
         transform_bonus=args.mmp_transform_bonus,
         fragment_bonus=args.mmp_fragment_bonus,
+        fragment_exact_penalty=args.mmp_fragment_exact_penalty,
         prompt_match_bonus=args.mmp_prompt_match_bonus,
         prompt_miss_penalty=args.mmp_prompt_miss_penalty,
     )

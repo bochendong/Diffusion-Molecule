@@ -19,6 +19,9 @@ export PHYSTABMOL_RETRIEVAL_EXACT_PENALTY="${PHYSTABMOL_RETRIEVAL_EXACT_PENALTY:
 export PHYSTABMOL_RETRIEVAL_EDIT_BONUS="${PHYSTABMOL_RETRIEVAL_EDIT_BONUS:-0.15}"
 export PHYSTABMOL_MMP_MAX_PAIRS="${PHYSTABMOL_MMP_MAX_PAIRS:-80000}"
 export PHYSTABMOL_MMP_FRAGMENT_NEIGHBORS="${PHYSTABMOL_MMP_FRAGMENT_NEIGHBORS:-12}"
+export PHYSTABMOL_MMP_EXACT_PENALTY="${PHYSTABMOL_MMP_EXACT_PENALTY:-0.75}"
+export PHYSTABMOL_MMP_FRAGMENT_BONUS="${PHYSTABMOL_MMP_FRAGMENT_BONUS:-0.24}"
+export PHYSTABMOL_MMP_FRAGMENT_EXACT_PENALTY="${PHYSTABMOL_MMP_FRAGMENT_EXACT_PENALTY:-0.30}"
 export PHYSTABMOL_PROPERTY_MASK_CONDITIONING="${PHYSTABMOL_PROPERTY_MASK_CONDITIONING:-1}"
 export PHYSTABMOL_RUN_SKETCHMOL_BENCHMARK="${PHYSTABMOL_RUN_SKETCHMOL_BENCHMARK:-1}"
 export PHYSTABMOL_RUN_STRUCTURE_PROMPT_BENCHMARK="${PHYSTABMOL_RUN_STRUCTURE_PROMPT_BENCHMARK:-1}"
@@ -41,6 +44,20 @@ if ! command -v sbatch >/dev/null 2>&1; then
   exit 127
 fi
 
+if [[ -s data/mmp_transform_library.csv ]] && [[ "${PHYSTABMOL_ALLOW_FRAGMENTLESS_LIBRARY:-0}" != "1" ]]; then
+  if ! awk -F',' 'NR > 1 && $1 == "fragment" { found = 1; exit } END { exit found ? 0 : 1 }' data/mmp_transform_library.csv; then
+    cat <<'EOF'
+Existing data/mmp_transform_library.csv has no fragment rows.
+Rebuild it before submitting the publication benchmark:
+  bash scripts/build_mmp_transform_library.sh
+
+To intentionally run the old pair-only library, set:
+  PHYSTABMOL_ALLOW_FRAGMENTLESS_LIBRARY=1
+EOF
+    exit 2
+  fi
+fi
+
 cat <<EOF
 Submitting PhysTabMol SketchMol-comparable structure benchmark:
   run_name=$PHYSTABMOL_RUN_NAME
@@ -49,6 +66,8 @@ Submitting PhysTabMol SketchMol-comparable structure benchmark:
   retrieval_edit_bonus=$PHYSTABMOL_RETRIEVAL_EDIT_BONUS
   mmp_max_pairs=$PHYSTABMOL_MMP_MAX_PAIRS
   mmp_fragment_neighbors=$PHYSTABMOL_MMP_FRAGMENT_NEIGHBORS
+  mmp_exact_penalty=$PHYSTABMOL_MMP_EXACT_PENALTY
+  mmp_fragment_bonus=$PHYSTABMOL_MMP_FRAGMENT_BONUS
   property_mask_conditioning=$PHYSTABMOL_PROPERTY_MASK_CONDITIONING
   sketchmol_benchmark=$PHYSTABMOL_RUN_SKETCHMOL_BENCHMARK
   structure_prompt_benchmark=$PHYSTABMOL_RUN_STRUCTURE_PROMPT_BENCHMARK

@@ -69,6 +69,15 @@ def main() -> None:
         metrics["structure_prompt_mean_joint_success_sketchmol_tolerance"] = float(
             structure_summary["joint_success_sketchmol_tolerance"].dropna().mean()
         )
+        for col in [
+            "exact_train_hit_rate",
+            "direct_train_decoder_fraction",
+            "source_aware_edit_decoder_fraction",
+            "sampled_nearest_train_tanimoto",
+            "sampled_novelty_at_tanimoto_0_90",
+        ]:
+            if col in structure_summary:
+                metrics[f"structure_prompt_mean_{col}"] = float(structure_summary[col].dropna().mean())
     metrics.update(
         {
             "postprocess_structure_prompt": True,
@@ -120,6 +129,7 @@ def _apply_overrides(args: Namespace, cli: argparse.Namespace) -> None:
         "mmp_exact_penalty": 0.30,
         "mmp_transform_bonus": 0.10,
         "mmp_fragment_bonus": 0.16,
+        "mmp_fragment_exact_penalty": 0.18,
         "mmp_prompt_match_bonus": 2.5,
         "mmp_prompt_miss_penalty": 8.0,
     }
@@ -176,6 +186,9 @@ def _summary(metrics: dict, run_dir: Path) -> str:
         "sketchmol_benchmark_mean_success_sketchmol_tolerance",
         "structure_prompt_mean_joint_success_strict",
         "structure_prompt_mean_joint_success_sketchmol_tolerance",
+        "structure_prompt_mean_exact_train_hit_rate",
+        "structure_prompt_mean_direct_train_decoder_fraction",
+        "structure_prompt_mean_sampled_novelty_at_tanimoto_0_90",
     ]
     lines = ["PhysTabMol structure-prompt postprocess complete", f"run_dir={run_dir}"]
     for key in keys:

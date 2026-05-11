@@ -85,6 +85,7 @@ class MMPTransformConfig:
     fragment_bonus: float = 0.16
     prompt_match_bonus: float = 2.5
     prompt_miss_penalty: float = 8.0
+    fragment_exact_penalty: float = 0.18
 
 
 @dataclass(frozen=True)
@@ -254,6 +255,8 @@ class MMPTransformIndex:
                 score = _candidate_score(table_row, rec.descriptors, rec.smiles, seed, config, prompt_smiles=prompt_smiles, train_smiles=self.train_smiles)
                 score -= config.fragment_bonus
                 score -= min(0.10, 0.01 * np.log1p(fragment.frequency))
+                if rec.smiles in self.train_smiles:
+                    score += config.fragment_exact_penalty
                 out.append(
                     DecodedCandidate(
                         smiles=rec.smiles,
@@ -366,7 +369,10 @@ def mine_fragments(records: list[dict[str, Any]], config: MMPTransformConfig) ->
     for record in records:
         if len(counts) >= config.max_fragments * 3:
             break
-        for fragment_smiles, delta, n_heavy in _extract_attachable_fragments(record["smiles"], config.max_fragment_atoms):
+        fragments = []
+        fragments.extend(_extract_attachable_fragments(record["smiles"], config.max_fragment_atoms))
+        fragments.extend(_extract_brics_fragments(record["smiles"], config.max_fragment_atoms))
+        for fragment_smiles, delta, n_heavy in fragments:
             counts[fragment_smiles] += 1
             approx[fragment_smiles] = delta
             heavy[fragment_smiles] = n_heavy
@@ -410,18 +416,61 @@ def _extract_attachable_fragments(smiles: str, max_fragment_atoms: int) -> list[
             continue
         try:
             fragmented = chem_mod.Chem.FragmentOnBonds(mol, [bond.GetIdx()], addDummies=True, dummyLabels=[(1, 1)])
-            for frag in chem_mod.Chem.GetMolFrags(fragmented, asMols=True, sanitizeFrags=True):
-                dummy_atoms = [atom for atom in frag.GetAtoms() if atom.GetAtomicNum() == 0]
-                if len(dummy_atoms) != 1:
-                    continue
-                heavy_atoms = sum(1 for atom in frag.GetAtoms() if atom.GetAtomicNum() > 1)
-                if heavy_atoms < 1 or heavy_atoms > max_fragment_atoms:
-                    continue
-                smi = chem_mod.Chem.MolToSmiles(frag, canonical=True)
-                out.append((smi, _fragment_approx_delta(frag), heavy_atoms))
+            for frag in chem_mod.Chem.GetMolFrags(fragmented, asMols=True, sanitizeFrags=False):
+                normalized = _normalize_attachable_fragment(frag, max_fragment_atoms)
+                if normalized is not None:
+                    out.append(normalized)
         except Exception:
             continue
     return out
+
+
+def _extract_brics_fragments(smiles: str, max_fragment_atoms: int) -> list[tuple[str, np.ndarray, int]]:
+    """Mine BRICS leaf fragments with a single attachment dummy.
+
+    The single-bond cutter above can be too brittle on server RDKit builds when
+    sanitized dummy fragments fail. BRICS gives chemically meaningful leaves and
+    usually produces fragments such as ``[16*]c1ccccc1`` that our attachment
+    code can graft onto a prompt scaffold.
+    """
+
+    try:
+        from rdkit.Chem import BRICS
+    except Exception:  # pragma: no cover - depends on RDKit extras.
+        return []
+    mol = chem_mod.Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return []
+    out = []
+    try:
+        fragments = BRICS.BRICSDecompose(mol, returnMols=True)
+    except Exception:
+        return []
+    for frag in fragments:
+        normalized = _normalize_attachable_fragment(frag, max_fragment_atoms)
+        if normalized is not None:
+            out.append(normalized)
+    return out
+
+
+def _normalize_attachable_fragment(fragment_mol, max_fragment_atoms: int) -> tuple[str, np.ndarray, int] | None:
+    dummy_atoms = [atom for atom in fragment_mol.GetAtoms() if atom.GetAtomicNum() == 0]
+    if len(dummy_atoms) != 1:
+        return None
+    dummy_neighbors = list(dummy_atoms[0].GetNeighbors())
+    if len(dummy_neighbors) != 1:
+        return None
+    heavy_atoms = sum(1 for atom in fragment_mol.GetAtoms() if atom.GetAtomicNum() > 1)
+    if heavy_atoms < 1 or heavy_atoms > max_fragment_atoms:
+        return None
+    try:
+        smi = chem_mod.Chem.MolToSmiles(fragment_mol, canonical=True)
+        parsed = chem_mod.Chem.MolFromSmiles(smi, sanitize=False)
+        if parsed is None:
+            return None
+        return smi, _fragment_approx_delta(fragment_mol), heavy_atoms
+    except Exception:
+        return None
 
 
 def _fragment_approx_delta(fragment_mol) -> np.ndarray:
