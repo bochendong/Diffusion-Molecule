@@ -196,6 +196,8 @@ def main() -> None:
                 "exact_train_hit_rate",
                 "direct_train_decoder_fraction",
                 "source_aware_edit_decoder_fraction",
+                "mmp_fragment_decoder_fraction",
+                "mmp_two_step_fragment_decoder_fraction",
                 "sampled_nearest_train_tanimoto",
                 "sampled_novelty_at_tanimoto_0_90",
             ]:
@@ -252,6 +254,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--mmp-transform-bonus", type=float, default=0.10)
     parser.add_argument("--mmp-fragment-bonus", type=float, default=0.16)
     parser.add_argument("--mmp-fragment-exact-penalty", type=float, default=0.18)
+    parser.add_argument("--mmp-fragment-growth-steps", type=int, default=2)
+    parser.add_argument("--mmp-fragment-growth-beam-size", type=int, default=12)
+    parser.add_argument("--mmp-fragment-second-step-neighbors", type=int, default=6)
+    parser.add_argument("--mmp-fragment-growth-mw-gap", type=float, default=25.0)
     parser.add_argument("--mmp-prompt-match-bonus", type=float, default=2.5)
     parser.add_argument("--mmp-prompt-miss-penalty", type=float, default=8.0)
     parser.add_argument("--embedding-dim", type=int, default=16)
@@ -451,6 +457,10 @@ def _mmp_transform_config(args) -> MMPTransformConfig:
         transform_bonus=args.mmp_transform_bonus,
         fragment_bonus=args.mmp_fragment_bonus,
         fragment_exact_penalty=args.mmp_fragment_exact_penalty,
+        fragment_growth_steps=args.mmp_fragment_growth_steps,
+        fragment_growth_beam_size=args.mmp_fragment_growth_beam_size,
+        fragment_second_step_neighbors=args.mmp_fragment_second_step_neighbors,
+        fragment_growth_mw_gap=args.mmp_fragment_growth_mw_gap,
         prompt_match_bonus=args.mmp_prompt_match_bonus,
         prompt_miss_penalty=args.mmp_prompt_miss_penalty,
     )
@@ -596,6 +606,9 @@ def _summary(metrics: dict, args: argparse.Namespace) -> str:
         "TPSA_mae",
         "sketchmol_benchmark_mean_success_sketchmol_tolerance",
         "structure_prompt_mean_joint_success_sketchmol_tolerance",
+        "structure_prompt_mean_exact_train_hit_rate",
+        "structure_prompt_mean_mmp_two_step_fragment_decoder_fraction",
+        "structure_prompt_mean_sampled_novelty_at_tanimoto_0_90",
     ]
     lines = [
         "PhysTabMol experiment complete",

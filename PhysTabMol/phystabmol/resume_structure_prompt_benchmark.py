@@ -73,6 +73,8 @@ def main() -> None:
             "exact_train_hit_rate",
             "direct_train_decoder_fraction",
             "source_aware_edit_decoder_fraction",
+            "mmp_fragment_decoder_fraction",
+            "mmp_two_step_fragment_decoder_fraction",
             "sampled_nearest_train_tanimoto",
             "sampled_novelty_at_tanimoto_0_90",
         ]:
@@ -130,6 +132,10 @@ def _apply_overrides(args: Namespace, cli: argparse.Namespace) -> None:
         "mmp_transform_bonus": 0.10,
         "mmp_fragment_bonus": 0.16,
         "mmp_fragment_exact_penalty": 0.18,
+        "mmp_fragment_growth_steps": 2,
+        "mmp_fragment_growth_beam_size": 12,
+        "mmp_fragment_second_step_neighbors": 6,
+        "mmp_fragment_growth_mw_gap": 25.0,
         "mmp_prompt_match_bonus": 2.5,
         "mmp_prompt_miss_penalty": 8.0,
     }
@@ -188,6 +194,7 @@ def _summary(metrics: dict, run_dir: Path) -> str:
         "structure_prompt_mean_joint_success_sketchmol_tolerance",
         "structure_prompt_mean_exact_train_hit_rate",
         "structure_prompt_mean_direct_train_decoder_fraction",
+        "structure_prompt_mean_mmp_two_step_fragment_decoder_fraction",
         "structure_prompt_mean_sampled_novelty_at_tanimoto_0_90",
     ]
     lines = ["PhysTabMol structure-prompt postprocess complete", f"run_dir={run_dir}"]

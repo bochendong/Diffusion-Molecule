@@ -86,6 +86,10 @@ class MMPTransformConfig:
     prompt_match_bonus: float = 2.5
     prompt_miss_penalty: float = 8.0
     fragment_exact_penalty: float = 0.18
+    fragment_growth_steps: int = 2
+    fragment_growth_beam_size: int = 12
+    fragment_second_step_neighbors: int = 6
+    fragment_growth_mw_gap: float = 25.0
 
 
 @dataclass(frozen=True)
@@ -249,24 +253,94 @@ class MMPTransformIndex:
         for idx in indices:
             fragment = self.fragments[int(idx)]
             for smi in _attach_fragment_cached(prompt_smiles, fragment.fragment_smiles, config.attachment_limit):
-                rec = molecular_descriptors(smi)
-                if not rec.valid:
-                    continue
-                score = _candidate_score(table_row, rec.descriptors, rec.smiles, seed, config, prompt_smiles=prompt_smiles, train_smiles=self.train_smiles)
-                score -= config.fragment_bonus
-                score -= min(0.10, 0.01 * np.log1p(fragment.frequency))
-                if rec.smiles in self.train_smiles:
-                    score += config.fragment_exact_penalty
-                out.append(
-                    DecodedCandidate(
-                        smiles=rec.smiles,
-                        score=score,
-                        valid=True,
-                        descriptors=rec.descriptors,
-                        source="mmp_learned_fragment_grow_decoder",
-                    )
+                candidate = self._fragment_candidate(
+                    table_row=table_row,
+                    smiles=smi,
+                    seed=seed,
+                    config=config,
+                    prompt_smiles=prompt_smiles,
+                    fragment=fragment,
+                    source="mmp_learned_fragment_grow_decoder",
                 )
+                if candidate is not None:
+                    out.append(candidate)
+        if config.fragment_growth_steps >= 2:
+            out.extend(self._decode_second_step_fragments(table_row, out, prompt_smiles, seed, config))
         return out
+
+    def _decode_second_step_fragments(
+        self,
+        table_row: dict[str, float],
+        first_step: list[DecodedCandidate],
+        prompt_smiles: str,
+        seed: int,
+        config: MMPTransformConfig,
+    ) -> list[DecodedCandidate]:
+        if not first_step or not self.fragments:
+            return []
+        target_mw = float(table_row.get("MW", 0.0))
+        seeds = [
+            candidate
+            for candidate in sorted(first_step, key=lambda item: item.score)[: max(1, config.fragment_growth_beam_size)]
+            if target_mw - float(candidate.descriptors.get("MW", 0.0)) >= config.fragment_growth_mw_gap
+        ]
+        out = []
+        for beam_idx, base in enumerate(seeds):
+            remaining_delta = _table_vector(table_row) - _descriptor_vector(base.descriptors)
+            indices = _nearest_indices(
+                self.fragment_delta_x / TABLE_SCALES,
+                self.fragment_nn,
+                remaining_delta / TABLE_SCALES,
+                min(config.fragment_second_step_neighbors, len(self.fragments)),
+            )
+            for idx in indices:
+                fragment = self.fragments[int(idx)]
+                for smi in _attach_fragment_cached(base.smiles, fragment.fragment_smiles, max(1, config.attachment_limit - 1)):
+                    candidate = self._fragment_candidate(
+                        table_row=table_row,
+                        smiles=smi,
+                        seed=seed + 10007 + beam_idx,
+                        config=config,
+                        prompt_smiles=prompt_smiles,
+                        fragment=fragment,
+                        source="mmp_two_step_fragment_grow_decoder",
+                    )
+                    if candidate is not None:
+                        candidate = DecodedCandidate(
+                            smiles=candidate.smiles,
+                            score=candidate.score + 0.03,
+                            valid=candidate.valid,
+                            descriptors=candidate.descriptors,
+                            source=candidate.source,
+                        )
+                        out.append(candidate)
+        return out
+
+    def _fragment_candidate(
+        self,
+        table_row: dict[str, float],
+        smiles: str,
+        seed: int,
+        config: MMPTransformConfig,
+        prompt_smiles: str,
+        fragment: MMPFragment,
+        source: str,
+    ) -> DecodedCandidate | None:
+        rec = molecular_descriptors(smiles)
+        if not rec.valid:
+            return None
+        score = _candidate_score(table_row, rec.descriptors, rec.smiles, seed, config, prompt_smiles=prompt_smiles, train_smiles=self.train_smiles)
+        score -= config.fragment_bonus
+        score -= min(0.10, 0.01 * np.log1p(fragment.frequency))
+        if rec.smiles in self.train_smiles:
+            score += config.fragment_exact_penalty
+        return DecodedCandidate(
+            smiles=rec.smiles,
+            score=score,
+            valid=True,
+            descriptors=rec.descriptors,
+            source=source,
+        )
 
 
 def decode_mmp_table_row(

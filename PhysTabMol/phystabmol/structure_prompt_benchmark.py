@@ -46,6 +46,7 @@ DIRECT_TRAIN_DECODER_SOURCES = {
 }
 SOURCE_AWARE_EDIT_DECODER_SOURCES = {
     "mmp_learned_fragment_grow_decoder",
+    "mmp_two_step_fragment_grow_decoder",
     "retrieval_mmp_edit_decoder",
     "structure_prompt_assembly_decoder",
     "physics_aware_dynamic_decoder",
@@ -473,7 +474,12 @@ def _summarize(decoded: pd.DataFrame, train_df: pd.DataFrame, task_name: str) ->
             "direct_train_decoder_fraction": float(source_series.isin(DIRECT_TRAIN_DECODER_SOURCES).mean()) if len(source_series) else 0.0,
             "source_aware_edit_decoder_fraction": float(source_series.isin(SOURCE_AWARE_EDIT_DECODER_SOURCES).mean()) if len(source_series) else 0.0,
             "mmp_target_decoder_fraction": float((source_series == "mmp_transform_target_decoder").mean()) if len(source_series) else 0.0,
-            "mmp_fragment_decoder_fraction": float((source_series == "mmp_learned_fragment_grow_decoder").mean()) if len(source_series) else 0.0,
+            "mmp_fragment_decoder_fraction": float(
+                source_series.isin({"mmp_learned_fragment_grow_decoder", "mmp_two_step_fragment_grow_decoder"}).mean()
+            )
+            if len(source_series)
+            else 0.0,
+            "mmp_two_step_fragment_decoder_fraction": float((source_series == "mmp_two_step_fragment_grow_decoder").mean()) if len(source_series) else 0.0,
         }
         row.update(metrics)
         row.update(sampled_train_overlap)
@@ -659,6 +665,9 @@ def _light_mmp_config(config: MMPTransformConfig | None) -> MMPTransformConfig |
         source_neighbors=min(config.source_neighbors, 64),
         fragment_neighbors=min(config.fragment_neighbors, 16),
         attachment_limit=min(config.attachment_limit, 3),
+        fragment_growth_steps=min(config.fragment_growth_steps, 2),
+        fragment_growth_beam_size=min(config.fragment_growth_beam_size, 12),
+        fragment_second_step_neighbors=min(config.fragment_second_step_neighbors, 6),
         prompt_match_bonus=max(config.prompt_match_bonus, 3.0),
         prompt_miss_penalty=max(config.prompt_miss_penalty, 10.0),
     )
