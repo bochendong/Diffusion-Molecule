@@ -304,6 +304,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--structure-prompt-conditions", type=int, default=200)
     parser.add_argument("--structure-prompt-samples", type=int, default=8)
     parser.add_argument("--structure-prompt-decode-top-k", type=int, default=2)
+    parser.add_argument("--disable-structure-prompt-condition-guided-ranking", action="store_true")
     parser.add_argument("--enable-3d", action="store_true")
     parser.add_argument("--save-3d-sdf", action="store_true")
     parser.add_argument("--max-3d-sdf", type=int, default=500)

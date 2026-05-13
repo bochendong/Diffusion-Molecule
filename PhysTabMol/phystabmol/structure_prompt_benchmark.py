@@ -264,7 +264,10 @@ def _generate_decode(
                 sampled_rows.append((condition_idx, sample_idx, table_row))
     for condition_idx, sample_idx, table_row in sampled_rows:
         condition_row = cond_df.iloc[int(condition_idx)]
-        decode_row = _condition_guided_table_row(table_row, condition_row)
+        use_condition_guided = bool(getattr(args, "structure_prompt_condition_guided_ranking", True)) and not bool(
+            getattr(args, "disable_structure_prompt_condition_guided_ranking", False)
+        )
+        decode_row = _condition_guided_table_row(table_row, condition_row) if use_condition_guided else dict(table_row)
         candidates = _decode_prompt_candidates(
             table_row=decode_row,
             prompt_smiles=str(condition_row["prompt_smiles"]),

@@ -40,7 +40,7 @@ def main() -> None:
     mmp_config = _mmp_transform_config(args)
     mmp_index = _build_mmp_transform_index(train_df, args, mmp_config)
 
-    output_dir = run_dir / "tables" / "structure_prompt_benchmark"
+    output_dir = run_dir / "tables" / (f"structure_prompt_ablation_{cli.ablation_name}" if cli.ablation_name else "structure_prompt_benchmark")
     _, structure_summary = run_structure_prompt_benchmark(
         diffusion=diffusion,
         train_df=train_df,
@@ -61,8 +61,14 @@ def main() -> None:
         mmp_config=mmp_config,
     )
 
-    metrics_path = run_dir / "metrics.json"
-    metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
+    if cli.ablation_name:
+        metrics_dir = run_dir / "ablation_metrics"
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = metrics_dir / f"{cli.ablation_name}.json"
+        metrics = {}
+    else:
+        metrics_path = run_dir / "metrics.json"
+        metrics = json.loads(metrics_path.read_text()) if metrics_path.exists() else {}
     metrics.update(_metrics_from_existing_sketchmol(run_dir))
     if not structure_summary.empty:
         metrics["structure_prompt_mean_joint_success_strict"] = float(structure_summary["joint_success_strict"].dropna().mean())
@@ -84,15 +90,26 @@ def main() -> None:
         {
             "postprocess_structure_prompt": True,
             "postprocess_run_dir": str(run_dir),
+            "postprocess_output_dir": str(output_dir),
+            "ablation_name": cli.ablation_name,
             "decoder_mode": getattr(args, "decoder_mode", None),
+            "structure_prompt_condition_guided_ranking": bool(getattr(args, "structure_prompt_condition_guided_ranking", True))
+            and not bool(getattr(args, "disable_structure_prompt_condition_guided_ranking", False)),
+            "mmp_fragment_growth_steps": float(getattr(args, "mmp_fragment_growth_steps", 0)),
+            "mmp_fragment_neighbors": float(getattr(args, "mmp_fragment_neighbors", 0)),
             "retrieval_candidates": float(len(retrieval_index.candidates)) if retrieval_index is not None else 0.0,
             "mmp_transform_pairs": float(len(mmp_index.pairs)) if mmp_index is not None else 0.0,
             "mmp_transform_fragments": float(len(mmp_index.fragments)) if mmp_index is not None else 0.0,
         }
     )
     save_json(metrics, metrics_path)
-    save_text(_summary(metrics, run_dir), run_dir / "summary.txt")
-    save_json(vars(cli), run_dir / "structure_prompt_postprocess_config.json")
+    summary_text = _summary(metrics, run_dir)
+    if cli.ablation_name:
+        save_text(summary_text, metrics_path.with_suffix(".txt"))
+        save_json(vars(cli), output_dir / "structure_prompt_postprocess_config.json")
+    else:
+        save_text(summary_text, run_dir / "summary.txt")
+        save_json(vars(cli), run_dir / "structure_prompt_postprocess_config.json")
     print(_summary(metrics, run_dir))
 
 
@@ -103,6 +120,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--structure-prompt-samples", type=int, default=0, help="0 keeps the original run config.")
     parser.add_argument("--structure-prompt-decode-top-k", type=int, default=0, help="0 keeps the original run config.")
     parser.add_argument("--device", default=None, help="Override model device, e.g. cuda or cpu.")
+    parser.add_argument("--ablation-name", default="", help="Write outputs under tables/structure_prompt_ablation_<name> and ablation_metrics/<name>.json.")
+    parser.add_argument("--decoder-mode", choices=["physics", "retrieval", "hybrid", "mmp", "hybrid_mmp"], default=None)
+    parser.add_argument("--mmp-fragment-neighbors", type=int, default=None)
+    parser.add_argument("--mmp-fragment-growth-steps", type=int, default=None)
+    parser.add_argument("--mmp-fragment-growth-beam-size", type=int, default=None)
+    parser.add_argument("--mmp-fragment-second-step-neighbors", type=int, default=None)
+    parser.add_argument("--mmp-fragment-growth-mw-gap", type=float, default=None)
+    parser.add_argument("--disable-structure-prompt-condition-guided-ranking", action="store_true")
     return parser.parse_args()
 
 
@@ -148,6 +173,20 @@ def _apply_overrides(args: Namespace, cli: argparse.Namespace) -> None:
         args.structure_prompt_samples = cli.structure_prompt_samples
     if cli.structure_prompt_decode_top_k:
         args.structure_prompt_decode_top_k = cli.structure_prompt_decode_top_k
+    if cli.decoder_mode:
+        args.decoder_mode = cli.decoder_mode
+    for key in [
+        "mmp_fragment_neighbors",
+        "mmp_fragment_growth_steps",
+        "mmp_fragment_growth_beam_size",
+        "mmp_fragment_second_step_neighbors",
+        "mmp_fragment_growth_mw_gap",
+    ]:
+        value = getattr(cli, key)
+        if value is not None:
+            setattr(args, key, value)
+    if cli.disable_structure_prompt_condition_guided_ranking:
+        args.disable_structure_prompt_condition_guided_ranking = True
 
 
 def _load_diffusion(run_dir: Path, device: str | None = None):
