@@ -263,8 +263,9 @@ def _generate_decode(
                 sampled_rows.append((condition_idx, sample_idx, table_row))
     for condition_idx, sample_idx, table_row in sampled_rows:
         condition_row = cond_df.iloc[int(condition_idx)]
+        decode_row = _condition_guided_table_row(table_row, condition_row)
         candidates = _decode_prompt_candidates(
-            table_row=table_row,
+            table_row=decode_row,
             prompt_smiles=str(condition_row["prompt_smiles"]),
             top_k=top_k,
             seed=int(condition_idx) * 1009 + int(sample_idx),
@@ -292,11 +293,34 @@ def _generate_decode(
             for optional_col in ("optimization_property", "requested_delta", "before_property", "fragment_growth_mw_min"):
                 if optional_col in condition_row:
                     out[optional_col] = condition_row[optional_col]
-            out.update({f"target_{key}": value for key, value in table_row.items()})
+            out.update({f"target_{key}": value for key, value in decode_row.items()})
+            out.update({f"sampled_{key}": value for key, value in table_row.items() if isinstance(value, (int, float))})
             out.update({f"actual_{key}": value for key, value in candidate.descriptors.items() if isinstance(value, (int, float))})
             out.update(_verify_structure_prompt(condition_row, candidate.smiles))
             rows.append(out)
     return pd.DataFrame(rows)
+
+
+def _condition_guided_table_row(table_row: dict[str, float], condition_row) -> dict[str, float]:
+    """Use explicit benchmark targets for decoder ranking.
+
+    The diffusion sample is still saved for analysis, but structure-prompt
+    evaluation judges the explicit prompt constraints in ``target_json``. If we
+    rank candidates only against the sampled row, a good source-aware fragment
+    can be rejected despite satisfying the actual benchmark instruction.
+    """
+
+    out = dict(table_row)
+    try:
+        target_props = json.loads(str(condition_row["target_json"]))
+    except Exception:
+        target_props = {}
+    for prop, value in target_props.items():
+        if prop in TARGET_COLUMNS:
+            out[prop] = float(value)
+    if "fragment_growth_mw_min" in condition_row and not pd.isna(condition_row["fragment_growth_mw_min"]):
+        out["MW"] = max(float(out.get("MW", 0.0)), float(condition_row["fragment_growth_mw_min"]))
+    return out
 
 
 def _decode_prompt_candidates(
@@ -633,7 +657,7 @@ def _light_mmp_config(config: MMPTransformConfig | None) -> MMPTransformConfig |
         target_neighbors=min(config.target_neighbors, 96),
         delta_neighbors=min(config.delta_neighbors, 64),
         source_neighbors=min(config.source_neighbors, 64),
-        fragment_neighbors=min(config.fragment_neighbors, 6),
+        fragment_neighbors=min(config.fragment_neighbors, 16),
         attachment_limit=min(config.attachment_limit, 3),
         prompt_match_bonus=max(config.prompt_match_bonus, 3.0),
         prompt_miss_penalty=max(config.prompt_miss_penalty, 10.0),
