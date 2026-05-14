@@ -547,6 +547,23 @@ python3 -m phystabmol.instruction_paraphrases filter \
 
 这一步只检查语言是否引入了 spec 外目标，不做化学裁判；最终化学评估仍由 verifier 完成。
 
+自然语言 instruction editing 的主实验可以一行提交：
+
+```bash
+bash scripts/run_instruction_editing_benchmark.sh
+```
+
+默认设置会使用 `source_reference` 多模态上下文、latent VAE diffusion、RDKit verifier 重排，以及 `data/mmp_transform_library.csv` 中的 source-aware fragment-growth decoder。若 transform library 不存在，Slurm 脚本会先自动构建。主结果重点看：
+
+- `overall_success_at_1/5/10_by_instruction`
+- `goal_success_rate / constraint_success_rate / edit_success_rate`
+- `sketchmol_local_edit_success_rate`
+- `exact_train_hit_rate`
+- `sampled_novelty_at_tanimoto_0_90`
+- `fragment_growth_candidate_fraction`
+
+默认 `PHYSTABMOL_FRAGMENT_PAIR_NEIGHBORS=0`，也就是主 decoder 不直接检索 mined pair target，而是从 source molecule 做 fragment growth；这能让实验更像真实编辑，而不是训练库近邻复读。
+
 ## 3D Molecule Support
 
 虽然不做视频，项目已经预留 3D 分子评估。若安装 RDKit，可开启：
@@ -611,7 +628,7 @@ RDKit 对论文级有效性、描述符和 Tanimoto 多样性评估很重要。
 - `instruction_source_decoder.py`：source-aware retrieval/repair decoder，用 verifier 重排候选。
 - `structure_prompt_benchmark.py`：对齐 SketchMol partial-image prompt 的 scaffold/fragment/local-optimization benchmark。
 - `instruction_baselines.py`：no-edit、random、rule-retrieval、oracle baselines。
-- `instruction_experiment.py`：instruction-guided tabular diffusion edit planner。
+- `instruction_experiment.py`：instruction-guided tabular diffusion edit planner，支持 verifier-aware ranking 与 source-aware fragment growth decoder。
 - `instruction_paraphrases.py`：LLM paraphrase prompt 导出与 deterministic consistency 过滤。
 - `run_demo.py`：端到端冒烟实验。
 

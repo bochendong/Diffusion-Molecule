@@ -36,9 +36,14 @@ python3 -c "import torch; print('cuda=', torch.cuda.is_available())" || true
 
 DATASET="${PHYSTABMOL_INSTRUCTION_DATASET:-data/instruction_editing.csv}"
 MULTIMODAL_CONTEXT="${PHYSTABMOL_MULTIMODAL_CONTEXT:-source_reference}"
+FRAGMENT_LIBRARY="${PHYSTABMOL_FRAGMENT_TRANSFORM_LIBRARY:-data/mmp_transform_library.csv}"
 if [[ ! -s "$DATASET" ]]; then
   echo "Instruction dataset not found at $DATASET; building it first."
   bash scripts/build_instruction_dataset.sh
+fi
+if [[ "${PHYSTABMOL_DISABLE_FRAGMENT_GROWTH_DECODER:-0}" != "1" && ! -s "$FRAGMENT_LIBRARY" ]]; then
+  echo "Fragment transform library not found at $FRAGMENT_LIBRARY; building it first."
+  PHYSTABMOL_MMP_TRANSFORM_LIBRARY="$FRAGMENT_LIBRARY" bash scripts/build_mmp_transform_library.sh
 fi
 
 EXTRA_ARGS=()
@@ -53,6 +58,12 @@ if [[ "${PHYSTABMOL_ALLOW_TARGET_REFERENCE:-0}" == "1" ]]; then
 fi
 if [[ "${PHYSTABMOL_LATENT_VAE:-1}" == "1" ]]; then
   EXTRA_ARGS+=(--latent-vae)
+fi
+if [[ "${PHYSTABMOL_DISABLE_FRAGMENT_GROWTH_DECODER:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--disable-fragment-growth-decoder)
+fi
+if [[ "${PHYSTABMOL_DISABLE_INSTRUCTION_GUIDED_PLAN:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--disable-instruction-guided-plan)
 fi
 if [[ "$MULTIMODAL_CONTEXT" == "source_reference" || "$MULTIMODAL_CONTEXT" == "full" ]]; then
   if ! head -n 1 "$DATASET" | tr ',' '\n' | grep -qx 'reference_smiles'; then
@@ -78,6 +89,18 @@ python3 -m phystabmol.instruction_experiment \
   --mmp-verify-candidates "${PHYSTABMOL_MMP_VERIFY_CANDIDATES:-512}" \
   --source-aware-pool-size "${PHYSTABMOL_SOURCE_AWARE_POOL_SIZE:-512}" \
   --source-aware-verify-candidates "${PHYSTABMOL_SOURCE_AWARE_VERIFY_CANDIDATES:-384}" \
+  --fragment-transform-library "$FRAGMENT_LIBRARY" \
+  --fragment-pair-neighbors "${PHYSTABMOL_FRAGMENT_PAIR_NEIGHBORS:-0}" \
+  --fragment-neighbors "${PHYSTABMOL_FRAGMENT_NEIGHBORS:-16}" \
+  --fragment-attachment-limit "${PHYSTABMOL_FRAGMENT_ATTACHMENT_LIMIT:-3}" \
+  --fragment-growth-steps "${PHYSTABMOL_FRAGMENT_GROWTH_STEPS:-2}" \
+  --fragment-growth-beam-size "${PHYSTABMOL_FRAGMENT_GROWTH_BEAM_SIZE:-12}" \
+  --fragment-second-step-neighbors "${PHYSTABMOL_FRAGMENT_SECOND_STEP_NEIGHBORS:-6}" \
+  --fragment-growth-mw-gap "${PHYSTABMOL_FRAGMENT_GROWTH_MW_GAP:-25.0}" \
+  --fragment-bonus "${PHYSTABMOL_FRAGMENT_BONUS:-0.24}" \
+  --fragment-exact-penalty "${PHYSTABMOL_FRAGMENT_EXACT_PENALTY:-0.30}" \
+  --fragment-prompt-match-bonus "${PHYSTABMOL_FRAGMENT_PROMPT_MATCH_BONUS:-3.0}" \
+  --fragment-prompt-miss-penalty "${PHYSTABMOL_FRAGMENT_PROMPT_MISS_PENALTY:-10.0}" \
   --torch-epochs "${PHYSTABMOL_TORCH_EPOCHS:-80}" \
   --torch-batch-size "${PHYSTABMOL_TORCH_BATCH_SIZE:-1024}" \
   --torch-hidden-dim "${PHYSTABMOL_TORCH_HIDDEN_DIM:-1024}" \

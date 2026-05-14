@@ -1,0 +1,49 @@
+#!/bin/bash
+set -euo pipefail
+
+# One-command server launcher for the verified natural-language instruction benchmark.
+#
+# Usage from PhysTabMol:
+#   bash scripts/run_instruction_editing_benchmark.sh
+#
+# Optional examples:
+#   PHYSTABMOL_EVAL_LIMIT=10000 PHYSTABMOL_WALLTIME=24:00:00 bash scripts/run_instruction_editing_benchmark.sh
+#   PHYSTABMOL_RUN_NAME=instruction_freeform_fragment_ablation bash scripts/run_instruction_editing_benchmark.sh --time=08:00:00
+
+PHYSTABMOL_ROOT="${PHYSTABMOL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+cd "$PHYSTABMOL_ROOT"
+
+export PHYSTABMOL_RUN_NAME="${PHYSTABMOL_RUN_NAME:-instruction_freeform_fragment_v1}"
+export PHYSTABMOL_MULTIMODAL_CONTEXT="${PHYSTABMOL_MULTIMODAL_CONTEXT:-source_reference}"
+export PHYSTABMOL_LATENT_VAE="${PHYSTABMOL_LATENT_VAE:-1}"
+export PHYSTABMOL_EVAL_LIMIT="${PHYSTABMOL_EVAL_LIMIT:-5000}"
+export PHYSTABMOL_SAMPLES="${PHYSTABMOL_SAMPLES:-8}"
+export PHYSTABMOL_DECODE_TOP_K="${PHYSTABMOL_DECODE_TOP_K:-2}"
+export PHYSTABMOL_FRAGMENT_PAIR_NEIGHBORS="${PHYSTABMOL_FRAGMENT_PAIR_NEIGHBORS:-0}"
+export PHYSTABMOL_FRAGMENT_NEIGHBORS="${PHYSTABMOL_FRAGMENT_NEIGHBORS:-16}"
+export PHYSTABMOL_FRAGMENT_GROWTH_STEPS="${PHYSTABMOL_FRAGMENT_GROWTH_STEPS:-2}"
+export PHYSTABMOL_FRAGMENT_GROWTH_BEAM_SIZE="${PHYSTABMOL_FRAGMENT_GROWTH_BEAM_SIZE:-12}"
+export PHYSTABMOL_FRAGMENT_SECOND_STEP_NEIGHBORS="${PHYSTABMOL_FRAGMENT_SECOND_STEP_NEIGHBORS:-6}"
+
+SBATCH_ARGS=(
+  "--account=${PHYSTABMOL_ACCOUNT:-def-hup-ab}"
+  "--time=${PHYSTABMOL_WALLTIME:-20:00:00}"
+)
+if [[ $# -gt 0 ]]; then
+  SBATCH_ARGS+=("$@")
+fi
+
+cat <<EOF
+Submitting PhysTabMol verified instruction editing benchmark:
+  run_name=$PHYSTABMOL_RUN_NAME
+  multimodal_context=$PHYSTABMOL_MULTIMODAL_CONTEXT
+  latent_vae=$PHYSTABMOL_LATENT_VAE
+  eval_limit=$PHYSTABMOL_EVAL_LIMIT
+  samples=$PHYSTABMOL_SAMPLES
+  decode_top_k=$PHYSTABMOL_DECODE_TOP_K
+  fragment_pair_neighbors=$PHYSTABMOL_FRAGMENT_PAIR_NEIGHBORS
+  fragment_neighbors=$PHYSTABMOL_FRAGMENT_NEIGHBORS
+  fragment_growth_steps=$PHYSTABMOL_FRAGMENT_GROWTH_STEPS
+EOF
+
+sbatch "${SBATCH_ARGS[@]}" scripts/run_instruction_editing_gpu.slurm.sh

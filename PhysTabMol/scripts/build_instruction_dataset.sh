@@ -12,8 +12,16 @@ set -euo pipefail
 
 PHYSTABMOL_ROOT="${PHYSTABMOL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$PHYSTABMOL_ROOT"
-# shellcheck source=/dev/null
-source "$PHYSTABMOL_ROOT/scripts/ensure_phystabmol_venv.sh"
+if command -v module >/dev/null 2>&1 && [[ "${PHYSTABMOL_USE_MODULE_ENV:-1}" == "1" && -f "$PHYSTABMOL_ROOT/scripts/env_module_venv.sh" ]]; then
+  # Compute Canada/Nibi path: match the training scripts' module + venv setup.
+  # shellcheck source=/dev/null
+  source "$PHYSTABMOL_ROOT/scripts/env_module_venv.sh"
+else
+  # Local fallback for machines without environment modules.
+  # shellcheck source=/dev/null
+  source "$PHYSTABMOL_ROOT/scripts/ensure_phystabmol_venv.sh"
+fi
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 
 DATA="${PHYSTABMOL_DATA:-data/molecules.csv}"
 OUT="${PHYSTABMOL_INSTRUCTION_OUT:-data/instruction_editing.csv}"
@@ -32,7 +40,7 @@ if [[ ! -s "$DATA" ]]; then
   PHYSTABMOL_OUT="$DATA" bash scripts/download_chembl_100k.sh --rdkit-filter
 fi
 
-python3 -m phystabmol.instruction_dataset \
+"$PYTHON_BIN" -m phystabmol.instruction_dataset \
   --data "$DATA" \
   --out "$OUT" \
   --jsonl-out "$JSONL_OUT" \

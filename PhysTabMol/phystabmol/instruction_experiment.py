@@ -12,6 +12,7 @@ import pandas as pd
 
 from .decoder import decode_table_row
 from .diffusion import TabularDiffusion
+from .features import table_row_from_smiles
 from .instruction_evaluate import evaluate_instruction_candidates
 from .instruction_features import (
     INSTRUCTION_SPEC_FEATURE_END,
@@ -21,8 +22,11 @@ from .instruction_features import (
 )
 from .instruction_mmp_decoder import MMPDecoderConfig, MMPTransformationIndex, decode_mmp_transform
 from .instruction_multimodal import MULTIMODAL_CONTEXT_MODES, multimodal_context_from_row, multimodal_feature_names
+from .instruction_schema import EDIT_RULES, PROPERTY_GOALS, normalize_spec, threshold
 from .instruction_source_decoder import SourceAwareCandidateIndex, SourceAwareDecoderConfig, decode_source_aware
+from .instruction_verifier import verify_instruction
 from .io import make_run_dir, save_json, save_text, set_seed
+from .mmp_transform_decoder import MMPTransformConfig, MMPTransformIndex, decode_mmp_table_row
 from .schema import TABLE_COLUMNS
 
 
@@ -79,6 +83,23 @@ def main() -> None:
         print("Building source-aware retrieval index from the train split...", flush=True)
         source_index = SourceAwareCandidateIndex.from_dataframe(train_df)
         print(f"Source-aware index size={len(source_index.candidates)} molecules.", flush=True)
+    fragment_index = None
+    if args.fragment_growth_decoder:
+        fragment_library = Path(args.fragment_transform_library)
+        if fragment_library.exists():
+            print(f"Loading fragment-growth transform library from {fragment_library}...", flush=True)
+            fragment_index = MMPTransformIndex.from_library_csv(fragment_library)
+            print(
+                f"Fragment-growth index size={len(fragment_index.pairs)} pairs, "
+                f"{len(fragment_index.fragments)} fragments.",
+                flush=True,
+            )
+        else:
+            print(
+                f"Fragment-growth transform library not found at {fragment_library}; "
+                "continuing without fragment growth.",
+                flush=True,
+            )
 
     n_gen = len(eval_df) * args.samples_per_instruction
     print(
@@ -111,6 +132,24 @@ def main() -> None:
             reference_neighbors=args.source_aware_reference_neighbors,
             verify_candidates=args.source_aware_verify_candidates,
         ),
+        fragment_index=fragment_index,
+        fragment_config=MMPTransformConfig(
+            target_neighbors=args.fragment_pair_neighbors,
+            delta_neighbors=args.fragment_pair_neighbors,
+            source_neighbors=args.fragment_pair_neighbors,
+            fragment_neighbors=args.fragment_neighbors,
+            attachment_limit=args.fragment_attachment_limit,
+            exact_train_penalty=args.fragment_exact_penalty,
+            fragment_bonus=args.fragment_bonus,
+            prompt_match_bonus=args.fragment_prompt_match_bonus,
+            prompt_miss_penalty=args.fragment_prompt_miss_penalty,
+            fragment_exact_penalty=args.fragment_exact_penalty,
+            fragment_growth_steps=args.fragment_growth_steps,
+            fragment_growth_beam_size=args.fragment_growth_beam_size,
+            fragment_second_step_neighbors=args.fragment_second_step_neighbors,
+            fragment_growth_mw_gap=args.fragment_growth_mw_gap,
+        ),
+        use_instruction_guided_plan=not args.disable_instruction_guided_plan,
     )
     decoded_df.to_csv(run_dir / "tables" / "decoded_instruction_candidates.csv", index=False)
 
@@ -126,11 +165,16 @@ def main() -> None:
             "multimodal_feature_dim": float(len(multimodal_feature_names(args.multimodal_context))),
             "mmp_decoder": bool(args.mmp_decoder),
             "source_aware_decoder": bool(args.source_aware_decoder),
+            "fragment_growth_decoder": bool(fragment_index is not None),
+            "fragment_transform_pairs": float(len(fragment_index.pairs)) if fragment_index is not None else 0.0,
+            "fragment_transform_fragments": float(len(fragment_index.fragments)) if fragment_index is not None else 0.0,
+            "instruction_guided_plan": bool(not args.disable_instruction_guided_plan),
             "latent_vae": bool(args.latent_vae),
             "vae_latent_dim": float(args.vae_latent_dim) if args.latent_vae else 0.0,
             "run_dir": str(run_dir),
         }
     )
+    metrics.update(_candidate_source_metrics(decoded_df))
     save_json(metrics, run_dir / "metrics.json")
     save_json(_environment(), run_dir / "environment.json")
     save_text(_summary(metrics, args), run_dir / "summary.txt")
@@ -167,6 +211,30 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-aware-source-neighbors", type=int, default=128)
     parser.add_argument("--source-aware-reference-neighbors", type=int, default=64)
     parser.add_argument("--source-aware-verify-candidates", type=int, default=192)
+    parser.add_argument("--disable-fragment-growth-decoder", dest="fragment_growth_decoder", action="store_false")
+    parser.set_defaults(fragment_growth_decoder=True)
+    parser.add_argument("--fragment-transform-library", default="data/mmp_transform_library.csv")
+    parser.add_argument(
+        "--fragment-pair-neighbors",
+        type=int,
+        default=0,
+        help="Number of mined pair targets to retrieve. Default 0 keeps the main decoder source-fragment based.",
+    )
+    parser.add_argument("--fragment-neighbors", type=int, default=16)
+    parser.add_argument("--fragment-attachment-limit", type=int, default=3)
+    parser.add_argument("--fragment-growth-steps", type=int, default=2)
+    parser.add_argument("--fragment-growth-beam-size", type=int, default=12)
+    parser.add_argument("--fragment-second-step-neighbors", type=int, default=6)
+    parser.add_argument("--fragment-growth-mw-gap", type=float, default=25.0)
+    parser.add_argument("--fragment-bonus", type=float, default=0.24)
+    parser.add_argument("--fragment-exact-penalty", type=float, default=0.30)
+    parser.add_argument("--fragment-prompt-match-bonus", type=float, default=3.0)
+    parser.add_argument("--fragment-prompt-miss-penalty", type=float, default=10.0)
+    parser.add_argument(
+        "--disable-instruction-guided-plan",
+        action="store_true",
+        help="Ablation: decode raw diffusion plans without deterministic spec-guided clipping/count hints.",
+    )
     parser.add_argument(
         "--disable-instruction-features",
         action="store_true",
@@ -328,18 +396,33 @@ def _decode_and_attach(
     mmp_config: MMPDecoderConfig | None = None,
     source_index: SourceAwareCandidateIndex | None = None,
     source_aware_config: SourceAwareDecoderConfig | None = None,
+    fragment_index: MMPTransformIndex | None = None,
+    fragment_config: MMPTransformConfig | None = None,
+    use_instruction_guided_plan: bool = True,
 ) -> pd.DataFrame:
     rows = []
     for _, source in generated_df.iterrows():
         instruction_idx = int(source["instruction_id"])
         instruction = eval_df.iloc[instruction_idx]
         table_row = {col: float(source[col]) for col in TABLE_COLUMNS}
+        decode_row = _instruction_guided_table_row(table_row, instruction) if use_instruction_guided_plan else table_row
         decode_seed = instruction_idx * 1009 + int(source["sample_idx"])
         verified_candidates = []
+        if fragment_index is not None:
+            verified_candidates.extend(
+                decode_mmp_table_row(
+                    decode_row,
+                    top_k=max(top_k * 8, top_k),
+                    seed=decode_seed,
+                    index=fragment_index,
+                    config=fragment_config,
+                    prompt_smiles=str(instruction["source_smiles"]),
+                )
+            )
         if mmp_index is not None:
             verified_candidates.extend(
                 decode_mmp_transform(
-                    table_row,
+                    decode_row,
                     instruction,
                     mmp_index,
                     top_k=max(top_k * 2, top_k),
@@ -350,7 +433,7 @@ def _decode_and_attach(
         if source_index is not None:
             verified_candidates.extend(
                 decode_source_aware(
-                    table_row,
+                    decode_row,
                     instruction,
                     source_index,
                     top_k=max(top_k * 2, top_k),
@@ -358,17 +441,18 @@ def _decode_and_attach(
                     config=source_aware_config,
                 )
             )
-        candidates = sorted(_dedupe_candidates(verified_candidates), key=lambda candidate: candidate.score)[:top_k]
+        candidates = _rank_instruction_candidates(_dedupe_candidates(verified_candidates), instruction, top_k=top_k)
         if len(candidates) < top_k:
             candidates.extend(
                 decode_table_row(
-                    table_row,
+                    decode_row,
                     top_k=top_k - len(candidates),
                     seed=decode_seed,
                     include_dynamic=dynamic_decoder,
                 )
             )
-        for rank, candidate in enumerate(_dedupe_candidates(candidates)[:top_k], start=1):
+        ranked = _rank_instruction_candidates(_dedupe_candidates(candidates), instruction, top_k=top_k)
+        for rank, candidate in enumerate(ranked, start=1):
             out = {
                 "instruction_id": instruction_idx,
                 "pair_id": source["pair_id"],
@@ -383,10 +467,116 @@ def _decode_and_attach(
                 "decoder_valid": candidate.valid,
                 "candidate_source": candidate.source,
             }
-            out.update({f"plan_{key}": value for key, value in table_row.items()})
+            out.update({f"sampled_plan_{key}": value for key, value in table_row.items()})
+            out.update({f"plan_{key}": value for key, value in decode_row.items()})
             out.update({f"actual_{key}": value for key, value in candidate.descriptors.items() if isinstance(value, (int, float))})
             rows.append(out)
     return pd.DataFrame(rows)
+
+
+def _instruction_guided_table_row(table_row: dict[str, float], instruction: pd.Series) -> dict[str, float]:
+    """Clip a sampled plan toward the executable instruction without using the target molecule."""
+
+    out = {col: float(table_row.get(col, 0.0)) for col in TABLE_COLUMNS}
+    try:
+        source_row = table_row_from_smiles(str(instruction["source_smiles"]))
+        spec = normalize_spec(str(instruction["instruction_spec_json"]))
+    except Exception:
+        return out
+
+    for goal in spec["goals"]:
+        rule = PROPERTY_GOALS.get(goal)
+        if rule is None:
+            continue
+        col = str(rule["column"])
+        required = threshold(spec, str(rule["threshold"]), float(rule["default"]))
+        target_value = float(source_row[col]) + float(rule["direction"]) * required
+        if float(rule["direction"]) > 0:
+            out[col] = max(float(out.get(col, 0.0)), target_value)
+        else:
+            out[col] = min(float(out.get(col, 0.0)), target_value)
+
+    if "keep_mw_similar" in spec["constraints"]:
+        max_delta = threshold(spec, "delta_mw_abs_max")
+        out["MW"] = float(np.clip(out.get("MW", source_row["MW"]), source_row["MW"] - max_delta, source_row["MW"] + max_delta))
+
+    for edit in spec["edits"]:
+        rule = EDIT_RULES.get(edit)
+        if rule is None:
+            continue
+        required = threshold(spec, str(rule["threshold"]), float(rule["default"]))
+        direction = float(rule["direction"])
+        if "columns" in rule:
+            columns = [str(col) for col in rule["columns"]]
+            if direction > 0:
+                primary = "N" if "N" in columns else columns[0]
+                out[primary] = max(float(out.get(primary, 0.0)), float(source_row[primary]) + required)
+            else:
+                remaining = required
+                for col in sorted(columns, key=lambda name: float(source_row.get(name, 0.0)), reverse=True):
+                    target_value = max(0.0, float(source_row[col]) - remaining)
+                    out[col] = min(float(out.get(col, 0.0)), target_value)
+                    remaining = max(0.0, remaining - max(0.0, float(source_row[col]) - target_value))
+        else:
+            col = str(rule["column"])
+            target_value = float(source_row.get(col, 0.0)) + direction * required
+            if direction > 0:
+                out[col] = max(float(out.get(col, 0.0)), target_value)
+            else:
+                out[col] = min(float(out.get(col, 0.0)), max(0.0, target_value))
+        _apply_edit_count_hints(out, source_row, edit, required)
+
+    return out
+
+
+def _apply_edit_count_hints(out: dict[str, float], source_row: dict[str, float], edit: str, required: float) -> None:
+    if edit == "add_halogen":
+        out["fg_halogen"] = max(float(out.get("fg_halogen", 0.0)), float(source_row["fg_halogen"]) + required)
+        out["F"] = max(float(out.get("F", 0.0)), float(source_row["F"]) + required)
+    elif edit == "remove_halogen":
+        out["fg_halogen"] = min(float(out.get("fg_halogen", 0.0)), max(0.0, float(source_row["fg_halogen"]) - required))
+        for col in ("F", "Cl", "Br", "I"):
+            out[col] = min(float(out.get(col, 0.0)), float(source_row[col]))
+    elif edit == "add_amide":
+        out["N"] = max(float(out.get("N", 0.0)), float(source_row["N"]) + required)
+        out["O"] = max(float(out.get("O", 0.0)), float(source_row["O"]) + required)
+    elif edit == "add_ester":
+        out["O"] = max(float(out.get("O", 0.0)), float(source_row["O"]) + 2.0 * required)
+    elif edit == "add_amine":
+        out["N"] = max(float(out.get("N", 0.0)), float(source_row["N"]) + required)
+    elif edit == "add_alcohol":
+        out["O"] = max(float(out.get("O", 0.0)), float(source_row["O"]) + required)
+
+
+def _rank_instruction_candidates(candidates, instruction: pd.Series, top_k: int):
+    if not candidates:
+        return []
+    source_smiles = str(instruction["source_smiles"])
+    spec_json = str(instruction["instruction_spec_json"])
+    ranked = []
+    for candidate in candidates:
+        result = verify_instruction(source_smiles, candidate.smiles, spec_json)
+        ranked.append((_instruction_rank_key(result, candidate), candidate))
+    ranked.sort(key=lambda item: item[0])
+    return [candidate for _, candidate in ranked[:top_k]]
+
+
+def _instruction_rank_key(result: dict[str, object], candidate) -> tuple[float, ...]:
+    passed_groups = sum(
+        1.0
+        for key in ("goal_success", "edit_success", "constraint_success")
+        if result.get(key)
+    )
+    return (
+        0.0 if result.get("overall_success") else 1.0,
+        -passed_groups,
+        0.0 if result.get("goal_success") else 1.0,
+        0.0 if result.get("edit_success") else 1.0,
+        0.0 if result.get("constraint_success") else 1.0,
+        0.0 if result.get("valid") else 1.0,
+        -float(result.get("similarity_to_source", 0.0) or 0.0),
+        float(candidate.score),
+    )
 
 
 def _dedupe_candidates(candidates):
@@ -401,6 +591,22 @@ def _dedupe_candidates(candidates):
         elif candidate.score < best[candidate.smiles].score:
             best[candidate.smiles] = candidate
     return [best[smiles] for smiles in order]
+
+
+def _candidate_source_metrics(decoded_df: pd.DataFrame) -> dict[str, float]:
+    if "candidate_source" not in decoded_df.columns or decoded_df.empty:
+        return {}
+    sources = decoded_df["candidate_source"].fillna("").astype(str)
+    metrics = {
+        "fragment_growth_candidate_fraction": float(sources.str.contains("fragment_grow_decoder").mean()),
+        "two_step_fragment_candidate_fraction": float((sources == "mmp_two_step_fragment_grow_decoder").mean()),
+        "mmp_pair_target_candidate_fraction": float((sources == "mmp_transform_target_decoder").mean()),
+    }
+    for source, value in sources.value_counts(normalize=True).head(8).items():
+        key = "".join(ch if ch.isalnum() else "_" for ch in source.strip().lower()).strip("_")
+        if key:
+            metrics[f"candidate_source_fraction_{key}"] = float(value)
+    return metrics
 
 
 def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
@@ -423,11 +629,18 @@ def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
         "target_similarity",
         "druglike_rate",
         "novelty",
+        "exact_train_hit_rate",
+        "sampled_nearest_train_tanimoto",
+        "sampled_novelty_at_tanimoto_0_90",
+        "fragment_growth_candidate_fraction",
+        "two_step_fragment_candidate_fraction",
     ]
     lines = ["PhysTabMol instruction-editing experiment complete", f"dataset={args.dataset}"]
     lines.append(f"multimodal_context={args.multimodal_context}")
     lines.append(f"mmp_decoder={args.mmp_decoder}")
     lines.append(f"source_aware_decoder={args.source_aware_decoder}")
+    lines.append(f"fragment_growth_decoder={args.fragment_growth_decoder}")
+    lines.append(f"instruction_guided_plan={not args.disable_instruction_guided_plan}")
     lines.append(f"latent_vae={args.latent_vae}")
     if args.latent_vae:
         lines.append(f"vae_latent_dim={args.vae_latent_dim}")

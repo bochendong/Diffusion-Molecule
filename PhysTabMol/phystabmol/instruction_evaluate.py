@@ -10,7 +10,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .chem import molecular_descriptors, passes_druglike_filters
+from .chem import canonicalize_smiles, molecular_descriptors, passes_druglike_filters, tanimoto
 from .instruction_local_edit import local_edit_metrics
 from .instruction_verifier import verify_instruction
 from .io import save_json
@@ -84,6 +84,8 @@ def evaluate_instruction_candidates(
     valid = detailed[valid_mask]
     unique_valid = sorted(set(valid_smiles))
     train = train_smiles or set()
+    train_canonical = _canonical_smiles_set(train)
+    exact_train_hits = [canonicalize_smiles(smi) in train_canonical for smi in detailed[candidate_col].fillna("").astype(str)]
     metrics = {
         "n": float(len(detailed)),
         "validity": float(valid_mask.mean()),
@@ -94,8 +96,10 @@ def evaluate_instruction_candidates(
         "similarity_to_source": float(valid["verify_similarity_to_source"].mean()) if not valid.empty else 0.0,
         "druglike_rate": _druglike_rate(valid[candidate_col].astype(str).tolist()) if not valid.empty else 0.0,
         "uniqueness": float(len(unique_valid) / max(1, len(valid_smiles))),
-        "novelty": float(len([s for s in unique_valid if s not in train]) / max(1, len(unique_valid))),
+        "novelty": float(len([s for s in unique_valid if s not in train_canonical]) / max(1, len(unique_valid))),
+        "exact_train_hit_rate": float(np.mean(exact_train_hits)) if exact_train_hits else 0.0,
     }
+    metrics.update(_sampled_train_overlap_metrics(unique_valid, train_canonical))
     if "local_target_candidate_similarity" in detailed.columns:
         metrics.update(_local_edit_summary(detailed, valid))
     if not valid.empty:
@@ -135,6 +139,49 @@ def _load_train_smiles(train_smiles_path: str | None, train_dataset_path: str | 
             if col in train.columns:
                 smiles.update(train[col].dropna().astype(str).tolist())
     return smiles
+
+
+def _canonical_smiles_set(smiles: set[str] | list[str]) -> set[str]:
+    out = set()
+    for smi in smiles:
+        can = canonicalize_smiles(str(smi))
+        if can:
+            out.add(can)
+    return out
+
+
+def _sampled_train_overlap_metrics(candidate_smiles: list[str], train_smiles: set[str], max_candidates: int = 256, max_train: int = 1024) -> dict[str, float]:
+    candidate_set = set()
+    for smi in candidate_smiles:
+        can = canonicalize_smiles(smi)
+        if can:
+            candidate_set.add(can)
+    candidates = sorted(candidate_set)
+    train = sorted(train_smiles)
+    if not candidates or not train:
+        return {
+            "sampled_nearest_train_tanimoto": 0.0,
+            "sampled_nearest_train_tanimoto_ge_0_90": 0.0,
+            "sampled_novelty_at_tanimoto_0_90": 0.0,
+        }
+    rng = np.random.default_rng(31)
+    if len(candidates) > max_candidates:
+        candidates = [candidates[int(i)] for i in rng.choice(len(candidates), size=max_candidates, replace=False)]
+    if len(train) > max_train:
+        train = [train[int(i)] for i in rng.choice(len(train), size=max_train, replace=False)]
+    nearest = []
+    for candidate in candidates:
+        if candidate in train_smiles:
+            nearest.append(1.0)
+            continue
+        sims = [tanimoto(candidate, train_smi) for train_smi in train if train_smi != candidate]
+        nearest.append(max(sims) if sims else 1.0)
+    ge_090 = float(np.mean([sim >= 0.90 for sim in nearest])) if nearest else 0.0
+    return {
+        "sampled_nearest_train_tanimoto": float(np.mean(nearest)) if nearest else 0.0,
+        "sampled_nearest_train_tanimoto_ge_0_90": ge_090,
+        "sampled_novelty_at_tanimoto_0_90": float(1.0 - ge_090),
+    }
 
 
 def _mean_bool(values: Any) -> float:
