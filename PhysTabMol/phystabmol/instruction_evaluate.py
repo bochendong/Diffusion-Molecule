@@ -250,13 +250,16 @@ def _topk_metrics(detailed: pd.DataFrame) -> dict[str, float]:
 def _sort_for_topk(detailed: pd.DataFrame) -> pd.DataFrame:
     sort_cols = []
     ascending = []
-    if "decoder_score" in detailed.columns:
-        sort_cols.append("decoder_score")
-        ascending.append(True)
-    for col in ("sample_idx", "rank", "instruction_row"):
+    for col in ("sample_idx", "rank"):
         if col in detailed.columns:
             sort_cols.append(col)
             ascending.append(True)
+    if "decoder_score" in detailed.columns:
+        sort_cols.append("decoder_score")
+        ascending.append(True)
+    if "instruction_row" in detailed.columns:
+        sort_cols.append("instruction_row")
+        ascending.append(True)
     if not sort_cols:
         return detailed
     return detailed.sort_values(sort_cols, ascending=ascending, kind="mergesort")

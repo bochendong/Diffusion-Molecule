@@ -50,8 +50,14 @@ EXTRA_ARGS=()
 if [[ "${PHYSTABMOL_DISABLE_SOURCE_AWARE_DECODER:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--disable-source-aware-decoder)
 fi
+if [[ "${PHYSTABMOL_ENABLE_SOURCE_AWARE_DECODER:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--enable-source-aware-decoder)
+fi
 if [[ "${PHYSTABMOL_DISABLE_MMP_DECODER:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--disable-mmp-decoder)
+fi
+if [[ "${PHYSTABMOL_ENABLE_MMP_DECODER:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--enable-mmp-decoder)
 fi
 if [[ "${PHYSTABMOL_ALLOW_TARGET_REFERENCE:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--allow-target-reference)
@@ -65,6 +71,9 @@ fi
 if [[ "${PHYSTABMOL_DISABLE_INSTRUCTION_GUIDED_PLAN:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--disable-instruction-guided-plan)
 fi
+if [[ "${PHYSTABMOL_DISABLE_INSTRUCTION_FEATURES:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--disable-instruction-features)
+fi
 if [[ "$MULTIMODAL_CONTEXT" == "source_reference" || "$MULTIMODAL_CONTEXT" == "full" ]]; then
   if ! head -n 1 "$DATASET" | tr ',' '\n' | grep -qx 'reference_smiles'; then
     echo "Dataset $DATASET has no reference_smiles column; rebuilding for multimodal source_reference/full."
@@ -77,6 +86,8 @@ python3 -m phystabmol.instruction_experiment \
   --backend "${PHYSTABMOL_BACKEND:-torch}" \
   --run-name "${PHYSTABMOL_RUN_NAME:-instruction_slurm_${SLURM_JOB_ID:-manual}}" \
   --limit "${PHYSTABMOL_LIMIT:-0}" \
+  --split-column "${PHYSTABMOL_SPLIT_COLUMN:-split}" \
+  --planner-mode "${PHYSTABMOL_PLANNER_MODE:-diffusion}" \
   --eval-limit "${PHYSTABMOL_EVAL_LIMIT:-2000}" \
   --samples-per-instruction "${PHYSTABMOL_SAMPLES:-8}" \
   --decode-top-k "${PHYSTABMOL_DECODE_TOP_K:-2}" \

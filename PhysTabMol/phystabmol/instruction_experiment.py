@@ -40,8 +40,9 @@ def main() -> None:
     dataset = pd.read_csv(args.dataset)
     if args.limit:
         dataset = dataset.head(args.limit).reset_index(drop=True)
-    train_df = dataset[dataset.get("split", "train") == "train"].reset_index(drop=True) if "split" in dataset else dataset
-    eval_df = dataset[dataset["split"].isin(args.eval_splits)].reset_index(drop=True) if "split" in dataset else dataset
+    split_col = args.split_column if args.split_column in dataset.columns else "split"
+    train_df = dataset[dataset.get(split_col, "train") == "train"].reset_index(drop=True) if split_col in dataset else dataset
+    eval_df = dataset[dataset[split_col].isin(args.eval_splits)].reset_index(drop=True) if split_col in dataset else dataset
     if args.eval_limit:
         eval_df = eval_df.head(args.eval_limit).reset_index(drop=True)
     if train_df.empty or eval_df.empty:
@@ -67,12 +68,15 @@ def main() -> None:
     train_df.to_csv(run_dir / "tables" / "instruction_train.csv", index=False)
     eval_df.to_csv(run_dir / "tables" / "instruction_eval.csv", index=False)
 
-    fit_name = "latent VAE diffusion" if args.latent_vae else "diffusion"
-    print(f"Fitting {fit_name} (backend may be sklearn MLP on ~{len(train_df) * args.noise_repeats} synthetic steps)...", flush=True)
-    diffusion, backend = _fit_diffusion(args, train_y, train_x)
-    print(f"Fit done ({backend}).", flush=True)
-    model_path = run_dir / "models" / ("instruction_diffusion.pt" if backend.startswith("torch") else "instruction_diffusion.pkl")
-    diffusion.save(model_path)
+    diffusion = None
+    backend = f"planner_{args.planner_mode}"
+    if args.planner_mode == "diffusion":
+        fit_name = "latent VAE diffusion" if args.latent_vae else "diffusion"
+        print(f"Fitting {fit_name} (backend may be sklearn MLP on ~{len(train_df) * args.noise_repeats} synthetic steps)...", flush=True)
+        diffusion, backend = _fit_diffusion(args, train_y, train_x)
+        print(f"Fit done ({backend}).", flush=True)
+        model_path = run_dir / "models" / ("instruction_diffusion.pt" if backend.startswith("torch") else "instruction_diffusion.pkl")
+        diffusion.save(model_path)
     mmp_index = None
     if args.mmp_decoder:
         print("Building MMP-style transformation index from verified train pairs...", flush=True)
@@ -107,9 +111,18 @@ def main() -> None:
         f"({args.timesteps} denoise steps each)...",
         flush=True,
     )
-    generated_df = _sample_edit_plans(diffusion, eval_x, eval_df, args.samples_per_instruction)
+    generated_df = _sample_edit_plans(
+        diffusion=diffusion,
+        conditions=eval_x,
+        eval_df=eval_df,
+        samples_per_instruction=args.samples_per_instruction,
+        planner_mode=args.planner_mode,
+        train_y=train_y,
+        seed=args.seed,
+    )
     generated_df.to_csv(run_dir / "tables" / "generated_edit_plans.csv", index=False)
     print(f"Decoding {len(generated_df)} rows to SMILES (RDKit; often the slowest step)...", flush=True)
+    train_smiles = set(train_df["source_smiles"].astype(str)) | set(train_df["target_smiles"].astype(str))
     decoded_df = _decode_and_attach(
         generated_df,
         eval_df,
@@ -150,10 +163,10 @@ def main() -> None:
             fragment_growth_mw_gap=args.fragment_growth_mw_gap,
         ),
         use_instruction_guided_plan=not args.disable_instruction_guided_plan,
+        train_smiles=train_smiles,
     )
     decoded_df.to_csv(run_dir / "tables" / "decoded_instruction_candidates.csv", index=False)
 
-    train_smiles = set(train_df["source_smiles"].astype(str)) | set(train_df["target_smiles"].astype(str))
     metrics, detailed = evaluate_instruction_candidates(decoded_df, train_smiles=train_smiles)
     detailed.to_csv(run_dir / "tables" / "verified_instruction_candidates.csv", index=False)
     metrics.update(
@@ -162,6 +175,8 @@ def main() -> None:
             "train_size": float(len(train_df)),
             "eval_size": float(len(eval_df)),
             "condition_dim": float(train_x.shape[1]),
+            "split_column": split_col,
+            "planner_mode": args.planner_mode,
             "multimodal_feature_dim": float(len(multimodal_feature_names(args.multimodal_context))),
             "mmp_decoder": bool(args.mmp_decoder),
             "source_aware_decoder": bool(args.source_aware_decoder),
@@ -190,22 +205,26 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--eval-splits", nargs="+", default=["valid", "test"])
+    parser.add_argument("--split-column", default="split", help="Dataset split column, e.g. split, split_by_scaffold, edit_combo_split, paraphrase_split.")
     parser.add_argument("--eval-limit", type=int, default=2000)
     parser.add_argument("--backend", choices=["auto", "torch", "sklearn"], default="auto")
+    parser.add_argument("--planner-mode", choices=["diffusion", "rule", "oracle", "random"], default="diffusion")
     parser.add_argument("--latent-vae", action="store_true", help="Train a table/molecule VAE and run diffusion in its latent space.")
     parser.add_argument("--samples-per-instruction", type=int, default=8)
     parser.add_argument("--decode-top-k", type=int, default=2)
     parser.add_argument("--dynamic-decoder", action="store_true")
+    parser.add_argument("--enable-mmp-decoder", dest="mmp_decoder", action="store_true")
     parser.add_argument("--disable-mmp-decoder", dest="mmp_decoder", action="store_false")
-    parser.set_defaults(mmp_decoder=True)
+    parser.set_defaults(mmp_decoder=False)
     parser.add_argument("--mmp-pool-size", type=int, default=768)
     parser.add_argument("--mmp-source-neighbors", type=int, default=256)
     parser.add_argument("--mmp-delta-neighbors", type=int, default=256)
     parser.add_argument("--mmp-tag-neighbors", type=int, default=384)
     parser.add_argument("--mmp-reference-neighbors", type=int, default=128)
     parser.add_argument("--mmp-verify-candidates", type=int, default=512)
+    parser.add_argument("--enable-source-aware-decoder", dest="source_aware_decoder", action="store_true")
     parser.add_argument("--disable-source-aware-decoder", dest="source_aware_decoder", action="store_false")
-    parser.set_defaults(source_aware_decoder=True)
+    parser.set_defaults(source_aware_decoder=False)
     parser.add_argument("--source-aware-pool-size", type=int, default=256)
     parser.add_argument("--source-aware-plan-neighbors", type=int, default=128)
     parser.add_argument("--source-aware-source-neighbors", type=int, default=128)
@@ -373,10 +392,34 @@ def _fit_diffusion(args, train_y: np.ndarray, train_x: np.ndarray):
     return model, "sklearn"
 
 
-def _sample_edit_plans(diffusion, conditions: np.ndarray, eval_df: pd.DataFrame, samples_per_instruction: int) -> pd.DataFrame:
+def _sample_edit_plans(
+    diffusion,
+    conditions: np.ndarray,
+    eval_df: pd.DataFrame,
+    samples_per_instruction: int,
+    planner_mode: str = "diffusion",
+    train_y: np.ndarray | None = None,
+    seed: int = 7,
+) -> pd.DataFrame:
     rows = []
+    rng = np.random.default_rng(seed)
     for instruction_idx, condition in enumerate(conditions):
-        for sample_idx, row in enumerate(diffusion.sample(condition[None, :], n=samples_per_instruction)):
+        if planner_mode == "diffusion":
+            sampled_rows = diffusion.sample(condition[None, :], n=samples_per_instruction)
+        elif planner_mode == "rule":
+            sampled_rows = [_instruction_guided_table_row(table_row_from_smiles(eval_df.iloc[instruction_idx]["source_smiles"]), eval_df.iloc[instruction_idx])] * samples_per_instruction
+        elif planner_mode == "oracle":
+            sampled_rows = [table_row_from_smiles(eval_df.iloc[instruction_idx]["target_smiles"])] * samples_per_instruction
+        elif planner_mode == "random":
+            if train_y is None or len(train_y) == 0:
+                raise ValueError("--planner-mode random requires non-empty train targets.")
+            sampled_rows = []
+            for _ in range(samples_per_instruction):
+                vec = train_y[int(rng.integers(0, len(train_y)))]
+                sampled_rows.append({col: float(vec[idx]) for idx, col in enumerate(TABLE_COLUMNS)})
+        else:
+            raise ValueError(f"Unsupported planner mode: {planner_mode}")
+        for sample_idx, row in enumerate(sampled_rows):
             out = {
                 "instruction_id": instruction_idx,
                 "pair_id": eval_df.iloc[instruction_idx].get("pair_id", instruction_idx),
@@ -399,6 +442,7 @@ def _decode_and_attach(
     fragment_index: MMPTransformIndex | None = None,
     fragment_config: MMPTransformConfig | None = None,
     use_instruction_guided_plan: bool = True,
+    train_smiles: set[str] | None = None,
 ) -> pd.DataFrame:
     rows = []
     for _, source in generated_df.iterrows():
@@ -441,7 +485,7 @@ def _decode_and_attach(
                     config=source_aware_config,
                 )
             )
-        candidates = _rank_instruction_candidates(_dedupe_candidates(verified_candidates), instruction, top_k=top_k)
+        candidates = _rank_instruction_candidates(_dedupe_candidates(verified_candidates), instruction, top_k=top_k, train_smiles=train_smiles)
         if len(candidates) < top_k:
             candidates.extend(
                 decode_table_row(
@@ -451,7 +495,7 @@ def _decode_and_attach(
                     include_dynamic=dynamic_decoder,
                 )
             )
-        ranked = _rank_instruction_candidates(_dedupe_candidates(candidates), instruction, top_k=top_k)
+        ranked = _rank_instruction_candidates(_dedupe_candidates(candidates), instruction, top_k=top_k, train_smiles=train_smiles)
         for rank, candidate in enumerate(ranked, start=1):
             out = {
                 "instruction_id": instruction_idx,
@@ -467,6 +511,20 @@ def _decode_and_attach(
                 "decoder_valid": candidate.valid,
                 "candidate_source": candidate.source,
             }
+            for meta_col in (
+                "difficulty",
+                "split_random",
+                "split_by_scaffold",
+                "edit_combo_split",
+                "paraphrase_split",
+                "goal_combo_key",
+                "edit_combo_key",
+                "instruction_combo_key",
+                "threshold_range_key",
+                "language_source",
+            ):
+                if meta_col in instruction:
+                    out[meta_col] = instruction[meta_col]
             out.update({f"sampled_plan_{key}": value for key, value in table_row.items()})
             out.update({f"plan_{key}": value for key, value in decode_row.items()})
             out.update({f"actual_{key}": value for key, value in candidate.descriptors.items() if isinstance(value, (int, float))})
@@ -548,32 +606,41 @@ def _apply_edit_count_hints(out: dict[str, float], source_row: dict[str, float],
         out["O"] = max(float(out.get("O", 0.0)), float(source_row["O"]) + required)
 
 
-def _rank_instruction_candidates(candidates, instruction: pd.Series, top_k: int):
+def _rank_instruction_candidates(candidates, instruction: pd.Series, top_k: int, train_smiles: set[str] | None = None):
     if not candidates:
         return []
     source_smiles = str(instruction["source_smiles"])
     spec_json = str(instruction["instruction_spec_json"])
+    train_smiles = train_smiles or set()
     ranked = []
     for candidate in candidates:
         result = verify_instruction(source_smiles, candidate.smiles, spec_json)
-        ranked.append((_instruction_rank_key(result, candidate), candidate))
+        ranked.append((_instruction_rank_key(result, candidate, train_smiles=train_smiles), candidate))
     ranked.sort(key=lambda item: item[0])
     return [candidate for _, candidate in ranked[:top_k]]
 
 
-def _instruction_rank_key(result: dict[str, object], candidate) -> tuple[float, ...]:
+def _instruction_rank_key(result: dict[str, object], candidate, train_smiles: set[str] | None = None) -> tuple[float, ...]:
     passed_groups = sum(
         1.0
         for key in ("goal_success", "edit_success", "constraint_success")
         if result.get(key)
     )
+    train_hit = candidate.smiles in (train_smiles or set())
+    druglike_penalty = 0.0
+    try:
+        druglike_penalty = 0.0 if bool(candidate.descriptors) and bool(result.get("druglike")) else 1.0
+    except Exception:
+        druglike_penalty = 1.0
     return (
         0.0 if result.get("overall_success") else 1.0,
+        0.0 if result.get("constraint_success") else 1.0,
         -passed_groups,
         0.0 if result.get("goal_success") else 1.0,
         0.0 if result.get("edit_success") else 1.0,
-        0.0 if result.get("constraint_success") else 1.0,
         0.0 if result.get("valid") else 1.0,
+        1.0 if train_hit else 0.0,
+        druglike_penalty,
         -float(result.get("similarity_to_source", 0.0) or 0.0),
         float(candidate.score),
     )
@@ -612,6 +679,8 @@ def _candidate_source_metrics(decoded_df: pd.DataFrame) -> dict[str, float]:
 def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
     keys = [
         "backend",
+        "planner_mode",
+        "split_column",
         "train_size",
         "eval_size",
         "n",

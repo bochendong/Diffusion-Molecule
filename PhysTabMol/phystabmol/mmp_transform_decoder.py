@@ -198,6 +198,7 @@ class MMPTransformIndex:
         candidates: list[DecodedCandidate] = []
         candidates.extend(self._decode_pair_targets(table_row, target_vec, delta_vec, prompt_vec, prompt_smiles, seed, config))
         if prompt_smiles:
+            candidates.extend(self._decode_prompt_atom_edits(table_row, prompt_smiles, seed, config))
             candidates.extend(self._decode_prompt_fragments(table_row, delta_vec, prompt_smiles, seed, config))
         return _dedupe_rank(candidates, top_k=top_k)
 
@@ -266,6 +267,33 @@ class MMPTransformIndex:
                     out.append(candidate)
         if config.fragment_growth_steps >= 2:
             out.extend(self._decode_second_step_fragments(table_row, out, prompt_smiles, seed, config))
+        return out
+
+    def _decode_prompt_atom_edits(
+        self,
+        table_row: dict[str, float],
+        prompt_smiles: str,
+        seed: int,
+        config: MMPTransformConfig,
+    ) -> list[DecodedCandidate]:
+        out = []
+        for smi in _direct_atom_edit_smiles_from_row(prompt_smiles, table_row, config.attachment_limit):
+            rec = molecular_descriptors(smi)
+            if not rec.valid:
+                continue
+            score = _candidate_score(table_row, rec.descriptors, rec.smiles, seed, config, prompt_smiles=prompt_smiles, train_smiles=self.train_smiles)
+            score -= 0.5 * config.fragment_bonus
+            if rec.smiles in self.train_smiles:
+                score += config.fragment_exact_penalty
+            out.append(
+                DecodedCandidate(
+                    smiles=rec.smiles,
+                    score=score,
+                    valid=True,
+                    descriptors=rec.descriptors,
+                    source="mmp_source_atom_edit_decoder",
+                )
+            )
         return out
 
     def _decode_second_step_fragments(
@@ -575,6 +603,88 @@ def _fragment_approx_delta(fragment_mol) -> np.ndarray:
             vec[idx] = float(counts.get("O", 0))
     vec[TABLE_COLUMNS.index("SA")] = 0.05 * float(sum(counts.values()))
     return vec
+
+
+@lru_cache(maxsize=200000)
+def _direct_atom_edit_smiles(prompt_smiles: str, table_key: tuple[tuple[str, float], ...] | dict[str, float], attachment_limit: int) -> tuple[str, ...]:
+    if not chem_mod.RDKIT_AVAILABLE:
+        return tuple()
+    table_row = dict(table_key) if not isinstance(table_key, dict) else table_key
+    mol = chem_mod.Chem.MolFromSmiles(prompt_smiles)
+    if mol is None:
+        return tuple()
+    out: set[str] = set()
+    source_rec = molecular_descriptors(prompt_smiles)
+    source_desc = source_rec.descriptors if source_rec.valid else {}
+
+    halogen_delta = float(table_row.get("fg_halogen", 0.0)) - float(source_desc.get("fg_halogen", 0.0))
+    hetero_delta = (
+        float(table_row.get("N", 0.0) + table_row.get("O", 0.0) + table_row.get("S", 0.0))
+        - float(source_desc.get("N", 0.0) + source_desc.get("O", 0.0) + source_desc.get("S", 0.0))
+    )
+    if halogen_delta >= 0.5:
+        for symbol in ("F", "Cl"):
+            out.update(_attach_atom_to_prompt(mol, symbol, attachment_limit))
+    elif halogen_delta <= -0.5:
+        out.update(_remove_terminal_atoms(mol, {9, 17, 35, 53}, attachment_limit))
+
+    if hetero_delta >= 0.5:
+        if float(table_row.get("O", 0.0)) >= float(source_desc.get("O", 0.0)) + 0.5:
+            out.update(_attach_atom_to_prompt(mol, "O", attachment_limit))
+        if float(table_row.get("N", 0.0)) >= float(source_desc.get("N", 0.0)) + 0.5:
+            out.update(_attach_atom_to_prompt(mol, "N", attachment_limit))
+    elif hetero_delta <= -0.5:
+        out.update(_remove_terminal_atoms(mol, {7, 8, 16}, attachment_limit))
+
+    return tuple(sorted(out))
+
+
+def _direct_atom_edit_smiles_from_row(prompt_smiles: str, table_row: dict[str, float], attachment_limit: int) -> tuple[str, ...]:
+    key = tuple(sorted((str(k), float(v)) for k, v in table_row.items()))
+    return _direct_atom_edit_smiles(prompt_smiles, key, attachment_limit)
+
+
+def _attach_atom_to_prompt(mol, symbol: str, attachment_limit: int) -> set[str]:
+    out = set()
+    mol_h = chem_mod.Chem.AddHs(mol)
+    for prompt_idx in _attachment_atoms(mol)[: max(1, attachment_limit)]:
+        prompt_atom = mol_h.GetAtomWithIdx(int(prompt_idx))
+        hydrogen_neighbors = [nbr.GetIdx() for nbr in prompt_atom.GetNeighbors() if nbr.GetAtomicNum() == 1]
+        if not hydrogen_neighbors:
+            continue
+        rw = chem_mod.Chem.RWMol(mol_h)
+        try:
+            rw.RemoveAtom(int(hydrogen_neighbors[0]))
+            atom_idx = rw.AddAtom(chem_mod.Chem.Atom(symbol))
+            rw.AddBond(int(prompt_idx), int(atom_idx), chem_mod.Chem.BondType.SINGLE)
+            candidate = rw.GetMol()
+            chem_mod.Chem.SanitizeMol(candidate)
+            candidate = chem_mod.Chem.RemoveHs(candidate)
+            out.add(chem_mod.Chem.MolToSmiles(candidate, canonical=True))
+        except Exception:
+            continue
+    return out
+
+
+def _remove_terminal_atoms(mol, atomic_nums: set[int], limit: int) -> set[str]:
+    out = set()
+    removable = [
+        int(atom.GetIdx())
+        for atom in mol.GetAtoms()
+        if atom.GetAtomicNum() in atomic_nums and len([nbr for nbr in atom.GetNeighbors() if nbr.GetAtomicNum() > 1]) <= 1
+    ][: max(1, limit)]
+    for atom_idx in removable:
+        rw = chem_mod.Chem.RWMol(mol)
+        try:
+            rw.RemoveAtom(int(atom_idx))
+            candidate = rw.GetMol()
+            chem_mod.Chem.SanitizeMol(candidate)
+            smi = chem_mod.Chem.MolToSmiles(candidate, canonical=True)
+            if smi:
+                out.add(smi)
+        except Exception:
+            continue
+    return out
 
 
 @lru_cache(maxsize=300000)

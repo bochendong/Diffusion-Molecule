@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from .instruction_actions import ground_instruction_text
 from .instruction_templates import instruction_text_is_consistent
 
 
@@ -74,11 +75,14 @@ def filter_paraphrases(dataset_path: str | Path, paraphrases_path: str | Path, o
         row = base.loc[pair_id].to_dict()
         text = str(para["instruction_text"])
         check = instruction_text_is_consistent(text, row["instruction_spec_json"])
+        grounded = ground_instruction_text(text, row["instruction_spec_json"])
         out = dict(row)
         out["instruction_text"] = text
         out["template_id"] = para.get("template_id", "llm_paraphrase")
         out["language_source"] = "llm_paraphrase"
         out["consistency_check_json"] = json.dumps(check, sort_keys=True)
+        out["grounded_instruction_spec_json"] = grounded["instruction_spec_json"]
+        out["recognized_instruction_tags"] = "|".join(grounded["recognized_tags"])
         if check["consistent"]:
             accepted.append(out)
         else:

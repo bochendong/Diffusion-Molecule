@@ -16,7 +16,7 @@ from .chem import canonicalize_smiles, molecular_descriptors, passes_druglike_fi
 from .instruction_local_edit import edit_region_summary
 from .instruction_schema import DEFAULT_THRESHOLDS, normalize_spec, spec_to_json
 from .instruction_templates import generate_instruction_texts
-from .instruction_verifier import preserves_scaffold, property_delta, score_verification, verify_instruction
+from .instruction_verifier import preserves_scaffold, property_delta, scaffold_smiles, score_verification, verify_instruction
 
 
 def main() -> None:
@@ -31,6 +31,7 @@ def main() -> None:
         max_similarity=args.max_similarity,
         instructions_per_spec=args.instructions_per_spec,
         reference_pool_size=args.reference_pool_size,
+        split_strategy=args.split_strategy,
         seed=args.seed,
     )
     out = Path(args.out)
@@ -61,6 +62,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--reference-pool-size", type=int, default=24)
     parser.add_argument("--min-similarity", type=float, default=0.6)
     parser.add_argument("--max-similarity", type=float, default=0.95)
+    parser.add_argument("--split-strategy", choices=["random", "scaffold"], default="random")
     parser.add_argument("--seed", type=int, default=7)
     return parser.parse_args()
 
@@ -75,6 +77,7 @@ def build_instruction_dataset(
     max_similarity: float = 0.95,
     instructions_per_spec: int = 5,
     reference_pool_size: int = 24,
+    split_strategy: str = "random",
     seed: int = 7,
 ) -> list[dict[str, Any]]:
     records = _load_records(data_path, smiles_column=smiles_column, limit=limit)
@@ -106,8 +109,8 @@ def build_instruction_dataset(
             spec = _spec_from_pair(source, target, sim, min_similarity)
             if spec is None:
                 continue
-            check = verify_instruction(source["smiles"], target["smiles"], spec)
-            if not check["overall_success"]:
+            spec_variants = _verified_spec_variants(source, target, spec)
+            if not spec_variants:
                 continue
             reference_smiles, reference_role = _select_reference_smiles(
                 source=source,
@@ -121,29 +124,44 @@ def build_instruction_dataset(
             pair_seen.add(pair_key)
             delta = property_delta(source["descriptors"], target["descriptors"])
             edit_region = edit_region_summary(source["smiles"], target["smiles"])
-            templates = generate_instruction_texts(spec, max_variants=instructions_per_spec)
-            for template in templates:
-                split = _split_for_key(pair_key, seed=seed)
-                rows.append(
-                    {
-                        "pair_id": pair_key,
-                        "source_smiles": source["smiles"],
-                        "target_smiles": target["smiles"],
-                        "reference_smiles": reference_smiles,
-                        "reference_role": reference_role,
-                        "instruction_text": template["instruction_text"],
-                        "instruction_spec_json": spec_to_json(spec),
-                        "property_delta_json": json.dumps(delta, sort_keys=True),
-                        "edit_region_json": json.dumps(edit_region, sort_keys=True),
-                        "edit_tags": "|".join(spec["goals"] + spec["constraints"] + spec["edits"]),
-                        "task_family": "verified_instruction_local_edit",
-                        "univideo_task": "i+i2i_edit" if reference_role == "verified_neighbor" else "i2i_edit",
-                        "sketchmol_task": "molecule_inpainting_analog",
-                        "template_id": template["template_id"],
-                        "split": split,
-                        "similarity_to_source": float(sim),
-                    }
-                )
+            for variant_idx, spec_variant in enumerate(spec_variants):
+                templates = generate_instruction_texts(spec_variant, max_variants=instructions_per_spec)
+                for template in templates:
+                    random_split = _split_for_key(pair_key, seed=seed)
+                    scaffold_split = _split_for_scaffold(source["smiles"], seed=seed)
+                    split = scaffold_split if split_strategy == "scaffold" else random_split
+                    combo_key = _combo_key(spec_variant)
+                    rows.append(
+                        {
+                            "pair_id": pair_key,
+                            "instruction_id_key": f"{pair_key}:{variant_idx}:{template['template_id']}",
+                            "source_smiles": source["smiles"],
+                            "target_smiles": target["smiles"],
+                            "reference_smiles": reference_smiles,
+                            "reference_role": reference_role,
+                            "instruction_text": template["instruction_text"],
+                            "instruction_spec_json": spec_to_json(spec_variant),
+                            "property_delta_json": json.dumps(delta, sort_keys=True),
+                            "edit_region_json": json.dumps(edit_region, sort_keys=True),
+                            "edit_tags": "|".join(spec_variant["goals"] + spec_variant["constraints"] + spec_variant["edits"]),
+                            "difficulty": _difficulty_from_spec(spec_variant),
+                            "goal_combo_key": "|".join(spec_variant["goals"]) or "none",
+                            "edit_combo_key": "|".join(spec_variant["edits"]) or "none",
+                            "instruction_combo_key": combo_key,
+                            "threshold_range_key": _threshold_range_key(spec_variant),
+                            "task_family": "verified_instruction_local_edit",
+                            "univideo_task": "i+i2i_edit" if reference_role == "verified_neighbor" else "i2i_edit",
+                            "sketchmol_task": "molecule_inpainting_analog",
+                            "template_id": template["template_id"],
+                            "language_source": "template",
+                            "split_random": random_split,
+                            "split_by_scaffold": scaffold_split,
+                            "edit_combo_split": _split_for_key("combo:" + combo_key, seed=seed),
+                            "paraphrase_split": _paraphrase_split(template["template_id"]),
+                            "split": split,
+                            "similarity_to_source": float(sim),
+                        }
+                    )
     if not rows:
         raise ValueError("No verified instruction pairs were found. Try lowering --min-similarity or increasing --limit.")
     return rows
@@ -192,6 +210,36 @@ def _spec_from_pair(source: dict[str, Any], target: dict[str, Any], similarity: 
     if not spec["goals"] and not spec["edits"]:
         return None
     return spec
+
+
+def _verified_spec_variants(source: dict[str, Any], target: dict[str, Any], base_spec: dict[str, Any]) -> list[dict[str, Any]]:
+    variants = []
+    base = normalize_spec(base_spec)
+    primary_actions = list(base["goals"]) + list(base["edits"])
+    if not primary_actions:
+        return []
+
+    easy_goal = base["goals"][:1]
+    easy_edit = [] if easy_goal else base["edits"][:1]
+    medium_goals = base["goals"][:1]
+    medium_edits = base["edits"][:1]
+    constraint_priority = [name for name in ("keep_similarity", "keep_mw_similar", "preserve_scaffold", "keep_druglike") if name in base["constraints"]]
+    raw_variants = [
+        {"goals": easy_goal, "constraints": constraint_priority[:1], "edits": easy_edit, "thresholds": base["thresholds"]},
+        {"goals": medium_goals, "constraints": constraint_priority[:2], "edits": medium_edits, "thresholds": base["thresholds"]},
+        base,
+    ]
+    seen = set()
+    for raw in raw_variants:
+        spec = normalize_spec(raw)
+        key = spec_to_json(spec)
+        if key in seen:
+            continue
+        seen.add(key)
+        check = verify_instruction(source["smiles"], target["smiles"], spec)
+        if check["overall_success"]:
+            variants.append(spec)
+    return variants
 
 
 def _goal_candidates(source: dict[str, float], target: dict[str, float]) -> list[str]:
@@ -319,6 +367,54 @@ def _split_for_key(key: str, seed: int) -> str:
     if value < 80:
         return "train"
     if value < 90:
+        return "valid"
+    return "test"
+
+
+def _split_for_scaffold(smiles: str, seed: int) -> str:
+    scaffold = scaffold_smiles(smiles) or canonicalize_smiles(smiles) or smiles
+    return _split_for_key("scaffold:" + scaffold, seed=seed)
+
+
+def _difficulty_from_spec(spec: dict[str, Any]) -> str:
+    normalized = normalize_spec(spec)
+    goals = len(normalized["goals"])
+    edits = len(normalized["edits"])
+    constraints = len(normalized["constraints"])
+    total_actions = goals + edits
+    if total_actions <= 1 and constraints <= 2:
+        return "easy"
+    if total_actions <= 2 and constraints <= 3:
+        return "medium"
+    return "hard"
+
+
+def _combo_key(spec: dict[str, Any]) -> str:
+    normalized = normalize_spec(spec)
+    tags = list(normalized["goals"]) + list(normalized["constraints"]) + list(normalized["edits"])
+    return "|".join(tags) or "none"
+
+
+def _threshold_range_key(spec: dict[str, Any]) -> str:
+    thresholds = normalize_spec(spec)["thresholds"]
+    parts = []
+    for key in ("delta_logp_min", "delta_qed_min", "delta_tpsa_min", "delta_mw_min", "delta_mw_abs_max", "similarity_min"):
+        value = float(thresholds.get(key, DEFAULT_THRESHOLDS.get(key, 0.0)))
+        default = float(DEFAULT_THRESHOLDS.get(key, 1.0))
+        if value < 0.75 * default:
+            bucket = "low"
+        elif value > 1.25 * default:
+            bucket = "high"
+        else:
+            bucket = "mid"
+        parts.append(f"{key}:{bucket}")
+    return "|".join(parts)
+
+
+def _paraphrase_split(template_id: str) -> str:
+    if template_id in {"template_direct", "template_source", "template_planner"}:
+        return "train"
+    if template_id == "template_candidate":
         return "valid"
     return "test"
 

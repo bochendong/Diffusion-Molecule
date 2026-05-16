@@ -391,7 +391,8 @@ data/instruction_editing.jsonl
 ```text
 source_smiles,target_smiles,instruction_text,instruction_spec_json,
 reference_smiles,reference_role,property_delta_json,edit_region_json,
-edit_tags,task_family,univideo_task,sketchmol_task,split
+edit_tags,difficulty,split_random,split_by_scaffold,edit_combo_split,
+paraphrase_split,task_family,univideo_task,sketchmol_task,split
 ```
 
 `reference_smiles` 是 UniVideo-style in-context reference：source + reference + text instruction
@@ -467,24 +468,27 @@ PhysTabMol: molecular table VAE latent diffusion
 ring/scaffold 与部分 atom-count plan 会轻量拉回 source；source-aware decoder 也会用 eval source 的
 descriptor vector 去训练池里检索 source-nearest 候选，即使这个 source 本身不在 train index 中。
 
-默认会启用两层 verified decoder：
+默认 paper-facing 路线把 decoder 分成两类：主模型使用 **source-aware fragment growth**；
+retrieval decoder 只作为 baseline/ablation，避免训练集近邻复读抢占结果。
 
-- **MMP transformation decoder**：从训练集 verified `source -> target` pairs 中抽取类似 matched molecular pair 的
+- **source-aware fragment growth decoder**：从 `source_smiles` 出发做 atom/fragment growth、substitution/removal，
+  并用 instruction verifier 做 constraint-first ranking。
+- **MMP transformation decoder baseline**：从训练集 verified `source -> target` pairs 中抽取类似 matched molecular pair 的
   transformation memory，按当前 source、instruction tags、generated descriptor delta 和 reference molecule
   检索候选，再用 RDKit verifier 重排。
-- **source-aware decoder**：从训练分子库中检索接近 `source molecule / reference molecule / generated plan`
+- **source-aware retrieval baseline**：从训练分子库中检索接近 `source molecule / reference molecule / generated plan`
   的候选，并用 verifier 重新排序。
 
 这样主任务更像“编辑原分子”，而不是无条件生成一个新分子。
 
-如果要做旧 decoder 的 ablation：
+如果要打开 retrieval baseline：
 
 ```bash
 python3 -m phystabmol.instruction_experiment \
   --dataset data/instruction_editing.csv \
   --backend torch \
-  --disable-mmp-decoder \
-  --disable-source-aware-decoder
+  --enable-mmp-decoder \
+  --enable-source-aware-decoder
 ```
 
 多模态输入 ablation：
@@ -525,7 +529,8 @@ Slurm 默认使用：
 ```text
 PHYSTABMOL_MULTIMODAL_CONTEXT=source_reference
 PHYSTABMOL_LATENT_VAE=1
-source-aware decoder enabled
+fragment growth decoder enabled
+MMP/source retrieval disabled unless explicitly enabled
 ```
 
 若已有旧 `data/instruction_editing.csv` 缺少 `reference_smiles`，脚本会自动重建 instruction dataset。
@@ -563,6 +568,33 @@ bash scripts/run_instruction_editing_benchmark.sh
 - `fragment_growth_candidate_fraction`
 
 默认 `PHYSTABMOL_FRAGMENT_PAIR_NEIGHBORS=0`，也就是主 decoder 不直接检索 mined pair target，而是从 source molecule 做 fragment growth；这能让实验更像真实编辑，而不是训练库近邻复读。
+
+Planner/decoder 消融一行提交：
+
+```bash
+bash scripts/run_instruction_ablation.sh
+```
+
+默认包含：
+
+```text
+full, rule_plan, random_plan, oracle_plan, no_instruction,
+retrieval_only, fragment_no_planner
+```
+
+汇总 paper-ready 表格：
+
+```bash
+bash scripts/summarize_instruction_results.sh
+```
+
+输出：
+
+```text
+outputs/instruction_paper_summary.csv
+outputs/instruction_paper_summary.tex
+outputs/instruction_failure_breakdown.csv
+```
 
 ## 3D Molecule Support
 

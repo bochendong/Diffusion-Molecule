@@ -34,6 +34,7 @@ REFERENCE_POOL_SIZE="${PHYSTABMOL_REFERENCE_POOL_SIZE:-24}"
 MIN_SIMILARITY="${PHYSTABMOL_MIN_SIMILARITY:-0.6}"
 MAX_SIMILARITY="${PHYSTABMOL_MAX_SIMILARITY:-0.95}"
 SEED="${PHYSTABMOL_SEED:-7}"
+SPLIT_STRATEGY="${PHYSTABMOL_SPLIT_STRATEGY:-random}"
 
 if [[ ! -s "$DATA" ]]; then
   echo "Dataset not found at $DATA; downloading ChEMBL first."
@@ -51,6 +52,7 @@ fi
   --reference-pool-size "$REFERENCE_POOL_SIZE" \
   --min-similarity "$MIN_SIMILARITY" \
   --max-similarity "$MAX_SIMILARITY" \
+  --split-strategy "$SPLIT_STRATEGY" \
   --seed "$SEED"
 
 echo "Instruction dataset written to $OUT"
