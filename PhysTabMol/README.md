@@ -541,16 +541,14 @@ LLM paraphrase 工作流是离线的。先导出 prompt：
 bash scripts/export_instruction_paraphrase_prompts.sh
 ```
 
-外部 LLM 返回 `pair_id,instruction_text` 后，用确定性语言/spec consistency check 过滤：
+外部 LLM 返回 `paraphrase_base_id,pair_id,instruction_text` 后，用确定性语言/spec consistency check 过滤：
 
 ```bash
-python3 -m phystabmol.instruction_paraphrases filter \
-  --dataset data/instruction_editing.csv \
-  --paraphrases llm_paraphrases.jsonl \
-  --out data/instruction_editing_llm_verified.csv
+PHYSTABMOL_LLM_PARAPHRASES=llm_paraphrases.jsonl \
+bash scripts/filter_instruction_paraphrases.sh
 ```
 
-这一步只检查语言是否引入了 spec 外目标，不做化学裁判；最终化学评估仍由 verifier 完成。
+这一步只检查语言是否完整表达 executable spec、且没有引入 spec 外目标，不做化学裁判；最终化学评估仍由 verifier 完成。`paraphrase_base_id` 很重要，因为同一个 source/target pair 会产生 easy/medium/hard 多个 instruction spec。
 
 自然语言 instruction editing 的主实验可以一行提交：
 
@@ -581,6 +579,22 @@ bash scripts/run_instruction_ablation.sh
 full, rule_plan, random_plan, oracle_plan, no_instruction,
 retrieval_only, fragment_no_planner
 ```
+
+其中 `no_instruction` 是严格 blind baseline：planner 看不到 target hints / goal / edit / constraint，decoder 和 ranking 也不能用 executable spec；真实 spec 只保留给最终 evaluator。这样可以检验自然语言/spec 条件是否真的提供了增益。
+
+泛化实验一行提交：
+
+```bash
+bash scripts/run_instruction_generalization.sh
+```
+
+默认覆盖：
+
+```text
+template_paraphrase, edit_combo, scaffold, llm_verified
+```
+
+`llm_verified` 只有在 `data/instruction_editing_llm_verified.csv` 存在时才会提交。
 
 汇总 paper-ready 表格：
 

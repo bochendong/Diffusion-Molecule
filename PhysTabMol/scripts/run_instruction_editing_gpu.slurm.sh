@@ -74,6 +74,9 @@ fi
 if [[ "${PHYSTABMOL_DISABLE_INSTRUCTION_FEATURES:-0}" == "1" ]]; then
   EXTRA_ARGS+=(--disable-instruction-features)
 fi
+if [[ "${PHYSTABMOL_BLIND_INSTRUCTION:-0}" == "1" ]]; then
+  EXTRA_ARGS+=(--blind-instruction)
+fi
 if [[ "$MULTIMODAL_CONTEXT" == "source_reference" || "$MULTIMODAL_CONTEXT" == "full" ]]; then
   if ! head -n 1 "$DATASET" | tr ',' '\n' | grep -qx 'reference_smiles'; then
     echo "Dataset $DATASET has no reference_smiles column; rebuilding for multimodal source_reference/full."

@@ -125,6 +125,8 @@ def build_instruction_dataset(
             delta = property_delta(source["descriptors"], target["descriptors"])
             edit_region = edit_region_summary(source["smiles"], target["smiles"])
             for variant_idx, spec_variant in enumerate(spec_variants):
+                spec_json = spec_to_json(spec_variant)
+                paraphrase_base_id = f"{pair_key}:{hashlib.sha1(spec_json.encode('utf-8')).hexdigest()[:12]}"
                 templates = generate_instruction_texts(spec_variant, max_variants=instructions_per_spec)
                 for template in templates:
                     random_split = _split_for_key(pair_key, seed=seed)
@@ -134,13 +136,14 @@ def build_instruction_dataset(
                     rows.append(
                         {
                             "pair_id": pair_key,
+                            "paraphrase_base_id": paraphrase_base_id,
                             "instruction_id_key": f"{pair_key}:{variant_idx}:{template['template_id']}",
                             "source_smiles": source["smiles"],
                             "target_smiles": target["smiles"],
                             "reference_smiles": reference_smiles,
                             "reference_role": reference_role,
                             "instruction_text": template["instruction_text"],
-                            "instruction_spec_json": spec_to_json(spec_variant),
+                            "instruction_spec_json": spec_json,
                             "property_delta_json": json.dumps(delta, sort_keys=True),
                             "edit_region_json": json.dumps(edit_region, sort_keys=True),
                             "edit_tags": "|".join(spec_variant["goals"] + spec_variant["constraints"] + spec_variant["edits"]),

@@ -47,6 +47,7 @@ def main() -> None:
         eval_df = eval_df.head(args.eval_limit).reset_index(drop=True)
     if train_df.empty or eval_df.empty:
         raise ValueError("Instruction dataset must contain non-empty train and eval splits.")
+    effective_multimodal_context = _effective_multimodal_context(args.multimodal_context, blind_instruction=args.blind_instruction)
 
     print(
         f"Building feature arrays: train={len(train_df)} eval={len(eval_df)} "
@@ -55,15 +56,17 @@ def main() -> None:
     )
     train_x, train_y = _build_arrays(
         train_df,
-        multimodal_context=args.multimodal_context,
+        multimodal_context=effective_multimodal_context,
         allow_target_reference=args.allow_target_reference,
         disable_instruction_features=args.disable_instruction_features,
+        blind_instruction=args.blind_instruction,
     )
     eval_x, _ = _build_arrays(
         eval_df,
-        multimodal_context=args.multimodal_context,
+        multimodal_context=effective_multimodal_context,
         allow_target_reference=args.allow_target_reference,
         disable_instruction_features=args.disable_instruction_features,
+        blind_instruction=args.blind_instruction,
     )
     train_df.to_csv(run_dir / "tables" / "instruction_train.csv", index=False)
     eval_df.to_csv(run_dir / "tables" / "instruction_eval.csv", index=False)
@@ -162,7 +165,8 @@ def main() -> None:
             fragment_second_step_neighbors=args.fragment_second_step_neighbors,
             fragment_growth_mw_gap=args.fragment_growth_mw_gap,
         ),
-        use_instruction_guided_plan=not args.disable_instruction_guided_plan,
+        use_instruction_guided_plan=not args.disable_instruction_guided_plan and not args.blind_instruction,
+        blind_instruction=args.blind_instruction,
         train_smiles=train_smiles,
     )
     decoded_df.to_csv(run_dir / "tables" / "decoded_instruction_candidates.csv", index=False)
@@ -178,12 +182,15 @@ def main() -> None:
             "split_column": split_col,
             "planner_mode": args.planner_mode,
             "multimodal_feature_dim": float(len(multimodal_feature_names(args.multimodal_context))),
+            "effective_multimodal_context": effective_multimodal_context,
+            "effective_multimodal_feature_dim": float(len(multimodal_feature_names(effective_multimodal_context))),
             "mmp_decoder": bool(args.mmp_decoder),
             "source_aware_decoder": bool(args.source_aware_decoder),
             "fragment_growth_decoder": bool(fragment_index is not None),
             "fragment_transform_pairs": float(len(fragment_index.pairs)) if fragment_index is not None else 0.0,
             "fragment_transform_fragments": float(len(fragment_index.fragments)) if fragment_index is not None else 0.0,
-            "instruction_guided_plan": bool(not args.disable_instruction_guided_plan),
+            "instruction_guided_plan": bool(not args.disable_instruction_guided_plan and not args.blind_instruction),
+            "blind_instruction": bool(args.blind_instruction),
             "latent_vae": bool(args.latent_vae),
             "vae_latent_dim": float(args.vae_latent_dim) if args.latent_vae else 0.0,
             "run_dir": str(run_dir),
@@ -259,6 +266,15 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Ablation: keep source/target hints but zero goal/edit/constraint features.",
     )
+    parser.add_argument(
+        "--blind-instruction",
+        action="store_true",
+        help=(
+            "Ablation: hide target hints plus all instruction features from the planner, "
+            "and prevent decoder/ranking from using the executable spec. The true spec is "
+            "kept only in the output CSV for final evaluation."
+        ),
+    )
     parser.add_argument("--multimodal-context", choices=MULTIMODAL_CONTEXT_MODES, default="none")
     parser.add_argument(
         "--allow-target-reference",
@@ -290,16 +306,27 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _effective_multimodal_context(multimodal_context: str, blind_instruction: bool = False) -> str:
+    if not blind_instruction:
+        return multimodal_context
+    if multimodal_context in {"source_reference", "full"}:
+        return "source_image"
+    return multimodal_context
+
+
 def _build_arrays(
     df: pd.DataFrame,
     multimodal_context: str = "none",
     allow_target_reference: bool = False,
     disable_instruction_features: bool = False,
+    blind_instruction: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     conditions = []
     targets = []
     for _, row in df.iterrows():
         condition = condition_from_source_and_spec(row["source_smiles"], row["instruction_spec_json"])
+        if blind_instruction:
+            condition[len(TABLE_COLUMNS) : INSTRUCTION_SPEC_FEATURE_END] = 0.0
         if disable_instruction_features:
             condition[INSTRUCTION_SPEC_FEATURE_START:INSTRUCTION_SPEC_FEATURE_END] = 0.0
         multimodal = multimodal_context_from_row(
@@ -442,12 +469,14 @@ def _decode_and_attach(
     fragment_index: MMPTransformIndex | None = None,
     fragment_config: MMPTransformConfig | None = None,
     use_instruction_guided_plan: bool = True,
+    blind_instruction: bool = False,
     train_smiles: set[str] | None = None,
 ) -> pd.DataFrame:
     rows = []
     for _, source in generated_df.iterrows():
         instruction_idx = int(source["instruction_id"])
         instruction = eval_df.iloc[instruction_idx]
+        decoder_instruction = _blind_instruction_row(instruction) if blind_instruction else instruction
         table_row = {col: float(source[col]) for col in TABLE_COLUMNS}
         decode_row = _instruction_guided_table_row(table_row, instruction) if use_instruction_guided_plan else table_row
         decode_seed = instruction_idx * 1009 + int(source["sample_idx"])
@@ -460,14 +489,14 @@ def _decode_and_attach(
                     seed=decode_seed,
                     index=fragment_index,
                     config=fragment_config,
-                    prompt_smiles=str(instruction["source_smiles"]),
+                    prompt_smiles=str(decoder_instruction["source_smiles"]),
                 )
             )
         if mmp_index is not None:
             verified_candidates.extend(
                 decode_mmp_transform(
                     decode_row,
-                    instruction,
+                    decoder_instruction,
                     mmp_index,
                     top_k=max(top_k * 2, top_k),
                     seed=decode_seed,
@@ -478,14 +507,20 @@ def _decode_and_attach(
             verified_candidates.extend(
                 decode_source_aware(
                     decode_row,
-                    instruction,
+                    decoder_instruction,
                     source_index,
                     top_k=max(top_k * 2, top_k),
                     seed=decode_seed,
                     config=source_aware_config,
                 )
             )
-        candidates = _rank_instruction_candidates(_dedupe_candidates(verified_candidates), instruction, top_k=top_k, train_smiles=train_smiles)
+        candidates = _rank_instruction_candidates(
+            _dedupe_candidates(verified_candidates),
+            instruction,
+            top_k=top_k,
+            train_smiles=train_smiles,
+            blind_instruction=blind_instruction,
+        )
         if len(candidates) < top_k:
             candidates.extend(
                 decode_table_row(
@@ -495,7 +530,13 @@ def _decode_and_attach(
                     include_dynamic=dynamic_decoder,
                 )
             )
-        ranked = _rank_instruction_candidates(_dedupe_candidates(candidates), instruction, top_k=top_k, train_smiles=train_smiles)
+        ranked = _rank_instruction_candidates(
+            _dedupe_candidates(candidates),
+            instruction,
+            top_k=top_k,
+            train_smiles=train_smiles,
+            blind_instruction=blind_instruction,
+        )
         for rank, candidate in enumerate(ranked, start=1):
             out = {
                 "instruction_id": instruction_idx,
@@ -606,9 +647,17 @@ def _apply_edit_count_hints(out: dict[str, float], source_row: dict[str, float],
         out["O"] = max(float(out.get("O", 0.0)), float(source_row["O"]) + required)
 
 
-def _rank_instruction_candidates(candidates, instruction: pd.Series, top_k: int, train_smiles: set[str] | None = None):
+def _rank_instruction_candidates(
+    candidates,
+    instruction: pd.Series,
+    top_k: int,
+    train_smiles: set[str] | None = None,
+    blind_instruction: bool = False,
+):
     if not candidates:
         return []
+    if blind_instruction:
+        return _rank_blind_candidates(candidates, instruction, top_k=top_k, train_smiles=train_smiles)
     source_smiles = str(instruction["source_smiles"])
     spec_json = str(instruction["instruction_spec_json"])
     train_smiles = train_smiles or set()
@@ -618,6 +667,46 @@ def _rank_instruction_candidates(candidates, instruction: pd.Series, top_k: int,
         ranked.append((_instruction_rank_key(result, candidate, train_smiles=train_smiles), candidate))
     ranked.sort(key=lambda item: item[0])
     return [candidate for _, candidate in ranked[:top_k]]
+
+
+def _rank_blind_candidates(candidates, instruction: pd.Series, top_k: int, train_smiles: set[str] | None = None):
+    source_smiles = str(instruction["source_smiles"])
+    train_smiles = train_smiles or set()
+    ranked = []
+    for candidate in candidates:
+        train_hit = candidate.smiles in train_smiles
+        druglike_penalty = 0.0
+        if not candidate.descriptors:
+            druglike_penalty = 1.0
+        else:
+            try:
+                result = verify_instruction(source_smiles, candidate.smiles, {"goals": [], "constraints": ["keep_druglike"], "edits": []})
+                druglike_penalty = 0.0 if result.get("druglike") else 1.0
+            except Exception:
+                druglike_penalty = 1.0
+        ranked.append(
+            (
+                (
+                    0.0 if candidate.valid else 1.0,
+                    1.0 if train_hit else 0.0,
+                    druglike_penalty,
+                    float(candidate.score),
+                    _stable_candidate_order(candidate.smiles),
+                ),
+                candidate,
+            )
+        )
+    ranked.sort(key=lambda item: item[0])
+    return [candidate for _, candidate in ranked[:top_k]]
+
+
+def _blind_instruction_row(instruction: pd.Series) -> pd.Series:
+    row = instruction.copy()
+    row["instruction_spec_json"] = '{"constraints":[],"edits":[],"goals":[],"thresholds":{},"version":1}'
+    row["instruction_text"] = "[instruction hidden]"
+    if "reference_smiles" in row:
+        row["reference_smiles"] = ""
+    return row
 
 
 def _instruction_rank_key(result: dict[str, object], candidate, train_smiles: set[str] | None = None) -> tuple[float, ...]:
@@ -644,6 +733,13 @@ def _instruction_rank_key(result: dict[str, object], candidate, train_smiles: se
         -float(result.get("similarity_to_source", 0.0) or 0.0),
         float(candidate.score),
     )
+
+
+def _stable_candidate_order(smiles: str) -> float:
+    import hashlib
+
+    digest = hashlib.sha256(str(smiles).encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big") / 2**32
 
 
 def _dedupe_candidates(candidates):
@@ -681,6 +777,7 @@ def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
         "backend",
         "planner_mode",
         "split_column",
+        "blind_instruction",
         "train_size",
         "eval_size",
         "n",
@@ -706,10 +803,12 @@ def _summary(metrics: dict[str, float], args: argparse.Namespace) -> str:
     ]
     lines = ["PhysTabMol instruction-editing experiment complete", f"dataset={args.dataset}"]
     lines.append(f"multimodal_context={args.multimodal_context}")
+    lines.append(f"effective_multimodal_context={_effective_multimodal_context(args.multimodal_context, args.blind_instruction)}")
     lines.append(f"mmp_decoder={args.mmp_decoder}")
     lines.append(f"source_aware_decoder={args.source_aware_decoder}")
     lines.append(f"fragment_growth_decoder={args.fragment_growth_decoder}")
-    lines.append(f"instruction_guided_plan={not args.disable_instruction_guided_plan}")
+    lines.append(f"instruction_guided_plan={not args.disable_instruction_guided_plan and not args.blind_instruction}")
+    lines.append(f"blind_instruction={args.blind_instruction}")
     lines.append(f"latent_vae={args.latent_vae}")
     if args.latent_vae:
         lines.append(f"vae_latent_dim={args.vae_latent_dim}")

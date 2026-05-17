@@ -42,6 +42,7 @@ from phystabmol.instruction_verifier import verify_instruction
 df = pd.read_csv(sys.argv[1])
 required = {
     "difficulty",
+    "paraphrase_base_id",
     "split_by_scaffold",
     "split_random",
     "edit_combo_split",
@@ -62,4 +63,41 @@ grounded = ground_instruction_text(row["instruction_text"], row["instruction_spe
 if not grounded["consistent_with_base"]:
     raise SystemExit("template instruction failed action grammar consistency")
 print("instruction component checks passed")
+PY
+
+python3 -m phystabmol.instruction_paraphrases export-prompts \
+  --dataset "$TMPDIR/instruction.csv" \
+  --out "$TMPDIR/prompts.jsonl" \
+  --paraphrases-per-item 2
+
+python3 - <<'PY' "$TMPDIR/instruction.csv" "$TMPDIR/paraphrases.jsonl"
+import json
+import pandas as pd
+import sys
+
+df = pd.read_csv(sys.argv[1])
+row = df.iloc[0]
+record = {
+    "paraphrase_base_id": row["paraphrase_base_id"],
+    "pair_id": row["pair_id"],
+    "instruction_text": row["instruction_text"],
+}
+with open(sys.argv[2], "w", encoding="utf-8") as f:
+    f.write(json.dumps(record) + "\n")
+PY
+
+python3 -m phystabmol.instruction_paraphrases filter \
+  --dataset "$TMPDIR/instruction.csv" \
+  --paraphrases "$TMPDIR/paraphrases.jsonl" \
+  --out "$TMPDIR/llm_verified.csv" \
+  --rejected-out "$TMPDIR/llm_rejected.csv"
+
+python3 - <<'PY' "$TMPDIR/llm_verified.csv"
+import pandas as pd
+import sys
+
+df = pd.read_csv(sys.argv[1])
+if df.empty or set(df["language_source"]) != {"llm_paraphrase"}:
+    raise SystemExit("verified paraphrase filter did not accept the control paraphrase")
+print("paraphrase filter checks passed")
 PY

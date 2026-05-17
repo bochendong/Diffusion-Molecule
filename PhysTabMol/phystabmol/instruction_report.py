@@ -14,6 +14,8 @@ METRIC_COLUMNS = [
     "run_name",
     "planner_mode",
     "split_column",
+    "blind_instruction",
+    "effective_multimodal_context",
     "backend",
     "overall_success_at_1_by_instruction",
     "overall_success_at_5_by_instruction",

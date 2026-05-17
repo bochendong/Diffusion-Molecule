@@ -18,10 +18,12 @@ echo "Submitting instruction ablations: $MODES"
 for mode in $MODES; do
   export PHYSTABMOL_RUN_NAME="${PHYSTABMOL_RUN_PREFIX:-instruction_ablation}_${mode}"
   export PHYSTABMOL_PLANNER_MODE="diffusion"
+  export PHYSTABMOL_MULTIMODAL_CONTEXT="${PHYSTABMOL_BASE_MULTIMODAL_CONTEXT:-source_reference}"
   export PHYSTABMOL_ENABLE_MMP_DECODER="0"
   export PHYSTABMOL_ENABLE_SOURCE_AWARE_DECODER="0"
   export PHYSTABMOL_DISABLE_INSTRUCTION_FEATURES="0"
   export PHYSTABMOL_DISABLE_INSTRUCTION_GUIDED_PLAN="0"
+  export PHYSTABMOL_BLIND_INSTRUCTION="0"
   case "$mode" in
     full)
       ;;
@@ -36,6 +38,9 @@ for mode in $MODES; do
       ;;
     no_instruction)
       export PHYSTABMOL_DISABLE_INSTRUCTION_FEATURES="1"
+      export PHYSTABMOL_DISABLE_INSTRUCTION_GUIDED_PLAN="1"
+      export PHYSTABMOL_BLIND_INSTRUCTION="1"
+      export PHYSTABMOL_MULTIMODAL_CONTEXT="${PHYSTABMOL_NO_INSTRUCTION_MULTIMODAL_CONTEXT:-source_image}"
       ;;
     retrieval_only)
       export PHYSTABMOL_ENABLE_MMP_DECODER="1"
