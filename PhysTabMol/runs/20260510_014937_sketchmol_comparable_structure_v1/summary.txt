@@ -1,9 +1,0 @@
-PhysTabMol structure-prompt postprocess complete
-run_dir=runs/20260510_014937_sketchmol_comparable_structure_v1
-decoder_mode=hybrid_mmp
-retrieval_candidates=95000.0000
-mmp_transform_pairs=80000.0000
-mmp_transform_fragments=0.0000
-sketchmol_benchmark_mean_success_sketchmol_tolerance=0.7515
-structure_prompt_mean_joint_success_strict=0.2960
-structure_prompt_mean_joint_success_sketchmol_tolerance=0.5215

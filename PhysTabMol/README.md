@@ -625,6 +625,24 @@ outputs/instruction_paper_summary.tex
 outputs/instruction_failure_breakdown.csv
 ```
 
+清理旧 run 目录时可以先预览：
+
+```bash
+bash scripts/prune_runs.sh
+```
+
+确认列表没问题后再删除：
+
+```bash
+bash scripts/prune_runs.sh --apply
+```
+
+默认保留最佳 structure-prompt run、`instruction_ablation_*`、`instruction_generalization_*` 和 `instruction_verified_*`。如需额外保留某个旧 run：
+
+```bash
+bash scripts/prune_runs.sh --keep 20260514_062738_instruction_freeform_fragment_v1 --apply
+```
+
 ## 3D Molecule Support
 
 虽然不做视频，项目已经预留 3D 分子评估。若安装 RDKit，可开启：

@@ -1,7 +1,0 @@
-{
-  "device": null,
-  "run_dir": "runs/20260510_014937_sketchmol_comparable_structure_v1",
-  "structure_prompt_conditions": 0,
-  "structure_prompt_decode_top_k": 0,
-  "structure_prompt_samples": 0
-}
