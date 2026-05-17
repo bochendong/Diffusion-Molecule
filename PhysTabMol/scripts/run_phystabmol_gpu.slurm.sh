@@ -13,6 +13,9 @@
 set -euo pipefail
 unset LD_LIBRARY_PATH
 unset PYTHONPATH
+export PHYSTABMOL_SUPPRESS_RDKIT_LOGS="${PHYSTABMOL_SUPPRESS_RDKIT_LOGS:-1}"
+export PHYSTABMOL_PROGRESS="${PHYSTABMOL_PROGRESS:-1}"
+export PHYSTABMOL_PROGRESS_STEP="${PHYSTABMOL_PROGRESS_STEP:-5}"
 
 # Slurm copies this script to /var/spool/slurmd/.../slurm_script — dirname(BASH_SOURCE) is not the repo.
 # Submit from PhysTabMol repo root: cd .../PhysTabMol && sbatch scripts/run_phystabmol_gpu.slurm.sh
@@ -31,6 +34,7 @@ export MODULE_CUDA="${MODULE_CUDA:-cuda/12.6}"
 source "$SCRIPT_DIR/env_module_venv.sh"
 
 echo "jobid=${SLURM_JOB_ID:-} node=$(hostname) cwd=$(pwd)"
+echo "rdkit_logs_suppressed=$PHYSTABMOL_SUPPRESS_RDKIT_LOGS progress_step=${PHYSTABMOL_PROGRESS_STEP}%"
 nvidia-smi || true
 python -c "import torch; print('cuda=', torch.cuda.is_available())" || true
 

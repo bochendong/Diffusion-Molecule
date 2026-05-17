@@ -30,6 +30,7 @@ from .decoder import DRUGLIKE_SOFT_PENALTY, DecodedCandidate
 from .evaluate import evaluate_smiles
 from .features import IMAGE_FEATURE_COLUMNS, descriptor_image, image_array_features
 from .mmp_transform_decoder import MMPTransformConfig, MMPTransformIndex
+from .progress import iter_progress
 from .retrieval_decoder import RetrievalCandidateIndex, RetrievalDecoderConfig, decode_retrieval_table_row
 from .schema import TARGET_COLUMNS, TABLE_COLUMNS
 from .sketchmol_benchmark import SKETCHMOL_SUCCESS_TOLERANCE, STRICT_SUCCESS_TOLERANCE
@@ -87,6 +88,7 @@ def run_structure_prompt_benchmark(
         ("fragment_prompt", _build_fragment_conditions),
         ("local_optimization_prompt", _build_local_optimization_conditions),
     ]:
+        print(f"structure prompt task={task_name}: building conditions", flush=True)
         cond_df = builder(train_df, eval_df, config)
         if cond_df.empty:
             continue
@@ -118,7 +120,7 @@ def _build_scaffold_conditions(train_df: pd.DataFrame, eval_df: pd.DataFrame, co
     rows = []
     source_df = _condition_frame(eval_df, config.conditions_per_task, config.seed + 11)
     train_medians = {col: float(train_df[col].median()) for col in TARGET_COLUMNS}
-    for condition_idx, row in source_df.iterrows():
+    for condition_idx, row in iter_progress(source_df.iterrows(), total=len(source_df), label="scaffold prompt conditions"):
         source = str(row["smiles"])
         prompt = scaffold_prompt(source)
         if not prompt:
@@ -141,7 +143,7 @@ def _build_fragment_conditions(train_df: pd.DataFrame, eval_df: pd.DataFrame, co
     rows = []
     source_df = _condition_frame(eval_df, config.conditions_per_task, config.seed + 23)
     train_medians = {col: float(train_df[col].median()) for col in TARGET_COLUMNS}
-    for condition_idx, row in source_df.iterrows():
+    for condition_idx, row in iter_progress(source_df.iterrows(), total=len(source_df), label="fragment prompt conditions"):
         source = str(row["smiles"])
         prompt = fragment_prompt(source)
         if not prompt:
@@ -175,7 +177,7 @@ def _build_local_optimization_conditions(train_df: pd.DataFrame, eval_df: pd.Dat
     source_df = _condition_frame(eval_df, config.conditions_per_task, config.seed + 37)
     train_medians = {col: float(train_df[col].median()) for col in TARGET_COLUMNS}
     row_id = 0
-    for _, row in source_df.iterrows():
+    for _, row in iter_progress(source_df.iterrows(), total=len(source_df), label="local optimization prompt conditions"):
         source = str(row["smiles"])
         prompt = scaffold_prompt(source) or fragment_prompt(source)
         if not prompt:
@@ -259,10 +261,10 @@ def _generate_decode(
         sampled_rows = diffusion.sample_batch(conditions, samples_per_condition=samples_per_prompt)
     else:
         sampled_rows = []
-        for condition_idx, condition in enumerate(conditions):
+        for condition_idx, condition in iter_progress(enumerate(conditions), total=len(conditions), label="structure prompt sampling"):
             for sample_idx, table_row in enumerate(diffusion.sample(condition[None, :], n=samples_per_prompt)):
                 sampled_rows.append((condition_idx, sample_idx, table_row))
-    for condition_idx, sample_idx, table_row in sampled_rows:
+    for condition_idx, sample_idx, table_row in iter_progress(sampled_rows, total=len(sampled_rows), label="structure prompt decoding"):
         condition_row = cond_df.iloc[int(condition_idx)]
         use_condition_guided = bool(getattr(args, "structure_prompt_condition_guided_ranking", True)) and not bool(
             getattr(args, "disable_structure_prompt_condition_guided_ranking", False)

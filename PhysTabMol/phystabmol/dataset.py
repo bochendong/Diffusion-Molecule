@@ -10,6 +10,7 @@ import pandas as pd
 from .chem import canonicalize_smiles
 from .data import build_demo_dataframe
 from .features import IMAGE_FEATURE_COLUMNS, descriptor_image, extract_image_features, image_array_features, table_row_from_smiles
+from .progress import iter_progress
 from .schema import TABLE_COLUMNS, TARGET_COLUMNS
 
 
@@ -29,7 +30,7 @@ def load_experiment_dataframe(
         raise ValueError(f"Missing SMILES column '{smiles_column}' in {data_path}")
 
     rows = []
-    for idx, raw in source.iterrows():
+    for idx, raw in iter_progress(source.iterrows(), total=len(source), label="loading experiment molecules"):
         smi = canonicalize_smiles(str(raw[smiles_column]))
         if smi is None:
             continue

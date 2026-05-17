@@ -8,12 +8,13 @@ development and unit tests.
 from __future__ import annotations
 
 import math
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass
 
 try:  # pragma: no cover - exercised only when RDKit is installed.
-    from rdkit import Chem, DataStructs
+    from rdkit import Chem, DataStructs, RDLogger
     from rdkit.Chem import AllChem, Crippen, Descriptors, Lipinski, QED, rdMolDescriptors
     from rdkit.Chem.FilterCatalog import FilterCatalog, FilterCatalogParams
 
@@ -32,6 +33,7 @@ try:  # pragma: no cover - exercised only when RDKit is installed.
 except Exception:  # pragma: no cover - fallback is covered in this environment.
     Chem = None
     DataStructs = None
+    RDLogger = None
     AllChem = None
     Crippen = None
     Descriptors = None
@@ -42,6 +44,28 @@ except Exception:  # pragma: no cover - fallback is covered in this environment.
     FilterCatalogParams = None
     _MORGAN_FP_GEN = None
     RDKIT_AVAILABLE = False
+
+
+def configure_rdkit_logging(suppress: bool | None = None) -> None:
+    """Toggle noisy RDKit C++ logs without changing Python exceptions."""
+
+    if not RDKIT_AVAILABLE or RDLogger is None:
+        return
+    if suppress is None:
+        suppress = os.environ.get("PHYSTABMOL_SUPPRESS_RDKIT_LOGS", "0").strip().lower() in {"1", "true", "yes", "on"}
+    if suppress:
+        RDLogger.DisableLog("rdApp.debug")
+        RDLogger.DisableLog("rdApp.info")
+        RDLogger.DisableLog("rdApp.warning")
+        RDLogger.DisableLog("rdApp.error")
+    else:
+        RDLogger.EnableLog("rdApp.debug")
+        RDLogger.EnableLog("rdApp.info")
+        RDLogger.EnableLog("rdApp.warning")
+        RDLogger.EnableLog("rdApp.error")
+
+
+configure_rdkit_logging()
 
 ATOM_WEIGHTS = {
     "C": 12.011,

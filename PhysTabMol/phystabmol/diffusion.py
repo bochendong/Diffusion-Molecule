@@ -28,6 +28,7 @@ else:
         SKLEARN_AVAILABLE = False
 
 from .schema import BOUNDS, INTEGER_COLUMNS, TABLE_COLUMNS
+from .progress import iter_progress
 
 
 TARGET_SCALES = np.asarray([120.0, 3.0, 0.35, 60.0, 3.0, 5.0, 5.0, 2.5], dtype=np.float32)
@@ -58,7 +59,7 @@ class TabularDiffusion:
         rng = np.random.default_rng(self.seed)
         train_x = []
         train_eps = []
-        for row_idx in range(len(y)):
+        for row_idx in iter_progress(range(len(y)), total=len(y), label="building sklearn diffusion noise"):
             for _ in range(self.noise_repeats):
                 t = rng.integers(1, self.timesteps + 1)
                 alpha_bar = self._alpha_bar(t)
@@ -86,7 +87,8 @@ class TabularDiffusion:
         rng = np.random.default_rng(self.seed + 101)
         rows = []
         cond_scaled = self.c_scaler.transform(condition_x)
-        for idx in range(n):
+        row_iter = iter_progress(range(n), total=n, label="sampling sklearn diffusion rows") if n >= 100 else range(n)
+        for idx in row_iter:
             c = cond_scaled[idx % len(cond_scaled)]
             y = rng.normal(size=len(TABLE_COLUMNS))
             for t in range(self.timesteps, 0, -1):

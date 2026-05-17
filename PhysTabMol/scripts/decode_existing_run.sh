@@ -27,6 +27,9 @@ else
 fi
 SCRIPT_DIR="$PHYSTABMOL_ROOT/scripts"
 cd "$PHYSTABMOL_ROOT"
+export PHYSTABMOL_SUPPRESS_RDKIT_LOGS="${PHYSTABMOL_SUPPRESS_RDKIT_LOGS:-1}"
+export PHYSTABMOL_PROGRESS="${PHYSTABMOL_PROGRESS:-1}"
+export PHYSTABMOL_PROGRESS_STEP="${PHYSTABMOL_PROGRESS_STEP:-5}"
 
 if [[ "${PHYSTABMOL_SKIP_ENV:-0}" != "1" ]]; then
   if command -v module >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/env_module_venv.sh" ]]; then

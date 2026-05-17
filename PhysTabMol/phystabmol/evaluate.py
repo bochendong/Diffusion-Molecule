@@ -8,11 +8,12 @@ import numpy as np
 import pandas as pd
 
 from .chem import molecular_descriptors, passes_druglike_filters, tanimoto
+from .progress import iter_progress
 from .schema import TARGET_COLUMNS
 
 
 def evaluate_smiles(smiles: list[str], train_smiles: list[str] | None = None, target: dict[str, float] | None = None) -> dict[str, float]:
-    records = [molecular_descriptors(s) for s in smiles]
+    records = [molecular_descriptors(s) for s in iter_progress(smiles, total=len(smiles), label="evaluating SMILES")]
     valid_records = [r for r in records if r.valid]
     unique = sorted({r.smiles for r in valid_records})
     train = set(train_smiles or [])

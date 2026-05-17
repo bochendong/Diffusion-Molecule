@@ -204,6 +204,9 @@ def write_smiles_csv(smiles_iter, out_path: Path, limit: int, deduplicate: bool,
                 continue
             writer.writerow([smi])
             written += 1
+            if progress_enabled() and limit and (written == 1 or written % max(1, limit // 20) == 0):
+                pct = int(written * 100 / max(1, limit))
+                print(f"downloading/filtering molecules: {pct}% ({written}/{limit})", flush=True)
             if limit and written >= limit:
                 break
     os.replace(tmp_name, out_path)
@@ -221,10 +224,14 @@ def clean_smiles(value: str) -> str:
 
 def rdkit_keep(smiles: str) -> bool:
     try:
-        from rdkit import Chem
+        from rdkit import Chem, RDLogger
         from rdkit.Chem import Crippen, Descriptors, Lipinski, rdMolDescriptors
     except Exception as exc:
         raise RuntimeError("--rdkit-filter requested, but RDKit is not installed.") from exc
+
+    if os.environ.get("PHYSTABMOL_SUPPRESS_RDKIT_LOGS", "0").strip().lower() in {"1", "true", "yes", "on"}:
+        RDLogger.DisableLog("rdApp.warning")
+        RDLogger.DisableLog("rdApp.error")
 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
@@ -239,6 +246,10 @@ def rdkit_keep(smiles: str) -> bool:
     hba = Lipinski.NumHAcceptors(mol)
     rb = Lipinski.NumRotatableBonds(mol)
     return 80 <= mw <= 650 and -3 <= logp <= 7 and 0 <= tpsa <= 180 and hbd <= 6 and hba <= 12 and rb <= 15
+
+
+def progress_enabled() -> bool:
+    return os.environ.get("PHYSTABMOL_PROGRESS", "1").strip().lower() not in {"0", "false", "no", "off"}
 
 
 def write_manifest(args: argparse.Namespace, raw_files: list[Path], out_path: Path, stats: dict) -> None:

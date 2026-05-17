@@ -11,6 +11,9 @@
 set -euo pipefail
 unset LD_LIBRARY_PATH
 unset PYTHONPATH
+export PHYSTABMOL_SUPPRESS_RDKIT_LOGS="${PHYSTABMOL_SUPPRESS_RDKIT_LOGS:-1}"
+export PHYSTABMOL_PROGRESS="${PHYSTABMOL_PROGRESS:-1}"
+export PHYSTABMOL_PROGRESS_STEP="${PHYSTABMOL_PROGRESS_STEP:-5}"
 
 # Submit from PhysTabMol repo root:
 #   cd .../PhysTabMol
@@ -31,6 +34,7 @@ if command -v module >/dev/null 2>&1 && [[ -f "$SCRIPT_DIR/env_module_venv.sh" ]
 fi
 
 echo "jobid=${SLURM_JOB_ID:-manual} node=$(hostname) cwd=$(pwd)"
+echo "rdkit_logs_suppressed=$PHYSTABMOL_SUPPRESS_RDKIT_LOGS progress_step=${PHYSTABMOL_PROGRESS_STEP}%"
 nvidia-smi || true
 python3 -c "import torch; print('cuda=', torch.cuda.is_available())" || true
 

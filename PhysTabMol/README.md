@@ -529,8 +529,23 @@ Slurm 默认使用：
 ```text
 PHYSTABMOL_MULTIMODAL_CONTEXT=source_reference
 PHYSTABMOL_LATENT_VAE=1
+PHYSTABMOL_SUPPRESS_RDKIT_LOGS=1
+PHYSTABMOL_PROGRESS=1
+PHYSTABMOL_PROGRESS_STEP=5
 fragment growth decoder enabled
 MMP/source retrieval disabled unless explicitly enabled
+```
+
+如果想重新显示 RDKit 的 kekulize/valence warning，可设：
+
+```bash
+PHYSTABMOL_SUPPRESS_RDKIT_LOGS=0 bash scripts/run_instruction_editing_benchmark.sh
+```
+
+进度日志默认每 5% 打一行；如果想更细：
+
+```bash
+PHYSTABMOL_PROGRESS_STEP=2 bash scripts/run_instruction_editing_benchmark.sh
 ```
 
 若已有旧 `data/instruction_editing.csv` 缺少 `reference_smiles`，脚本会自动重建 instruction dataset。

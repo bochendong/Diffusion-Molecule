@@ -20,6 +20,7 @@ from .geometry3d import add_3d_metrics
 from .io import make_run_dir, save_json, save_text, set_seed
 from .mmp_transform_decoder import MMPTransformConfig, MMPTransformIndex
 from .pretrained_understanding import PretrainedImageUnderstanding
+from .progress import iter_progress
 from .retrieval_decoder import RetrievalCandidateIndex, RetrievalDecoderConfig, decode_retrieval_table_row
 from .schema import TARGET_COLUMNS
 from .sketchmol_benchmark import SketchMolBenchmarkConfig, run_sketchmol_benchmark
@@ -355,12 +356,17 @@ def _fit_diffusion(args, train_table_y: np.ndarray, train_condition: np.ndarray)
 def _sample_tables(diffusion, conditions: np.ndarray, samples_per_condition: int) -> pd.DataFrame:
     rows = []
     if hasattr(diffusion, "sample_batch"):
-        for condition_idx, sample_idx, row in diffusion.sample_batch(conditions, samples_per_condition=samples_per_condition):
+        total = len(conditions) * samples_per_condition
+        for condition_idx, sample_idx, row in iter_progress(
+            diffusion.sample_batch(conditions, samples_per_condition=samples_per_condition),
+            total=total,
+            label="sampling table rows",
+        ):
             out = {"condition_idx": condition_idx, "sample_idx": sample_idx}
             out.update(row)
             rows.append(out)
         return pd.DataFrame(rows)
-    for condition_idx, condition in enumerate(conditions):
+    for condition_idx, condition in iter_progress(enumerate(conditions), total=len(conditions), label="sampling conditions"):
         samples = diffusion.sample(condition[None, :], n=samples_per_condition)
         for sample_idx, row in enumerate(samples):
             out = {"condition_idx": condition_idx, "sample_idx": sample_idx}
@@ -381,7 +387,7 @@ def _decode_generated(
 ) -> pd.DataFrame:
     rows = []
     table_cols = [col for col in generated_df.columns if col not in {"condition_idx", "sample_idx"}]
-    for _, source in generated_df.iterrows():
+    for _, source in iter_progress(generated_df.iterrows(), total=len(generated_df), label="decoding generated rows"):
         row = {col: float(source[col]) for col in table_cols}
         decode_seed = int(source["condition_idx"]) * 1009 + int(source["sample_idx"])
         for rank, candidate in enumerate(

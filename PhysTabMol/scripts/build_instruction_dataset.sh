@@ -12,6 +12,9 @@ set -euo pipefail
 
 PHYSTABMOL_ROOT="${PHYSTABMOL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 cd "$PHYSTABMOL_ROOT"
+export PHYSTABMOL_SUPPRESS_RDKIT_LOGS="${PHYSTABMOL_SUPPRESS_RDKIT_LOGS:-1}"
+export PHYSTABMOL_PROGRESS="${PHYSTABMOL_PROGRESS:-1}"
+export PHYSTABMOL_PROGRESS_STEP="${PHYSTABMOL_PROGRESS_STEP:-5}"
 if command -v module >/dev/null 2>&1 && [[ "${PHYSTABMOL_USE_MODULE_ENV:-1}" == "1" && -f "$PHYSTABMOL_ROOT/scripts/env_module_venv.sh" ]]; then
   # Compute Canada/Nibi path: match the training scripts' module + venv setup.
   # shellcheck source=/dev/null

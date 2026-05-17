@@ -26,6 +26,7 @@ from .instruction_schema import EDIT_RULES, PROPERTY_GOALS, normalize_spec, thre
 from .instruction_source_decoder import SourceAwareCandidateIndex, SourceAwareDecoderConfig, decode_source_aware
 from .instruction_verifier import verify_instruction
 from .io import make_run_dir, save_json, save_text, set_seed
+from .progress import iter_progress
 from .mmp_transform_decoder import MMPTransformConfig, MMPTransformIndex, decode_mmp_table_row
 from .schema import TABLE_COLUMNS
 
@@ -56,6 +57,7 @@ def main() -> None:
     )
     train_x, train_y = _build_arrays(
         train_df,
+        label="feature arrays train",
         multimodal_context=effective_multimodal_context,
         allow_target_reference=args.allow_target_reference,
         disable_instruction_features=args.disable_instruction_features,
@@ -63,6 +65,7 @@ def main() -> None:
     )
     eval_x, _ = _build_arrays(
         eval_df,
+        label="feature arrays eval",
         multimodal_context=effective_multimodal_context,
         allow_target_reference=args.allow_target_reference,
         disable_instruction_features=args.disable_instruction_features,
@@ -122,6 +125,7 @@ def main() -> None:
         planner_mode=args.planner_mode,
         train_y=train_y,
         seed=args.seed,
+        label="sampling edit plans",
     )
     generated_df.to_csv(run_dir / "tables" / "generated_edit_plans.csv", index=False)
     print(f"Decoding {len(generated_df)} rows to SMILES (RDKit; often the slowest step)...", flush=True)
@@ -168,6 +172,7 @@ def main() -> None:
         use_instruction_guided_plan=not args.disable_instruction_guided_plan and not args.blind_instruction,
         blind_instruction=args.blind_instruction,
         train_smiles=train_smiles,
+        label="decoding candidates",
     )
     decoded_df.to_csv(run_dir / "tables" / "decoded_instruction_candidates.csv", index=False)
 
@@ -316,6 +321,7 @@ def _effective_multimodal_context(multimodal_context: str, blind_instruction: bo
 
 def _build_arrays(
     df: pd.DataFrame,
+    label: str = "feature arrays",
     multimodal_context: str = "none",
     allow_target_reference: bool = False,
     disable_instruction_features: bool = False,
@@ -323,7 +329,7 @@ def _build_arrays(
 ) -> tuple[np.ndarray, np.ndarray]:
     conditions = []
     targets = []
-    for _, row in df.iterrows():
+    for _, row in iter_progress(df.iterrows(), total=len(df), label=label):
         condition = condition_from_source_and_spec(row["source_smiles"], row["instruction_spec_json"])
         if blind_instruction:
             condition[len(TABLE_COLUMNS) : INSTRUCTION_SPEC_FEATURE_END] = 0.0
@@ -427,10 +433,11 @@ def _sample_edit_plans(
     planner_mode: str = "diffusion",
     train_y: np.ndarray | None = None,
     seed: int = 7,
+    label: str = "sampling edit plans",
 ) -> pd.DataFrame:
     rows = []
     rng = np.random.default_rng(seed)
-    for instruction_idx, condition in enumerate(conditions):
+    for instruction_idx, condition in iter_progress(enumerate(conditions), total=len(conditions), label=label):
         if planner_mode == "diffusion":
             sampled_rows = diffusion.sample(condition[None, :], n=samples_per_instruction)
         elif planner_mode == "rule":
@@ -471,9 +478,10 @@ def _decode_and_attach(
     use_instruction_guided_plan: bool = True,
     blind_instruction: bool = False,
     train_smiles: set[str] | None = None,
+    label: str = "decoding candidates",
 ) -> pd.DataFrame:
     rows = []
-    for _, source in generated_df.iterrows():
+    for _, source in iter_progress(generated_df.iterrows(), total=len(generated_df), label=label):
         instruction_idx = int(source["instruction_id"])
         instruction = eval_df.iloc[instruction_idx]
         decoder_instruction = _blind_instruction_row(instruction) if blind_instruction else instruction

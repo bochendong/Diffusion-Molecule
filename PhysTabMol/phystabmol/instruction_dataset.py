@@ -17,6 +17,7 @@ from .instruction_local_edit import edit_region_summary
 from .instruction_schema import DEFAULT_THRESHOLDS, normalize_spec, spec_to_json
 from .instruction_templates import generate_instruction_texts
 from .instruction_verifier import preserves_scaffold, property_delta, scaffold_smiles, score_verification, verify_instruction
+from .progress import iter_progress
 
 
 def main() -> None:
@@ -89,7 +90,7 @@ def build_instruction_dataset(
     rows: list[dict[str, Any]] = []
     pair_seen: set[str] = set()
     source_order = rng.permutation(len(records))
-    for source_idx in source_order:
+    for source_idx in iter_progress(source_order, total=len(source_order), label="building instruction pairs"):
         if len(pair_seen) >= max_pairs:
             break
         candidates = _candidate_indices(source_idx, records, buckets, rng, pairs_per_source=pairs_per_source)
@@ -178,7 +179,8 @@ def _load_records(data_path: str | Path, smiles_column: str, limit: int | None) 
         df = df.head(limit)
     records = []
     seen = set()
-    for raw in df[smiles_column].dropna().astype(str):
+    smiles_values = df[smiles_column].dropna().astype(str)
+    for raw in iter_progress(smiles_values, total=len(smiles_values), label="loading instruction molecules"):
         can = canonicalize_smiles(raw)
         if can is None or can in seen:
             continue

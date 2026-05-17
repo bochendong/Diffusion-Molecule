@@ -28,6 +28,9 @@ fi
 
 unset LD_LIBRARY_PATH
 unset PYTHONPATH
+export PHYSTABMOL_SUPPRESS_RDKIT_LOGS="${PHYSTABMOL_SUPPRESS_RDKIT_LOGS:-1}"
+export PHYSTABMOL_PROGRESS="${PHYSTABMOL_PROGRESS:-1}"
+export PHYSTABMOL_PROGRESS_STEP="${PHYSTABMOL_PROGRESS_STEP:-5}"
 
 export MODULE_CUDA="${MODULE_CUDA:-cuda/12.6}"
 # shellcheck source=/dev/null
@@ -40,6 +43,7 @@ DECODE_TOP_K="${PHYSTABMOL_STRUCTURE_PROMPT_DECODE_TOP_K:-0}"
 
 echo "jobid=${SLURM_JOB_ID:-} node=$(hostname) cwd=$(pwd)"
 echo "Resuming structure prompt benchmark for $RUN_DIR"
+echo "rdkit_logs_suppressed=$PHYSTABMOL_SUPPRESS_RDKIT_LOGS progress_step=${PHYSTABMOL_PROGRESS_STEP}%"
 nvidia-smi || true
 
 python -m phystabmol.resume_structure_prompt_benchmark \

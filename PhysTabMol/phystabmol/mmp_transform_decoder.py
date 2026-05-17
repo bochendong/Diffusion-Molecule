@@ -34,6 +34,7 @@ else:
 from . import chem as chem_mod
 from .chem import canonicalize_smiles, molecular_descriptors, passes_druglike_filters, tanimoto
 from .decoder import DRUGLIKE_SOFT_PENALTY, DecodedCandidate
+from .progress import iter_progress
 from .schema import TABLE_COLUMNS, TARGET_COLUMNS
 
 
@@ -145,7 +146,7 @@ class MMPTransformIndex:
         fragments: list[MMPFragment] = []
         train_smiles: set[str] = set()
         pair_rows = df[df["record_type"] == "pair"] if "record_type" in df else df
-        for _, row in pair_rows.iterrows():
+        for _, row in iter_progress(pair_rows.iterrows(), total=len(pair_rows), label="loading MMP pair rows"):
             source = str(row.get("source_smiles", "")).strip()
             target = str(row.get("target_smiles", "")).strip()
             if not source or not target or source == "nan" or target == "nan":
@@ -170,7 +171,8 @@ class MMPTransformIndex:
             )
             train_smiles.update([source_rec.smiles, target_rec.smiles])
         if "record_type" in df:
-            for _, row in df[df["record_type"] == "fragment"].iterrows():
+            fragment_rows = df[df["record_type"] == "fragment"]
+            for _, row in iter_progress(fragment_rows.iterrows(), total=len(fragment_rows), label="loading MMP fragment rows"):
                 fragment = str(row.get("fragment_smiles", "")).strip()
                 if not fragment or fragment == "nan":
                     continue
@@ -429,7 +431,7 @@ def mine_mmp_pairs(records: list[dict[str, Any]], config: MMPTransformConfig) ->
         neighbor_idx = _fallback_neighbor_indices(scaled, n_neighbors)
     pairs: list[MMPPair] = []
     seen: set[tuple[str, str]] = set()
-    for src_idx, neighbors in enumerate(neighbor_idx):
+    for src_idx, neighbors in iter_progress(enumerate(neighbor_idx), total=len(neighbor_idx), label="mining MMP pairs"):
         source = records[int(src_idx)]
         source_vec = x[int(src_idx)]
         for target_idx in neighbors:
@@ -468,7 +470,7 @@ def mine_fragments(records: list[dict[str, Any]], config: MMPTransformConfig) ->
     counts: Counter[str] = Counter()
     approx: dict[str, np.ndarray] = {}
     heavy: dict[str, int] = {}
-    for record in records:
+    for record in iter_progress(records, total=len(records), label="mining attachable fragments"):
         if len(counts) >= config.max_fragments * 3:
             break
         fragments = []
@@ -488,7 +490,8 @@ def mine_fragments(records: list[dict[str, Any]], config: MMPTransformConfig) ->
 def _records_from_dataframe(df: pd.DataFrame) -> list[dict[str, Any]]:
     records = []
     seen = set()
-    for _, row in df.dropna(subset=["smiles"]).iterrows():
+    source = df.dropna(subset=["smiles"])
+    for _, row in iter_progress(source.iterrows(), total=len(source), label="loading molecule descriptors"):
         can = canonicalize_smiles(str(row["smiles"]))
         if can is None or can in seen:
             continue

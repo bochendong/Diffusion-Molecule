@@ -14,6 +14,7 @@ from .chem import canonicalize_smiles, molecular_descriptors, passes_druglike_fi
 from .instruction_local_edit import local_edit_metrics
 from .instruction_verifier import verify_instruction
 from .io import save_json
+from .progress import iter_progress
 
 
 def main() -> None:
@@ -60,7 +61,7 @@ def evaluate_instruction_candidates(
 
     details = []
     valid_smiles = []
-    for idx, row in candidates.iterrows():
+    for idx, row in iter_progress(candidates.iterrows(), total=len(candidates), label="verifying candidates"):
         source = str(row[source_col])
         candidate = str(row[candidate_col])
         result = verify_instruction(source, candidate, row[spec_col])

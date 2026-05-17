@@ -10,6 +10,7 @@ from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import StandardScaler
 
 from .diffusion import clip_table_row
+from .progress import iter_progress
 from .schema import BOUNDS, INTEGER_COLUMNS, TABLE_COLUMNS
 
 
@@ -120,7 +121,7 @@ class TorchTabularDiffusion:
         loss_fn = nn.MSELoss()
         self.history_ = []
         self.model.train()
-        for epoch in range(self.epochs):
+        for epoch in iter_progress(range(self.epochs), total=self.epochs, label="training diffusion epochs"):
             losses = []
             for _ in range(steps_per_epoch):
                 row_idx = torch.randint(0, len(y_tensor), (self.batch_size,), device=self.device_)
@@ -181,7 +182,9 @@ class TorchTabularDiffusion:
         rows = []
         self.model.eval()
         chunk_size = max(1, int(self.sample_chunk_size))
-        for start in range(0, len(condition_indices), chunk_size):
+        chunk_starts = range(0, len(condition_indices), chunk_size)
+        total_chunks = int(np.ceil(len(condition_indices) / chunk_size)) if len(condition_indices) else 0
+        for start in iter_progress(chunk_starts, total=total_chunks, label="sampling diffusion chunks"):
             end = min(start + chunk_size, len(condition_indices))
             chunk_condition_idx = condition_indices[start:end]
             chunk_sample_idx = sample_indices[start:end]

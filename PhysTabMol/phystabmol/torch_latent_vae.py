@@ -19,6 +19,7 @@ StandardScaler = None
 SKLEARN_AVAILABLE = False
 
 from .diffusion import clip_table_row
+from .progress import iter_progress
 from .schema import BOUNDS, INTEGER_COLUMNS, TABLE_COLUMNS
 
 
@@ -215,7 +216,7 @@ class TorchLatentVAEDiffusion:
         mse = nn.MSELoss(reduction="mean")
         history = []
         self.vae.train()
-        for epoch in range(self.vae_epochs):
+        for epoch in iter_progress(range(self.vae_epochs), total=self.vae_epochs, label="training VAE epochs"):
             losses = []
             recon_losses = []
             kl_losses = []
@@ -267,7 +268,7 @@ class TorchLatentVAEDiffusion:
         loss_fn = nn.MSELoss()
         history = []
         self.model.train()
-        for epoch in range(self.epochs):
+        for epoch in iter_progress(range(self.epochs), total=self.epochs, label="training latent diffusion epochs"):
             losses = []
             for xb, eps in loader:
                 xb = xb.to(self.device_)
@@ -292,7 +293,8 @@ class TorchLatentVAEDiffusion:
         rows = []
         self.model.eval()
         self.vae.eval()
-        for idx in range(n):
+        row_iter = iter_progress(range(n), total=n, label="sampling latent diffusion rows") if n >= 100 else range(n)
+        for idx in row_iter:
             c_np = cond_scaled[idx % len(cond_scaled)]
             z = rng.normal(size=self.vae_latent_dim).astype(np.float32)
             for t in range(self.timesteps, 0, -1):
