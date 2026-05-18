@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "molpilot"
+version = "0.1.0"
+description = "Unified multimodal molecular editing, inpainting, and de novo generation prototype."
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.23",
+  "selfies>=2.1",
+]
+
+[project.optional-dependencies]
+torch = ["torch>=2.0"]
+vision = ["pillow>=9.0"]
+rdkit = ["rdkit"]
+
+[tool.setuptools.packages.find]
+include = ["molpilot*"]

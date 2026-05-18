@@ -1,0 +1,29 @@
+project: molpilot
+seed: 7
+task_mix:
+  edit: 0.5
+  inpaint: 0.3
+  de_novo: 0.2
+understanding:
+  render_missing_images: true
+  condition_dim: 256
+  text_dim: 96
+  molecule_dim: 96
+  image_dim: 32
+  spec_dim: 32
+diffusion:
+  latent_dim: 64
+  timesteps: 100
+  epochs: 20
+  batch_size: 256
+  hidden_dim: 512
+  layers: 4
+  lr: 0.0003
+guidance:
+  text_scale: 5.0
+  multimodal_scale: 1.5
+verification:
+  main_table_only_hard_verifiable: true
+  novelty_tanimoto_threshold: 0.90
+  similarity_min_default: 0.60
+
