@@ -14,12 +14,13 @@ SLURM_MEM_PER_CPU="${MOLPILOT_SLURM_MEM_PER_CPU:-4096M}"
 if [[ -n "${MOLPILOT_SLURM_GPUS:-}" ]]; then
   GPU_CANDIDATES=("$MOLPILOT_SLURM_GPUS")
 elif [[ "$GPU_PROFILE" == "h100_40gb_mig" ]]; then
-  GPU_CANDIDATES=(
-    "nvidia_h100_80gb_hbm3_3g.40gb:1"
-    "nvidia_h100_80gb_hbm3_4g.40gb:1"
-  )
+  GPU_CANDIDATES=("h100_3g.40gb:1")
 elif [[ "$GPU_PROFILE" == "h100_10gb_mig" ]]; then
-  GPU_CANDIDATES=("nvidia_h100_80gb_hbm3_1g.10gb:1")
+  GPU_CANDIDATES=("h100_1g.10gb:1")
+elif [[ "$GPU_PROFILE" == "h100_20gb_mig" ]]; then
+  GPU_CANDIDATES=("h100_2g.20gb:1")
+elif [[ "$GPU_PROFILE" == "h100_full" ]]; then
+  GPU_CANDIDATES=("h100_80gb:1")
 else
   GPU_CANDIDATES=("$GPU_PROFILE")
 fi
