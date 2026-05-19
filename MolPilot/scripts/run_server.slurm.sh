@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=molpilot
 #SBATCH --account=def-hup-ab
-#SBATCH --gpus=nvidia_h100_80gb_hbm3_4g.40gb:1
+#SBATCH --gpus=nvidia_h100_80gb_hbm3_3g.40gb:1
 #SBATCH --mem-per-cpu=4096M
 #SBATCH --time=20:00:00
 #SBATCH --cpus-per-task=16

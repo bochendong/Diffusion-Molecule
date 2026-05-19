@@ -9,8 +9,20 @@ EVAL_LIMIT="${MOLPILOT_EVAL_LIMIT:-1000}"
 CODEC="${MOLPILOT_CODEC:-sequence}"
 RUN_NAME="${MOLPILOT_RUN_NAME:-molpilot_${CODEC}_${LIMIT}_$(date +%Y%m%d_%H%M%S)}"
 GPU_PROFILE="${MOLPILOT_GPU_PROFILE:-h100_40gb_mig}"
-SLURM_GPUS="${MOLPILOT_SLURM_GPUS:-nvidia_h100_80gb_hbm3_4g.40gb:1}"
 SLURM_MEM_PER_CPU="${MOLPILOT_SLURM_MEM_PER_CPU:-4096M}"
+
+if [[ -n "${MOLPILOT_SLURM_GPUS:-}" ]]; then
+  GPU_CANDIDATES=("$MOLPILOT_SLURM_GPUS")
+elif [[ "$GPU_PROFILE" == "h100_40gb_mig" ]]; then
+  GPU_CANDIDATES=(
+    "nvidia_h100_80gb_hbm3_3g.40gb:1"
+    "nvidia_h100_80gb_hbm3_4g.40gb:1"
+  )
+elif [[ "$GPU_PROFILE" == "h100_10gb_mig" ]]; then
+  GPU_CANDIDATES=("nvidia_h100_80gb_hbm3_1g.10gb:1")
+else
+  GPU_CANDIDATES=("$GPU_PROFILE")
+fi
 
 if [[ ! -f "$DATA" ]]; then
   echo "ERROR: molecule CSV not found: $DATA"
@@ -30,7 +42,7 @@ echo "  limit=$LIMIT"
 echo "  eval_limit=$EVAL_LIMIT"
 echo "  codec=$CODEC"
 echo "  gpu_profile=$GPU_PROFILE"
-echo "  slurm_gpus=$SLURM_GPUS"
+echo "  slurm_gpu_candidates=${GPU_CANDIDATES[*]}"
 echo "  slurm_mem_per_cpu=$SLURM_MEM_PER_CPU"
 echo "  run_name=$RUN_NAME"
 
@@ -69,7 +81,23 @@ elif [[ "$GPU_PROFILE" == "h100_40gb_mig" ]]; then
   export MOLPILOT_TIMESTEPS="${MOLPILOT_TIMESTEPS:-100}"
 fi
 
-sbatch \
-  --gpus="$SLURM_GPUS" \
-  --mem-per-cpu="$SLURM_MEM_PER_CPU" \
-  scripts/run_staged_server.slurm.sh
+SUBMITTED=0
+for SLURM_GPUS in "${GPU_CANDIDATES[@]}"; do
+  echo "Trying sbatch with --gpus=$SLURM_GPUS"
+  if sbatch \
+    --gpus="$SLURM_GPUS" \
+    --mem-per-cpu="$SLURM_MEM_PER_CPU" \
+    scripts/run_staged_server.slurm.sh; then
+    SUBMITTED=1
+    break
+  fi
+done
+
+if [[ "$SUBMITTED" != "1" ]]; then
+  echo "ERROR: none of the GPU candidates were accepted by Slurm."
+  echo "Try checking available names with:"
+  echo "  sinfo -o '%G %N' | sort -u"
+  echo "Then rerun with:"
+  echo "  MOLPILOT_SLURM_GPUS=<available_gpu_name>:1 bash scripts/submit_chembl_staged.sh"
+  exit 2
+fi
