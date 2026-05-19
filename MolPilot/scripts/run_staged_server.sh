@@ -8,7 +8,7 @@ export PYTHONPATH="$PWD:${PYTHONPATH:-}"
 
 RUN_NAME="${MOLPILOT_RUN_NAME:-molpilot_staged_v1}"
 STAGE_ROOT="${MOLPILOT_STAGE_ROOT:-outputs/stages/$RUN_NAME}"
-DATA="${MOLPILOT_DATA:-data/molecules.csv}"
+DATA="${MOLPILOT_DATA:-../PhysTabMol/data/molecules.csv}"
 LIMIT="${MOLPILOT_LIMIT:-100000}"
 
 AE_DIR="$STAGE_ROOT/stage1_autoencoder"
@@ -24,6 +24,19 @@ echo "MolPilot staged server run"
 echo "  data=$DATA"
 echo "  limit=$LIMIT"
 echo "  stage_root=$STAGE_ROOT"
+
+if [[ ! -f "$DATA" ]]; then
+  echo "ERROR: MOLPILOT_DATA points to '$DATA', but that file does not exist."
+  echo "For the ChEMBL file created by PhysTabMol, run from MolPilot with:"
+  echo "  MOLPILOT_DATA=../PhysTabMol/data/molecules.csv bash scripts/run_staged_server.sh"
+  echo "Use scripts/run_staged_smoke.sh for the built-in 6-molecule smoke test."
+  exit 2
+fi
+
+DATA_ROWS=$(wc -l < "$DATA" | tr -d ' ')
+if [[ "$DATA_ROWS" -lt 1000 ]]; then
+  echo "WARNING: '$DATA' has only $DATA_ROWS lines. This is probably a small/debug run."
+fi
 
 "$PYTHON_BIN" -m molpilot.train_autoencoder \
   --data "$DATA" \

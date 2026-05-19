@@ -84,7 +84,7 @@ Run on a server with a real molecule CSV:
 
 ```bash
 cd MolPilot
-MOLPILOT_DATA=/path/to/molecules.csv \
+MOLPILOT_DATA=../PhysTabMol/data/molecules.csv \
 MOLPILOT_RUN_NAME=molpilot_edit_inpaint_denovo_v1 \
 bash scripts/run_staged_server.sh
 ```
@@ -93,10 +93,30 @@ Submit the staged run to Slurm:
 
 ```bash
 cd MolPilot
-MOLPILOT_DATA=data/molecules.csv \
+MOLPILOT_DATA=../PhysTabMol/data/molecules.csv \
 MOLPILOT_RUN_NAME=molpilot_staged_v1 \
 sbatch scripts/run_staged_server.slurm.sh
 ```
+
+Or use the one-command ChEMBL submit helper. It defaults to a 10k run:
+
+```bash
+cd MolPilot
+bash scripts/submit_chembl_staged.sh
+```
+
+For the full 100k run:
+
+```bash
+cd MolPilot
+MOLPILOT_LIMIT=100000 \
+MOLPILOT_EVAL_LIMIT=5000 \
+MOLPILOT_RUN_NAME=molpilot_sequence_100k_v1 \
+bash scripts/submit_chembl_staged.sh
+```
+
+The server script intentionally fails if `MOLPILOT_DATA` does not exist. Use
+`scripts/run_staged_smoke.sh` when you want the built-in 6-molecule debug run.
 
 Expected CSV columns for real data:
 
