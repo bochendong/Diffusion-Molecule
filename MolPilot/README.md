@@ -112,6 +112,8 @@ and `--mem-per-cpu=4096M`. For smaller slices, set
 `MOLPILOT_AE_BATCH_SIZE`, `MOLPILOT_AE_HIDDEN_DIM`,
 `MOLPILOT_DIFFUSION_BATCH_SIZE`, and `MOLPILOT_DIFFUSION_HIDDEN_DIM`. If Slurm
 uses a different resource name, override it with `MOLPILOT_SLURM_GPUS`.
+The submit helper captures the active venv Python. If needed, set
+`PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python` explicitly.
 
 For the full 100k run:
 

@@ -10,6 +10,7 @@ CODEC="${MOLPILOT_CODEC:-sequence}"
 RUN_NAME="${MOLPILOT_RUN_NAME:-molpilot_${CODEC}_${LIMIT}_$(date +%Y%m%d_%H%M%S)}"
 GPU_PROFILE="${MOLPILOT_GPU_PROFILE:-h100_40gb_mig}"
 SLURM_MEM_PER_CPU="${MOLPILOT_SLURM_MEM_PER_CPU:-4096M}"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python || command -v python3)}"
 
 if [[ -n "${MOLPILOT_SLURM_GPUS:-}" ]]; then
   GPU_CANDIDATES=("$MOLPILOT_SLURM_GPUS")
@@ -37,6 +38,18 @@ if ! command -v sbatch >/dev/null 2>&1; then
   exit 2
 fi
 
+if [[ -z "$PYTHON_BIN" || ! -x "$PYTHON_BIN" ]]; then
+  echo "ERROR: could not find an executable Python. Activate your venv or set PYTHON_BIN."
+  exit 2
+fi
+
+if ! "$PYTHON_BIN" -c "import numpy" >/dev/null 2>&1; then
+  echo "ERROR: $PYTHON_BIN cannot import numpy."
+  echo "Activate the phystabmol venv first, or run:"
+  echo "  PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python bash scripts/submit_chembl_staged.sh"
+  exit 2
+fi
+
 echo "Submitting MolPilot staged ChEMBL run:"
 echo "  data=$DATA"
 echo "  limit=$LIMIT"
@@ -45,6 +58,7 @@ echo "  codec=$CODEC"
 echo "  gpu_profile=$GPU_PROFILE"
 echo "  slurm_gpu_candidates=${GPU_CANDIDATES[*]}"
 echo "  slurm_mem_per_cpu=$SLURM_MEM_PER_CPU"
+echo "  python_bin=$PYTHON_BIN"
 echo "  run_name=$RUN_NAME"
 
 export MOLPILOT_DATA="$DATA"
@@ -52,6 +66,7 @@ export MOLPILOT_LIMIT="$LIMIT"
 export MOLPILOT_EVAL_LIMIT="$EVAL_LIMIT"
 export MOLPILOT_CODEC="$CODEC"
 export MOLPILOT_RUN_NAME="$RUN_NAME"
+export PYTHON_BIN="$PYTHON_BIN"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 if [[ "$GPU_PROFILE" == "h100_10gb_mig" ]]; then
@@ -86,6 +101,7 @@ SUBMITTED=0
 for SLURM_GPUS in "${GPU_CANDIDATES[@]}"; do
   echo "Trying sbatch with --gpus=$SLURM_GPUS"
   if sbatch \
+    --export=ALL \
     --gpus="$SLURM_GPUS" \
     --mem-per-cpu="$SLURM_MEM_PER_CPU" \
     scripts/run_staged_server.slurm.sh; then

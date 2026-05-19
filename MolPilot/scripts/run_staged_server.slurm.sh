@@ -11,9 +11,13 @@
 set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR:-$(dirname "${BASH_SOURCE[0]}")/..}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 echo "jobid=${SLURM_JOB_ID:-manual} node=$(hostname) cwd=$(pwd)"
+echo "python_bin=$PYTHON_BIN"
 nvidia-smi || true
-python3 -c "import torch; print('cuda=', torch.cuda.is_available())" || true
+"$PYTHON_BIN" -c "import sys; print('python=', sys.executable)"
+"$PYTHON_BIN" -c "import numpy; print('numpy=', numpy.__version__)"
+"$PYTHON_BIN" -c "import torch; print('cuda=', torch.cuda.is_available())" || true
 
 bash scripts/run_staged_server.sh

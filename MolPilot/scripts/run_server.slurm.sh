@@ -11,7 +11,9 @@
 set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR:-$(dirname "${BASH_SOURCE[0]}")/..}"
+PYTHON_BIN="${PYTHON_BIN:-python3}"
 echo "jobid=${SLURM_JOB_ID:-manual} node=$(hostname) cwd=$(pwd)"
+echo "python_bin=$PYTHON_BIN"
 nvidia-smi || true
 
 bash scripts/run_server.sh
