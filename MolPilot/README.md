@@ -105,6 +105,15 @@ cd MolPilot
 bash scripts/submit_chembl_staged.sh
 ```
 
+The helper defaults to a 40GB H100 MIG profile because the Slurm script requests
+`nvidia_h100_80gb_hbm3_4g.40gb:1` and `--mem-per-cpu=4096M`. For smaller slices,
+set `MOLPILOT_GPU_PROFILE=h100_10gb_mig`; for larger slices, override training
+knobs such as `MOLPILOT_AE_BATCH_SIZE`, `MOLPILOT_AE_HIDDEN_DIM`,
+`MOLPILOT_DIFFUSION_BATCH_SIZE`, and `MOLPILOT_DIFFUSION_HIDDEN_DIM`.
+If Slurm uses a different 40GB MIG resource name, override it with
+`MOLPILOT_SLURM_GPUS`, for example
+`MOLPILOT_SLURM_GPUS=nvidia_h100_80gb_hbm3_3g.40gb:1`.
+
 For the full 100k run:
 
 ```bash

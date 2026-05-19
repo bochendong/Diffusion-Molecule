@@ -51,7 +51,7 @@ fi
   --hidden-dim "${MOLPILOT_AE_HIDDEN_DIM:-768}" \
   --layers "${MOLPILOT_AE_LAYERS:-4}" \
   --epochs "${MOLPILOT_AE_EPOCHS:-60}" \
-  --batch-size "${MOLPILOT_AE_BATCH_SIZE:-1024}"
+  --batch-size "${MOLPILOT_AE_BATCH_SIZE:-512}"
 
 "$PYTHON_BIN" -m molpilot.train_understanding \
   --data "$DATA" \
