@@ -59,6 +59,11 @@ def verify_candidate(source_smiles: str | None, candidate_smiles: str, spec: Obj
 
 
 def _goals_ok(source: dict[str, float], cand: dict[str, float], spec: ObjectiveSpec, reasons: list[str]) -> bool:
+    if not source:
+        # De novo prompts do not have a source molecule, so relative goals such
+        # as "decrease LogP" are only meaningful when paired with absolute
+        # constraints/proxy checks.
+        return True
     ok = True
     for goal in spec.goals:
         if goal == "decrease_logp":
@@ -146,4 +151,3 @@ def _delta_at_most(source: dict[str, float], cand: dict[str, float], key: str, t
     if not passed:
         reasons.append(f"{name}_failed")
     return bool(passed)
-

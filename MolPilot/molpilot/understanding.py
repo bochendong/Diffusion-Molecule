@@ -82,7 +82,9 @@ def ground_instruction(instruction: str) -> ObjectiveSpec:
         goals.append("decrease_logp")
     if any(word in text for word in ("increase logp", "more lipophilic")):
         goals.append("increase_logp")
-    if any(word in text for word in ("tpsa too high", "reduce tpsa", "lower tpsa", "permeability", "bbb", "brain", "cns")):
+    if any(word in text for word in ("tpsa too high", "reduce tpsa", "lower tpsa")):
+        goals.append("reduce_tpsa")
+    if any(word in text for word in ("permeability", "bbb", "brain", "cns")):
         goals.append("reduce_tpsa")
         constraints.append("cns_like")
         if "bbb" in text or "brain" in text:
@@ -98,6 +100,8 @@ def ground_instruction(instruction: str) -> ObjectiveSpec:
         constraints.append("preserve_scaffold")
     if any(word in text for word in ("similar", "minimal change", "small edit")):
         constraints.append("keep_similarity")
+    if any(word in text for word in ("keep mw similar", "keep molecular weight similar", "similar mw", "similar molecular weight")):
+        constraints.append("keep_mw_similar")
     if any(word in text for word in ("herg", "cardiotoxic")):
         proxy_goals.append("reduce_herg_proxy")
     if any(word in text for word in ("potency", "activity", "binding", "ic50", "ec50")):
@@ -153,4 +157,3 @@ def _first_matching(text: str, options: list[str]) -> str | None:
         if option in text:
             return option
     return None
-
