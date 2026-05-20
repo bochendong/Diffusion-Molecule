@@ -10,7 +10,15 @@ CODEC="${MOLPILOT_CODEC:-sequence}"
 RUN_NAME="${MOLPILOT_RUN_NAME:-molpilot_${CODEC}_${LIMIT}_$(date +%Y%m%d_%H%M%S)}"
 GPU_PROFILE="${MOLPILOT_GPU_PROFILE:-h100_40gb_mig}"
 SLURM_MEM_PER_CPU="${MOLPILOT_SLURM_MEM_PER_CPU:-4096M}"
-PYTHON_BIN="${PYTHON_BIN:-$(command -v python || command -v python3)}"
+STAGE2_MODEL="${MOLPILOT_STAGE2_MODEL:-jepa}"
+DEFAULT_SERVER_PYTHON="/scratch/bdong/venvs/phystabmol/bin/python"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "$DEFAULT_SERVER_PYTHON" ]]; then
+    PYTHON_BIN="$DEFAULT_SERVER_PYTHON"
+  else
+    PYTHON_BIN="$(command -v python || command -v python3)"
+  fi
+fi
 
 if [[ -n "${MOLPILOT_SLURM_GPUS:-}" ]]; then
   GPU_CANDIDATES=("$MOLPILOT_SLURM_GPUS")
@@ -56,6 +64,7 @@ echo "  limit=$LIMIT"
 echo "  eval_limit=$EVAL_LIMIT"
 echo "  codec=$CODEC"
 echo "  gpu_profile=$GPU_PROFILE"
+echo "  stage2_model=$STAGE2_MODEL"
 echo "  slurm_gpu_candidates=${GPU_CANDIDATES[*]}"
 echo "  slurm_mem_per_cpu=$SLURM_MEM_PER_CPU"
 echo "  python_bin=$PYTHON_BIN"
@@ -66,6 +75,7 @@ export MOLPILOT_LIMIT="$LIMIT"
 export MOLPILOT_EVAL_LIMIT="$EVAL_LIMIT"
 export MOLPILOT_CODEC="$CODEC"
 export MOLPILOT_RUN_NAME="$RUN_NAME"
+export MOLPILOT_STAGE2_MODEL="$STAGE2_MODEL"
 export PYTHON_BIN="$PYTHON_BIN"
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
