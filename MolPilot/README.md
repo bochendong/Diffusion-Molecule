@@ -1,6 +1,6 @@
 # MolPilot
 
-Independent prototype for unified multimodal molecular generation.
+Independent prototype for verified JEPA-guided molecular editing and generation.
 
 This folder is intentionally separate from `PhysTabMol`. It is a new research
 line inspired by two local codebases:
@@ -12,6 +12,11 @@ line inspired by two local codebases:
   branches for unconditional, text-only, and multimodal guidance.
 
 MolPilot adapts those ideas to molecules without importing either project.
+
+The current research direction is summarized in
+[`docs/project_blueprint.md`](docs/project_blueprint.md): verified
+closed-loop molecular editing, with a JEPA-style latent planner and a chemical
+verifier used for data construction, ranking, and future training feedback.
 
 ## Target Tasks
 
@@ -38,9 +43,14 @@ Understanding stream
   - condition branches: uncond, text/spec, multimodal
         |
         v
+Molecular JEPA planner
+  - predicts target/edit molecule latent from source latent + instruction
+  - learns latent edits instead of hand-written edit actions
+        |
+        v
 Conditional molecular latent diffusion
   - task token: edit / inpaint / de_novo
-  - source latent and mask conditioning when present
+  - conditioned by JEPA-predicted target/edit latent
   - outputs molecular latent candidates
         |
         v
@@ -188,10 +198,11 @@ Stage 1: train molecular autoencoder
   scripts/run_staged_*.sh -> molpilot.train_autoencoder
 
 Stage 2: train understanding alignment
-  text/SMILES/image/spec condition -> target molecular latent
+  source latent + text/SMILES/image/spec condition -> target/edit molecular latent
+  default model: JEPA-style predictor
 
 Stage 3: train conditional molecular latent diffusion
-  source/prompt condition latent -> target molecular latent
+  JEPA-predicted condition latent -> target molecular latent
 
 Stage 4: sample and verify
   generated candidates -> RDKit/proxy verifier
@@ -211,6 +222,8 @@ stronger graph decoder and task-specific inpainting mask loss.
 Useful ablation:
 
 ```bash
+MOLPILOT_STAGE2_MODEL=alignment bash scripts/run_staged_server.sh
+MOLPILOT_STAGE2_MODEL=jepa bash scripts/run_staged_server.sh
 MOLPILOT_CODEC=feature bash scripts/run_staged_server.sh
 MOLPILOT_CODEC=sequence bash scripts/run_staged_server.sh
 ```

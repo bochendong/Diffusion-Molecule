@@ -35,7 +35,8 @@ echo "  stage_root=$STAGE_ROOT"
   --autoencoder-dir "$AE_DIR" \
   --output-dir "$ALIGN_DIR" \
   --limit "$LIMIT" \
-  --epochs "${MOLPILOT_ALIGN_EPOCHS:-2}"
+  --epochs "${MOLPILOT_ALIGN_EPOCHS:-2}" \
+  --model-kind "${MOLPILOT_STAGE2_MODEL:-jepa}"
 
 "$PYTHON_BIN" -m molpilot.train_diffusion \
   --data "$DATA" \

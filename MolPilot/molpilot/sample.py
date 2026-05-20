@@ -8,9 +8,9 @@ import json
 
 import numpy as np
 
-from .alignment import UnderstandingAlignment
 from .artifacts import ensure_dir, save_json, write_csv
 from .autoencoder import load_autoencoder
+from .condition_model import load_condition_model, predict_condition_latents
 from .diffusion import MolecularLatentDiffusion
 from .stage_data import build_condition_table, load_smiles_and_pairs
 from .verifier import verify_candidate
@@ -20,7 +20,7 @@ def main() -> None:
     args = parse_args()
     out_dir = ensure_dir(args.output_dir)
     autoencoder = load_autoencoder(args.autoencoder_dir)
-    alignment = UnderstandingAlignment.load(args.alignment_dir)
+    alignment = load_condition_model(args.alignment_dir)
     diffusion = MolecularLatentDiffusion.load(args.diffusion_dir, codec=autoencoder)
     _, pairs = load_smiles_and_pairs(args.data, limit=args.limit)
     raw_conditions, _, bundles, request_rows = build_condition_table(
@@ -29,7 +29,7 @@ def main() -> None:
         render_missing_images=args.render_missing_images,
         render_dir=str(out_dir / "rendered_inputs"),
     )
-    conditions = alignment.predict(raw_conditions)
+    conditions = predict_condition_latents(alignment, raw_conditions, pairs, autoencoder)
     sampled = diffusion.sample_smiles(conditions, n_per_condition=args.samples_per_request, top_k=args.decode_top_k)
     rows = []
     request_metric_rows = []

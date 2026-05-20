@@ -68,6 +68,9 @@ fi
   --epochs "${MOLPILOT_ALIGN_EPOCHS:-60}" \
   --batch-size "${MOLPILOT_ALIGN_BATCH_SIZE:-1024}" \
   --contrastive-weight "${MOLPILOT_CONTRASTIVE_WEIGHT:-0.05}" \
+  --delta-weight "${MOLPILOT_JEPA_DELTA_WEIGHT:-0.25}" \
+  --sigreg-weight "${MOLPILOT_JEPA_SIGREG_WEIGHT:-0.01}" \
+  --model-kind "${MOLPILOT_STAGE2_MODEL:-jepa}" \
   "${RENDER_ARGS[@]}"
 
 "$PYTHON_BIN" -m molpilot.train_diffusion \

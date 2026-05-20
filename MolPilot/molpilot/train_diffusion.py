@@ -6,9 +6,9 @@ import argparse
 
 import numpy as np
 
-from .alignment import UnderstandingAlignment
 from .artifacts import ensure_dir, save_json, write_csv
 from .autoencoder import load_autoencoder
+from .condition_model import load_condition_model, predict_condition_latents
 from .diffusion import DiffusionConfig, MolecularLatentDiffusion
 from .stage_data import build_condition_table, load_smiles_and_pairs
 
@@ -17,7 +17,7 @@ def main() -> None:
     args = parse_args()
     out_dir = ensure_dir(args.output_dir)
     autoencoder = load_autoencoder(args.autoencoder_dir)
-    alignment = UnderstandingAlignment.load(args.alignment_dir)
+    condition_model = load_condition_model(args.alignment_dir)
     _, pairs = load_smiles_and_pairs(args.data, limit=args.limit)
     raw_conditions, target_smiles, _, rows = build_condition_table(
         pairs,
@@ -25,7 +25,7 @@ def main() -> None:
         render_missing_images=args.render_missing_images,
         render_dir=str(out_dir / "rendered_inputs"),
     )
-    conditions = alignment.predict(raw_conditions)
+    conditions = predict_condition_latents(condition_model, raw_conditions, pairs, autoencoder)
     target_latents = autoencoder.encode_many(target_smiles)
     diffusion = MolecularLatentDiffusion(
         DiffusionConfig(
