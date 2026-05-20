@@ -23,6 +23,12 @@ def main() -> None:
     alignment = load_condition_model(args.alignment_dir)
     diffusion = MolecularLatentDiffusion.load(args.diffusion_dir, codec=autoencoder)
     _, pairs = load_smiles_and_pairs(args.data, limit=args.limit)
+    pairs = _select_pairs_by_task(
+        pairs,
+        max_per_task=args.max_requests_per_task,
+        tasks=args.tasks,
+        seed=args.seed,
+    )
     raw_conditions, _, bundles, request_rows = build_condition_table(
         pairs,
         condition_dim=args.condition_dim,
@@ -100,6 +106,7 @@ def main() -> None:
         "requests": float(len(pairs)),
         "candidates": float(len(rows)),
         "verifier_ranking": not args.disable_verifier_ranking,
+        "max_requests_per_task": float(args.max_requests_per_task),
         "overall_success": float(np.mean(overall)) if overall else 0.0,
         "hard_verified_success": float(np.mean(hard)) if hard else 0.0,
         **_aggregate_request_metrics(request_metric_rows),
@@ -130,7 +137,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--decode-top-k", type=int, default=4)
     parser.add_argument("--render-missing-images", action="store_true")
     parser.add_argument("--disable-verifier-ranking", action="store_true")
+    parser.add_argument("--max-requests-per-task", type=int, default=0)
+    parser.add_argument("--tasks", default="edit,inpaint,de_novo")
+    parser.add_argument("--seed", type=int, default=7)
     return parser.parse_args()
+
+
+def _select_pairs_by_task(pairs, max_per_task: int = 0, tasks: str = "edit,inpaint,de_novo", seed: int = 7):
+    allowed = [task.strip() for task in str(tasks).split(",") if task.strip()]
+    allowed_set = set(allowed)
+    grouped: dict[str, list] = {task: [] for task in allowed}
+    for pair in pairs:
+        task = pair[0].task_type.value
+        if task in allowed_set:
+            grouped.setdefault(task, []).append(pair)
+    rng = np.random.default_rng(seed)
+    selected = []
+    for task in allowed:
+        rows = list(grouped.get(task, []))
+        if max_per_task > 0 and len(rows) > max_per_task:
+            chosen = rng.choice(len(rows), size=max_per_task, replace=False)
+            rows = [rows[int(idx)] for idx in sorted(chosen)]
+        selected.extend(rows)
+    return selected
 
 
 def _ranking_score(result) -> float:
@@ -166,7 +195,30 @@ def _aggregate_request_metrics(rows: list[dict[str, object]]) -> dict[str, float
             key = f"{prefix}_at_{k}"
             values = [float(row.get(key, 0.0)) for row in rows]
             out[f"request_{key}"] = float(np.mean(values)) if values else 0.0
+    tasks = sorted({str(row.get("task_type", "unknown")) for row in rows})
+    for task in tasks:
+        task_rows = [row for row in rows if str(row.get("task_type", "unknown")) == task]
+        task_key = _safe_metric_key(task)
+        out[f"task_{task_key}_requests"] = float(len(task_rows))
+        for prefix in ("overall", "goal", "constraint"):
+            for k in (1, 5, 10):
+                key = f"{prefix}_at_{k}"
+                values = [float(row.get(key, 0.0)) for row in task_rows]
+                out[f"task_{task_key}_request_{key}"] = float(np.mean(values)) if values else 0.0
+    for prefix in ("overall", "goal", "constraint"):
+        for k in (1, 5, 10):
+            values = []
+            for task in tasks:
+                task_key = _safe_metric_key(task)
+                metric_key = f"task_{task_key}_request_{prefix}_at_{k}"
+                if metric_key in out:
+                    values.append(out[metric_key])
+            out[f"macro_task_request_{prefix}_at_{k}"] = float(np.mean(values)) if values else 0.0
     return out
+
+
+def _safe_metric_key(value: str) -> str:
+    return "".join(ch if ch.isalnum() else "_" for ch in str(value)).strip("_") or "unknown"
 
 
 if __name__ == "__main__":

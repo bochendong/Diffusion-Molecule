@@ -125,6 +125,9 @@ uses a different resource name, override it with `MOLPILOT_SLURM_GPUS`.
 The submit helper defaults to `MOLPILOT_STAGE2_MODEL=jepa` and uses
 `/scratch/bdong/venvs/phystabmol/bin/python` when that venv exists. If needed,
 override either value with `MOLPILOT_STAGE2_MODEL=alignment` or `PYTHON_BIN=...`.
+Stage 4 uses task-balanced evaluation by default: it builds requests from
+`MOLPILOT_EVAL_MOLECULE_LIMIT` molecules, then caps each task family with
+`MOLPILOT_MAX_REQUESTS_PER_TASK` or `MOLPILOT_EVAL_LIMIT`.
 
 Resample an existing trained stage without retraining:
 
@@ -146,6 +149,16 @@ This writes ranked samples to `stage4_samples_ranked`, including
 `request_metrics.csv` for `overall@1/5/10` and `failure_reasons.csv` for
 constraint debugging. Set `MOLPILOT_DISABLE_VERIFIER_RANKING=1` to produce a
 no-ranking ablation.
+
+Task-balanced resampling can be controlled with:
+
+```bash
+MOLPILOT_STAGE_ROOT=outputs/stages/molpilot_sequence_10000_20260519_190716 \
+MOLPILOT_EVAL_MOLECULE_LIMIT=10000 \
+MOLPILOT_MAX_REQUESTS_PER_TASK=1000 \
+MOLPILOT_EVAL_TASKS=edit,inpaint,de_novo \
+bash scripts/resample_existing_stage.sh
+```
 
 For the full 100k run:
 

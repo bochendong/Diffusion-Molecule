@@ -83,6 +83,7 @@ ranking into training feedback.
    - edit overall@1/5/10
    - inpaint overall@1/5/10
    - constraint success, scaffold preservation, similarity, MW drift
+   - macro task average so de novo generation cannot hide edit/inpaint failure
 2. JEPA planner ablation:
    - no Stage 2 predictor
    - alignment MLP

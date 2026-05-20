@@ -81,6 +81,28 @@ def _task_breakdown(rows: list[dict[str, str]]) -> dict[str, float]:
         key = "".join(ch if ch.isalnum() else "_" for ch in task).strip("_") or "unknown"
         out[f"task_{key}_rows"] = float(len(task_rows))
         out[f"task_{key}_overall_success"] = float(np.mean([_as_bool(row.get("overall_success", "")) for row in task_rows]))
+        out.update(_task_request_topk(task_rows, f"task_{key}"))
+    task_keys = sorted("".join(ch if ch.isalnum() else "_" for ch in task).strip("_") or "unknown" for task in grouped)
+    for metric in ("overall", "goal", "constraint"):
+        for k in (1, 5, 10):
+            values = [out[f"task_{task_key}_request_{metric}_at_{k}"] for task_key in task_keys if f"task_{task_key}_request_{metric}_at_{k}" in out]
+            out[f"macro_task_request_{metric}_at_{k}"] = float(np.mean(values)) if values else 0.0
+    return out
+
+
+def _task_request_topk(rows: list[dict[str, str]], prefix: str) -> dict[str, float]:
+    grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        grouped[str(row.get("request_id", ""))].append(row)
+    out = {f"{prefix}_requests": float(len(grouped))}
+    for metric in ("overall_success", "goal_success", "constraint_success"):
+        short = metric.replace("_success", "")
+        for k in (1, 5, 10):
+            values = []
+            for request_rows in grouped.values():
+                ordered = sorted(request_rows, key=lambda row: int(float(row.get("rank", 0) or 0)))
+                values.append(max(_as_bool(row.get(metric, "")) for row in ordered[:k]) if ordered else 0.0)
+            out[f"{prefix}_request_{short}_at_{k}"] = float(np.mean(values)) if values else 0.0
     return out
 
 

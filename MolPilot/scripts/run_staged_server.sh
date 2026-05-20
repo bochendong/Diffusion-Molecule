@@ -93,10 +93,12 @@ fi
   --alignment-dir "$ALIGN_DIR" \
   --diffusion-dir "$DIFF_DIR" \
   --output-dir "$SAMPLE_DIR" \
-  --limit "${MOLPILOT_EVAL_LIMIT:-5000}" \
+  --limit "${MOLPILOT_EVAL_MOLECULE_LIMIT:-$LIMIT}" \
   --condition-dim "${MOLPILOT_CONDITION_DIM:-256}" \
   --samples-per-request "${MOLPILOT_SAMPLES:-8}" \
   --decode-top-k "${MOLPILOT_DECODE_TOP_K:-4}" \
+  --max-requests-per-task "${MOLPILOT_MAX_REQUESTS_PER_TASK:-${MOLPILOT_EVAL_LIMIT:-1000}}" \
+  --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo}" \
   "${SAMPLE_ARGS[@]}" \
   "${RENDER_ARGS[@]}"
 

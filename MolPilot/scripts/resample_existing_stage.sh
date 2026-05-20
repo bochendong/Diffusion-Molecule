@@ -36,10 +36,12 @@ echo "  disable_verifier_ranking=${MOLPILOT_DISABLE_VERIFIER_RANKING:-0}"
   --alignment-dir "$STAGE_ROOT/stage2_understanding" \
   --diffusion-dir "$STAGE_ROOT/stage3_diffusion" \
   --output-dir "$SAMPLE_DIR" \
-  --limit "${MOLPILOT_EVAL_LIMIT:-5000}" \
+  --limit "${MOLPILOT_EVAL_MOLECULE_LIMIT:-${MOLPILOT_LIMIT:-10000}}" \
   --condition-dim "${MOLPILOT_CONDITION_DIM:-256}" \
   --samples-per-request "${MOLPILOT_SAMPLES:-8}" \
   --decode-top-k "${MOLPILOT_DECODE_TOP_K:-4}" \
+  --max-requests-per-task "${MOLPILOT_MAX_REQUESTS_PER_TASK:-${MOLPILOT_EVAL_LIMIT:-1000}}" \
+  --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo}" \
   "${SAMPLE_ARGS[@]}" \
   "${RENDER_ARGS[@]}"
 
