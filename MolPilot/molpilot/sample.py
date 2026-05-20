@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter
 import json
 
 import numpy as np
@@ -31,15 +32,30 @@ def main() -> None:
     conditions = alignment.predict(raw_conditions)
     sampled = diffusion.sample_smiles(conditions, n_per_condition=args.samples_per_request, top_k=args.decode_top_k)
     rows = []
+    request_metric_rows = []
     overall = []
     hard = []
+    failure_counts: Counter[str] = Counter()
     for request_idx, (((request, target), bundle), candidates) in enumerate(zip(zip(pairs, bundles), sampled)):
-        for rank, candidate in enumerate(candidates[: args.samples_per_request * args.decode_top_k]):
+        scored = []
+        for raw_rank, candidate in enumerate(candidates[: args.samples_per_request * args.decode_top_k]):
             result = verify_candidate(request.source_smiles, candidate, bundle.objective)
+            for reason in result.reasons:
+                failure_counts[reason] += 1
+            scored.append((raw_rank, candidate, result, _ranking_score(result)))
+        if not args.disable_verifier_ranking:
+            scored.sort(key=lambda item: (-item[3], item[0]))
+
+        request_overall = []
+        request_goal = []
+        request_constraint = []
+        for rank, (raw_rank, candidate, result, score) in enumerate(scored):
             rows.append(
                 {
                     "request_id": request_idx,
                     "rank": rank,
+                    "raw_rank": raw_rank,
+                    "ranking_score": f"{score:.6f}",
                     "task_type": request.task_type.value,
                     "source_smiles": request.source_smiles or "",
                     "target_smiles": target,
@@ -51,20 +67,53 @@ def main() -> None:
                 }
             )
             overall.append(float(result.overall_success))
+            request_overall.append(float(result.overall_success))
+            request_goal.append(float(result.goal_success))
+            request_constraint.append(float(result.constraint_success))
             if result.hard_verifiable:
                 hard.append(float(result.overall_success))
+        request_metric_rows.append(
+            {
+                "request_id": request_idx,
+                "task_type": request.task_type.value,
+                "source_smiles": request.source_smiles or "",
+                "target_smiles": target,
+                "instruction": request.instruction,
+                "n_candidates": len(scored),
+                **_topk_metrics(request_overall, "overall"),
+                **_topk_metrics(request_goal, "goal"),
+                **_topk_metrics(request_constraint, "constraint"),
+            }
+        )
     write_csv(rows, out_dir / "tables" / "candidates.csv")
     write_csv(request_rows, out_dir / "tables" / "requests.csv")
+    write_csv(request_metric_rows, out_dir / "tables" / "request_metrics.csv")
+    write_csv(
+        [
+            {"reason": reason, "count": count, "fraction": count / max(1, len(rows))}
+            for reason, count in failure_counts.most_common()
+        ],
+        out_dir / "tables" / "failure_reasons.csv",
+    )
     metrics = {
         "stage": "stage4_sample_verify",
         "requests": float(len(pairs)),
         "candidates": float(len(rows)),
+        "verifier_ranking": not args.disable_verifier_ranking,
         "overall_success": float(np.mean(overall)) if overall else 0.0,
         "hard_verified_success": float(np.mean(hard)) if hard else 0.0,
+        **_aggregate_request_metrics(request_metric_rows),
+        **{f"failure_reason_{reason}": float(count) for reason, count in failure_counts.most_common(20)},
     }
     save_json(metrics, out_dir / "metrics.json")
     print("Stage 4 sampling/evaluation complete")
     print(f"requests={len(pairs)} candidates={len(rows)} hard_verified_success={metrics['hard_verified_success']:.4f}")
+    print(
+        "request_topk "
+        f"overall@1={metrics.get('request_overall_at_1', 0.0):.4f} "
+        f"overall@5={metrics.get('request_overall_at_5', 0.0):.4f} "
+        f"overall@10={metrics.get('request_overall_at_10', 0.0):.4f}"
+    )
     print(f"sample_dir={out_dir}")
 
 
@@ -80,7 +129,44 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--samples-per-request", type=int, default=8)
     parser.add_argument("--decode-top-k", type=int, default=4)
     parser.add_argument("--render-missing-images", action="store_true")
+    parser.add_argument("--disable-verifier-ranking", action="store_true")
     return parser.parse_args()
+
+
+def _ranking_score(result) -> float:
+    score = 0.0
+    score += 1000.0 if result.overall_success else 0.0
+    score += 100.0 if result.constraint_success else 0.0
+    score += 20.0 if result.goal_success else 0.0
+    score += 5.0 if result.valid else 0.0
+    penalties = {
+        "scaffold_changed": 12.0,
+        "low_similarity": 8.0,
+        "mw_drift": 6.0,
+        "druglike_failed": 4.0,
+        "cns_profile_failed": 4.0,
+        "invalid_smiles": 100.0,
+    }
+    for reason in result.reasons:
+        score -= penalties.get(reason, 1.0)
+    return score
+
+
+def _topk_metrics(values: list[float], prefix: str) -> dict[str, float]:
+    out = {}
+    for k in (1, 5, 10):
+        out[f"{prefix}_at_{k}"] = float(max(values[:k])) if values else 0.0
+    return out
+
+
+def _aggregate_request_metrics(rows: list[dict[str, object]]) -> dict[str, float]:
+    out = {}
+    for prefix in ("overall", "goal", "constraint"):
+        for k in (1, 5, 10):
+            key = f"{prefix}_at_{k}"
+            values = [float(row.get(key, 0.0)) for row in rows]
+            out[f"request_{key}"] = float(np.mean(values)) if values else 0.0
+    return out
 
 
 if __name__ == "__main__":

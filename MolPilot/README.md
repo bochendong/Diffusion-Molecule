@@ -115,6 +115,29 @@ uses a different resource name, override it with `MOLPILOT_SLURM_GPUS`.
 The submit helper captures the active venv Python. If needed, set
 `PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python` explicitly.
 
+Resample an existing trained stage without retraining:
+
+```bash
+cd MolPilot
+MOLPILOT_STAGE_ROOT=outputs/stages/molpilot_sequence_10000_20260519_190716 \
+PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/resample_existing_stage.sh
+```
+
+Or submit the same resampling step to Slurm:
+
+```bash
+cd MolPilot
+MOLPILOT_STAGE_ROOT=outputs/stages/molpilot_sequence_10000_20260519_190716 \
+PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+sbatch --export=ALL scripts/resample_existing_stage.slurm.sh
+```
+
+This writes ranked samples to `stage4_samples_ranked`, including
+`request_metrics.csv` for `overall@1/5/10` and `failure_reasons.csv` for
+constraint debugging. Set `MOLPILOT_DISABLE_VERIFIER_RANKING=1` to produce a
+no-ranking ablation.
+
 For the full 100k run:
 
 ```bash

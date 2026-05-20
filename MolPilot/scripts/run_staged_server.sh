@@ -19,6 +19,10 @@ RENDER_ARGS=()
 if [[ "${MOLPILOT_RENDER_MISSING_IMAGES:-0}" == "1" ]]; then
   RENDER_ARGS+=(--render-missing-images)
 fi
+SAMPLE_ARGS=()
+if [[ "${MOLPILOT_DISABLE_VERIFIER_RANKING:-0}" == "1" ]]; then
+  SAMPLE_ARGS+=(--disable-verifier-ranking)
+fi
 
 echo "MolPilot staged server run"
 echo "  data=$DATA"
@@ -90,6 +94,7 @@ fi
   --condition-dim "${MOLPILOT_CONDITION_DIM:-256}" \
   --samples-per-request "${MOLPILOT_SAMPLES:-8}" \
   --decode-top-k "${MOLPILOT_DECODE_TOP_K:-4}" \
+  "${SAMPLE_ARGS[@]}" \
   "${RENDER_ARGS[@]}"
 
 "$PYTHON_BIN" -m molpilot.evaluate \
