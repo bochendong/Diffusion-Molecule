@@ -3,7 +3,7 @@
 #SBATCH --account=def-hup-ab
 #SBATCH --gpus=h100_3g.40gb:1
 #SBATCH --mem-per-cpu=4096M
-#SBATCH --time=04:00:00
+#SBATCH --time=00:30:00
 #SBATCH --cpus-per-task=16
 #SBATCH --output=./molpilot-resample-%j.log
 #SBATCH --error=./molpilot-resample-%j.log

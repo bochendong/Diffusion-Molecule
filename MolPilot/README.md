@@ -122,6 +122,8 @@ and `--mem-per-cpu=4096M`. For smaller slices, set
 `MOLPILOT_AE_BATCH_SIZE`, `MOLPILOT_AE_HIDDEN_DIM`,
 `MOLPILOT_DIFFUSION_BATCH_SIZE`, and `MOLPILOT_DIFFUSION_HIDDEN_DIM`. If Slurm
 uses a different resource name, override it with `MOLPILOT_SLURM_GPUS`.
+The default staged Slurm time is 2 hours; for larger 100k/full runs, override
+with `MOLPILOT_SLURM_TIME=08:00:00` or another appropriate value.
 The submit helper defaults to `MOLPILOT_STAGE2_MODEL=jepa` and uses
 `/scratch/bdong/venvs/phystabmol/bin/python` when that venv exists. If needed,
 override either value with `MOLPILOT_STAGE2_MODEL=alignment` or `PYTHON_BIN=...`.

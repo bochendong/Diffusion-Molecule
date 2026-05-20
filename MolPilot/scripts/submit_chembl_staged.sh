@@ -11,6 +11,7 @@ CODEC="${MOLPILOT_CODEC:-sequence}"
 RUN_NAME="${MOLPILOT_RUN_NAME:-molpilot_${CODEC}_${LIMIT}_$(date +%Y%m%d_%H%M%S)}"
 GPU_PROFILE="${MOLPILOT_GPU_PROFILE:-h100_40gb_mig}"
 SLURM_MEM_PER_CPU="${MOLPILOT_SLURM_MEM_PER_CPU:-4096M}"
+SLURM_TIME="${MOLPILOT_SLURM_TIME:-02:00:00}"
 STAGE2_MODEL="${MOLPILOT_STAGE2_MODEL:-jepa}"
 DEFAULT_SERVER_PYTHON="/scratch/bdong/venvs/phystabmol/bin/python"
 if [[ -z "${PYTHON_BIN:-}" ]]; then
@@ -69,6 +70,7 @@ echo "  gpu_profile=$GPU_PROFILE"
 echo "  stage2_model=$STAGE2_MODEL"
 echo "  slurm_gpu_candidates=${GPU_CANDIDATES[*]}"
 echo "  slurm_mem_per_cpu=$SLURM_MEM_PER_CPU"
+echo "  slurm_time=$SLURM_TIME"
 echo "  python_bin=$PYTHON_BIN"
 echo "  run_name=$RUN_NAME"
 
@@ -117,6 +119,7 @@ for SLURM_GPUS in "${GPU_CANDIDATES[@]}"; do
     --export=ALL \
     --gpus="$SLURM_GPUS" \
     --mem-per-cpu="$SLURM_MEM_PER_CPU" \
+    --time="$SLURM_TIME" \
     scripts/run_staged_server.slurm.sh; then
     SUBMITTED=1
     break
