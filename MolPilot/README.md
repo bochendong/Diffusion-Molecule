@@ -152,6 +152,14 @@ This writes ranked samples to `stage4_samples_ranked`, including
 constraint debugging. Set `MOLPILOT_DISABLE_VERIFIER_RANKING=1` to produce a
 no-ranking ablation.
 
+For `edit` and `inpaint`, Stage 4 now enables source-guided sampling by
+default. It decodes raw diffusion samples, source-anchored latent variants, and
+local source-neighborhood candidates, then records `candidate_origin` plus
+`origin_*` metrics. Use `MOLPILOT_DISABLE_SOURCE_GUIDANCE=1` for an ablation,
+`MOLPILOT_SOURCE_EDIT_STRENGTHS=0.20,0.40,0.65` to tune how much generated
+delta is kept, and `MOLPILOT_SOURCE_NEIGHBORHOOD_K=64` to widen the local
+candidate pool.
+
 Task-balanced resampling can be controlled with:
 
 ```bash

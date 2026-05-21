@@ -13,6 +13,7 @@ from .autoencoder import load_autoencoder
 from .condition_model import load_condition_model, predict_condition_latents
 from .diffusion import MolecularLatentDiffusion
 from .stage_data import build_condition_table, load_smiles_and_pairs
+from .source_guidance import decode_source_guided_candidates, parse_strengths
 from .verifier import verify_candidate
 
 
@@ -36,16 +37,29 @@ def main() -> None:
         render_dir=str(out_dir / "rendered_inputs"),
     )
     conditions = predict_condition_latents(alignment, raw_conditions, pairs, autoencoder)
-    sampled = diffusion.sample_smiles(conditions, n_per_condition=args.samples_per_request, top_k=args.decode_top_k)
+    sampled_latents = diffusion.sample_latents(conditions, n_per_condition=args.samples_per_request)
+    source_edit_strengths = parse_strengths(args.source_edit_strengths)
     rows = []
     request_metric_rows = []
     overall = []
     hard = []
     failure_counts: Counter[str] = Counter()
-    for request_idx, (((request, target), bundle), candidates) in enumerate(zip(zip(pairs, bundles), sampled)):
+    latent_cursor = 0
+    for request_idx, ((request, target), bundle) in enumerate(zip(pairs, bundles)):
+        request_latents = sampled_latents[latent_cursor : latent_cursor + args.samples_per_request]
+        latent_cursor += args.samples_per_request
+        candidates = decode_source_guided_candidates(
+            autoencoder,
+            request,
+            request_latents,
+            top_k=args.decode_top_k,
+            source_edit_strengths=source_edit_strengths,
+            source_neighborhood_k=args.source_neighborhood_k,
+            enable_source_guidance=not args.disable_source_guidance,
+        )
         scored = []
-        for raw_rank, candidate in enumerate(candidates[: args.samples_per_request * args.decode_top_k]):
-            result = verify_candidate(request.source_smiles, candidate, bundle.objective)
+        for raw_rank, candidate in enumerate(candidates):
+            result = verify_candidate(request.source_smiles, candidate.smiles, bundle.objective)
             for reason in result.reasons:
                 failure_counts[reason] += 1
             scored.append((raw_rank, candidate, result, _ranking_score(result)))
@@ -62,10 +76,11 @@ def main() -> None:
                     "rank": rank,
                     "raw_rank": raw_rank,
                     "ranking_score": f"{score:.6f}",
+                    "candidate_origin": candidate.origin,
                     "task_type": request.task_type.value,
                     "source_smiles": request.source_smiles or "",
                     "target_smiles": target,
-                    "candidate_smiles": candidate,
+                    "candidate_smiles": candidate.smiles,
                     "instruction": request.instruction,
                     "objective_json": json.dumps(bundle.objective.to_dict(), sort_keys=True),
                     "notes": "|".join(bundle.notes),
@@ -106,6 +121,9 @@ def main() -> None:
         "requests": float(len(pairs)),
         "candidates": float(len(rows)),
         "verifier_ranking": not args.disable_verifier_ranking,
+        "source_guidance": not args.disable_source_guidance,
+        "source_edit_strengths": args.source_edit_strengths,
+        "source_neighborhood_k": float(args.source_neighborhood_k),
         "max_requests_per_task": float(args.max_requests_per_task),
         "overall_success": float(np.mean(overall)) if overall else 0.0,
         "hard_verified_success": float(np.mean(hard)) if hard else 0.0,
@@ -137,6 +155,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--decode-top-k", type=int, default=4)
     parser.add_argument("--render-missing-images", action="store_true")
     parser.add_argument("--disable-verifier-ranking", action="store_true")
+    parser.add_argument("--disable-source-guidance", action="store_true")
+    parser.add_argument("--source-edit-strengths", default="0.25,0.50")
+    parser.add_argument("--source-neighborhood-k", type=int, default=32)
     parser.add_argument("--max-requests-per-task", type=int, default=0)
     parser.add_argument("--tasks", default="edit,inpaint,de_novo")
     parser.add_argument("--seed", type=int, default=7)

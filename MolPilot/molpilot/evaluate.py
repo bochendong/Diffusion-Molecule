@@ -33,6 +33,7 @@ def main() -> None:
     metrics["hard_overall_success"] = float(np.mean([_as_bool(row.get("overall_success", "")) for row in hard_rows])) if hard_rows else 0.0
     metrics.update(_request_topk(rows))
     metrics.update(_task_breakdown(rows))
+    metrics.update(_origin_breakdown(rows))
     metrics.update(_failure_reasons(rows))
     save_json(metrics, args.out)
     print("MolPilot evaluation summary")
@@ -114,6 +115,21 @@ def _failure_reasons(rows: list[dict[str, str]]) -> dict[str, float]:
             if reason:
                 counts[reason] += 1
     return {f"failure_reason_{reason}": float(count) for reason, count in counts.most_common(20)}
+
+
+def _origin_breakdown(rows: list[dict[str, str]]) -> dict[str, float]:
+    grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        origins = str(row.get("candidate_origin", "") or "unknown").split("+")
+        for origin in origins:
+            origin = origin.strip() or "unknown"
+            grouped[origin].append(row)
+    out = {}
+    for origin, origin_rows in grouped.items():
+        key = "".join(ch if ch.isalnum() else "_" for ch in origin).strip("_") or "unknown"
+        out[f"origin_{key}_rows"] = float(len(origin_rows))
+        out[f"origin_{key}_overall_success"] = float(np.mean([_as_bool(row.get("overall_success", "")) for row in origin_rows]))
+    return out
 
 
 if __name__ == "__main__":

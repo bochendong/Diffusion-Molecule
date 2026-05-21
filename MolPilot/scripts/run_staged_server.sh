@@ -30,6 +30,9 @@ SAMPLE_ARGS=()
 if [[ "${MOLPILOT_DISABLE_VERIFIER_RANKING:-0}" == "1" ]]; then
   SAMPLE_ARGS+=(--disable-verifier-ranking)
 fi
+if [[ "${MOLPILOT_DISABLE_SOURCE_GUIDANCE:-0}" == "1" ]]; then
+  SAMPLE_ARGS+=(--disable-source-guidance)
+fi
 
 echo "MolPilot staged server run"
 echo "  data=$DATA"
@@ -104,6 +107,8 @@ fi
   --condition-dim "${MOLPILOT_CONDITION_DIM:-256}" \
   --samples-per-request "${MOLPILOT_SAMPLES:-8}" \
   --decode-top-k "${MOLPILOT_DECODE_TOP_K:-4}" \
+  --source-edit-strengths "${MOLPILOT_SOURCE_EDIT_STRENGTHS:-0.25,0.50}" \
+  --source-neighborhood-k "${MOLPILOT_SOURCE_NEIGHBORHOOD_K:-32}" \
   --max-requests-per-task "${MOLPILOT_MAX_REQUESTS_PER_TASK:-${MOLPILOT_EVAL_LIMIT:-1000}}" \
   --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo}" \
   "${SAMPLE_ARGS[@]}" \
