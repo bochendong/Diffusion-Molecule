@@ -34,11 +34,16 @@ class TaskBalancedEvalTests(unittest.TestCase):
         rows = [
             {"candidate_origin": "diffusion", "overall_success": "False"},
             {"candidate_origin": "source_guided_0.25+source_neighborhood", "overall_success": "True"},
+            {"candidate_origin": "graph_edit_methyl+graph_edit_fluoro", "overall_success": "True"},
+            {"candidate_origin": "scaffold_library", "overall_success": "False"},
         ]
         metrics = _origin_breakdown(rows)
         self.assertEqual(metrics["origin_diffusion_rows"], 1.0)
         self.assertEqual(metrics["origin_source_guided_0_25_overall_success"], 1.0)
         self.assertEqual(metrics["origin_source_neighborhood_overall_success"], 1.0)
+        self.assertEqual(metrics["origin_graph_edit_methyl_overall_success"], 1.0)
+        self.assertEqual(metrics["origin_family_graph_edit_rows"], 1.0)
+        self.assertEqual(metrics["origin_family_scaffold_library_overall_success"], 0.0)
 
 
 if __name__ == "__main__":

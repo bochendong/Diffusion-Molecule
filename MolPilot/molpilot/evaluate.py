@@ -119,17 +119,42 @@ def _failure_reasons(rows: list[dict[str, str]]) -> dict[str, float]:
 
 def _origin_breakdown(rows: list[dict[str, str]]) -> dict[str, float]:
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
+    family_grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in rows:
         origins = str(row.get("candidate_origin", "") or "unknown").split("+")
+        row_families = set()
         for origin in origins:
             origin = origin.strip() or "unknown"
             grouped[origin].append(row)
+            row_families.add(_origin_family(origin))
+        for family in row_families:
+            family_grouped[family].append(row)
     out = {}
     for origin, origin_rows in grouped.items():
         key = "".join(ch if ch.isalnum() else "_" for ch in origin).strip("_") or "unknown"
         out[f"origin_{key}_rows"] = float(len(origin_rows))
         out[f"origin_{key}_overall_success"] = float(np.mean([_as_bool(row.get("overall_success", "")) for row in origin_rows]))
+    for family, family_rows in family_grouped.items():
+        key = "".join(ch if ch.isalnum() else "_" for ch in family).strip("_") or "unknown"
+        out[f"origin_family_{key}_rows"] = float(len(family_rows))
+        out[f"origin_family_{key}_overall_success"] = float(np.mean([_as_bool(row.get("overall_success", "")) for row in family_rows]))
     return out
+
+
+def _origin_family(origin: str) -> str:
+    if origin.startswith("source_guided_"):
+        return "source_guided"
+    if origin.startswith("graph_edit_"):
+        return "graph_edit"
+    if origin.startswith("graph_grow_"):
+        return "graph_grow"
+    if origin == "source_neighborhood":
+        return "source_neighborhood"
+    if origin == "scaffold_library":
+        return "scaffold_library"
+    if origin == "diffusion":
+        return "diffusion"
+    return origin or "unknown"
 
 
 if __name__ == "__main__":

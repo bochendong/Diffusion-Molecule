@@ -36,6 +36,8 @@ def decode_source_guided_candidates(
     graph_edit_limit: int = 96,
     scaffold_library_k: int = 32,
     enable_source_guidance: bool = True,
+    include_diffusion_candidates: bool = True,
+    enable_latent_source_guidance: bool = True,
     enable_graph_editor: bool = True,
 ) -> list[Candidate]:
     """Decode candidates with optional source-locked variants.
@@ -55,12 +57,13 @@ def decode_source_guided_candidates(
         and request.task_type in {TaskType.EDIT, TaskType.INPAINT}
     )
 
-    for latent in latents:
-        _extend_decoded(candidates, codec, latent, top_k=top_k, origin="diffusion", source_smiles=source_smiles)
+    if include_diffusion_candidates:
+        for latent in latents:
+            _extend_decoded(candidates, codec, latent, top_k=top_k, origin="diffusion", source_smiles=source_smiles)
 
     if source_enabled:
         source_latent = _encode_source(codec, source_smiles)
-        if source_latent is not None:
+        if source_latent is not None and enable_latent_source_guidance:
             for strength in source_edit_strengths:
                 strength = _clamp_strength(strength)
                 for latent in latents:

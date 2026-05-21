@@ -32,6 +32,28 @@ class SourceGuidanceTests(unittest.TestCase):
         self.assertTrue(any("source_neighborhood" in candidate.origin for candidate in candidates))
         self.assertTrue(any(candidate.origin.startswith("source_guided") for candidate in candidates))
 
+    def test_can_isolate_non_diffusion_candidate_sources(self):
+        codec = NearestLatentCodec(latent_dim=16).fit(["CCO", "CCN", "CCCl", "c1ccccc1"])
+        request = GenerationRequest(
+            task_type=TaskType.EDIT,
+            source_smiles="CCO",
+            instruction="Lower LogP while preserving scaffold.",
+        )
+        latents = np.asarray([codec.encode("c1ccccc1")], dtype=np.float32)
+        candidates = decode_source_guided_candidates(
+            codec,
+            request,
+            latents,
+            top_k=2,
+            source_edit_strengths=[0.25],
+            source_neighborhood_k=3,
+            include_diffusion_candidates=False,
+            enable_latent_source_guidance=True,
+            enable_graph_editor=False,
+        )
+        self.assertTrue(candidates)
+        self.assertNotIn("diffusion", {candidate.origin for candidate in candidates})
+
 
 if __name__ == "__main__":
     unittest.main()

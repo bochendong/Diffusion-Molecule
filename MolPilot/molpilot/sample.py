@@ -59,6 +59,8 @@ def main() -> None:
             graph_edit_limit=args.graph_edit_limit,
             scaffold_library_k=args.scaffold_library_k,
             enable_source_guidance=not args.disable_source_guidance,
+            include_diffusion_candidates=not args.disable_diffusion_candidates,
+            enable_latent_source_guidance=not args.disable_latent_source_guidance,
             enable_graph_editor=not args.disable_graph_editor,
         )
         scored = []
@@ -126,6 +128,8 @@ def main() -> None:
         "candidates": float(len(rows)),
         "verifier_ranking": not args.disable_verifier_ranking,
         "source_guidance": not args.disable_source_guidance,
+        "diffusion_candidates": not args.disable_diffusion_candidates,
+        "latent_source_guidance": not args.disable_latent_source_guidance,
         "graph_editor": not args.disable_graph_editor,
         "source_edit_strengths": args.source_edit_strengths,
         "source_neighborhood_k": float(args.source_neighborhood_k),
@@ -163,6 +167,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--render-missing-images", action="store_true")
     parser.add_argument("--disable-verifier-ranking", action="store_true")
     parser.add_argument("--disable-source-guidance", action="store_true")
+    parser.add_argument("--disable-diffusion-candidates", action="store_true")
+    parser.add_argument("--disable-latent-source-guidance", action="store_true")
     parser.add_argument("--disable-graph-editor", action="store_true")
     parser.add_argument("--source-edit-strengths", default="0.25,0.50")
     parser.add_argument("--source-neighborhood-k", type=int, default=32)

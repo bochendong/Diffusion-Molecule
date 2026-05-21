@@ -33,6 +33,12 @@ fi
 if [[ "${MOLPILOT_DISABLE_SOURCE_GUIDANCE:-0}" == "1" ]]; then
   SAMPLE_ARGS+=(--disable-source-guidance)
 fi
+if [[ "${MOLPILOT_DISABLE_DIFFUSION_CANDIDATES:-0}" == "1" ]]; then
+  SAMPLE_ARGS+=(--disable-diffusion-candidates)
+fi
+if [[ "${MOLPILOT_DISABLE_LATENT_SOURCE_GUIDANCE:-0}" == "1" ]]; then
+  SAMPLE_ARGS+=(--disable-latent-source-guidance)
+fi
 if [[ "${MOLPILOT_DISABLE_GRAPH_EDITOR:-0}" == "1" ]]; then
   SAMPLE_ARGS+=(--disable-graph-editor)
 fi
@@ -116,6 +122,7 @@ fi
   --scaffold-library-k "${MOLPILOT_SCAFFOLD_LIBRARY_K:-32}" \
   --max-requests-per-task "${MOLPILOT_MAX_REQUESTS_PER_TASK:-${MOLPILOT_EVAL_LIMIT:-1000}}" \
   --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo}" \
+  --seed "${MOLPILOT_SEED:-7}" \
   "${SAMPLE_ARGS[@]}" \
   "${RENDER_ARGS[@]}"
 

@@ -172,6 +172,27 @@ MOLPILOT_EVAL_TASKS=edit,inpaint,de_novo \
 bash scripts/resample_existing_stage.sh
 ```
 
+Overnight source-decoder ablations can be submitted in one command:
+
+```bash
+MOLPILOT_STAGE_ROOT=outputs/stages/molpilot_sequence_10000_20260520_015836 \
+MOLPILOT_ABLATION_TIME=08:00:00 \
+bash scripts/run_overnight_resample_ablation.sh
+```
+
+This requests an 8-hour walltime for each job, but jobs exit early when the
+sweep is done. The default `overnight` profile submits quick isolation runs
+plus heavier edit/inpaint sweeps: `full_graph`, `graph_only`,
+`scaffold_library_only`, `latent_only`, `diffusion_only`, `full_no_library`,
+`full_wide`, `graph_heavy`, `scaffold_library_heavy`, `full_heavy`, and
+`full_heavy_seed17`. Use `MOLPILOT_ABLATION_PROFILE=quick` if you only want the
+seven shorter runs. Summarize them after the jobs finish:
+
+```bash
+MOLPILOT_STAGE_ROOT=outputs/stages/molpilot_sequence_10000_20260520_015836 \
+bash scripts/summarize_resample_ablation.sh
+```
+
 For the full 100k run:
 
 ```bash
