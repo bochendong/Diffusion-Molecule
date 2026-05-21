@@ -208,6 +208,8 @@ def _attach_fragment(core_mol, attach_idx: int, fragment_smiles: str):
         combo = Chem.CombineMols(core_mol, frag)
         rw = Chem.RWMol(combo)
         offset = core_mol.GetNumAtoms()
+        if not _reserve_attachment_valence(rw, attach_idx):
+            return None
         rw.AddBond(int(attach_idx), int(offset + neighbor_idx), Chem.BondType.SINGLE)
         rw.RemoveAtom(int(offset + dummy_idx))
         edited = rw.GetMol()
@@ -223,6 +225,21 @@ def _fallback_attachment_atoms(mol) -> list[int]:
         if atom.GetAtomicNum() == 6 and atom.GetTotalNumHs() > 0:
             atoms.append(atom.GetIdx())
     return atoms[:8]
+
+
+def _reserve_attachment_valence(rw, atom_idx: int) -> bool:
+    """Use one available hydrogen as the attachment point before adding a bond."""
+
+    try:
+        atom = rw.GetAtomWithIdx(int(atom_idx))
+        hydrogens = int(atom.GetTotalNumHs())
+        if hydrogens <= 0:
+            return False
+        atom.SetNoImplicit(True)
+        atom.SetNumExplicitHs(max(0, hydrogens - 1))
+        return True
+    except Exception:
+        return False
 
 
 def _fragments_for_spec(spec: ObjectiveSpec) -> list[FragmentTemplate]:

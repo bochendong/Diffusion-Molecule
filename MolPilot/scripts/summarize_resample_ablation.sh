@@ -57,11 +57,21 @@ fields = [
 rows = []
 for suffix in suffixes:
     metrics_path = stage_root / f"eval_metrics_{suffix}.json"
+    sample_metrics_path = stage_root / f"stage4_samples_{suffix}" / "metrics.json"
     row = {"suffix": suffix, "status": "missing"}
+    metrics = {}
+    if sample_metrics_path.exists():
+        with sample_metrics_path.open(encoding="utf-8") as handle:
+            metrics.update(json.load(handle))
     if metrics_path.exists():
         with metrics_path.open(encoding="utf-8") as handle:
-            metrics = json.load(handle)
+            metrics.update(json.load(handle))
+    if metrics:
         row["status"] = "ok"
+        if "requests" not in metrics:
+            metrics["requests"] = metrics.get("request_count", "")
+        if "candidates" not in metrics:
+            metrics["candidates"] = metrics.get("rows", "")
         for field in fields:
             if field in {"suffix", "status"}:
                 continue
