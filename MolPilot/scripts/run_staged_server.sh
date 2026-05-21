@@ -3,7 +3,14 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+DEFAULT_SERVER_PYTHON="/scratch/bdong/venvs/phystabmol/bin/python"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "$DEFAULT_SERVER_PYTHON" ]]; then
+    PYTHON_BIN="$DEFAULT_SERVER_PYTHON"
+  else
+    PYTHON_BIN="$(command -v python || command -v python3)"
+  fi
+fi
 export PYTHONPATH="$PWD:${PYTHONPATH:-}"
 
 RUN_NAME="${MOLPILOT_RUN_NAME:-molpilot_staged_v1}"

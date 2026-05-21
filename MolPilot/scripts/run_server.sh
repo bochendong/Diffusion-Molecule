@@ -3,7 +3,14 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+DEFAULT_SERVER_PYTHON="/scratch/bdong/venvs/phystabmol/bin/python"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "$DEFAULT_SERVER_PYTHON" ]]; then
+    PYTHON_BIN="$DEFAULT_SERVER_PYTHON"
+  else
+    PYTHON_BIN="$(command -v python || command -v python3)"
+  fi
+fi
 export PYTHONPATH="$PWD:${PYTHONPATH:-}"
 
 "$PYTHON_BIN" -m molpilot.experiment \
@@ -16,4 +23,3 @@ export PYTHONPATH="$PWD:${PYTHONPATH:-}"
   --hidden-dim "${MOLPILOT_HIDDEN_DIM:-512}" \
   --samples-per-request "${MOLPILOT_SAMPLES:-8}" \
   --decode-top-k "${MOLPILOT_DECODE_TOP_K:-4}"
-

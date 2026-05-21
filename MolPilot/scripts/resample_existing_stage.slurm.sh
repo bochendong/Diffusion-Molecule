@@ -11,7 +11,15 @@
 set -euo pipefail
 
 cd "${SLURM_SUBMIT_DIR:-$(dirname "${BASH_SOURCE[0]}")/..}"
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+DEFAULT_SERVER_PYTHON="/scratch/bdong/venvs/phystabmol/bin/python"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "$DEFAULT_SERVER_PYTHON" ]]; then
+    PYTHON_BIN="$DEFAULT_SERVER_PYTHON"
+  else
+    PYTHON_BIN="$(command -v python3)"
+  fi
+fi
+export PYTHON_BIN
 echo "jobid=${SLURM_JOB_ID:-manual} node=$(hostname) cwd=$(pwd)"
 echo "python_bin=$PYTHON_BIN"
 nvidia-smi || true

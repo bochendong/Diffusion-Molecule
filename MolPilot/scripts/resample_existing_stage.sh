@@ -3,8 +3,21 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-PYTHON_BIN="${PYTHON_BIN:-python3}"
+DEFAULT_SERVER_PYTHON="/scratch/bdong/venvs/phystabmol/bin/python"
+if [[ -z "${PYTHON_BIN:-}" ]]; then
+  if [[ -x "$DEFAULT_SERVER_PYTHON" ]]; then
+    PYTHON_BIN="$DEFAULT_SERVER_PYTHON"
+  else
+    PYTHON_BIN="$(command -v python || command -v python3)"
+  fi
+fi
 export PYTHONPATH="$PWD:${PYTHONPATH:-}"
+
+if ! "$PYTHON_BIN" -c "import numpy" >/dev/null 2>&1; then
+  echo "ERROR: $PYTHON_BIN cannot import numpy."
+  echo "Set PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python or activate the right venv."
+  exit 2
+fi
 
 STAGE_ROOT="${MOLPILOT_STAGE_ROOT:-${MOLPILOT_RUN_DIR:-}}"
 if [[ -z "$STAGE_ROOT" ]]; then
@@ -28,6 +41,7 @@ echo "MolPilot resample existing stage"
 echo "  stage_root=$STAGE_ROOT"
 echo "  data=$DATA"
 echo "  sample_dir=$SAMPLE_DIR"
+echo "  python_bin=$PYTHON_BIN"
 echo "  disable_verifier_ranking=${MOLPILOT_DISABLE_VERIFIER_RANKING:-0}"
 
 "$PYTHON_BIN" -m molpilot.sample \
