@@ -39,6 +39,9 @@ fi
 if [[ "${MOLPILOT_DISABLE_SOURCE_GUIDANCE:-0}" == "1" ]]; then
   SAMPLE_ARGS+=(--disable-source-guidance)
 fi
+if [[ "${MOLPILOT_DISABLE_GRAPH_EDITOR:-0}" == "1" ]]; then
+  SAMPLE_ARGS+=(--disable-graph-editor)
+fi
 
 echo "MolPilot resample existing stage"
 echo "  stage_root=$STAGE_ROOT"
@@ -59,6 +62,8 @@ echo "  disable_verifier_ranking=${MOLPILOT_DISABLE_VERIFIER_RANKING:-0}"
   --decode-top-k "${MOLPILOT_DECODE_TOP_K:-4}" \
   --source-edit-strengths "${MOLPILOT_SOURCE_EDIT_STRENGTHS:-0.25,0.50}" \
   --source-neighborhood-k "${MOLPILOT_SOURCE_NEIGHBORHOOD_K:-32}" \
+  --graph-edit-limit "${MOLPILOT_GRAPH_EDIT_LIMIT:-96}" \
+  --scaffold-library-k "${MOLPILOT_SCAFFOLD_LIBRARY_K:-32}" \
   --max-requests-per-task "${MOLPILOT_MAX_REQUESTS_PER_TASK:-${MOLPILOT_EVAL_LIMIT:-1000}}" \
   --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo}" \
   "${SAMPLE_ARGS[@]}" \

@@ -52,10 +52,14 @@ def main() -> None:
             autoencoder,
             request,
             request_latents,
+            objective=bundle.objective,
             top_k=args.decode_top_k,
             source_edit_strengths=source_edit_strengths,
             source_neighborhood_k=args.source_neighborhood_k,
+            graph_edit_limit=args.graph_edit_limit,
+            scaffold_library_k=args.scaffold_library_k,
             enable_source_guidance=not args.disable_source_guidance,
+            enable_graph_editor=not args.disable_graph_editor,
         )
         scored = []
         for raw_rank, candidate in enumerate(candidates):
@@ -122,8 +126,11 @@ def main() -> None:
         "candidates": float(len(rows)),
         "verifier_ranking": not args.disable_verifier_ranking,
         "source_guidance": not args.disable_source_guidance,
+        "graph_editor": not args.disable_graph_editor,
         "source_edit_strengths": args.source_edit_strengths,
         "source_neighborhood_k": float(args.source_neighborhood_k),
+        "graph_edit_limit": float(args.graph_edit_limit),
+        "scaffold_library_k": float(args.scaffold_library_k),
         "max_requests_per_task": float(args.max_requests_per_task),
         "overall_success": float(np.mean(overall)) if overall else 0.0,
         "hard_verified_success": float(np.mean(hard)) if hard else 0.0,
@@ -156,8 +163,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--render-missing-images", action="store_true")
     parser.add_argument("--disable-verifier-ranking", action="store_true")
     parser.add_argument("--disable-source-guidance", action="store_true")
+    parser.add_argument("--disable-graph-editor", action="store_true")
     parser.add_argument("--source-edit-strengths", default="0.25,0.50")
     parser.add_argument("--source-neighborhood-k", type=int, default=32)
+    parser.add_argument("--graph-edit-limit", type=int, default=96)
+    parser.add_argument("--scaffold-library-k", type=int, default=32)
     parser.add_argument("--max-requests-per-task", type=int, default=0)
     parser.add_argument("--tasks", default="edit,inpaint,de_novo")
     parser.add_argument("--seed", type=int, default=7)

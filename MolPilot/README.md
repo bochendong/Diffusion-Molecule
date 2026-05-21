@@ -153,12 +153,14 @@ constraint debugging. Set `MOLPILOT_DISABLE_VERIFIER_RANKING=1` to produce a
 no-ranking ablation.
 
 For `edit` and `inpaint`, Stage 4 now enables source-guided sampling by
-default. It decodes raw diffusion samples, source-anchored latent variants, and
-local source-neighborhood candidates, then records `candidate_origin` plus
-`origin_*` metrics. Use `MOLPILOT_DISABLE_SOURCE_GUIDANCE=1` for an ablation,
+default. It decodes raw diffusion samples, source-anchored latent variants,
+local source-neighborhood candidates, graph-level R-group edits, and same
+scaffold analog candidates, then records `candidate_origin` plus `origin_*`
+metrics. Use `MOLPILOT_DISABLE_SOURCE_GUIDANCE=1` for a full source-guidance
+ablation, `MOLPILOT_DISABLE_GRAPH_EDITOR=1` to remove graph-level edits,
 `MOLPILOT_SOURCE_EDIT_STRENGTHS=0.20,0.40,0.65` to tune how much generated
-delta is kept, and `MOLPILOT_SOURCE_NEIGHBORHOOD_K=64` to widen the local
-candidate pool.
+delta is kept, `MOLPILOT_GRAPH_EDIT_LIMIT=128` to widen RDKit local edits, and
+`MOLPILOT_SCAFFOLD_LIBRARY_K=0` to disable same-scaffold analog retrieval.
 
 Task-balanced resampling can be controlled with:
 

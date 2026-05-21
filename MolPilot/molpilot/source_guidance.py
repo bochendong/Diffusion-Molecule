@@ -15,7 +15,8 @@ from typing import Iterable
 import numpy as np
 
 from .chem import canonicalize_smiles
-from .schema import GenerationRequest, TaskType
+from .graph_editor import generate_graph_edit_candidates, generate_scaffold_library_candidates
+from .schema import GenerationRequest, ObjectiveSpec, TaskType
 
 
 @dataclass
@@ -28,10 +29,14 @@ def decode_source_guided_candidates(
     codec,
     request: GenerationRequest,
     latents: np.ndarray,
+    objective: ObjectiveSpec | None = None,
     top_k: int = 4,
     source_edit_strengths: Iterable[float] = (0.25, 0.50),
     source_neighborhood_k: int = 32,
+    graph_edit_limit: int = 96,
+    scaffold_library_k: int = 32,
     enable_source_guidance: bool = True,
+    enable_graph_editor: bool = True,
 ) -> list[Candidate]:
     """Decode candidates with optional source-locked variants.
 
@@ -77,6 +82,17 @@ def decode_source_guided_candidates(
                     origin="source_neighborhood",
                     source_smiles=source_smiles,
                 )
+        if enable_graph_editor and objective is not None:
+            for candidate in generate_graph_edit_candidates(source_smiles, objective, limit=graph_edit_limit):
+                candidates.append(Candidate(candidate.smiles, candidate.origin))
+            train_smiles = getattr(codec, "train_smiles", []) or []
+            for candidate in generate_scaffold_library_candidates(
+                source_smiles,
+                objective,
+                train_smiles,
+                limit=scaffold_library_k,
+            ):
+                candidates.append(Candidate(candidate.smiles, candidate.origin))
 
     return _dedupe_candidates(candidates)
 
