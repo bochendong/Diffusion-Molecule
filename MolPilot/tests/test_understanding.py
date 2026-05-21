@@ -29,7 +29,17 @@ class UnderstandingTests(unittest.TestCase):
         self.assertIn("multimodal", bundle.branches)
         self.assertEqual(len(bundle.branches["multimodal"].vector), 256)
 
+    def test_repair_prompt_gets_similarity_constraint(self):
+        spec = ground_instruction("Repair this OCR-corrupted invalid SMILES.")
+        self.assertIn("keep_similarity", spec.constraints)
+        request = GenerationRequest(
+            task_type=TaskType.REPAIR,
+            source_smiles="CC(",
+            instruction="Repair this invalid molecule.",
+        )
+        bundle = UnderstandingStream().encode(request)
+        self.assertIn("multimodal", bundle.branches)
+
 
 if __name__ == "__main__":
     unittest.main()
-

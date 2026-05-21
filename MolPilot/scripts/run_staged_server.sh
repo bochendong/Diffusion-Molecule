@@ -17,6 +17,7 @@ RUN_NAME="${MOLPILOT_RUN_NAME:-molpilot_staged_v1}"
 STAGE_ROOT="${MOLPILOT_STAGE_ROOT:-outputs/stages/$RUN_NAME}"
 DATA="${MOLPILOT_DATA:-../PhysTabMol/data/molecules.csv}"
 LIMIT="${MOLPILOT_LIMIT:-100000}"
+TASK_MODE="${MOLPILOT_TASK_MODE:-verified}"
 
 AE_DIR="$STAGE_ROOT/stage1_autoencoder"
 ALIGN_DIR="$STAGE_ROOT/stage2_understanding"
@@ -42,11 +43,15 @@ fi
 if [[ "${MOLPILOT_DISABLE_GRAPH_EDITOR:-0}" == "1" ]]; then
   SAMPLE_ARGS+=(--disable-graph-editor)
 fi
+if [[ "${MOLPILOT_DISABLE_REPAIR_BASELINES:-0}" == "1" ]]; then
+  SAMPLE_ARGS+=(--disable-repair-baselines)
+fi
 
 echo "MolPilot staged server run"
 echo "  data=$DATA"
 echo "  limit=$LIMIT"
 echo "  stage_root=$STAGE_ROOT"
+echo "  task_mode=$TASK_MODE"
 
 if [[ ! -f "$DATA" ]]; then
   echo "ERROR: MOLPILOT_DATA points to '$DATA', but that file does not exist."
@@ -81,6 +86,9 @@ fi
   --autoencoder-dir "$AE_DIR" \
   --output-dir "$ALIGN_DIR" \
   --limit "$LIMIT" \
+  --task-mode "$TASK_MODE" \
+  --repair-corruptions "${MOLPILOT_REPAIR_CORRUPTIONS:-}" \
+  --repair-corruptions-per-molecule "${MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE:-2}" \
   --condition-dim "${MOLPILOT_CONDITION_DIM:-256}" \
   --hidden-dim "${MOLPILOT_ALIGN_HIDDEN_DIM:-768}" \
   --layers "${MOLPILOT_ALIGN_LAYERS:-4}" \
@@ -98,6 +106,9 @@ fi
   --alignment-dir "$ALIGN_DIR" \
   --output-dir "$DIFF_DIR" \
   --limit "$LIMIT" \
+  --task-mode "$TASK_MODE" \
+  --repair-corruptions "${MOLPILOT_REPAIR_CORRUPTIONS:-}" \
+  --repair-corruptions-per-molecule "${MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE:-2}" \
   --condition-dim "${MOLPILOT_CONDITION_DIM:-256}" \
   --hidden-dim "${MOLPILOT_DIFFUSION_HIDDEN_DIM:-1024}" \
   --layers "${MOLPILOT_DIFFUSION_LAYERS:-6}" \
@@ -113,6 +124,9 @@ fi
   --diffusion-dir "$DIFF_DIR" \
   --output-dir "$SAMPLE_DIR" \
   --limit "${MOLPILOT_EVAL_MOLECULE_LIMIT:-$LIMIT}" \
+  --task-mode "$TASK_MODE" \
+  --repair-corruptions "${MOLPILOT_REPAIR_CORRUPTIONS:-}" \
+  --repair-corruptions-per-molecule "${MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE:-2}" \
   --condition-dim "${MOLPILOT_CONDITION_DIM:-256}" \
   --samples-per-request "${MOLPILOT_SAMPLES:-8}" \
   --decode-top-k "${MOLPILOT_DECODE_TOP_K:-4}" \
@@ -120,8 +134,9 @@ fi
   --source-neighborhood-k "${MOLPILOT_SOURCE_NEIGHBORHOOD_K:-32}" \
   --graph-edit-limit "${MOLPILOT_GRAPH_EDIT_LIMIT:-96}" \
   --scaffold-library-k "${MOLPILOT_SCAFFOLD_LIBRARY_K:-32}" \
+  --repair-nearest-k "${MOLPILOT_REPAIR_NEAREST_K:-8}" \
   --max-requests-per-task "${MOLPILOT_MAX_REQUESTS_PER_TASK:-${MOLPILOT_EVAL_LIMIT:-1000}}" \
-  --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo}" \
+  --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo,repair}" \
   --seed "${MOLPILOT_SEED:-7}" \
   "${SAMPLE_ARGS[@]}" \
   "${RENDER_ARGS[@]}"

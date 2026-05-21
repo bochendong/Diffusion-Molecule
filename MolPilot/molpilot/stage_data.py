@@ -8,13 +8,36 @@ from dataclasses import asdict
 import numpy as np
 
 from .data import build_smoke_requests, load_smiles_csv
+from .repair_dataset import build_repair_requests
 from .schema import GenerationRequest
 from .understanding import UnderstandingConfig, UnderstandingStream
 
 
-def load_smiles_and_pairs(data: str | None, limit: int = 0):
+def load_smiles_and_pairs(
+    data: str | None,
+    limit: int = 0,
+    task_mode: str = "verified",
+    repair_corruption_types: str | None = None,
+    repair_corruptions_per_molecule: int = 2,
+    seed: int = 7,
+):
     smiles = load_smiles_csv(data, limit=limit)
-    pairs = build_smoke_requests(smiles)
+    if task_mode == "repair":
+        pairs = build_repair_requests(
+            smiles,
+            corruption_types=repair_corruption_types,
+            corruptions_per_molecule=repair_corruptions_per_molecule,
+            seed=seed,
+        )
+    elif task_mode == "mixed":
+        pairs = build_smoke_requests(smiles) + build_repair_requests(
+            smiles,
+            corruption_types=repair_corruption_types,
+            corruptions_per_molecule=repair_corruptions_per_molecule,
+            seed=seed,
+        )
+    else:
+        pairs = build_smoke_requests(smiles)
     return smiles, pairs
 
 
@@ -48,4 +71,3 @@ def build_condition_table(
             }
         )
     return raw_conditions, target_smiles, bundles, rows
-

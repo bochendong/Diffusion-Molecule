@@ -48,6 +48,9 @@ fi
 if [[ "${MOLPILOT_DISABLE_GRAPH_EDITOR:-0}" == "1" ]]; then
   SAMPLE_ARGS+=(--disable-graph-editor)
 fi
+if [[ "${MOLPILOT_DISABLE_REPAIR_BASELINES:-0}" == "1" ]]; then
+  SAMPLE_ARGS+=(--disable-repair-baselines)
+fi
 
 echo "MolPilot resample existing stage"
 echo "  stage_root=$STAGE_ROOT"
@@ -63,6 +66,9 @@ echo "  disable_verifier_ranking=${MOLPILOT_DISABLE_VERIFIER_RANKING:-0}"
   --diffusion-dir "$STAGE_ROOT/stage3_diffusion" \
   --output-dir "$SAMPLE_DIR" \
   --limit "${MOLPILOT_EVAL_MOLECULE_LIMIT:-${MOLPILOT_LIMIT:-10000}}" \
+  --task-mode "${MOLPILOT_TASK_MODE:-verified}" \
+  --repair-corruptions "${MOLPILOT_REPAIR_CORRUPTIONS:-}" \
+  --repair-corruptions-per-molecule "${MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE:-2}" \
   --condition-dim "${MOLPILOT_CONDITION_DIM:-256}" \
   --samples-per-request "${MOLPILOT_SAMPLES:-8}" \
   --decode-top-k "${MOLPILOT_DECODE_TOP_K:-4}" \
@@ -70,8 +76,9 @@ echo "  disable_verifier_ranking=${MOLPILOT_DISABLE_VERIFIER_RANKING:-0}"
   --source-neighborhood-k "${MOLPILOT_SOURCE_NEIGHBORHOOD_K:-32}" \
   --graph-edit-limit "${MOLPILOT_GRAPH_EDIT_LIMIT:-96}" \
   --scaffold-library-k "${MOLPILOT_SCAFFOLD_LIBRARY_K:-32}" \
+  --repair-nearest-k "${MOLPILOT_REPAIR_NEAREST_K:-8}" \
   --max-requests-per-task "${MOLPILOT_MAX_REQUESTS_PER_TASK:-${MOLPILOT_EVAL_LIMIT:-1000}}" \
-  --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo}" \
+  --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo,repair}" \
   --seed "${MOLPILOT_SEED:-7}" \
   "${SAMPLE_ARGS[@]}" \
   "${RENDER_ARGS[@]}"

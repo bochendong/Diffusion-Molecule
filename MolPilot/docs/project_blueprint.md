@@ -6,6 +6,17 @@ Can a molecular design model translate natural-language and multimodal context
 into chemically verifiable molecule edits without relying on image-to-SMILES OCR
 recovery?
 
+MolPilot-R narrows the fastest verifiable version to molecular repair:
+
+```text
+corrupted / invalid molecular observation + optional instruction
+  -> valid repaired molecule
+```
+
+The repair task is a chemical denoising analogue of DDPM: valid molecules are
+corrupted by deterministic string/structure noise, then the model learns to
+recover clean molecular latents under a repair instruction.
+
 ## Positioning
 
 MolPilot is not meant to be another generic text-to-SMILES generator. The core
@@ -100,6 +111,13 @@ ranking into training feedback.
    - conformer success
    - shape descriptors
    - no disease/docking claim unless a reliable proxy is added
+
+6. Verified molecular repair:
+   - repair validity@1/5/10
+   - exact recovery@1/5/10
+   - scaffold recovery@1/5/10
+   - Tanimoto/property recovery against the clean molecule
+   - transfer gain when repair pretraining is reused for edit/inpaint
 
 ## Acceptance Target
 

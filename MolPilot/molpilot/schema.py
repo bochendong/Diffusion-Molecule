@@ -18,6 +18,7 @@ class TaskType(str, Enum):
     EDIT = "edit"
     INPAINT = "inpaint"
     DE_NOVO = "de_novo"
+    REPAIR = "repair"
 
 
 HARD_VERIFIABLE_GOALS = (
@@ -122,4 +123,3 @@ class ConditionBundle:
     branches: dict[str, ConditionBranch]
     rendered_image: str | None = None
     notes: list[str] = field(default_factory=list)
-

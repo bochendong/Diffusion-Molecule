@@ -78,6 +78,8 @@ def ground_instruction(instruction: str) -> ObjectiveSpec:
         goals.append("decrease_logp")
         proxy_goals.append("improve_solubility_proxy")
         constraints.extend(["keep_mw_similar", "preserve_scaffold"])
+    if any(word in text for word in ("repair", "fix", "corrupted", "invalid smiles", "ocr")):
+        constraints.append("keep_similarity")
     if any(word in text for word in ("logp too high", "too lipophilic", "lower logp", "reduce logp")):
         goals.append("decrease_logp")
     if any(word in text for word in ("increase logp", "more lipophilic")):
@@ -130,6 +132,8 @@ def _task_instruction(request: GenerationRequest) -> str:
         prefix = "Edit the source molecule according to the medicinal chemistry instruction:"
     elif request.task_type == TaskType.INPAINT:
         prefix = "Complete the masked molecular region while preserving the known scaffold:"
+    elif request.task_type == TaskType.REPAIR:
+        prefix = "Repair the corrupted molecular observation into a valid molecule:"
     else:
         prefix = "Generate a molecule from scratch that matches the requested profile:"
     parts = [prefix, request.instruction]

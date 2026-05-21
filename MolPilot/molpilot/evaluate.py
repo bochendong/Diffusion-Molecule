@@ -33,6 +33,7 @@ def main() -> None:
     metrics["hard_overall_success"] = float(np.mean([_as_bool(row.get("overall_success", "")) for row in hard_rows])) if hard_rows else 0.0
     metrics.update(_request_topk(rows))
     metrics.update(_task_breakdown(rows))
+    metrics.update(_repair_breakdown(rows))
     metrics.update(_origin_breakdown(rows))
     metrics.update(_failure_reasons(rows))
     save_json(metrics, args.out)
@@ -107,6 +108,46 @@ def _task_request_topk(rows: list[dict[str, str]], prefix: str) -> dict[str, flo
     return out
 
 
+def _repair_breakdown(rows: list[dict[str, str]]) -> dict[str, float]:
+    repair_rows = [row for row in rows if str(row.get("task_type", "")) == "repair"]
+    if not repair_rows:
+        return {}
+    out = {"repair_rows": float(len(repair_rows))}
+    for column in ("valid", "exact_recovery", "scaffold_recovery", "novel", "novel_verified_success"):
+        values = [_as_bool(row.get(column, "")) for row in repair_rows]
+        out[f"repair_{column}"] = float(np.mean(values)) if values else 0.0
+    out["repair_tanimoto_to_clean"] = _float_mean(repair_rows, "tanimoto_to_clean")
+    out["repair_property_mae_to_clean"] = _float_mean(repair_rows, "property_mae_to_clean")
+    grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
+    for row in repair_rows:
+        grouped[str(row.get("request_id", ""))].append(row)
+    metric_columns = {
+        "repair_validity": "valid",
+        "exact_recovery": "exact_recovery",
+        "scaffold_recovery": "scaffold_recovery",
+        "novel_repair_success": "novel_verified_success",
+        "repair_overall": "overall_success",
+    }
+    for out_name, column in metric_columns.items():
+        for k in (1, 5, 10):
+            values = []
+            for request_rows in grouped.values():
+                ordered = sorted(request_rows, key=lambda row: int(float(row.get("rank", 0) or 0)))
+                values.append(max(_as_bool(row.get(column, "")) for row in ordered[:k]) if ordered else 0.0)
+            out[f"{out_name}_at_{k}"] = float(np.mean(values)) if values else 0.0
+    for k in (1, 5, 10):
+        best_tanimoto = []
+        best_mae = []
+        for request_rows in grouped.values():
+            ordered = sorted(request_rows, key=lambda row: int(float(row.get("rank", 0) or 0)))[:k]
+            if ordered:
+                best_tanimoto.append(max(_as_float(row.get("tanimoto_to_clean", 0.0)) for row in ordered))
+                best_mae.append(min(_as_float(row.get("property_mae_to_clean", "inf")) for row in ordered))
+        out[f"best_tanimoto_to_clean_at_{k}"] = float(np.mean(best_tanimoto)) if best_tanimoto else 0.0
+        out[f"best_property_mae_to_clean_at_{k}"] = float(np.mean(best_mae)) if best_mae else 0.0
+    return out
+
+
 def _failure_reasons(rows: list[dict[str, str]]) -> dict[str, float]:
     counts: Counter[str] = Counter()
     for row in rows:
@@ -155,6 +196,18 @@ def _origin_family(origin: str) -> str:
     if origin == "diffusion":
         return "diffusion"
     return origin or "unknown"
+
+
+def _as_float(value: str | float | int) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+def _float_mean(rows: list[dict[str, str]], column: str) -> float:
+    values = [_as_float(row.get(column, 0.0)) for row in rows]
+    return float(np.mean(values)) if values else 0.0
 
 
 if __name__ == "__main__":

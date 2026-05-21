@@ -10,6 +10,7 @@ RUN_NAME="${MOLPILOT_RUN_NAME:-staged_smoke}"
 STAGE_ROOT="${MOLPILOT_STAGE_ROOT:-outputs/stages/$RUN_NAME}"
 DATA="${MOLPILOT_DATA:-}"
 LIMIT="${MOLPILOT_LIMIT:-0}"
+TASK_MODE="${MOLPILOT_TASK_MODE:-verified}"
 
 AE_DIR="$STAGE_ROOT/stage1_autoencoder"
 ALIGN_DIR="$STAGE_ROOT/stage2_understanding"
@@ -18,6 +19,7 @@ SAMPLE_DIR="$STAGE_ROOT/stage4_samples"
 
 echo "MolPilot staged smoke run"
 echo "  stage_root=$STAGE_ROOT"
+echo "  task_mode=$TASK_MODE"
 
 "$PYTHON_BIN" -m molpilot.train_autoencoder \
   --data "$DATA" \
@@ -35,6 +37,9 @@ echo "  stage_root=$STAGE_ROOT"
   --autoencoder-dir "$AE_DIR" \
   --output-dir "$ALIGN_DIR" \
   --limit "$LIMIT" \
+  --task-mode "$TASK_MODE" \
+  --repair-corruptions "${MOLPILOT_REPAIR_CORRUPTIONS:-}" \
+  --repair-corruptions-per-molecule "${MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE:-2}" \
   --epochs "${MOLPILOT_ALIGN_EPOCHS:-2}" \
   --model-kind "${MOLPILOT_STAGE2_MODEL:-jepa}"
 
@@ -44,6 +49,9 @@ echo "  stage_root=$STAGE_ROOT"
   --alignment-dir "$ALIGN_DIR" \
   --output-dir "$DIFF_DIR" \
   --limit "$LIMIT" \
+  --task-mode "$TASK_MODE" \
+  --repair-corruptions "${MOLPILOT_REPAIR_CORRUPTIONS:-}" \
+  --repair-corruptions-per-molecule "${MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE:-2}" \
   --epochs "${MOLPILOT_DIFFUSION_EPOCHS:-2}" \
   --timesteps "${MOLPILOT_TIMESTEPS:-20}"
 
@@ -54,8 +62,12 @@ echo "  stage_root=$STAGE_ROOT"
   --diffusion-dir "$DIFF_DIR" \
   --output-dir "$SAMPLE_DIR" \
   --limit "$LIMIT" \
+  --task-mode "$TASK_MODE" \
+  --repair-corruptions "${MOLPILOT_REPAIR_CORRUPTIONS:-}" \
+  --repair-corruptions-per-molecule "${MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE:-2}" \
   --samples-per-request "${MOLPILOT_SAMPLES:-2}" \
-  --decode-top-k "${MOLPILOT_DECODE_TOP_K:-2}"
+  --decode-top-k "${MOLPILOT_DECODE_TOP_K:-2}" \
+  --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo,repair}"
 
 "$PYTHON_BIN" -m molpilot.evaluate \
   --candidates "$SAMPLE_DIR/tables/candidates.csv" \

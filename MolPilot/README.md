@@ -90,6 +90,21 @@ cd MolPilot
 bash scripts/run_staged_smoke.sh
 ```
 
+Run the MolPilot-R repair smoke test:
+
+```bash
+cd MolPilot
+bash scripts/run_repair_smoke.sh
+```
+
+Build the automatic corrupted-to-valid repair dataset table:
+
+```bash
+cd MolPilot
+MOLPILOT_LIMIT=1000 \
+bash scripts/build_repair_dataset.sh
+```
+
 Run on a server with a real molecule CSV:
 
 ```bash
@@ -130,6 +145,51 @@ override either value with `MOLPILOT_STAGE2_MODEL=alignment` or `PYTHON_BIN=...`
 Stage 4 uses task-balanced evaluation by default: it builds requests from
 `MOLPILOT_EVAL_MOLECULE_LIMIT` molecules, then caps each task family with
 `MOLPILOT_MAX_REQUESTS_PER_TASK` or `MOLPILOT_EVAL_LIMIT`.
+
+## MolPilot-R Repair Mode
+
+MolPilot-R adds a verifiable corrupted-to-valid task:
+
+```text
+clean valid SMILES -> automatic corruption -> corrupted/partial SMILES
+corrupted/partial SMILES + repair instruction -> valid repaired molecule
+```
+
+Enable it with `MOLPILOT_TASK_MODE=repair`; the staged scripts then train Stage
+2 and Stage 3 on repair requests rather than edit/inpaint/de novo requests.
+The first corruption families are token deletion, truncation, branch
+parenthesis corruption, ring-closure corruption, aromaticity corruption, atom
+replacement, bond corruption, and OCR-like character confusion.
+
+Submit a 10k repair run:
+
+```bash
+cd MolPilot
+bash scripts/submit_repair_staged.sh
+```
+
+Submit the fastest repair-transfer test, where Stage 2/3 train on mixed
+verified editing plus repair tasks and Stage 4 evaluates only edit/inpaint:
+
+```bash
+cd MolPilot
+bash scripts/submit_repair_transfer_staged.sh
+```
+
+Useful knobs:
+
+```text
+MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE=2
+MOLPILOT_REPAIR_CORRUPTIONS=token_deletion,truncation,ocr_confusion
+MOLPILOT_EVAL_TASKS=repair
+MOLPILOT_DISABLE_REPAIR_BASELINES=1
+```
+
+Repair evaluation writes `repair_metrics.json`,
+`tables/repair_request_metrics.csv`, and the normal `eval_metrics.json`.
+The headline repair metrics are `repair_validity@k`, `exact_recovery@k`,
+`scaffold_recovery@k`, `best_tanimoto_to_clean@k`, and
+`novel_repair_success@k`.
 
 Resample an existing trained stage without retraining:
 

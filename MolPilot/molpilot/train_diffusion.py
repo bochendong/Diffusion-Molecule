@@ -18,7 +18,14 @@ def main() -> None:
     out_dir = ensure_dir(args.output_dir)
     autoencoder = load_autoencoder(args.autoencoder_dir)
     condition_model = load_condition_model(args.alignment_dir)
-    _, pairs = load_smiles_and_pairs(args.data, limit=args.limit)
+    _, pairs = load_smiles_and_pairs(
+        args.data,
+        limit=args.limit,
+        task_mode=args.task_mode,
+        repair_corruption_types=args.repair_corruptions,
+        repair_corruptions_per_molecule=args.repair_corruptions_per_molecule,
+        seed=args.seed,
+    )
     raw_conditions, target_smiles, _, rows = build_condition_table(
         pairs,
         condition_dim=args.condition_dim,
@@ -66,6 +73,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--alignment-dir", default="outputs/stages/default/stage2_understanding")
     parser.add_argument("--output-dir", default="outputs/stages/default/stage3_diffusion")
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument("--task-mode", choices=["verified", "repair", "mixed"], default="verified")
+    parser.add_argument("--repair-corruptions", default=None)
+    parser.add_argument("--repair-corruptions-per-molecule", type=int, default=2)
     parser.add_argument("--condition-dim", type=int, default=256)
     parser.add_argument("--hidden-dim", type=int, default=512)
     parser.add_argument("--layers", type=int, default=4)

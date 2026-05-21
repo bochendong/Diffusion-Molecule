@@ -11,11 +11,16 @@ class TaskBalancedEvalTests(unittest.TestCase):
         for task in (TaskType.EDIT, TaskType.INPAINT, TaskType.DE_NOVO):
             for idx in range(5):
                 pairs.append((GenerationRequest(task_type=task, source_smiles="CCO", instruction=f"{task.value} {idx}"), "CCN"))
+        for idx in range(3):
+            pairs.append((GenerationRequest(task_type=TaskType.REPAIR, source_smiles="CC(", instruction=f"repair {idx}"), "CCO"))
         selected = _select_pairs_by_task(pairs, max_per_task=2, tasks="edit,inpaint,de_novo", seed=1)
         counts = {}
         for request, _ in selected:
             counts[request.task_type.value] = counts.get(request.task_type.value, 0) + 1
         self.assertEqual(counts, {"edit": 2, "inpaint": 2, "de_novo": 2})
+        selected = _select_pairs_by_task(pairs, max_per_task=2, tasks="repair", seed=1)
+        self.assertEqual(len(selected), 2)
+        self.assertTrue(all(request.task_type == TaskType.REPAIR for request, _ in selected))
 
     def test_task_breakdown_reports_request_topk(self):
         rows = [
