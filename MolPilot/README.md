@@ -168,6 +168,10 @@ cd MolPilot
 bash scripts/submit_repair_staged.sh
 ```
 
+The repair submit helpers default to `MOLPILOT_GPU_PROFILE=h100_20gb_mig` to
+avoid long 40GB queues. Override with `MOLPILOT_GPU_PROFILE=h100_10gb_mig` for
+smaller/cheaper runs or `h100_40gb_mig` for the larger model profile.
+
 Submit the fastest repair-transfer test, where Stage 2/3 train on mixed
 verified editing plus repair tasks and Stage 4 evaluates only edit/inpaint:
 
