@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 import json
+import csv
 from pathlib import Path
 
 import numpy as np
@@ -11,6 +12,7 @@ from sketchimage_jepa.features import context_vector, matrix_from_examples
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
 from sketchimage_jepa.schema import BenchmarkExample, TaskType
+from sketchimage_jepa.task_builder import build_tasks_from_molecules, load_molecule_rows
 
 
 class SketchImageJEPATests(unittest.TestCase):
@@ -81,6 +83,32 @@ class SketchImageJEPATests(unittest.TestCase):
             updated, meta = attach_rendered_image_context([example], tmp)
             self.assertIsNone(updated[0].image_path)
             self.assertEqual(meta["rendered_images"], 0)
+
+    def test_task_builder_creates_task_csv_rows(self):
+        smiles = [
+            "c1ccccc1",
+            "Cc1ccccc1",
+            "Oc1ccccc1",
+            "Nc1ccccc1",
+            "CCOc1ccccc1",
+            "CCOc1ccc(O)cc1",
+            "CCN(CC)CC",
+            "CCN(CCO)CCO",
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "molecules.csv")
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smi in smiles:
+                    writer.writerow({"smiles": smi})
+            molecules = load_molecule_rows(path)
+            tasks = build_tasks_from_molecules(molecules, max_tasks=12, pairs_per_source=2, pair_candidates=8, seed=3)
+            task_types = {task.task_type.value for task in tasks}
+            self.assertIn("de_novo", task_types)
+            self.assertIn("edit", task_types)
+            self.assertIn("inpaint", task_types)
+            self.assertLessEqual(len(tasks), 12)
 
 
 if __name__ == "__main__":

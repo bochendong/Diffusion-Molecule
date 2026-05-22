@@ -83,6 +83,19 @@ SketchMol DDIM reference = 250 steps, eta 1.0, scale 2, scale_pro 4
 It writes a timestamped directory under `outputs/runs/` and stores the full
 reference knob set in `run_config.json`. Useful overrides:
 
+Build tasks from a molecule CSV and run:
+
+```bash
+SKETCHIMAGE_MOLECULE_CSV=data/example_molecules.csv \
+SKETCHIMAGE_RUN_NAME=first_server_check \
+bash scripts/run_sketchmol_aligned.sh
+```
+
+The molecule CSV can use `smiles`, `SMILES`, or `canonical_smiles` as the SMILES
+column. The generated task CSV is saved under `outputs/tasks/`.
+
+Run from an already-built task CSV:
+
 ```bash
 SKETCHIMAGE_DATASET_CSV=data/example_tasks.csv \
 SKETCHIMAGE_RUN_NAME=first_server_check \

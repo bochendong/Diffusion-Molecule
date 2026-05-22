@@ -53,6 +53,7 @@ fi
 
 RUN_NAME="${SKETCHIMAGE_RUN_NAME:-sketchimage_jepa_$(date +%Y%m%d_%H%M%S)}"
 RUN_ROOT="${SKETCHIMAGE_RUN_ROOT:-outputs/runs/$RUN_NAME}"
+MOLECULE_CSV="${SKETCHIMAGE_MOLECULE_CSV:-}"
 DATASET_CSV="${SKETCHIMAGE_DATASET_CSV:-data/example_tasks.csv}"
 TRAIN_CSV="${SKETCHIMAGE_TRAIN_CSV:-}"
 EVAL_CSV="${SKETCHIMAGE_EVAL_CSV:-}"
@@ -69,6 +70,7 @@ RENDER_IMAGE_CONTEXT="${SKETCHIMAGE_RENDER_IMAGE_CONTEXT:-$DEFAULT_RENDER_IMAGE_
 echo "SketchImage-JEPA one-click run"
 echo "  python=$PYTHON_BIN"
 echo "  run_root=$RUN_ROOT"
+echo "  molecule_csv=${MOLECULE_CSV:-<not provided>}"
 echo "  dataset_csv=$DATASET_CSV"
 echo "  train_csv=${TRAIN_CSV:-<auto split>}"
 echo "  eval_csv=${EVAL_CSV:-<auto split>}"
@@ -90,7 +92,25 @@ else
 fi
 
 echo
-echo "[2/2] Running experiment"
+echo "[2/2] Preparing data and running experiment"
+
+if [[ -n "$MOLECULE_CSV" && -z "$TRAIN_CSV" && -z "$EVAL_CSV" ]]; then
+  TASK_CSV="${SKETCHIMAGE_TASK_CSV:-outputs/tasks/${RUN_NAME}_tasks.csv}"
+  echo "  building task CSV from molecule CSV"
+  echo "  task_csv=$TASK_CSV"
+  "$PYTHON_BIN" -m sketchimage_jepa.task_builder \
+    --molecule-csv "$MOLECULE_CSV" \
+    --out "$TASK_CSV" \
+    --limit "${SKETCHIMAGE_MOLECULE_LIMIT:-10000}" \
+    --max-tasks "${SKETCHIMAGE_MAX_TASKS:-5000}" \
+    --pairs-per-source "${SKETCHIMAGE_PAIRS_PER_SOURCE:-2}" \
+    --pair-candidates "${SKETCHIMAGE_PAIR_CANDIDATES:-128}" \
+    --min-similarity "${SKETCHIMAGE_MIN_SIMILARITY:-0.15}" \
+    --max-similarity "${SKETCHIMAGE_MAX_SIMILARITY:-0.90}" \
+    --seed "$SEED" \
+    --task-types "${SKETCHIMAGE_TASK_TYPES:-de_novo,edit,inpaint,fragment_grow}"
+  DATASET_CSV="$TASK_CSV"
+fi
 
 ARGS=(
   -m sketchimage_jepa.experiment

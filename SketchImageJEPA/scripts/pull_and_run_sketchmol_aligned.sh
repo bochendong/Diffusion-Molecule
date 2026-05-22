@@ -6,6 +6,10 @@
 #   bash SketchImageJEPA/scripts/pull_and_run_sketchmol_aligned.sh
 #
 # Useful overrides:
+#   SKETCHIMAGE_MOLECULE_CSV=/path/to/molecules.csv \
+#   SKETCHIMAGE_RUN_NAME=sketchmol_aligned_server_v1 \
+#   bash SketchImageJEPA/scripts/pull_and_run_sketchmol_aligned.sh
+#
 #   SKETCHIMAGE_DATASET_CSV=/path/to/tasks.csv \
 #   SKETCHIMAGE_RUN_NAME=sketchmol_aligned_server_v1 \
 #   bash SketchImageJEPA/scripts/pull_and_run_sketchmol_aligned.sh
