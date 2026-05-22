@@ -9,6 +9,27 @@ cd SketchImageJEPA
 bash scripts/run_sketchmol_aligned.sh
 ```
 
+Do not run a large experiment directly on a login node. Use the login node for
+`git pull` and `sbatch`; run the experiment on a Slurm compute node.
+
+Submit from the login node:
+
+```bash
+cd "/path/to/Diffusion Molecule"
+git pull --rebase origin main
+cd SketchImageJEPA
+SKETCHIMAGE_MOLECULE_CSV=/path/to/molecules.csv \
+SKETCHIMAGE_RUN_NAME=sketchmol_aligned_server_v1 \
+bash scripts/submit_sketchmol_aligned.sh
+```
+
+Check the job:
+
+```bash
+squeue -u "$USER"
+tail -f sketchimage-jepa-<jobid>.log
+```
+
 One-command pull and run:
 
 ```bash

@@ -118,6 +118,14 @@ use:
 bash scripts/run_smoke.sh
 ```
 
+On a Slurm login node, submit instead of running directly:
+
+```bash
+SKETCHIMAGE_MOLECULE_CSV=/path/to/molecules.csv \
+SKETCHIMAGE_RUN_NAME=sketchmol_aligned_server_v1 \
+bash scripts/submit_sketchmol_aligned.sh
+```
+
 Run the bundled CSV example:
 
 ```bash
