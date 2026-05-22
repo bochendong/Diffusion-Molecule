@@ -194,6 +194,10 @@ Repair evaluation writes `repair_metrics.json`,
 The headline repair metrics are `repair_validity@k`, `exact_recovery@k`,
 `scaffold_recovery@k`, `best_tanimoto_to_clean@k`, and
 `novel_repair_success@k`.
+Stage 4 also decodes the JEPA/condition predicted target latent directly as
+`condition_direct` candidates before diffusion sampling. This is especially
+important for repair, where Stage 2 is already trained to map corrupted input to
+the clean molecule latent.
 
 Resample an existing trained stage without retraining:
 

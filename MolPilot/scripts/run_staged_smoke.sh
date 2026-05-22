@@ -67,6 +67,7 @@ echo "  task_mode=$TASK_MODE"
   --repair-corruptions-per-molecule "${MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE:-2}" \
   --samples-per-request "${MOLPILOT_SAMPLES:-2}" \
   --decode-top-k "${MOLPILOT_DECODE_TOP_K:-2}" \
+  --condition-decode-top-k "${MOLPILOT_CONDITION_DECODE_TOP_K:-2}" \
   --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo,repair}"
 
 "$PYTHON_BIN" -m molpilot.evaluate \

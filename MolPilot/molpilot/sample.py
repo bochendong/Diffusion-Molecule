@@ -79,6 +79,11 @@ def main() -> None:
     for request_idx, ((request, target), bundle) in enumerate(zip(pairs, bundles)):
         request_latents = sampled_latents[latent_cursor : latent_cursor + args.samples_per_request]
         latent_cursor += args.samples_per_request
+        direct_condition_candidates = _condition_latent_candidates(
+            autoencoder,
+            conditions[request_idx],
+            top_k=args.condition_decode_top_k,
+        )
         candidates = decode_source_guided_candidates(
             autoencoder,
             request,
@@ -94,6 +99,7 @@ def main() -> None:
             enable_latent_source_guidance=not args.disable_latent_source_guidance,
             enable_graph_editor=not args.disable_graph_editor,
         )
+        candidates = _dedupe_candidates(direct_condition_candidates + candidates)
         if request.task_type == TaskType.REPAIR and not args.disable_repair_baselines:
             candidates = _dedupe_candidates(
                 _repair_baseline_candidates(autoencoder, request.source_smiles, top_k=args.repair_nearest_k)
@@ -195,6 +201,7 @@ def main() -> None:
         "source_neighborhood_k": float(args.source_neighborhood_k),
         "graph_edit_limit": float(args.graph_edit_limit),
         "scaffold_library_k": float(args.scaffold_library_k),
+        "condition_decode_top_k": float(args.condition_decode_top_k),
         "max_requests_per_task": float(args.max_requests_per_task),
         "task_mode": args.task_mode,
         "repair_corruptions_per_molecule": float(args.repair_corruptions_per_molecule),
@@ -242,11 +249,21 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-neighborhood-k", type=int, default=32)
     parser.add_argument("--graph-edit-limit", type=int, default=96)
     parser.add_argument("--scaffold-library-k", type=int, default=32)
+    parser.add_argument("--condition-decode-top-k", type=int, default=4)
     parser.add_argument("--repair-nearest-k", type=int, default=8)
     parser.add_argument("--max-requests-per-task", type=int, default=0)
     parser.add_argument("--tasks", default="edit,inpaint,de_novo")
     parser.add_argument("--seed", type=int, default=7)
     return parser.parse_args()
+
+
+def _condition_latent_candidates(autoencoder, condition_latent, top_k: int = 4) -> list[Candidate]:
+    if top_k <= 0:
+        return []
+    try:
+        return [Candidate(smiles, "condition_direct") for smiles in autoencoder.decode(condition_latent, top_k=top_k)]
+    except Exception:
+        return []
 
 
 def _repair_baseline_candidates(autoencoder, corrupted_smiles: str | None, top_k: int = 8) -> list[Candidate]:

@@ -76,6 +76,7 @@ echo "  disable_verifier_ranking=${MOLPILOT_DISABLE_VERIFIER_RANKING:-0}"
   --source-neighborhood-k "${MOLPILOT_SOURCE_NEIGHBORHOOD_K:-32}" \
   --graph-edit-limit "${MOLPILOT_GRAPH_EDIT_LIMIT:-96}" \
   --scaffold-library-k "${MOLPILOT_SCAFFOLD_LIBRARY_K:-32}" \
+  --condition-decode-top-k "${MOLPILOT_CONDITION_DECODE_TOP_K:-4}" \
   --repair-nearest-k "${MOLPILOT_REPAIR_NEAREST_K:-8}" \
   --max-requests-per-task "${MOLPILOT_MAX_REQUESTS_PER_TASK:-${MOLPILOT_EVAL_LIMIT:-1000}}" \
   --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo,repair}" \

@@ -193,6 +193,8 @@ def _origin_family(origin: str) -> str:
         return "source_neighborhood"
     if origin == "scaffold_library":
         return "scaffold_library"
+    if origin == "condition_direct":
+        return "condition_direct"
     if origin == "diffusion":
         return "diffusion"
     return origin or "unknown"

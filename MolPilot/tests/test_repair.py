@@ -4,6 +4,7 @@ from molpilot.chem import RDKIT_AVAILABLE
 from molpilot.evaluate import _repair_breakdown
 from molpilot.repair_dataset import build_repair_examples, build_repair_requests
 from molpilot.repair_verifier import verify_repair
+from molpilot.sample import _condition_latent_candidates
 from molpilot.schema import TaskType
 from molpilot.stage_data import load_smiles_and_pairs
 
@@ -39,6 +40,15 @@ class RepairDatasetTests(unittest.TestCase):
         tasks = {request.task_type for request, _ in pairs}
         self.assertIn(TaskType.REPAIR, tasks)
         self.assertTrue({TaskType.EDIT, TaskType.INPAINT, TaskType.DE_NOVO} & tasks)
+
+    def test_condition_latent_candidates_decode_directly(self):
+        class Codec:
+            def decode(self, latent, top_k=4):
+                return ["CCO"][:top_k]
+
+        candidates = _condition_latent_candidates(Codec(), [0.0], top_k=2)
+        self.assertEqual(candidates[0].smiles, "CCO")
+        self.assertEqual(candidates[0].origin, "condition_direct")
 
 
 class RepairVerifierTests(unittest.TestCase):
