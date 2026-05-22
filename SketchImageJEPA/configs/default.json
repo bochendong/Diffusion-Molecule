@@ -1,0 +1,13 @@
+{
+  "preset": "sketchmol_aligned",
+  "feature_dim": 256,
+  "latent_dim": 4096,
+  "latent_shape": [32, 32, 4],
+  "image_size": 256,
+  "top_k": 8,
+  "ridge": 0.001,
+  "train_fraction": 0.8,
+  "seed": 7,
+  "render_image_context": true,
+  "output_dir": "outputs/smoke"
+}

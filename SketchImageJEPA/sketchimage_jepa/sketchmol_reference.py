@@ -1,0 +1,56 @@
+"""Reference knobs for SketchMol-aligned comparisons."""
+
+from __future__ import annotations
+
+
+SKETCHMOL_REFERENCE = {
+    "source": "Research/Molecule Generation/SketchMol/SketchMol-v1-main plus PhysTabMol SketchMol-aligned benchmark",
+    "image_size": 256,
+    "latent_grid": 32,
+    "latent_channels": 4,
+    "latent_dim": 32 * 32 * 4,
+    "condition_dim": 256,
+    "ddim_steps": 250,
+    "eta": 1.0,
+    "valid_guidance_scale": 2.0,
+    "property_guidance_scale": 4.0,
+    "default_property_num": 2,
+    "tri_mode": True,
+    "single_property_conditions": 125,
+    "samples_per_condition": 8,
+    "molecules_per_single_property_target": 1000,
+    "multi_property_conditions": 1000,
+    "optimization_conditions": 100,
+    "benchmark_decode_top_k": 1,
+    "structure_prompt_conditions": 1000,
+    "structure_prompt_samples": 8,
+    "structure_prompt_decode_top_k": 2,
+    "property_keys": ["LogP", "QED", "MW", "TPSA", "HBD", "HBA", "RB"],
+    "single_property_targets": {
+        "LogP": [0.2, 2.5, 3.4, 4.1, 6.1],
+        "QED": [0.32, 0.50, 0.62, 0.75, 0.90],
+        "MW": [191, 313, 366, 410, 510],
+        "TPSA": [17, 50, 68, 85, 125],
+        "HBD": [0, 1, 2, 3],
+        "HBA": [1, 3, 4, 6, 8],
+        "RB": [1, 4, 5, 6, 9],
+    },
+    "ood_targets": {
+        "LogP": [8, 9, 10],
+        "TPSA": [160, 170, 180],
+        "HBA": [11, 12, 13],
+        "RB": [11, 12, 13],
+        "MW": [600, 650, 700],
+    },
+    "optimization_tasks": {"LogP": 2.5, "QED": 0.3, "TPSA": -45.0},
+    "sketchmol_success_tolerance": {
+        "LogP": 1.8,
+        "QED": 0.20,
+        "MW": 90.0,
+        "TPSA": 30.0,
+        "HBD": 1.0,
+        "HBA": 2.0,
+        "RB": 2.0,
+        "SA": 0.5,
+    },
+}

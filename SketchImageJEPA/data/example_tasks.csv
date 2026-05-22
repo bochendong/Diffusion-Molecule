@@ -1,0 +1,7 @@
+task_id,task_type,source_smiles,target_smiles,instruction,mask_hint,image_path,goals
+denovo_qed_aspirin_like,de_novo,,CC(=O)Oc1ccccc1C(=O)O,Generate a small drug-like aromatic acid with balanced QED.,,,druglike;aromatic;acid
+edit_lower_logp,edit,CCOc1ccccc1,CCOc1ccc(O)cc1,Lower LogP while keeping the aromatic core.,,,lower_logp;keep_aromatic_core
+edit_raise_polarity,edit,CCN(CC)CC,CCN(CCO)CCO,Increase polarity and hydrogen bonding without making the molecule too large.,,,increase_tpsa;increase_hbd
+inpaint_keep_benzene,inpaint,c1ccccc1,Nc1ccccc1O,Fill the masked positions with polar substituents while preserving the benzene ring.,keep benzene ring; fill two substituent positions,,preserve_scaffold;polar_substituents
+fragment_grow_indole,fragment_grow,c1ccccc1N,c1ccc2[nH]ccc2c1,Grow the fragment into a compact heteroaromatic scaffold.,grow fused heteroaromatic ring from an aniline-like fragment,,fragment_growth;heteroaromatic
+denovo_low_tpsa,de_novo,,CC(C)c1ccccc1,Generate a compact low-TPSA molecule with moderate hydrophobicity.,,,low_tpsa;moderate_logp

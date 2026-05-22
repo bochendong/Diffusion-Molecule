@@ -1,0 +1,21 @@
+{
+  "preset": "sketchmol_aligned",
+  "feature_dim": 256,
+  "latent_dim": 4096,
+  "latent_shape": [32, 32, 4],
+  "image_size": 256,
+  "samples_per_condition": 8,
+  "top_k": 8,
+  "ridge": 0.001,
+  "train_fraction": 0.8,
+  "seed": 7,
+  "render_image_context": true,
+  "single_property_conditions": 125,
+  "multi_property_conditions": 1000,
+  "optimization_conditions": 100,
+  "structure_prompt_conditions": 1000,
+  "structure_prompt_samples": 8,
+  "sketchmol_ddim_steps": 250,
+  "sketchmol_valid_guidance_scale": 2.0,
+  "sketchmol_property_guidance_scale": 4.0
+}
