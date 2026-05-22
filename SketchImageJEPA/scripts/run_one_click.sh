@@ -82,6 +82,21 @@ echo "  train_fraction=$TRAIN_FRACTION"
 echo "  seed=$SEED"
 echo "  render_image_context=$RENDER_IMAGE_CONTEXT"
 
+check_input_file() {
+  local label="$1"
+  local path="$2"
+  if [[ -n "$path" && ! -f "$path" ]]; then
+    echo "ERROR: $label does not exist: $path" >&2
+    echo "Run from $ROOT_DIR, or provide an absolute CSV path." >&2
+    exit 2
+  fi
+}
+
+check_input_file "SKETCHIMAGE_MOLECULE_CSV" "$MOLECULE_CSV"
+check_input_file "SKETCHIMAGE_DATASET_CSV" "$DATASET_CSV"
+check_input_file "SKETCHIMAGE_TRAIN_CSV" "$TRAIN_CSV"
+check_input_file "SKETCHIMAGE_EVAL_CSV" "$EVAL_CSV"
+
 if [[ "$RUN_TESTS" == "1" ]]; then
   echo
   echo "[1/2] Running tests"

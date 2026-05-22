@@ -28,6 +28,28 @@ if [[ -z "${SKETCHIMAGE_MOLECULE_CSV:-}" && -z "${SKETCHIMAGE_DATASET_CSV:-}" ]]
   export SKETCHIMAGE_MOLECULE_CSV="data/example_molecules.csv"
 fi
 
+check_csv_exists() {
+  local label="$1"
+  local path="$2"
+  if [[ -n "$path" && ! -f "$path" ]]; then
+    cat <<EOF >&2
+ERROR: $label does not exist: $path
+
+Use a real CSV path. From this project you can test with:
+  SKETCHIMAGE_MOLECULE_CSV=data/example_molecules.csv bash scripts/submit_sketchmol_aligned.sh
+
+Or find candidate CSVs with:
+  find /scratch/bdong/projects/Diffusion-Molecule -name '*.csv' | head -50
+EOF
+    exit 2
+  fi
+}
+
+check_csv_exists "SKETCHIMAGE_MOLECULE_CSV" "${SKETCHIMAGE_MOLECULE_CSV:-}"
+check_csv_exists "SKETCHIMAGE_DATASET_CSV" "${SKETCHIMAGE_DATASET_CSV:-}"
+check_csv_exists "SKETCHIMAGE_TRAIN_CSV" "${SKETCHIMAGE_TRAIN_CSV:-}"
+check_csv_exists "SKETCHIMAGE_EVAL_CSV" "${SKETCHIMAGE_EVAL_CSV:-}"
+
 export SKETCHIMAGE_RUN_NAME="${SKETCHIMAGE_RUN_NAME:-sketchimage_aligned_${SKETCHIMAGE_MOLECULE_LIMIT:-10000}_$(date +%Y%m%d_%H%M%S)}"
 export SKETCHIMAGE_MOLECULE_LIMIT="${SKETCHIMAGE_MOLECULE_LIMIT:-10000}"
 export SKETCHIMAGE_MAX_TASKS="${SKETCHIMAGE_MAX_TASKS:-5000}"
