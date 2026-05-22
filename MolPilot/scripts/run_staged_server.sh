@@ -134,8 +134,10 @@ fi
   --source-neighborhood-k "${MOLPILOT_SOURCE_NEIGHBORHOOD_K:-32}" \
   --graph-edit-limit "${MOLPILOT_GRAPH_EDIT_LIMIT:-96}" \
   --scaffold-library-k "${MOLPILOT_SCAFFOLD_LIBRARY_K:-32}" \
-  --condition-decode-top-k "${MOLPILOT_CONDITION_DECODE_TOP_K:-4}" \
-  --repair-nearest-k "${MOLPILOT_REPAIR_NEAREST_K:-8}" \
+  --condition-decode-top-k "${MOLPILOT_CONDITION_DECODE_TOP_K:-16}" \
+  --condition-blend-strengths "${MOLPILOT_CONDITION_BLEND_STRENGTHS:-0.25,0.50,0.75}" \
+  --repair-nearest-k "${MOLPILOT_REPAIR_NEAREST_K:-16}" \
+  --repair-string-k "${MOLPILOT_REPAIR_STRING_K:-64}" \
   --max-requests-per-task "${MOLPILOT_MAX_REQUESTS_PER_TASK:-${MOLPILOT_EVAL_LIMIT:-1000}}" \
   --tasks "${MOLPILOT_EVAL_TASKS:-edit,inpaint,de_novo,repair}" \
   --seed "${MOLPILOT_SEED:-7}" \

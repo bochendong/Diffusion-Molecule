@@ -18,6 +18,8 @@ BOOL_COLUMNS = (
     "goal_success",
     "constraint_success",
     "overall_success",
+    "soft_success",
+    "soft_repair_success",
 )
 
 
@@ -26,8 +28,15 @@ def main() -> None:
     rows = _read_rows(args.candidates)
     metrics = {"rows": float(len(rows))}
     for column in BOOL_COLUMNS:
-        values = [_as_bool(row.get(column, "")) for row in rows]
-        metrics[column] = float(np.mean(values)) if values else 0.0
+        values = [_as_bool(row.get(column, "")) for row in rows if column in row]
+        if values:
+            metrics[column] = float(np.mean(values))
+    objective_rows = [row for row in rows if "objective_quality" in row]
+    repair_quality_rows = [row for row in rows if "repair_quality" in row]
+    if objective_rows:
+        metrics["objective_quality"] = _float_mean(objective_rows, "objective_quality")
+    if repair_quality_rows:
+        metrics["repair_quality"] = _float_mean(repair_quality_rows, "repair_quality")
     hard_rows = [row for row in rows if _as_bool(row.get("hard_verifiable", ""))]
     metrics["hard_rows"] = float(len(hard_rows))
     metrics["hard_overall_success"] = float(np.mean([_as_bool(row.get("overall_success", "")) for row in hard_rows])) if hard_rows else 0.0
@@ -63,14 +72,26 @@ def _request_topk(rows: list[dict[str, str]]) -> dict[str, float]:
     for row in rows:
         grouped[str(row.get("request_id", ""))].append(row)
     out = {}
-    for metric in ("overall_success", "goal_success", "constraint_success"):
+    for metric in ("overall_success", "goal_success", "constraint_success", "soft_success"):
+        if not any(metric in row or (metric == "soft_success" and "soft_repair_success" in row) for row in rows):
+            continue
         short = metric.replace("_success", "")
         for k in (1, 5, 10):
             values = []
             for request_rows in grouped.values():
                 ordered = sorted(request_rows, key=lambda row: int(float(row.get("rank", 0) or 0)))
-                values.append(max(_as_bool(row.get(metric, "")) for row in ordered[:k]) if ordered else 0.0)
+                values.append(max(_as_bool(row.get(metric, row.get("soft_repair_success", ""))) for row in ordered[:k]) if ordered else 0.0)
             out[f"request_{short}_at_{k}"] = float(np.mean(values)) if values else 0.0
+    for metric in ("objective_quality", "repair_quality"):
+        if not any(metric in row for row in rows):
+            continue
+        short = metric.replace("_quality", "")
+        for k in (1, 5, 10):
+            values = []
+            for request_rows in grouped.values():
+                ordered = sorted(request_rows, key=lambda row: int(float(row.get("rank", 0) or 0)))[:k]
+                values.append(max(_as_float(row.get(metric, 0.0)) for row in ordered) if ordered else 0.0)
+            out[f"request_best_{short}_quality_at_{k}"] = float(np.mean(values)) if values else 0.0
     return out
 
 
@@ -83,12 +104,21 @@ def _task_breakdown(rows: list[dict[str, str]]) -> dict[str, float]:
         key = "".join(ch if ch.isalnum() else "_" for ch in task).strip("_") or "unknown"
         out[f"task_{key}_rows"] = float(len(task_rows))
         out[f"task_{key}_overall_success"] = float(np.mean([_as_bool(row.get("overall_success", "")) for row in task_rows]))
+        if any("soft_success" in row or "soft_repair_success" in row for row in task_rows):
+            out[f"task_{key}_soft_success"] = float(
+                np.mean([_as_bool(row.get("soft_success", row.get("soft_repair_success", ""))) for row in task_rows])
+            )
+        if any("objective_quality" in row for row in task_rows):
+            out[f"task_{key}_objective_quality"] = _float_mean(task_rows, "objective_quality")
+        if any("repair_quality" in row for row in task_rows):
+            out[f"task_{key}_repair_quality"] = _float_mean(task_rows, "repair_quality")
         out.update(_task_request_topk(task_rows, f"task_{key}"))
     task_keys = sorted("".join(ch if ch.isalnum() else "_" for ch in task).strip("_") or "unknown" for task in grouped)
-    for metric in ("overall", "goal", "constraint"):
+    for metric in ("overall", "goal", "constraint", "soft", "best_objective_quality", "best_repair_quality"):
         for k in (1, 5, 10):
             values = [out[f"task_{task_key}_request_{metric}_at_{k}"] for task_key in task_keys if f"task_{task_key}_request_{metric}_at_{k}" in out]
-            out[f"macro_task_request_{metric}_at_{k}"] = float(np.mean(values)) if values else 0.0
+            if values:
+                out[f"macro_task_request_{metric}_at_{k}"] = float(np.mean(values))
     return out
 
 
@@ -97,14 +127,26 @@ def _task_request_topk(rows: list[dict[str, str]], prefix: str) -> dict[str, flo
     for row in rows:
         grouped[str(row.get("request_id", ""))].append(row)
     out = {f"{prefix}_requests": float(len(grouped))}
-    for metric in ("overall_success", "goal_success", "constraint_success"):
+    for metric in ("overall_success", "goal_success", "constraint_success", "soft_success"):
+        if not any(metric in row or (metric == "soft_success" and "soft_repair_success" in row) for row in rows):
+            continue
         short = metric.replace("_success", "")
         for k in (1, 5, 10):
             values = []
             for request_rows in grouped.values():
                 ordered = sorted(request_rows, key=lambda row: int(float(row.get("rank", 0) or 0)))
-                values.append(max(_as_bool(row.get(metric, "")) for row in ordered[:k]) if ordered else 0.0)
+                values.append(max(_as_bool(row.get(metric, row.get("soft_repair_success", ""))) for row in ordered[:k]) if ordered else 0.0)
             out[f"{prefix}_request_{short}_at_{k}"] = float(np.mean(values)) if values else 0.0
+    for metric in ("objective_quality", "repair_quality"):
+        if not any(metric in row for row in rows):
+            continue
+        short = metric.replace("_quality", "")
+        for k in (1, 5, 10):
+            values = []
+            for request_rows in grouped.values():
+                ordered = sorted(request_rows, key=lambda row: int(float(row.get("rank", 0) or 0)))[:k]
+                values.append(max(_as_float(row.get(metric, 0.0)) for row in ordered) if ordered else 0.0)
+            out[f"{prefix}_request_best_{short}_quality_at_{k}"] = float(np.mean(values)) if values else 0.0
     return out
 
 
@@ -113,11 +155,12 @@ def _repair_breakdown(rows: list[dict[str, str]]) -> dict[str, float]:
     if not repair_rows:
         return {}
     out = {"repair_rows": float(len(repair_rows))}
-    for column in ("valid", "exact_recovery", "scaffold_recovery", "novel", "novel_verified_success"):
+    for column in ("valid", "exact_recovery", "scaffold_recovery", "novel", "novel_verified_success", "soft_repair_success"):
         values = [_as_bool(row.get(column, "")) for row in repair_rows]
         out[f"repair_{column}"] = float(np.mean(values)) if values else 0.0
     out["repair_tanimoto_to_clean"] = _float_mean(repair_rows, "tanimoto_to_clean")
     out["repair_property_mae_to_clean"] = _float_mean(repair_rows, "property_mae_to_clean")
+    out["repair_quality"] = _float_mean(repair_rows, "repair_quality")
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in repair_rows:
         grouped[str(row.get("request_id", ""))].append(row)
@@ -126,6 +169,7 @@ def _repair_breakdown(rows: list[dict[str, str]]) -> dict[str, float]:
         "exact_recovery": "exact_recovery",
         "scaffold_recovery": "scaffold_recovery",
         "novel_repair_success": "novel_verified_success",
+        "soft_repair_success": "soft_repair_success",
         "repair_overall": "overall_success",
     }
     for out_name, column in metric_columns.items():
@@ -145,6 +189,12 @@ def _repair_breakdown(rows: list[dict[str, str]]) -> dict[str, float]:
                 best_mae.append(min(_as_float(row.get("property_mae_to_clean", "inf")) for row in ordered))
         out[f"best_tanimoto_to_clean_at_{k}"] = float(np.mean(best_tanimoto)) if best_tanimoto else 0.0
         out[f"best_property_mae_to_clean_at_{k}"] = float(np.mean(best_mae)) if best_mae else 0.0
+        best_quality = []
+        for request_rows in grouped.values():
+            ordered = sorted(request_rows, key=lambda row: int(float(row.get("rank", 0) or 0)))[:k]
+            if ordered:
+                best_quality.append(max(_as_float(row.get("repair_quality", 0.0)) for row in ordered))
+        out[f"best_repair_quality_at_{k}"] = float(np.mean(best_quality)) if best_quality else 0.0
     return out
 
 
@@ -195,6 +245,10 @@ def _origin_family(origin: str) -> str:
         return "scaffold_library"
     if origin == "condition_direct":
         return "condition_direct"
+    if origin.startswith("condition_blend_"):
+        return "condition_blend"
+    if origin == "string_repair_prior":
+        return "string_repair_prior"
     if origin == "diffusion":
         return "diffusion"
     return origin or "unknown"

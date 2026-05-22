@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from difflib import SequenceMatcher
 import json
 
 import numpy as np
@@ -69,6 +70,7 @@ def main() -> None:
     conditions = predict_condition_latents(alignment, raw_conditions, pairs, autoencoder)
     sampled_latents = diffusion.sample_latents(conditions, n_per_condition=args.samples_per_request)
     source_edit_strengths = parse_strengths(args.source_edit_strengths)
+    condition_blend_strengths = parse_strengths(args.condition_blend_strengths)
     known_smiles = set(getattr(autoencoder, "train_smiles", []) or [])
     rows = []
     request_metric_rows = []
@@ -82,6 +84,13 @@ def main() -> None:
         direct_condition_candidates = _condition_latent_candidates(
             autoencoder,
             conditions[request_idx],
+            top_k=args.condition_decode_top_k,
+        )
+        condition_blend_candidates = _condition_blend_candidates(
+            autoencoder,
+            request.source_smiles,
+            conditions[request_idx],
+            strengths=condition_blend_strengths,
             top_k=args.condition_decode_top_k,
         )
         candidates = decode_source_guided_candidates(
@@ -99,10 +108,15 @@ def main() -> None:
             enable_latent_source_guidance=not args.disable_latent_source_guidance,
             enable_graph_editor=not args.disable_graph_editor,
         )
-        candidates = _dedupe_candidates(direct_condition_candidates + candidates)
+        candidates = _dedupe_candidates(direct_condition_candidates + condition_blend_candidates + candidates)
         if request.task_type == TaskType.REPAIR and not args.disable_repair_baselines:
             candidates = _dedupe_candidates(
-                _repair_baseline_candidates(autoencoder, request.source_smiles, top_k=args.repair_nearest_k)
+                _repair_baseline_candidates(
+                    autoencoder,
+                    request.source_smiles,
+                    latent_top_k=args.repair_nearest_k,
+                    string_top_k=args.repair_string_k,
+                )
                 + candidates
             )
         scored = []
@@ -125,9 +139,13 @@ def main() -> None:
         request_overall = []
         request_goal = []
         request_constraint = []
+        request_soft = []
+        request_quality = []
         request_exact_recovery = []
         request_scaffold_recovery = []
         request_novel_repair = []
+        request_soft_repair = []
+        request_repair_quality = []
         for rank, (raw_rank, candidate, result, score) in enumerate(scored):
             rows.append(
                 {
@@ -150,9 +168,13 @@ def main() -> None:
             request_overall.append(float(result.overall_success))
             request_goal.append(float(result.goal_success))
             request_constraint.append(float(result.constraint_success))
+            request_soft.append(float(getattr(result, "soft_success", getattr(result, "soft_repair_success", False))))
+            request_quality.append(float(getattr(result, "objective_quality", getattr(result, "repair_quality", 0.0))))
             request_exact_recovery.append(float(getattr(result, "exact_recovery", False)))
             request_scaffold_recovery.append(float(getattr(result, "scaffold_recovery", False)))
             request_novel_repair.append(float(getattr(result, "novel_verified_success", False)))
+            request_soft_repair.append(float(getattr(result, "soft_repair_success", False)))
+            request_repair_quality.append(float(getattr(result, "repair_quality", 0.0)))
             if result.hard_verifiable:
                 hard.append(float(result.overall_success))
         request_metrics = {
@@ -165,6 +187,8 @@ def main() -> None:
             **_topk_metrics(request_overall, "overall"),
             **_topk_metrics(request_goal, "goal"),
             **_topk_metrics(request_constraint, "constraint"),
+            **_topk_metrics(request_soft, "soft_success"),
+            **_topk_metrics(request_quality, "best_objective_quality"),
         }
         if request.task_type == TaskType.REPAIR:
             request_metrics.update(
@@ -172,6 +196,8 @@ def main() -> None:
                     **_topk_metrics(request_exact_recovery, "exact_recovery"),
                     **_topk_metrics(request_scaffold_recovery, "scaffold_recovery"),
                     **_topk_metrics(request_novel_repair, "novel_repair_success"),
+                    **_topk_metrics(request_soft_repair, "soft_repair_success"),
+                    **_topk_metrics(request_repair_quality, "best_repair_quality"),
                 }
             )
         request_metric_rows.append(request_metrics)
@@ -198,10 +224,12 @@ def main() -> None:
         "latent_source_guidance": not args.disable_latent_source_guidance,
         "graph_editor": not args.disable_graph_editor,
         "source_edit_strengths": args.source_edit_strengths,
+        "condition_blend_strengths": args.condition_blend_strengths,
         "source_neighborhood_k": float(args.source_neighborhood_k),
         "graph_edit_limit": float(args.graph_edit_limit),
         "scaffold_library_k": float(args.scaffold_library_k),
         "condition_decode_top_k": float(args.condition_decode_top_k),
+        "repair_string_k": float(args.repair_string_k),
         "max_requests_per_task": float(args.max_requests_per_task),
         "task_mode": args.task_mode,
         "repair_corruptions_per_molecule": float(args.repair_corruptions_per_molecule),
@@ -251,6 +279,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--scaffold-library-k", type=int, default=32)
     parser.add_argument("--condition-decode-top-k", type=int, default=4)
     parser.add_argument("--repair-nearest-k", type=int, default=8)
+    parser.add_argument("--repair-string-k", type=int, default=64)
+    parser.add_argument("--condition-blend-strengths", default="0.25,0.50,0.75")
     parser.add_argument("--max-requests-per-task", type=int, default=0)
     parser.add_argument("--tasks", default="edit,inpaint,de_novo")
     parser.add_argument("--seed", type=int, default=7)
@@ -266,18 +296,83 @@ def _condition_latent_candidates(autoencoder, condition_latent, top_k: int = 4) 
         return []
 
 
-def _repair_baseline_candidates(autoencoder, corrupted_smiles: str | None, top_k: int = 8) -> list[Candidate]:
+def _condition_blend_candidates(
+    autoencoder,
+    source_smiles: str | None,
+    condition_latent,
+    strengths: list[float],
+    top_k: int = 4,
+) -> list[Candidate]:
+    if not source_smiles or top_k <= 0:
+        return []
+    try:
+        source_latent = np.asarray(autoencoder.encode(source_smiles), dtype=np.float32)
+        condition_latent = np.asarray(condition_latent, dtype=np.float32)
+    except Exception:
+        return []
+    out: list[Candidate] = []
+    for strength in strengths:
+        blended = source_latent + float(strength) * (condition_latent - source_latent)
+        try:
+            for smiles in autoencoder.decode(blended, top_k=max(1, top_k)):
+                out.append(Candidate(smiles, f"condition_blend_{strength:.2f}"))
+        except Exception:
+            continue
+    return _dedupe_candidates(out)
+
+
+def _repair_baseline_candidates(
+    autoencoder,
+    corrupted_smiles: str | None,
+    latent_top_k: int = 8,
+    string_top_k: int = 64,
+) -> list[Candidate]:
     out: list[Candidate] = []
     if corrupted_smiles:
         out.append(Candidate(str(corrupted_smiles), "no_repair"))
-    if corrupted_smiles and hasattr(autoencoder, "encode"):
+    if corrupted_smiles and latent_top_k > 0 and hasattr(autoencoder, "encode"):
         try:
             latent = autoencoder.encode(corrupted_smiles)
-            for smiles in autoencoder.decode(latent, top_k=max(1, top_k)):
+            for smiles in autoencoder.decode(latent, top_k=max(1, latent_top_k)):
                 out.append(Candidate(smiles, "nearest_valid_retrieval"))
         except Exception:
             pass
+    if corrupted_smiles and string_top_k > 0:
+        out.extend(_string_repair_prior_candidates(autoencoder, corrupted_smiles, top_k=string_top_k))
     return _dedupe_candidates(out)
+
+
+def _string_repair_prior_candidates(autoencoder, corrupted_smiles: str, top_k: int = 64) -> list[Candidate]:
+    library = list(getattr(autoencoder, "train_smiles", []) or [])
+    if not library or not corrupted_smiles:
+        return []
+    corrupted = _normalise_corruption_text(corrupted_smiles)
+    char_set = set(corrupted)
+    rough: list[tuple[float, str]] = []
+    for smiles in library:
+        candidate = str(smiles)
+        normal = _normalise_corruption_text(candidate)
+        if not normal:
+            continue
+        overlap = len(char_set & set(normal)) / max(1, len(char_set | set(normal)))
+        if overlap < 0.18:
+            continue
+        prefix = _common_prefix_fraction(corrupted, normal)
+        length = 1.0 - min(1.0, abs(len(normal) - len(corrupted)) / max(1, max(len(normal), len(corrupted))))
+        rough_score = 0.45 * overlap + 0.35 * prefix + 0.20 * length
+        rough.append((rough_score, candidate))
+    if not rough:
+        return []
+    rough.sort(key=lambda item: (-item[0], item[1]))
+    refined: list[tuple[float, str]] = []
+    for _, smiles in rough[: max(top_k * 12, 128)]:
+        normal = _normalise_corruption_text(smiles)
+        ratio = SequenceMatcher(None, corrupted, normal).ratio()
+        prefix = _common_prefix_fraction(corrupted, normal)
+        score = 0.75 * ratio + 0.25 * prefix
+        refined.append((score, smiles))
+    refined.sort(key=lambda item: (-item[0], item[1]))
+    return [Candidate(smiles, "string_repair_prior") for _, smiles in refined[:top_k]]
 
 
 def _dedupe_candidates(candidates: list[Candidate]) -> list[Candidate]:
@@ -315,24 +410,27 @@ def _select_pairs_by_task(pairs, max_per_task: int = 0, tasks: str = "edit,inpai
 
 
 def _ranking_score(result) -> float:
-    score = 0.0
+    quality = float(getattr(result, "objective_quality", getattr(result, "repair_quality", 0.0)))
+    soft = bool(getattr(result, "soft_success", getattr(result, "soft_repair_success", False)))
+    score = 100.0 * quality
     score += 1000.0 if result.overall_success else 0.0
-    score += 100.0 if result.constraint_success else 0.0
+    score += 200.0 if soft else 0.0
+    score += 50.0 if result.constraint_success else 0.0
     score += 20.0 if result.goal_success else 0.0
-    score += 5.0 if result.valid else 0.0
+    score += 10.0 if result.valid else 0.0
     penalties = {
-        "scaffold_changed": 12.0,
-        "low_similarity": 8.0,
-        "mw_drift": 6.0,
-        "druglike_failed": 4.0,
-        "cns_profile_failed": 4.0,
+        "scaffold_changed": 3.0,
+        "low_similarity": 3.0,
+        "mw_drift": 2.0,
+        "druglike_failed": 1.0,
+        "cns_profile_failed": 1.0,
         "invalid_smiles": 100.0,
-        "scaffold_not_recovered": 8.0,
-        "low_similarity_to_clean": 8.0,
-        "property_drift_from_clean": 4.0,
+        "scaffold_not_recovered": 2.0,
+        "low_similarity_to_clean": 3.0,
+        "property_drift_from_clean": 2.0,
     }
     for reason in result.reasons:
-        score -= penalties.get(reason, 1.0)
+        score -= penalties.get(reason, 0.5)
     return score
 
 
@@ -345,7 +443,7 @@ def _topk_metrics(values: list[float], prefix: str) -> dict[str, float]:
 
 def _aggregate_request_metrics(rows: list[dict[str, object]]) -> dict[str, float]:
     out = {}
-    for prefix in ("overall", "goal", "constraint"):
+    for prefix in ("overall", "goal", "constraint", "soft_success", "best_objective_quality"):
         for k in (1, 5, 10):
             key = f"{prefix}_at_{k}"
             values = [float(row.get(key, 0.0)) for row in rows]
@@ -355,12 +453,12 @@ def _aggregate_request_metrics(rows: list[dict[str, object]]) -> dict[str, float
         task_rows = [row for row in rows if str(row.get("task_type", "unknown")) == task]
         task_key = _safe_metric_key(task)
         out[f"task_{task_key}_requests"] = float(len(task_rows))
-        for prefix in ("overall", "goal", "constraint"):
+        for prefix in ("overall", "goal", "constraint", "soft_success", "best_objective_quality"):
             for k in (1, 5, 10):
                 key = f"{prefix}_at_{k}"
                 values = [float(row.get(key, 0.0)) for row in task_rows]
                 out[f"task_{task_key}_request_{key}"] = float(np.mean(values)) if values else 0.0
-    for prefix in ("overall", "goal", "constraint"):
+    for prefix in ("overall", "goal", "constraint", "soft_success", "best_objective_quality"):
         for k in (1, 5, 10):
             values = []
             for task in tasks:
@@ -378,7 +476,18 @@ def _novel_verified_summary(rows: list[dict[str, object]]) -> list[dict[str, obj
         task = str(row.get("task_type", "unknown"))
         grouped.setdefault(task, []).append(row)
     out = []
-    metric_keys = [f"{prefix}_at_{k}" for prefix in ("overall", "novel_repair_success", "exact_recovery", "scaffold_recovery") for k in (1, 5, 10)]
+    metric_keys = [
+        f"{prefix}_at_{k}"
+        for prefix in (
+            "overall",
+            "soft_repair_success",
+            "novel_repair_success",
+            "exact_recovery",
+            "scaffold_recovery",
+            "best_repair_quality",
+        )
+        for k in (1, 5, 10)
+    ]
     for task, task_rows in sorted(grouped.items()):
         summary = {"task_type": task, "requests": len(task_rows)}
         for key in metric_keys:
@@ -389,6 +498,32 @@ def _novel_verified_summary(rows: list[dict[str, object]]) -> list[dict[str, obj
 
 def _safe_metric_key(value: str) -> str:
     return "".join(ch if ch.isalnum() else "_" for ch in str(value)).strip("_") or "unknown"
+
+
+def _normalise_corruption_text(value: str) -> str:
+    text = str(value or "").strip()
+    replacements = (
+        ("CI", "Cl"),
+        ("B8", "Br"),
+        ("0", "O"),
+        ("5", "S"),
+        ("?", ""),
+        (" ", ""),
+    )
+    for old, new in replacements:
+        text = text.replace(old, new)
+    return text
+
+
+def _common_prefix_fraction(left: str, right: str) -> float:
+    if not left or not right:
+        return 0.0
+    count = 0
+    for a, b in zip(left, right):
+        if a != b:
+            break
+        count += 1
+    return float(count / max(1, min(len(left), len(right))))
 
 
 if __name__ == "__main__":

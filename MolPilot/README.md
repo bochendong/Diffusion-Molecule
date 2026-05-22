@@ -187,17 +187,27 @@ MOLPILOT_REPAIR_CORRUPTIONS_PER_MOLECULE=2
 MOLPILOT_REPAIR_CORRUPTIONS=token_deletion,truncation,ocr_confusion
 MOLPILOT_EVAL_TASKS=repair
 MOLPILOT_DISABLE_REPAIR_BASELINES=1
+MOLPILOT_REPAIR_STRING_K=64
+MOLPILOT_CONDITION_DECODE_TOP_K=16
+MOLPILOT_CONDITION_BLEND_STRENGTHS=0.25,0.50,0.75
 ```
 
 Repair evaluation writes `repair_metrics.json`,
 `tables/repair_request_metrics.csv`, and the normal `eval_metrics.json`.
 The headline repair metrics are `repair_validity@k`, `exact_recovery@k`,
 `scaffold_recovery@k`, `best_tanimoto_to_clean@k`, and
-`novel_repair_success@k`.
+`novel_repair_success@k`. For early experiment selection, also track
+`soft_repair_success@k` and `best_repair_quality@k`; these keep the strict
+exact/scaffold verifier but add a smoother recovery score based on validity,
+Tanimoto recovery, property drift, scaffold recovery, and exact recovery.
 Stage 4 also decodes the JEPA/condition predicted target latent directly as
 `condition_direct` candidates before diffusion sampling. This is especially
 important for repair, where Stage 2 is already trained to map corrupted input to
-the clean molecule latent.
+the clean molecule latent. It also emits `condition_blend_*` candidates by
+interpolating the source/corrupted latent toward the predicted condition latent,
+plus a `string_repair_prior` for OCR/partial-SMILES repair. These are
+continuous/retrieval priors for ranking, not chemistry-specific hand-written
+fragment rules.
 
 Resample an existing trained stage without retraining:
 
