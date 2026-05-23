@@ -23,6 +23,28 @@ if [[ -z "${SKETCHIMAGE_PYTHON_BIN:-}" ]]; then
   fi
 fi
 
+if [[ "${SKETCHIMAGE_TORCH_PREFLIGHT:-1}" == "1" ]]; then
+  if ! "$SKETCHIMAGE_PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+import torch
+PY
+  then
+    cat <<EOF >&2
+ERROR: $SKETCHIMAGE_PYTHON_BIN cannot import torch.
+
+Set SKETCHIMAGE_PYTHON_BIN to a Python with PyTorch, or install torch into the
+current venv first:
+
+  MODULE_RDKIT=rdkit/2025.09.4 \\
+  VENV_DIR=/scratch/bdong/venvs/sketchimage-rdkit \\
+  bash scripts/setup_torch_venv.sh
+
+If torch import only works after special modules are loaded inside Slurm, rerun
+with SKETCHIMAGE_TORCH_PREFLIGHT=0 and set SKETCHIMAGE_MODULES accordingly.
+EOF
+    exit 2
+  fi
+fi
+
 if [[ -z "${SKETCHIMAGE_MOLECULE_CSV:-}" && -z "${SKETCHIMAGE_DATASET_CSV:-}" ]]; then
   echo "No molecule/task CSV provided; defaulting to data/example_molecules.csv for a small GPU smoke submission."
   export SKETCHIMAGE_MOLECULE_CSV="data/example_molecules.csv"

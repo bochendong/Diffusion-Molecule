@@ -64,6 +64,14 @@ SKETCHIMAGE_PYTHON_BIN=/path/to/python3 bash scripts/run_sketchmol_aligned.sh
 The default `ridge` backend is a CPU benchmark harness. For a real GPU run,
 use the PyTorch latent denoising backend:
 
+If the selected venv cannot import torch, install it once:
+
+```bash
+MODULE_RDKIT=rdkit/2025.09.4 \
+VENV_DIR=/scratch/bdong/venvs/sketchimage-rdkit \
+bash scripts/setup_torch_venv.sh
+```
+
 ```bash
 cd SketchImageJEPA
 SKETCHIMAGE_BACKEND=torch_denoiser \

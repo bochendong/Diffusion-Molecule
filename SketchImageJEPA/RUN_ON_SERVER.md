@@ -29,6 +29,16 @@ The CPU script is still useful for fast checks. To run the GPU-capable
 conditional latent denoiser, use a Python environment with `torch`, `numpy`,
 and RDKit available, then submit:
 
+If your current `sketchimage-rdkit` venv does not have torch yet, install it
+once from the login node:
+
+```bash
+cd "/path/to/Diffusion Molecule/SketchImageJEPA"
+MODULE_RDKIT=rdkit/2025.09.4 \
+VENV_DIR=/scratch/bdong/venvs/sketchimage-rdkit \
+bash scripts/setup_torch_venv.sh
+```
+
 ```bash
 cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main
