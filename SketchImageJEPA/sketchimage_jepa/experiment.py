@@ -12,6 +12,7 @@ from .decoder import RetrievalDecoder
 from .features import matrix_from_examples
 from .image_context import attach_rendered_image_context
 from .jepa import JEPAConfig, SketchImageJEPAPredictor
+from .report import summarize_predictions_csv
 from .sketchmol_reference import SKETCHMOL_REFERENCE
 from .verifier import score_candidates, summarize_scores
 
@@ -76,7 +77,9 @@ def run_experiment(
     (output_dir / "run_config.json").write_text(json.dumps(run_config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     write_examples_csv(output_dir / "train_examples.csv", train_examples)
     write_examples_csv(output_dir / "eval_examples.csv", eval_examples)
-    _write_predictions(output_dir / "predictions.csv", eval_examples, scores_by_task)
+    predictions_path = output_dir / "predictions.csv"
+    _write_predictions(predictions_path, eval_examples, scores_by_task)
+    summarize_predictions_csv(predictions_path, out_dir=output_dir)
     return metrics
 
 

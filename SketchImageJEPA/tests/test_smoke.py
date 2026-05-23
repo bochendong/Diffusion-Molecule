@@ -11,6 +11,7 @@ from sketchimage_jepa.experiment import run_experiment
 from sketchimage_jepa.features import context_vector, matrix_from_examples
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
+from sketchimage_jepa.report import summarize_prediction_rows
 from sketchimage_jepa.schema import BenchmarkExample, TaskType
 from sketchimage_jepa.task_builder import build_tasks_from_molecules, load_molecule_rows
 
@@ -38,6 +39,8 @@ class SketchImageJEPATests(unittest.TestCase):
             self.assertEqual(metrics["eval_tasks"], 2.0)
             self.assertTrue(Path(tmp, "metrics.json").exists())
             self.assertTrue(Path(tmp, "predictions.csv").exists())
+            self.assertTrue(Path(tmp, "task_type_summary.csv").exists())
+            self.assertTrue(Path(tmp, "task_type_summary.json").exists())
             self.assertTrue(Path(tmp, "run_config.json").exists())
             self.assertTrue(Path(tmp, "train_examples.csv").exists())
             self.assertTrue(Path(tmp, "eval_examples.csv").exists())
@@ -109,6 +112,40 @@ class SketchImageJEPATests(unittest.TestCase):
             self.assertIn("edit", task_types)
             self.assertIn("inpaint", task_types)
             self.assertLessEqual(len(tasks), 12)
+
+    def test_report_groups_metrics_by_task_type(self):
+        rows = [
+            {
+                "task_id": "d1",
+                "task_type": "de_novo",
+                "rank": "1",
+                "valid": "True",
+                "target_tanimoto": "0.20",
+                "scaffold_match": "False",
+            },
+            {
+                "task_id": "d1",
+                "task_type": "de_novo",
+                "rank": "2",
+                "valid": "True",
+                "target_tanimoto": "0.70",
+                "scaffold_match": "False",
+            },
+            {
+                "task_id": "e1",
+                "task_type": "edit",
+                "rank": "1",
+                "valid": "True",
+                "target_tanimoto": "0.80",
+                "scaffold_match": "True",
+            },
+        ]
+        summary = {row["task_type"]: row for row in summarize_prediction_rows(rows)}
+        self.assertEqual(summary["overall"]["n"], 2)
+        self.assertEqual(summary["de_novo"]["n"], 1)
+        self.assertAlmostEqual(summary["de_novo"]["top1_target_tanimoto"], 0.20)
+        self.assertAlmostEqual(summary["de_novo"]["mean_best_tanimoto"], 0.70)
+        self.assertAlmostEqual(summary["edit"]["top1_scaffold_match"], 1.0)
 
 
 if __name__ == "__main__":
