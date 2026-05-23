@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 RDKIT_AVAILABLE = False
@@ -14,6 +15,7 @@ Lipinski = None
 QED = None
 DataStructs = None
 rdMolDescriptors = None
+rdFingerprintGenerator = None
 
 try:  # pragma: no cover - depends on local/server environment.
     from rdkit import Chem as _Chem
@@ -25,6 +27,11 @@ try:  # pragma: no cover - depends on local/server environment.
     from rdkit.Chem import QED as _QED
     from rdkit.Chem import rdMolDescriptors as _rdMolDescriptors
 
+    try:
+        from rdkit.Chem import rdFingerprintGenerator as _rdFingerprintGenerator
+    except Exception:
+        _rdFingerprintGenerator = None
+
     Chem = _Chem
     Crippen = _Crippen
     Descriptors = _Descriptors
@@ -32,6 +39,7 @@ try:  # pragma: no cover - depends on local/server environment.
     Lipinski = _Lipinski
     QED = _QED
     DataStructs = _DataStructs
+    rdFingerprintGenerator = _rdFingerprintGenerator
     rdMolDescriptors = _rdMolDescriptors
     RDKIT_AVAILABLE = True
 except Exception:  # pragma: no cover
@@ -105,8 +113,8 @@ def tanimoto(smiles_a: str | None, smiles_b: str | None) -> float:
     mol_b = Chem.MolFromSmiles(smiles_b)
     if mol_a is None or mol_b is None:
         return 0.0
-    fp_a = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol_a, 2, nBits=2048)
-    fp_b = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol_b, 2, nBits=2048)
+    fp_a = _morgan_fingerprint(mol_a)
+    fp_b = _morgan_fingerprint(mol_b)
     return float(DataStructs.TanimotoSimilarity(fp_a, fp_b))
 
 
@@ -116,8 +124,19 @@ def morgan_fingerprint_bits(smiles: str | None, n_bits: int = 2048, radius: int 
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
-    fp = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, radius, nBits=n_bits)
+    fp = _morgan_fingerprint(mol, n_bits=n_bits, radius=radius)
     return [1.0 if bit == "1" else 0.0 for bit in fp.ToBitString()]
+
+
+def _morgan_fingerprint(mol, n_bits: int = 2048, radius: int = 2):
+    if rdFingerprintGenerator is not None:
+        return _morgan_generator(n_bits=n_bits, radius=radius).GetFingerprint(mol)
+    return rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, radius, nBits=n_bits)
+
+
+@lru_cache(maxsize=16)
+def _morgan_generator(n_bits: int = 2048, radius: int = 2):
+    return rdFingerprintGenerator.GetMorganGenerator(radius=radius, fpSize=n_bits)
 
 
 def scaffold_key(smiles: str | None) -> str:
