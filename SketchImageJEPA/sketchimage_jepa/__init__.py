@@ -1,6 +1,5 @@
 """SketchImage-JEPA standalone molecular planning prototype."""
 
-from .jepa import JEPAConfig, SketchImageJEPAPredictor
 from .schema import BenchmarkExample, Candidate, TaskType
 
 __all__ = [
@@ -10,3 +9,15 @@ __all__ = [
     "SketchImageJEPAPredictor",
     "TaskType",
 ]
+
+
+def __getattr__(name: str):
+    if name == "JEPAConfig":
+        from .jepa import JEPAConfig
+
+        return JEPAConfig
+    if name == "SketchImageJEPAPredictor":
+        from .jepa import SketchImageJEPAPredictor
+
+        return SketchImageJEPAPredictor
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
