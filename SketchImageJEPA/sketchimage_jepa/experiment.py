@@ -39,7 +39,9 @@ def run_experiment(
     torch_weight_decay: float = 1e-4,
     torch_diffusion_steps: int = 16,
     torch_train_noise: float = 0.35,
+    torch_direct_loss_weight: float = 1.0,
     torch_device: str = "auto",
+    de_novo_latent_rerank_weight: float = 0.05,
 ) -> dict[str, float]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -66,11 +68,12 @@ def run_experiment(
         torch_weight_decay=torch_weight_decay,
         torch_diffusion_steps=torch_diffusion_steps,
         torch_train_noise=torch_train_noise,
+        torch_direct_loss_weight=torch_direct_loss_weight,
         torch_device=torch_device,
         seed=seed,
     ).fit(train_conditions, train_targets, train_sources)
     pred_latents = model.predict(eval_conditions, eval_sources)
-    decoder = RetrievalDecoder([example.target_smiles for example in train_examples], train_targets)
+    decoder = RetrievalDecoder([example.target_smiles for example in train_examples], train_targets, de_novo_latent_rerank_weight=de_novo_latent_rerank_weight)
     decoded = decoder.decode(pred_latents, [example.source_smiles for example in eval_examples], top_k=top_k, examples=eval_examples)
     scores_by_task = [score_candidates(example, candidates) for example, candidates in zip(eval_examples, decoded)]
     metrics = summarize_scores(scores_by_task)
@@ -96,7 +99,9 @@ def run_experiment(
         "torch_weight_decay": torch_weight_decay if backend == "torch_denoiser" else None,
         "torch_diffusion_steps": torch_diffusion_steps if backend == "torch_denoiser" else None,
         "torch_train_noise": torch_train_noise if backend == "torch_denoiser" else None,
+        "torch_direct_loss_weight": torch_direct_loss_weight if backend == "torch_denoiser" else None,
         "torch_device": getattr(model, "device_name", torch_device) if backend == "torch_denoiser" else None,
+        "de_novo_latent_rerank_weight": de_novo_latent_rerank_weight,
         "train_image_context": train_image_meta,
         "eval_image_context": eval_image_meta,
         "model_history": model.history,
@@ -143,7 +148,9 @@ def main() -> None:
     parser.add_argument("--torch-weight-decay", type=float, default=1e-4)
     parser.add_argument("--torch-diffusion-steps", type=int, default=16)
     parser.add_argument("--torch-train-noise", type=float, default=0.35)
+    parser.add_argument("--torch-direct-loss-weight", type=float, default=1.0)
     parser.add_argument("--torch-device", default="auto")
+    parser.add_argument("--de-novo-latent-rerank-weight", type=float, default=0.05)
     args = parser.parse_args()
     metrics = run_experiment(
         output_dir=args.output_dir,
@@ -167,7 +174,9 @@ def main() -> None:
         torch_weight_decay=args.torch_weight_decay,
         torch_diffusion_steps=args.torch_diffusion_steps,
         torch_train_noise=args.torch_train_noise,
+        torch_direct_loss_weight=args.torch_direct_loss_weight,
         torch_device=args.torch_device,
+        de_novo_latent_rerank_weight=args.de_novo_latent_rerank_weight,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
 
@@ -184,6 +193,7 @@ def _build_model(
     torch_weight_decay: float,
     torch_diffusion_steps: int,
     torch_train_noise: float,
+    torch_direct_loss_weight: float,
     torch_device: str,
     seed: int,
 ):
@@ -203,6 +213,7 @@ def _build_model(
                 weight_decay=torch_weight_decay,
                 diffusion_steps=torch_diffusion_steps,
                 train_noise=torch_train_noise,
+                direct_loss_weight=torch_direct_loss_weight,
                 device=torch_device,
                 seed=seed,
             )

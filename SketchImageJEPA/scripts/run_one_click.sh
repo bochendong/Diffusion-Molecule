@@ -69,7 +69,9 @@ TORCH_LR="${SKETCHIMAGE_TORCH_LR:-0.001}"
 TORCH_WEIGHT_DECAY="${SKETCHIMAGE_TORCH_WEIGHT_DECAY:-0.0001}"
 TORCH_DIFFUSION_STEPS="${SKETCHIMAGE_TORCH_DIFFUSION_STEPS:-16}"
 TORCH_TRAIN_NOISE="${SKETCHIMAGE_TORCH_TRAIN_NOISE:-0.35}"
+TORCH_DIRECT_LOSS_WEIGHT="${SKETCHIMAGE_TORCH_DIRECT_LOSS_WEIGHT:-1.0}"
 TORCH_DEVICE="${SKETCHIMAGE_TORCH_DEVICE:-auto}"
+DE_NOVO_LATENT_RERANK_WEIGHT="${SKETCHIMAGE_DE_NOVO_LATENT_RERANK_WEIGHT:-0.05}"
 TRAIN_FRACTION="${SKETCHIMAGE_TRAIN_FRACTION:-$DEFAULT_TRAIN_FRACTION}"
 SEED="${SKETCHIMAGE_SEED:-7}"
 LIMIT="${SKETCHIMAGE_LIMIT:-}"
@@ -107,8 +109,10 @@ if [[ "$BACKEND" == "torch_denoiser" ]]; then
   echo "  torch_batch_size=$TORCH_BATCH_SIZE"
   echo "  torch_lr=$TORCH_LR"
   echo "  torch_diffusion_steps=$TORCH_DIFFUSION_STEPS"
+  echo "  torch_direct_loss_weight=$TORCH_DIRECT_LOSS_WEIGHT"
   echo "  torch_device=$TORCH_DEVICE"
 fi
+echo "  de_novo_latent_rerank_weight=$DE_NOVO_LATENT_RERANK_WEIGHT"
 echo "  train_fraction=$TRAIN_FRACTION"
 echo "  seed=$SEED"
 echo "  render_image_context=$RENDER_IMAGE_CONTEXT"
@@ -179,9 +183,12 @@ if [[ "$BACKEND" == "torch_denoiser" ]]; then
     --torch-weight-decay "$TORCH_WEIGHT_DECAY"
     --torch-diffusion-steps "$TORCH_DIFFUSION_STEPS"
     --torch-train-noise "$TORCH_TRAIN_NOISE"
+    --torch-direct-loss-weight "$TORCH_DIRECT_LOSS_WEIGHT"
     --torch-device "$TORCH_DEVICE"
   )
 fi
+
+ARGS+=(--de-novo-latent-rerank-weight "$DE_NOVO_LATENT_RERANK_WEIGHT")
 
 if [[ -n "$LIMIT" ]]; then
   ARGS+=(--limit "$LIMIT")

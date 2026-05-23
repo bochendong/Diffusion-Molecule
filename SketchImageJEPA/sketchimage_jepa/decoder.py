@@ -8,9 +8,6 @@ from .chem import canonicalize_smiles, molecular_descriptors
 from .property_guidance import parse_property_targets, property_match_score
 from .schema import BenchmarkExample, Candidate, TaskType
 
-DE_NOVO_LATENT_RERANK_WEIGHT = 0.25
-
-
 class RetrievalDecoder:
     """Nearest-neighbor molecular latent decoder.
 
@@ -18,10 +15,11 @@ class RetrievalDecoder:
     molecule surface while future learned graph/SELFIES decoders are built.
     """
 
-    def __init__(self, smiles: list[str], latents: np.ndarray):
+    def __init__(self, smiles: list[str], latents: np.ndarray, de_novo_latent_rerank_weight: float = 0.05):
         self.smiles = [canonicalize_smiles(smi) or smi for smi in smiles]
         self.latents = np.asarray(latents, dtype=np.float32)
         self.descriptors = [molecular_descriptors(smi).descriptors for smi in self.smiles]
+        self.de_novo_latent_rerank_weight = float(de_novo_latent_rerank_weight)
 
     def decode(
         self,
@@ -57,7 +55,7 @@ class RetrievalDecoder:
             targets = parse_property_targets(example.instruction)
             if targets:
                 scores = np.asarray([property_match_score(desc, targets) for desc in self.descriptors], dtype=np.float32)
-                scores = scores + DE_NOVO_LATENT_RERANK_WEIGHT * latent_sims
+                scores = scores + self.de_novo_latent_rerank_weight * latent_sims
                 return np.argsort(-scores), "property_guided_retrieval"
         return np.argsort(-latent_sims), "latent_retrieval"
 
@@ -65,7 +63,7 @@ class RetrievalDecoder:
         if example and example.task_type == TaskType.DE_NOVO:
             targets = parse_property_targets(example.instruction)
             if targets:
-                return float(property_match_score(self.descriptors[int(idx)], targets) + DE_NOVO_LATENT_RERANK_WEIGHT * latent_sim)
+                return float(property_match_score(self.descriptors[int(idx)], targets) + self.de_novo_latent_rerank_weight * latent_sim)
         return float(latent_sim)
 
 

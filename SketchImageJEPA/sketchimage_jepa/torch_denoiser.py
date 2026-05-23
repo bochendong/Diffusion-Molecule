@@ -21,6 +21,7 @@ class TorchDenoiserConfig:
     weight_decay: float = 1e-4
     diffusion_steps: int = 16
     train_noise: float = 0.35
+    direct_loss_weight: float = 1.0
     device: str = "auto"
     seed: int = 7
 
@@ -40,6 +41,7 @@ class TorchLatentDenoiser:
         self.config = config or TorchDenoiserConfig()
         self.model: Any | None = None
         self.device_name = "cpu"
+        self.target_mean_: np.ndarray | None = None
         self.history: list[dict[str, float | str]] = []
 
     def fit(self, conditions: np.ndarray, target_latents: np.ndarray, source_latents: np.ndarray) -> "TorchLatentDenoiser":
@@ -52,6 +54,8 @@ class TorchLatentDenoiser:
         self.config.latent_dim = int(target_latents.shape[1])
         device = _resolve_device(torch, self.config.device)
         self.device_name = str(device)
+        target_mean = torch.mean(torch.from_numpy(target_latents), dim=0, keepdim=True).to(device)
+        self.target_mean_ = target_mean.detach().cpu().numpy().astype(np.float32)
 
         model = _DenoisingMLP(self.config.feature_dim, self.config.latent_dim, self.config.hidden_dim, nn).to(device)
         dataset = TensorDataset(
@@ -66,6 +70,8 @@ class TorchLatentDenoiser:
         history: list[dict[str, float | str]] = []
         for epoch in range(1, self.config.epochs + 1):
             total = 0.0
+            recon_total = 0.0
+            direct_total = 0.0
             seen = 0
             for batch_conditions, batch_targets, batch_sources in loader:
                 batch_conditions = batch_conditions.to(device)
@@ -82,14 +88,30 @@ class TorchLatentDenoiser:
                 delta_loss = torch.sum(((pred - batch_sources) - (batch_targets - batch_sources)) ** 2 * source_mask) / max(
                     1.0, float(torch.sum(source_mask).detach().cpu()) * self.config.latent_dim
                 )
-                loss = recon_loss + 0.2 * delta_loss
+                mean_anchor = target_mean.expand(batch_size, -1)
+                direct_input = source_mask * batch_sources + (1.0 - source_mask) * mean_anchor
+                direct_t = torch.ones(batch_size, 1, device=device)
+                direct_pred = model(direct_input, batch_conditions, batch_sources, source_mask, direct_t)
+                direct_loss = torch.mean((direct_pred - batch_targets) ** 2)
+                loss = recon_loss + 0.2 * delta_loss + self.config.direct_loss_weight * direct_loss
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 optimizer.step()
                 total += float(loss.detach().cpu()) * batch_size
+                recon_total += float(recon_loss.detach().cpu()) * batch_size
+                direct_total += float(direct_loss.detach().cpu()) * batch_size
                 seen += batch_size
-            history.append({"epoch": float(epoch), "loss": total / max(1, seen), "backend": self.backend_name, "device": self.device_name})
+            history.append(
+                {
+                    "epoch": float(epoch),
+                    "loss": total / max(1, seen),
+                    "recon_loss": recon_total / max(1, seen),
+                    "direct_loss": direct_total / max(1, seen),
+                    "backend": self.backend_name,
+                    "device": self.device_name,
+                }
+            )
 
         self.model = model
         self.history = history
@@ -107,8 +129,8 @@ class TorchLatentDenoiser:
         model = self.model.to(device)
         model.eval()
         with torch.no_grad():
-            x = torch.randn((len(conditions_tensor), self.config.latent_dim), device=device)
-            x = source_mask * (sources_tensor + 0.15 * x) + (1.0 - source_mask) * x
+            target_mean = self._target_mean_tensor(torch, device, len(conditions_tensor))
+            x = source_mask * sources_tensor + (1.0 - source_mask) * target_mean
             steps = max(1, int(self.config.diffusion_steps))
             for step in range(steps, 0, -1):
                 t = torch.full((len(conditions_tensor), 1), step / steps, device=device)
@@ -128,6 +150,15 @@ class TorchLatentDenoiser:
         if self.model is not None:
             torch, _, _, _ = _torch_deps()
             torch.save(self.model.state_dict(), out_dir / "model.pt")
+        if self.target_mean_ is not None:
+            np.save(out_dir / "target_mean.npy", self.target_mean_)
+
+    def _target_mean_tensor(self, torch: Any, device: Any, rows: int):
+        if self.target_mean_ is None:
+            mean = torch.zeros((1, self.config.latent_dim), device=device)
+        else:
+            mean = torch.from_numpy(self.target_mean_).to(device)
+        return mean.expand(rows, -1)
 
 
 def _DenoisingMLP(feature_dim: int, latent_dim: int, hidden_dim: int, nn: Any):
