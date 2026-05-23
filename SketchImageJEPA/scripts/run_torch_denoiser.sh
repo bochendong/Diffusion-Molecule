@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Run the GPU-capable PyTorch latent denoising backend with SketchMol-aligned
+# task construction and evaluation.
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+export SKETCHIMAGE_BACKEND="${SKETCHIMAGE_BACKEND:-torch_denoiser}"
+export SKETCHIMAGE_RUN_NAME="${SKETCHIMAGE_RUN_NAME:-sketchimage_torch_denoiser_$(date +%Y%m%d_%H%M%S)}"
+export SKETCHIMAGE_TORCH_DEVICE="${SKETCHIMAGE_TORCH_DEVICE:-auto}"
+export SKETCHIMAGE_TORCH_HIDDEN_DIM="${SKETCHIMAGE_TORCH_HIDDEN_DIM:-1024}"
+export SKETCHIMAGE_TORCH_EPOCHS="${SKETCHIMAGE_TORCH_EPOCHS:-25}"
+export SKETCHIMAGE_TORCH_BATCH_SIZE="${SKETCHIMAGE_TORCH_BATCH_SIZE:-128}"
+export SKETCHIMAGE_TORCH_LR="${SKETCHIMAGE_TORCH_LR:-0.001}"
+export SKETCHIMAGE_TORCH_WEIGHT_DECAY="${SKETCHIMAGE_TORCH_WEIGHT_DECAY:-0.0001}"
+export SKETCHIMAGE_TORCH_DIFFUSION_STEPS="${SKETCHIMAGE_TORCH_DIFFUSION_STEPS:-16}"
+export SKETCHIMAGE_TORCH_TRAIN_NOISE="${SKETCHIMAGE_TORCH_TRAIN_NOISE:-0.35}"
+
+echo "SketchImage-JEPA torch denoiser run"
+echo "  backend=$SKETCHIMAGE_BACKEND"
+echo "  torch_device=$SKETCHIMAGE_TORCH_DEVICE"
+echo "  torch_epochs=$SKETCHIMAGE_TORCH_EPOCHS"
+echo "  torch_hidden_dim=$SKETCHIMAGE_TORCH_HIDDEN_DIM"
+echo "  torch_batch_size=$SKETCHIMAGE_TORCH_BATCH_SIZE"
+echo "  torch_diffusion_steps=$SKETCHIMAGE_TORCH_DIFFUSION_STEPS"
+echo
+
+bash scripts/run_sketchmol_aligned.sh

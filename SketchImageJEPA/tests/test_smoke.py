@@ -54,6 +54,7 @@ class SketchImageJEPATests(unittest.TestCase):
             self.assertEqual(metrics["train_tasks"], 4.0)
             config = json.loads(Path(tmp, "run_config.json").read_text(encoding="utf-8"))
             self.assertEqual(config["preset"], "sketchmol_aligned")
+            self.assertEqual(config["backend"], "ridge")
             self.assertEqual(config["sketchmol_reference"]["condition_dim"], 256)
             self.assertEqual(config["sketchmol_reference"]["latent_dim"], 4096)
             self.assertEqual(config["sketchmol_reference"]["samples_per_condition"], 8)

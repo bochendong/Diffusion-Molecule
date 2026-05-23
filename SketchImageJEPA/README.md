@@ -59,6 +59,45 @@ The one-click scripts follow the same convention:
 SKETCHIMAGE_PYTHON_BIN=/path/to/python3 bash scripts/run_sketchmol_aligned.sh
 ```
 
+## GPU Backend
+
+The default `ridge` backend is a CPU benchmark harness. For a real GPU run,
+use the PyTorch latent denoising backend:
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_BACKEND=torch_denoiser \
+SKETCHIMAGE_PYTHON_BIN=/path/to/python-with-torch \
+SKETCHIMAGE_MOLECULE_CSV=/path/to/molecules.csv \
+bash scripts/run_torch_denoiser.sh
+```
+
+On a Slurm login node, submit the GPU job:
+
+```bash
+SKETCHIMAGE_RUN_NAME=sketchmol_aligned_torch_50k_10k_v1 \
+SKETCHIMAGE_PYTHON_BIN=/path/to/python-with-torch \
+SKETCHIMAGE_MOLECULE_CSV=/path/to/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_MAX_TASKS=10000 \
+SKETCHIMAGE_TORCH_EPOCHS=25 \
+bash scripts/submit_torch_denoiser.sh
+```
+
+Default GPU request:
+
+```text
+gpu = 1
+cpus-per-task = 8
+mem = 64G
+time = 8h
+```
+
+The torch backend trains a conditional latent denoising model and writes the
+same `metrics.json`, `predictions.csv`, `task_type_summary.csv`, and
+`run_config.json` artifacts as the CPU run. The decoder still uses the shared
+RDKit/property evaluation path, so CPU and GPU runs are directly comparable.
+
 The smoke run writes:
 
 ```text

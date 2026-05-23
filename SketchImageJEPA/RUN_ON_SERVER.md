@@ -23,6 +23,44 @@ SKETCHIMAGE_RUN_NAME=sketchmol_aligned_server_v1 \
 bash scripts/submit_sketchmol_aligned.sh
 ```
 
+## GPU Torch Backend
+
+The CPU script is still useful for fast checks. To run the GPU-capable
+conditional latent denoiser, use a Python environment with `torch`, `numpy`,
+and RDKit available, then submit:
+
+```bash
+cd "/path/to/Diffusion Molecule"
+git pull --rebase origin main
+cd SketchImageJEPA
+SKETCHIMAGE_RUN_NAME=sketchmol_aligned_torch_50k_10k_v1 \
+SKETCHIMAGE_PYTHON_BIN=/path/to/python-with-torch \
+SKETCHIMAGE_MOLECULE_CSV=/path/to/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_MAX_TASKS=10000 \
+SKETCHIMAGE_TORCH_EPOCHS=25 \
+bash scripts/submit_torch_denoiser.sh
+```
+
+Default resource request:
+
+```text
+gpu = 1
+cpus-per-task = 8
+mem = 64G
+time = 8h
+```
+
+If your cluster requires modules before the venv is active, provide them as a
+space-separated list:
+
+```bash
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4 cuda" \
+SKETCHIMAGE_PYTHON_BIN=/path/to/python-with-torch \
+SKETCHIMAGE_MOLECULE_CSV=/path/to/molecules.csv \
+bash scripts/submit_torch_denoiser.sh
+```
+
 Check the job:
 
 ```bash

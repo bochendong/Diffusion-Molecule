@@ -61,11 +61,33 @@ FEATURE_DIM="${SKETCHIMAGE_FEATURE_DIM:-$DEFAULT_FEATURE_DIM}"
 LATENT_DIM="${SKETCHIMAGE_LATENT_DIM:-$DEFAULT_LATENT_DIM}"
 TOP_K="${SKETCHIMAGE_TOP_K:-$DEFAULT_TOP_K}"
 RIDGE="${SKETCHIMAGE_RIDGE:-0.001}"
+BACKEND="${SKETCHIMAGE_BACKEND:-ridge}"
+TORCH_HIDDEN_DIM="${SKETCHIMAGE_TORCH_HIDDEN_DIM:-1024}"
+TORCH_EPOCHS="${SKETCHIMAGE_TORCH_EPOCHS:-20}"
+TORCH_BATCH_SIZE="${SKETCHIMAGE_TORCH_BATCH_SIZE:-128}"
+TORCH_LR="${SKETCHIMAGE_TORCH_LR:-0.001}"
+TORCH_WEIGHT_DECAY="${SKETCHIMAGE_TORCH_WEIGHT_DECAY:-0.0001}"
+TORCH_DIFFUSION_STEPS="${SKETCHIMAGE_TORCH_DIFFUSION_STEPS:-16}"
+TORCH_TRAIN_NOISE="${SKETCHIMAGE_TORCH_TRAIN_NOISE:-0.35}"
+TORCH_DEVICE="${SKETCHIMAGE_TORCH_DEVICE:-auto}"
 TRAIN_FRACTION="${SKETCHIMAGE_TRAIN_FRACTION:-$DEFAULT_TRAIN_FRACTION}"
 SEED="${SKETCHIMAGE_SEED:-7}"
 LIMIT="${SKETCHIMAGE_LIMIT:-}"
 RUN_TESTS="${SKETCHIMAGE_RUN_TESTS:-1}"
 RENDER_IMAGE_CONTEXT="${SKETCHIMAGE_RENDER_IMAGE_CONTEXT:-$DEFAULT_RENDER_IMAGE_CONTEXT}"
+
+if [[ "$BACKEND" == "torch_denoiser" ]]; then
+  "$PYTHON_BIN" - <<'PY'
+try:
+    import torch
+except Exception as exc:
+    raise SystemExit(f"ERROR: SKETCHIMAGE_BACKEND=torch_denoiser requires PyTorch in this Python: {exc}")
+print("torch=", torch.__version__)
+print("torch_cuda_available=", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("torch_cuda_device=", torch.cuda.get_device_name(0))
+PY
+fi
 
 echo "SketchImage-JEPA one-click run"
 echo "  python=$PYTHON_BIN"
@@ -78,6 +100,15 @@ echo "  feature_dim=$FEATURE_DIM"
 echo "  latent_dim=$LATENT_DIM"
 echo "  top_k=$TOP_K"
 echo "  ridge=$RIDGE"
+echo "  backend=$BACKEND"
+if [[ "$BACKEND" == "torch_denoiser" ]]; then
+  echo "  torch_hidden_dim=$TORCH_HIDDEN_DIM"
+  echo "  torch_epochs=$TORCH_EPOCHS"
+  echo "  torch_batch_size=$TORCH_BATCH_SIZE"
+  echo "  torch_lr=$TORCH_LR"
+  echo "  torch_diffusion_steps=$TORCH_DIFFUSION_STEPS"
+  echo "  torch_device=$TORCH_DEVICE"
+fi
 echo "  train_fraction=$TRAIN_FRACTION"
 echo "  seed=$SEED"
 echo "  render_image_context=$RENDER_IMAGE_CONTEXT"
@@ -134,9 +165,23 @@ ARGS=(
   --latent-dim "$LATENT_DIM"
   --top-k "$TOP_K"
   --ridge "$RIDGE"
+  --backend "$BACKEND"
   --seed "$SEED"
   --preset "$PRESET"
 )
+
+if [[ "$BACKEND" == "torch_denoiser" ]]; then
+  ARGS+=(
+    --torch-hidden-dim "$TORCH_HIDDEN_DIM"
+    --torch-epochs "$TORCH_EPOCHS"
+    --torch-batch-size "$TORCH_BATCH_SIZE"
+    --torch-lr "$TORCH_LR"
+    --torch-weight-decay "$TORCH_WEIGHT_DECAY"
+    --torch-diffusion-steps "$TORCH_DIFFUSION_STEPS"
+    --torch-train-noise "$TORCH_TRAIN_NOISE"
+    --torch-device "$TORCH_DEVICE"
+  )
+fi
 
 if [[ -n "$LIMIT" ]]; then
   ARGS+=(--limit "$LIMIT")

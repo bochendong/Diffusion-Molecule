@@ -8,6 +8,8 @@ from .chem import canonicalize_smiles, molecular_descriptors
 from .property_guidance import parse_property_targets, property_match_score
 from .schema import BenchmarkExample, Candidate, TaskType
 
+DE_NOVO_LATENT_RERANK_WEIGHT = 0.25
+
 
 class RetrievalDecoder:
     """Nearest-neighbor molecular latent decoder.
@@ -55,7 +57,7 @@ class RetrievalDecoder:
             targets = parse_property_targets(example.instruction)
             if targets:
                 scores = np.asarray([property_match_score(desc, targets) for desc in self.descriptors], dtype=np.float32)
-                scores = scores + 0.02 * latent_sims
+                scores = scores + DE_NOVO_LATENT_RERANK_WEIGHT * latent_sims
                 return np.argsort(-scores), "property_guided_retrieval"
         return np.argsort(-latent_sims), "latent_retrieval"
 
@@ -63,7 +65,7 @@ class RetrievalDecoder:
         if example and example.task_type == TaskType.DE_NOVO:
             targets = parse_property_targets(example.instruction)
             if targets:
-                return float(property_match_score(self.descriptors[int(idx)], targets) + 0.02 * latent_sim)
+                return float(property_match_score(self.descriptors[int(idx)], targets) + DE_NOVO_LATENT_RERANK_WEIGHT * latent_sim)
         return float(latent_sim)
 
 

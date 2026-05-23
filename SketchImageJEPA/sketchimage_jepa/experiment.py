@@ -31,6 +31,15 @@ def run_experiment(
     seed: int = 7,
     render_image_context: bool = False,
     preset: str | None = None,
+    backend: str = "ridge",
+    torch_hidden_dim: int = 1024,
+    torch_epochs: int = 20,
+    torch_batch_size: int = 128,
+    torch_lr: float = 1e-3,
+    torch_weight_decay: float = 1e-4,
+    torch_diffusion_steps: int = 16,
+    torch_train_noise: float = 0.35,
+    torch_device: str = "auto",
 ) -> dict[str, float]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -45,7 +54,21 @@ def run_experiment(
 
     train_conditions, train_targets, train_sources = matrix_from_examples(train_examples, feature_dim=feature_dim, latent_dim=latent_dim)
     eval_conditions, _, eval_sources = matrix_from_examples(eval_examples, feature_dim=feature_dim, latent_dim=latent_dim)
-    model = SketchImageJEPAPredictor(JEPAConfig(feature_dim=feature_dim, latent_dim=latent_dim, ridge=ridge)).fit(train_conditions, train_targets, train_sources)
+    model = _build_model(
+        backend=backend,
+        feature_dim=feature_dim,
+        latent_dim=latent_dim,
+        ridge=ridge,
+        torch_hidden_dim=torch_hidden_dim,
+        torch_epochs=torch_epochs,
+        torch_batch_size=torch_batch_size,
+        torch_lr=torch_lr,
+        torch_weight_decay=torch_weight_decay,
+        torch_diffusion_steps=torch_diffusion_steps,
+        torch_train_noise=torch_train_noise,
+        torch_device=torch_device,
+        seed=seed,
+    ).fit(train_conditions, train_targets, train_sources)
     pred_latents = model.predict(eval_conditions, eval_sources)
     decoder = RetrievalDecoder([example.target_smiles for example in train_examples], train_targets)
     decoded = decoder.decode(pred_latents, [example.source_smiles for example in eval_examples], top_k=top_k, examples=eval_examples)
@@ -65,6 +88,15 @@ def run_experiment(
         "seed": seed,
         "render_image_context": render_image_context,
         "preset": preset,
+        "backend": backend,
+        "torch_hidden_dim": torch_hidden_dim if backend == "torch_denoiser" else None,
+        "torch_epochs": torch_epochs if backend == "torch_denoiser" else None,
+        "torch_batch_size": torch_batch_size if backend == "torch_denoiser" else None,
+        "torch_lr": torch_lr if backend == "torch_denoiser" else None,
+        "torch_weight_decay": torch_weight_decay if backend == "torch_denoiser" else None,
+        "torch_diffusion_steps": torch_diffusion_steps if backend == "torch_denoiser" else None,
+        "torch_train_noise": torch_train_noise if backend == "torch_denoiser" else None,
+        "torch_device": getattr(model, "device_name", torch_device) if backend == "torch_denoiser" else None,
         "train_image_context": train_image_meta,
         "eval_image_context": eval_image_meta,
         "model_history": model.history,
@@ -103,6 +135,15 @@ def main() -> None:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--render-image-context", action="store_true")
     parser.add_argument("--preset", choices=["smoke", "sketchmol_aligned"], default=None)
+    parser.add_argument("--backend", choices=["ridge", "torch_denoiser"], default="ridge")
+    parser.add_argument("--torch-hidden-dim", type=int, default=1024)
+    parser.add_argument("--torch-epochs", type=int, default=20)
+    parser.add_argument("--torch-batch-size", type=int, default=128)
+    parser.add_argument("--torch-lr", type=float, default=1e-3)
+    parser.add_argument("--torch-weight-decay", type=float, default=1e-4)
+    parser.add_argument("--torch-diffusion-steps", type=int, default=16)
+    parser.add_argument("--torch-train-noise", type=float, default=0.35)
+    parser.add_argument("--torch-device", default="auto")
     args = parser.parse_args()
     metrics = run_experiment(
         output_dir=args.output_dir,
@@ -118,8 +159,55 @@ def main() -> None:
         seed=args.seed,
         render_image_context=args.render_image_context,
         preset=args.preset,
+        backend=args.backend,
+        torch_hidden_dim=args.torch_hidden_dim,
+        torch_epochs=args.torch_epochs,
+        torch_batch_size=args.torch_batch_size,
+        torch_lr=args.torch_lr,
+        torch_weight_decay=args.torch_weight_decay,
+        torch_diffusion_steps=args.torch_diffusion_steps,
+        torch_train_noise=args.torch_train_noise,
+        torch_device=args.torch_device,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
+
+
+def _build_model(
+    backend: str,
+    feature_dim: int,
+    latent_dim: int,
+    ridge: float,
+    torch_hidden_dim: int,
+    torch_epochs: int,
+    torch_batch_size: int,
+    torch_lr: float,
+    torch_weight_decay: float,
+    torch_diffusion_steps: int,
+    torch_train_noise: float,
+    torch_device: str,
+    seed: int,
+):
+    if backend == "ridge":
+        return SketchImageJEPAPredictor(JEPAConfig(feature_dim=feature_dim, latent_dim=latent_dim, ridge=ridge))
+    if backend == "torch_denoiser":
+        from .torch_denoiser import TorchDenoiserConfig, TorchLatentDenoiser
+
+        return TorchLatentDenoiser(
+            TorchDenoiserConfig(
+                feature_dim=feature_dim,
+                latent_dim=latent_dim,
+                hidden_dim=torch_hidden_dim,
+                epochs=torch_epochs,
+                batch_size=torch_batch_size,
+                lr=torch_lr,
+                weight_decay=torch_weight_decay,
+                diffusion_steps=torch_diffusion_steps,
+                train_noise=torch_train_noise,
+                device=torch_device,
+                seed=seed,
+            )
+        )
+    raise ValueError(f"Unsupported backend: {backend}")
 
 
 def _load_splits(
