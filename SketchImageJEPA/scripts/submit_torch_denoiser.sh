@@ -16,10 +16,27 @@ fi
 
 DEFAULT_SERVER_PYTHON="/scratch/bdong/venvs/sketchimage-rdkit/bin/python"
 if [[ -z "${SKETCHIMAGE_PYTHON_BIN:-}" ]]; then
-  if [[ -x "$DEFAULT_SERVER_PYTHON" ]]; then
-    export SKETCHIMAGE_PYTHON_BIN="$DEFAULT_SERVER_PYTHON"
-  else
-    export SKETCHIMAGE_PYTHON_BIN="$(command -v python3)"
+  PYTHON_CANDIDATES=(
+    "$DEFAULT_SERVER_PYTHON"
+    "/scratch/bdong/venvs/phystabmol/bin/python"
+    "/home/bdong/scratch/venvs/phystabmol/bin/python"
+    "$(command -v python3 2>/dev/null || true)"
+  )
+  for python_candidate in "${PYTHON_CANDIDATES[@]}"; do
+    if [[ -n "$python_candidate" && -x "$python_candidate" ]] && "$python_candidate" - <<'PY' >/dev/null 2>&1
+import torch
+PY
+    then
+      export SKETCHIMAGE_PYTHON_BIN="$python_candidate"
+      break
+    fi
+  done
+  if [[ -z "${SKETCHIMAGE_PYTHON_BIN:-}" ]]; then
+    if [[ -x "$DEFAULT_SERVER_PYTHON" ]]; then
+      export SKETCHIMAGE_PYTHON_BIN="$DEFAULT_SERVER_PYTHON"
+    else
+      export SKETCHIMAGE_PYTHON_BIN="$(command -v python3)"
+    fi
   fi
 fi
 
@@ -37,6 +54,10 @@ current venv first:
   MODULE_RDKIT=rdkit/2025.09.4 \\
   VENV_DIR=/scratch/bdong/venvs/sketchimage-rdkit \\
   bash scripts/setup_torch_venv.sh
+
+Or locate the existing torch venv first:
+
+  bash scripts/find_torch_python.sh
 
 If torch import only works after special modules are loaded inside Slurm, rerun
 with SKETCHIMAGE_TORCH_PREFLIGHT=0 and set SKETCHIMAGE_MODULES accordingly.

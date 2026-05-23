@@ -72,6 +72,12 @@ VENV_DIR=/scratch/bdong/venvs/sketchimage-rdkit \
 bash scripts/setup_torch_venv.sh
 ```
 
+If torch is already installed in a different venv, list candidates:
+
+```bash
+bash scripts/find_torch_python.sh
+```
+
 ```bash
 cd SketchImageJEPA
 SKETCHIMAGE_BACKEND=torch_denoiser \

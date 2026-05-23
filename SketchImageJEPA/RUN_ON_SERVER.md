@@ -39,6 +39,20 @@ VENV_DIR=/scratch/bdong/venvs/sketchimage-rdkit \
 bash scripts/setup_torch_venv.sh
 ```
 
+If torch already exists in another venv, find it first:
+
+```bash
+cd "/path/to/Diffusion Molecule/SketchImageJEPA"
+bash scripts/find_torch_python.sh
+```
+
+Then submit with the matching interpreter:
+
+```bash
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/<torch-venv>/bin/python \
+bash scripts/submit_torch_denoiser.sh
+```
+
 ```bash
 cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main
