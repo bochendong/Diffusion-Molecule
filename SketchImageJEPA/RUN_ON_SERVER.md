@@ -45,11 +45,18 @@ bash scripts/submit_torch_denoiser.sh
 Default resource request:
 
 ```text
-gpu = 1
+h100 10GB MIG = 1
 cpus-per-task = 8
 mem = 64G
 time = 8h
 ```
+
+The submit helper defaults to `SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig`. It first
+tries `nvidia_h100_80gb_hbm3_1g.10gb:1`, then `h100_1g.10gb:1`, matching the
+GPU names used by the neighboring PhysTabMol and MolPilot scripts. Override
+with `SKETCHIMAGE_GPU_PROFILE=h100_20gb_mig` or
+`SKETCHIMAGE_SLURM_GPUS=<available_gpu_name>:1` if the scheduler requires a
+different name.
 
 If your cluster requires modules before the venv is active, provide them as a
 space-separated list:

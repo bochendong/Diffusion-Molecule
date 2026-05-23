@@ -56,10 +56,24 @@ export SKETCHIMAGE_TORCH_BATCH_SIZE="${SKETCHIMAGE_TORCH_BATCH_SIZE:-128}"
 export SKETCHIMAGE_TORCH_HIDDEN_DIM="${SKETCHIMAGE_TORCH_HIDDEN_DIM:-1024}"
 export SKETCHIMAGE_TORCH_DIFFUSION_STEPS="${SKETCHIMAGE_TORCH_DIFFUSION_STEPS:-16}"
 
+GPU_PROFILE="${SKETCHIMAGE_GPU_PROFILE:-h100_10gb_mig}"
+if [[ -n "${SKETCHIMAGE_SLURM_GPUS:-}" ]]; then
+  GPU_CANDIDATES=("$SKETCHIMAGE_SLURM_GPUS")
+elif [[ "$GPU_PROFILE" == "h100_10gb_mig" ]]; then
+  GPU_CANDIDATES=("nvidia_h100_80gb_hbm3_1g.10gb:1" "h100_1g.10gb:1")
+elif [[ "$GPU_PROFILE" == "h100_20gb_mig" ]]; then
+  GPU_CANDIDATES=("h100_2g.20gb:1" "nvidia_h100_80gb_hbm3_2g.20gb:1")
+elif [[ "$GPU_PROFILE" == "h100_40gb_mig" ]]; then
+  GPU_CANDIDATES=("h100_3g.40gb:1" "nvidia_h100_80gb_hbm3_3g.40gb:1")
+elif [[ "$GPU_PROFILE" == "h100_full" ]]; then
+  GPU_CANDIDATES=("h100_80gb:1" "h100:1")
+else
+  GPU_CANDIDATES=("$GPU_PROFILE")
+fi
+
 SLURM_TIME="${SKETCHIMAGE_SLURM_TIME:-08:00:00}"
 SLURM_MEM="${SKETCHIMAGE_SLURM_MEM:-64G}"
 SLURM_CPUS="${SKETCHIMAGE_SLURM_CPUS:-8}"
-SLURM_GPUS="${SKETCHIMAGE_SLURM_GPUS:-1}"
 
 echo "Submitting SketchImage-JEPA torch denoiser run:"
 echo "  run_name=$SKETCHIMAGE_RUN_NAME"
@@ -71,15 +85,32 @@ echo "  python=$SKETCHIMAGE_PYTHON_BIN"
 echo "  torch_epochs=$SKETCHIMAGE_TORCH_EPOCHS"
 echo "  torch_batch_size=$SKETCHIMAGE_TORCH_BATCH_SIZE"
 echo "  torch_hidden_dim=$SKETCHIMAGE_TORCH_HIDDEN_DIM"
+echo "  gpu_profile=$GPU_PROFILE"
+echo "  slurm_gpu_candidates=${GPU_CANDIDATES[*]}"
 echo "  slurm_time=$SLURM_TIME"
 echo "  slurm_mem=$SLURM_MEM"
 echo "  slurm_cpus=$SLURM_CPUS"
-echo "  slurm_gpus=$SLURM_GPUS"
 
-sbatch \
-  --export=ALL \
-  --gres="gpu:${SLURM_GPUS}" \
-  --time="$SLURM_TIME" \
-  --mem="$SLURM_MEM" \
-  --cpus-per-task="$SLURM_CPUS" \
-  scripts/run_torch_denoiser.slurm.sh
+SUBMITTED=0
+for SLURM_GPUS in "${GPU_CANDIDATES[@]}"; do
+  echo "Trying sbatch with --gpus=$SLURM_GPUS"
+  if sbatch \
+    --export=ALL \
+    --gpus="$SLURM_GPUS" \
+    --time="$SLURM_TIME" \
+    --mem="$SLURM_MEM" \
+    --cpus-per-task="$SLURM_CPUS" \
+    scripts/run_torch_denoiser.slurm.sh; then
+    SUBMITTED=1
+    break
+  fi
+done
+
+if [[ "$SUBMITTED" != "1" ]]; then
+  echo "ERROR: none of the GPU candidates were accepted by Slurm." >&2
+  echo "Try checking available names with:" >&2
+  echo "  sinfo -o '%G %N' | sort -u" >&2
+  echo "Then rerun with:" >&2
+  echo "  SKETCHIMAGE_SLURM_GPUS=<available_gpu_name>:1 bash scripts/submit_torch_denoiser.sh" >&2
+  exit 2
+fi

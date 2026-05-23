@@ -87,11 +87,17 @@ bash scripts/submit_torch_denoiser.sh
 Default GPU request:
 
 ```text
-gpu = 1
+h100 10GB MIG = 1
 cpus-per-task = 8
 mem = 64G
 time = 8h
 ```
+
+The submit helper defaults to `SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig` and tries
+both GPU names used by neighboring project scripts:
+`nvidia_h100_80gb_hbm3_1g.10gb:1` and `h100_1g.10gb:1`. For a larger slice,
+set `SKETCHIMAGE_GPU_PROFILE=h100_20gb_mig` or
+`SKETCHIMAGE_SLURM_GPUS=<cluster_gpu_name>:1`.
 
 The torch backend trains a conditional latent denoising model and writes the
 same `metrics.json`, `predictions.csv`, `task_type_summary.csv`, and

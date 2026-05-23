@@ -1,6 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=sketchimage-gpu
 #SBATCH --account=def-hup-ab
+#SBATCH --gpus=nvidia_h100_80gb_hbm3_1g.10gb:1
 #SBATCH --mem=64G
 #SBATCH --time=08:00:00
 #SBATCH --cpus-per-task=8
