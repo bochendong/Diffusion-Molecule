@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .dataset import load_examples_csv, split_examples, toy_examples, write_examples_csv
 from .decoder import RetrievalDecoder
-from .features import matrix_from_examples
+from .features import MOLECULE_LATENT_VERSION, matrix_from_examples
 from .image_context import attach_rendered_image_context
 from .jepa import JEPAConfig, SketchImageJEPAPredictor
 from .report import summarize_predictions_csv
@@ -84,6 +84,7 @@ def run_experiment(
         "eval_csv": str(eval_csv) if eval_csv else None,
         "feature_dim": feature_dim,
         "latent_dim": latent_dim,
+        "molecule_latent_version": MOLECULE_LATENT_VERSION,
         "top_k": top_k,
         "ridge": ridge,
         "limit": limit,

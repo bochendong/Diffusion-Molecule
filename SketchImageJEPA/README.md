@@ -33,10 +33,11 @@ condition / source / mask / optional image statistics
 ```
 
 The first implementation is deliberately small: a numpy ridge JEPA predictor,
-hashed molecular/context features, a retrieval decoder, deterministic
-train/eval splitting, optional RDKit-rendered image context, and a toy
-SketchMol-aligned benchmark. This gives us a fast runnable surface before
-moving to a torch model and larger ChEMBL/PubChem runs.
+RDKit Morgan-fingerprint molecular latents with deterministic fallbacks,
+hashed context features, a retrieval decoder, deterministic train/eval
+splitting, optional RDKit-rendered image context, and a toy SketchMol-aligned
+benchmark. This gives us a fast runnable surface before moving to a larger
+learned decoder and ChEMBL/PubChem runs.
 
 ## Quick Start
 

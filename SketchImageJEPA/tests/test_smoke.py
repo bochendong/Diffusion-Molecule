@@ -9,7 +9,7 @@ import numpy as np
 from sketchimage_jepa.dataset import toy_examples
 from sketchimage_jepa.decoder import RetrievalDecoder
 from sketchimage_jepa.experiment import run_experiment
-from sketchimage_jepa.features import context_vector, matrix_from_examples, molecule_latent
+from sketchimage_jepa.features import MOLECULE_LATENT_VERSION, context_vector, matrix_from_examples, molecule_latent
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
 from sketchimage_jepa.report import summarize_prediction_rows
@@ -55,6 +55,7 @@ class SketchImageJEPATests(unittest.TestCase):
             config = json.loads(Path(tmp, "run_config.json").read_text(encoding="utf-8"))
             self.assertEqual(config["preset"], "sketchmol_aligned")
             self.assertEqual(config["backend"], "ridge")
+            self.assertEqual(config["molecule_latent_version"], MOLECULE_LATENT_VERSION)
             self.assertEqual(config["sketchmol_reference"]["condition_dim"], 256)
             self.assertEqual(config["sketchmol_reference"]["latent_dim"], 4096)
             self.assertEqual(config["sketchmol_reference"]["samples_per_condition"], 8)
@@ -186,6 +187,12 @@ class SketchImageJEPATests(unittest.TestCase):
         scores = score_candidates(example, candidates)
         self.assertEqual(scores[0].smiles, "CCCCCCCC")
         self.assertGreater(scores[1].target_tanimoto, scores[0].target_tanimoto)
+
+    def test_molecule_latent_shape_and_norm(self):
+        latent = molecule_latent("CCO", 64)
+        self.assertEqual(latent.shape, (64,))
+        self.assertTrue(np.isfinite(latent).all())
+        self.assertGreater(float(np.linalg.norm(latent)), 0.0)
 
 
 if __name__ == "__main__":

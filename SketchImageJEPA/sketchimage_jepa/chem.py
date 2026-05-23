@@ -110,6 +110,16 @@ def tanimoto(smiles_a: str | None, smiles_b: str | None) -> float:
     return float(DataStructs.TanimotoSimilarity(fp_a, fp_b))
 
 
+def morgan_fingerprint_bits(smiles: str | None, n_bits: int = 2048, radius: int = 2) -> list[float] | None:
+    if not smiles or not RDKIT_AVAILABLE:
+        return None
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    fp = rdMolDescriptors.GetMorganFingerprintAsBitVect(mol, radius, nBits=n_bits)
+    return [1.0 if bit == "1" else 0.0 for bit in fp.ToBitString()]
+
+
 def scaffold_key(smiles: str | None) -> str:
     if not smiles:
         return ""

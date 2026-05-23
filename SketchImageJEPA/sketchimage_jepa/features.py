@@ -9,8 +9,11 @@ from typing import Iterable
 
 import numpy as np
 
-from .chem import DESCRIPTOR_KEYS, molecular_descriptors
+from .chem import DESCRIPTOR_KEYS, molecular_descriptors, morgan_fingerprint_bits
 from .schema import BenchmarkExample
+
+MOLECULE_LATENT_VERSION = "rdkit_morgan_descriptor_v2"
+FINGERPRINT_BITS = 2048
 
 
 def stable_hash_vector(text: str, dim: int, salt: str = "") -> np.ndarray:
@@ -33,6 +36,13 @@ def molecule_latent(smiles: str | None, dim: int) -> np.ndarray:
     scales = np.asarray([500.0, 5.0, 1.0, 150.0, 5.0, 10.0, 10.0], dtype=np.float32)
     scaled = desc / scales
     vec[: min(dim, len(scaled))] = scaled[:dim]
+    fp = morgan_fingerprint_bits(rec.smiles, n_bits=min(FINGERPRINT_BITS, dim - len(scaled))) if dim > len(scaled) else None
+    if fp:
+        fp_arr = np.asarray(fp, dtype=np.float32)
+        start = min(dim, len(scaled))
+        stop = min(dim, start + len(fp_arr))
+        vec[start:stop] = fp_arr[: max(0, stop - start)]
+        return _normalize(vec)
     hashed = stable_hash_vector(rec.smiles if rec.valid else str(smiles), dim, salt="molecule")
     return _normalize(0.6 * vec + 0.4 * hashed)
 
