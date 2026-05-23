@@ -7,13 +7,15 @@ from pathlib import Path
 import numpy as np
 
 from sketchimage_jepa.dataset import toy_examples
+from sketchimage_jepa.decoder import RetrievalDecoder
 from sketchimage_jepa.experiment import run_experiment
-from sketchimage_jepa.features import context_vector, matrix_from_examples
+from sketchimage_jepa.features import context_vector, matrix_from_examples, molecule_latent
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
 from sketchimage_jepa.report import summarize_prediction_rows
-from sketchimage_jepa.schema import BenchmarkExample, TaskType
+from sketchimage_jepa.schema import BenchmarkExample, Candidate, TaskType
 from sketchimage_jepa.task_builder import build_tasks_from_molecules, load_molecule_rows
+from sketchimage_jepa.verifier import score_candidates
 
 
 class SketchImageJEPATests(unittest.TestCase):
@@ -146,6 +148,43 @@ class SketchImageJEPATests(unittest.TestCase):
         self.assertAlmostEqual(summary["de_novo"]["top1_target_tanimoto"], 0.20)
         self.assertAlmostEqual(summary["de_novo"]["mean_best_tanimoto"], 0.70)
         self.assertAlmostEqual(summary["edit"]["top1_scaffold_match"], 1.0)
+
+    def test_denovo_decoder_uses_property_guidance(self):
+        smiles = ["CCCCCCCC", "CCO", "c1ccccc1"]
+        latents = np.stack([molecule_latent(smiles_value, 16) for smiles_value in smiles])
+        example = BenchmarkExample(
+            task_id="denovo_property",
+            task_type=TaskType.DE_NOVO,
+            target_smiles="CCO",
+            instruction="Generate a molecule with MW around 40, LogP around 0.3, QED around 0.5, and TPSA around 17.",
+        )
+        decoder = RetrievalDecoder(smiles, latents)
+        candidates = decoder.decode(np.zeros((1, 16), dtype=np.float32), [None], top_k=1, examples=[example])
+        self.assertEqual(candidates[0][0].smiles, "CCO")
+        self.assertEqual(candidates[0][0].origin, "property_guided_retrieval")
+
+    def test_decoder_does_not_return_source_as_top_candidate(self):
+        smiles = ["CCO", "CCN"]
+        latents = np.stack([molecule_latent(smiles_value, 16) for smiles_value in smiles])
+        decoder = RetrievalDecoder(smiles, latents)
+        candidates = decoder.decode(latents[:1], ["CCO"], top_k=1)
+        self.assertEqual(candidates[0][0].smiles, "CCN")
+
+    def test_scoring_preserves_model_rank_without_target_oracle(self):
+        example = BenchmarkExample(
+            task_id="rank_order",
+            task_type=TaskType.EDIT,
+            source_smiles="CCO",
+            target_smiles="CCN",
+            instruction="Change the terminal hetero atom.",
+        )
+        candidates = [
+            Candidate(smiles="CCCCCCCC", origin="model", score=0.9, rank=1),
+            Candidate(smiles="CCN", origin="model", score=0.1, rank=2),
+        ]
+        scores = score_candidates(example, candidates)
+        self.assertEqual(scores[0].smiles, "CCCCCCCC")
+        self.assertGreater(scores[1].target_tanimoto, scores[0].target_tanimoto)
 
 
 if __name__ == "__main__":

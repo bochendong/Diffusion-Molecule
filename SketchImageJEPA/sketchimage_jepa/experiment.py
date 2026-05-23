@@ -48,7 +48,7 @@ def run_experiment(
     model = SketchImageJEPAPredictor(JEPAConfig(feature_dim=feature_dim, latent_dim=latent_dim, ridge=ridge)).fit(train_conditions, train_targets, train_sources)
     pred_latents = model.predict(eval_conditions, eval_sources)
     decoder = RetrievalDecoder([example.target_smiles for example in train_examples], train_targets)
-    decoded = decoder.decode(pred_latents, [example.source_smiles for example in eval_examples], top_k=top_k)
+    decoded = decoder.decode(pred_latents, [example.source_smiles for example in eval_examples], top_k=top_k, examples=eval_examples)
     scores_by_task = [score_candidates(example, candidates) for example, candidates in zip(eval_examples, decoded)]
     metrics = summarize_scores(scores_by_task)
     metrics.update({"train_tasks": float(len(train_examples)), "eval_tasks": float(len(eval_examples))})
@@ -68,6 +68,11 @@ def run_experiment(
         "train_image_context": train_image_meta,
         "eval_image_context": eval_image_meta,
         "model_history": model.history,
+        "decoder": {
+            "de_novo": "property_guided_retrieval",
+            "source_policy": "exclude_source_from_ranked_candidates",
+            "ranking": "model_order_no_target_oracle",
+        },
     }
     if preset == "sketchmol_aligned":
         run_config["sketchmol_reference"] = SKETCHMOL_REFERENCE
@@ -159,6 +164,12 @@ def _write_predictions(path: Path, examples, scores_by_task) -> None:
         "target_tanimoto",
         "scaffold_match",
         "score",
+        "property_mae",
+        "property_success",
+        "mw_abs_error",
+        "logp_abs_error",
+        "qed_abs_error",
+        "tpsa_abs_error",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -178,6 +189,12 @@ def _write_predictions(path: Path, examples, scores_by_task) -> None:
                     "target_tanimoto": f"{score.target_tanimoto:.6f}",
                     "scaffold_match": score.scaffold_match,
                     "score": f"{score.score:.6f}",
+                    "property_mae": f"{score.property_mae:.6f}",
+                    "property_success": score.property_success,
+                    "mw_abs_error": f"{score.property_errors.get('MW', 0.0):.6f}",
+                    "logp_abs_error": f"{score.property_errors.get('LogP', 0.0):.6f}",
+                    "qed_abs_error": f"{score.property_errors.get('QED', 0.0):.6f}",
+                    "tpsa_abs_error": f"{score.property_errors.get('TPSA', 0.0):.6f}",
                 }
                 writer.writerow(row)
 

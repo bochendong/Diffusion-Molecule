@@ -29,8 +29,10 @@ def summarize_predictions_csv(
 
 def summarize_prediction_rows(rows: Iterable[dict[str, str]], hit_threshold: float = 0.65) -> list[dict[str, object]]:
     by_task: dict[str, list[dict[str, str]]] = defaultdict(list)
+    has_property_metrics = False
     for row in rows:
         by_task[row["task_id"]].append(row)
+        has_property_metrics = has_property_metrics or bool(row.get("property_mae"))
 
     task_summaries: list[dict[str, object]] = []
     for task_id, task_rows in by_task.items():
@@ -47,10 +49,14 @@ def summarize_prediction_rows(rows: Iterable[dict[str, str]], hit_threshold: flo
                 "top1_scaffold_match": _bool(top1.get("scaffold_match")),
                 "best_target_tanimoto": _float(best.get("target_tanimoto")),
                 "topk_hit": _float(best.get("target_tanimoto")) >= hit_threshold,
+                "top1_property_mae": _float(top1.get("property_mae")),
+                "top1_property_success": _bool(top1.get("property_success")),
+                "best_property_mae": min(_float(row.get("property_mae")) for row in task_rows) if has_property_metrics else 0.0,
+                "topk_property_success": any(_bool(row.get("property_success")) for row in task_rows) if has_property_metrics else False,
             }
         )
 
-    return _aggregate_task_summaries(task_summaries)
+    return _aggregate_task_summaries(task_summaries, has_property_metrics=has_property_metrics)
 
 
 def main() -> None:
@@ -63,7 +69,7 @@ def main() -> None:
     print(json.dumps(summary, indent=2, sort_keys=True))
 
 
-def _aggregate_task_summaries(task_summaries: list[dict[str, object]]) -> list[dict[str, object]]:
+def _aggregate_task_summaries(task_summaries: list[dict[str, object]], has_property_metrics: bool) -> list[dict[str, object]]:
     by_type: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in task_summaries:
         by_type[str(row["task_type"])].append(row)
@@ -73,18 +79,26 @@ def _aggregate_task_summaries(task_summaries: list[dict[str, object]]) -> list[d
     for task_type in sorted(by_type):
         rows = by_type[task_type]
         n = len(rows)
-        out.append(
-            {
-                "task_type": "overall" if task_type == "__overall__" else task_type,
-                "n": n,
-                "mean_candidate_count": _mean(float(row["candidate_count"]) for row in rows),
-                "top1_validity": _mean(1.0 if row["top1_valid"] else 0.0 for row in rows),
-                "top1_target_tanimoto": _mean(float(row["top1_target_tanimoto"]) for row in rows),
-                "top1_scaffold_match": _mean(1.0 if row["top1_scaffold_match"] else 0.0 for row in rows),
-                "mean_best_tanimoto": _mean(float(row["best_target_tanimoto"]) for row in rows),
-                "topk_target_hit": _mean(1.0 if row["topk_hit"] else 0.0 for row in rows),
-            }
-        )
+        record = {
+            "task_type": "overall" if task_type == "__overall__" else task_type,
+            "n": n,
+            "mean_candidate_count": _mean(float(row["candidate_count"]) for row in rows),
+            "top1_validity": _mean(1.0 if row["top1_valid"] else 0.0 for row in rows),
+            "top1_target_tanimoto": _mean(float(row["top1_target_tanimoto"]) for row in rows),
+            "top1_scaffold_match": _mean(1.0 if row["top1_scaffold_match"] else 0.0 for row in rows),
+            "mean_best_tanimoto": _mean(float(row["best_target_tanimoto"]) for row in rows),
+            "topk_target_hit": _mean(1.0 if row["topk_hit"] else 0.0 for row in rows),
+        }
+        if has_property_metrics:
+            record.update(
+                {
+                    "top1_property_mae": _mean(float(row["top1_property_mae"]) for row in rows),
+                    "mean_best_property_mae": _mean(float(row["best_property_mae"]) for row in rows),
+                    "top1_property_success": _mean(1.0 if row["top1_property_success"] else 0.0 for row in rows),
+                    "topk_property_success": _mean(1.0 if row["topk_property_success"] else 0.0 for row in rows),
+                }
+            )
+        out.append(record)
     out.sort(key=lambda row: (row["task_type"] != "overall", str(row["task_type"])))
     return out
 
