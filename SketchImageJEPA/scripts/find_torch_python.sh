@@ -6,6 +6,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+if [[ -n "${SKETCHIMAGE_MODULES:-}" ]] && command -v module >/dev/null 2>&1; then
+  # shellcheck disable=SC2086
+  module load $SKETCHIMAGE_MODULES
+fi
+
 CANDIDATES=()
 if [[ -n "${SKETCHIMAGE_PYTHON_BIN:-}" ]]; then
   CANDIDATES+=("$SKETCHIMAGE_PYTHON_BIN")

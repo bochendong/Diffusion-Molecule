@@ -43,13 +43,14 @@ If torch already exists in another venv, find it first:
 
 ```bash
 cd "/path/to/Diffusion Molecule/SketchImageJEPA"
-bash scripts/find_torch_python.sh
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" bash scripts/find_torch_python.sh
 ```
 
 Then submit with the matching interpreter:
 
 ```bash
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/<torch-venv>/bin/python \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
 bash scripts/submit_torch_denoiser.sh
 ```
 

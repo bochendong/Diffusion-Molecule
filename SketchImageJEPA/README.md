@@ -75,7 +75,7 @@ bash scripts/setup_torch_venv.sh
 If torch is already installed in a different venv, list candidates:
 
 ```bash
-bash scripts/find_torch_python.sh
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" bash scripts/find_torch_python.sh
 ```
 
 ```bash

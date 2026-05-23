@@ -14,6 +14,11 @@ if ! command -v sbatch >/dev/null 2>&1; then
   exit 2
 fi
 
+if [[ -n "${SKETCHIMAGE_MODULES:-}" ]] && command -v module >/dev/null 2>&1; then
+  # shellcheck disable=SC2086
+  module load $SKETCHIMAGE_MODULES
+fi
+
 DEFAULT_SERVER_PYTHON="/scratch/bdong/venvs/sketchimage-rdkit/bin/python"
 if [[ -z "${SKETCHIMAGE_PYTHON_BIN:-}" ]]; then
   PYTHON_CANDIDATES=(
@@ -61,6 +66,31 @@ Or locate the existing torch venv first:
 
 If torch import only works after special modules are loaded inside Slurm, rerun
 with SKETCHIMAGE_TORCH_PREFLIGHT=0 and set SKETCHIMAGE_MODULES accordingly.
+EOF
+    exit 2
+  fi
+fi
+
+if [[ "${SKETCHIMAGE_RDKIT_PREFLIGHT:-1}" == "1" ]]; then
+  if ! "$SKETCHIMAGE_PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+import rdkit
+PY
+  then
+    cat <<EOF >&2
+ERROR: $SKETCHIMAGE_PYTHON_BIN cannot import rdkit.
+
+This cluster exposes RDKit through modules. Try:
+
+  SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \\
+  SKETCHIMAGE_PYTHON_BIN=$SKETCHIMAGE_PYTHON_BIN \\
+  bash scripts/submit_torch_denoiser.sh
+
+You can inspect candidates with:
+
+  SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" bash scripts/find_torch_python.sh
+
+If you intentionally want fallback string metrics, rerun with
+SKETCHIMAGE_RDKIT_PREFLIGHT=0.
 EOF
     exit 2
   fi
