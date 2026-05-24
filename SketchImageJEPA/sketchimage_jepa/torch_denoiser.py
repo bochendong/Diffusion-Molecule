@@ -22,6 +22,8 @@ class TorchDenoiserConfig:
     diffusion_steps: int = 16
     train_noise: float = 0.35
     direct_loss_weight: float = 1.0
+    cosine_loss_weight: float = 1.0
+    positive_loss_weight: float = 8.0
     device: str = "auto"
     seed: int = 7
 
@@ -71,7 +73,9 @@ class TorchLatentDenoiser:
         for epoch in range(1, self.config.epochs + 1):
             total = 0.0
             recon_total = 0.0
+            recon_cosine_total = 0.0
             direct_total = 0.0
+            direct_cosine_total = 0.0
             seen = 0
             for batch_conditions, batch_targets, batch_sources in loader:
                 batch_conditions = batch_conditions.to(device)
@@ -84,7 +88,9 @@ class TorchLatentDenoiser:
                 noisy = (1.0 - self.config.train_noise * t) * batch_targets + (self.config.train_noise * t) * noise
 
                 pred = model(noisy, batch_conditions, batch_sources, source_mask, t)
-                recon_loss = torch.mean((pred - batch_targets) ** 2)
+                recon_mse = _positive_weighted_mse(torch, pred, batch_targets, self.config.positive_loss_weight)
+                recon_cosine = _cosine_loss(torch, pred, batch_targets)
+                recon_loss = recon_mse + self.config.cosine_loss_weight * recon_cosine
                 delta_loss = torch.sum(((pred - batch_sources) - (batch_targets - batch_sources)) ** 2 * source_mask) / max(
                     1.0, float(torch.sum(source_mask).detach().cpu()) * self.config.latent_dim
                 )
@@ -92,22 +98,28 @@ class TorchLatentDenoiser:
                 direct_input = source_mask * batch_sources + (1.0 - source_mask) * mean_anchor
                 direct_t = torch.ones(batch_size, 1, device=device)
                 direct_pred = model(direct_input, batch_conditions, batch_sources, source_mask, direct_t)
-                direct_loss = torch.mean((direct_pred - batch_targets) ** 2)
+                direct_mse = _positive_weighted_mse(torch, direct_pred, batch_targets, self.config.positive_loss_weight)
+                direct_cosine = _cosine_loss(torch, direct_pred, batch_targets)
+                direct_loss = direct_mse + self.config.cosine_loss_weight * direct_cosine
                 loss = recon_loss + 0.2 * delta_loss + self.config.direct_loss_weight * direct_loss
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
                 optimizer.step()
                 total += float(loss.detach().cpu()) * batch_size
-                recon_total += float(recon_loss.detach().cpu()) * batch_size
-                direct_total += float(direct_loss.detach().cpu()) * batch_size
+                recon_total += float(recon_mse.detach().cpu()) * batch_size
+                recon_cosine_total += float(recon_cosine.detach().cpu()) * batch_size
+                direct_total += float(direct_mse.detach().cpu()) * batch_size
+                direct_cosine_total += float(direct_cosine.detach().cpu()) * batch_size
                 seen += batch_size
             history.append(
                 {
                     "epoch": float(epoch),
                     "loss": total / max(1, seen),
                     "recon_loss": recon_total / max(1, seen),
+                    "recon_cosine_loss": recon_cosine_total / max(1, seen),
                     "direct_loss": direct_total / max(1, seen),
+                    "direct_cosine_loss": direct_cosine_total / max(1, seen),
                     "backend": self.backend_name,
                     "device": self.device_name,
                 }
@@ -197,6 +209,17 @@ def _set_torch_seed(torch: Any, seed: int) -> None:
     torch.manual_seed(int(seed))
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(int(seed))
+
+
+def _positive_weighted_mse(torch: Any, pred: Any, target: Any, positive_weight: float):
+    weights = 1.0 + float(positive_weight) * (torch.abs(target) > 1e-8).float()
+    return torch.sum(weights * (pred - target) ** 2) / torch.clamp(torch.sum(weights), min=1.0)
+
+
+def _cosine_loss(torch: Any, pred: Any, target: Any):
+    pred_norm = torch.nn.functional.normalize(pred, p=2, dim=1, eps=1e-8)
+    target_norm = torch.nn.functional.normalize(target, p=2, dim=1, eps=1e-8)
+    return 1.0 - torch.mean(torch.sum(pred_norm * target_norm, dim=1))
 
 
 def _torch_deps():

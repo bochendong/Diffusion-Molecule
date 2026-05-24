@@ -70,6 +70,8 @@ TORCH_WEIGHT_DECAY="${SKETCHIMAGE_TORCH_WEIGHT_DECAY:-0.0001}"
 TORCH_DIFFUSION_STEPS="${SKETCHIMAGE_TORCH_DIFFUSION_STEPS:-16}"
 TORCH_TRAIN_NOISE="${SKETCHIMAGE_TORCH_TRAIN_NOISE:-0.35}"
 TORCH_DIRECT_LOSS_WEIGHT="${SKETCHIMAGE_TORCH_DIRECT_LOSS_WEIGHT:-1.0}"
+TORCH_COSINE_LOSS_WEIGHT="${SKETCHIMAGE_TORCH_COSINE_LOSS_WEIGHT:-1.0}"
+TORCH_POSITIVE_LOSS_WEIGHT="${SKETCHIMAGE_TORCH_POSITIVE_LOSS_WEIGHT:-8.0}"
 TORCH_DEVICE="${SKETCHIMAGE_TORCH_DEVICE:-auto}"
 DE_NOVO_LATENT_RERANK_WEIGHT="${SKETCHIMAGE_DE_NOVO_LATENT_RERANK_WEIGHT:-0.05}"
 TRAIN_FRACTION="${SKETCHIMAGE_TRAIN_FRACTION:-$DEFAULT_TRAIN_FRACTION}"
@@ -110,6 +112,8 @@ if [[ "$BACKEND" == "torch_denoiser" ]]; then
   echo "  torch_lr=$TORCH_LR"
   echo "  torch_diffusion_steps=$TORCH_DIFFUSION_STEPS"
   echo "  torch_direct_loss_weight=$TORCH_DIRECT_LOSS_WEIGHT"
+  echo "  torch_cosine_loss_weight=$TORCH_COSINE_LOSS_WEIGHT"
+  echo "  torch_positive_loss_weight=$TORCH_POSITIVE_LOSS_WEIGHT"
   echo "  torch_device=$TORCH_DEVICE"
 fi
 echo "  de_novo_latent_rerank_weight=$DE_NOVO_LATENT_RERANK_WEIGHT"
@@ -184,6 +188,8 @@ if [[ "$BACKEND" == "torch_denoiser" ]]; then
     --torch-diffusion-steps "$TORCH_DIFFUSION_STEPS"
     --torch-train-noise "$TORCH_TRAIN_NOISE"
     --torch-direct-loss-weight "$TORCH_DIRECT_LOSS_WEIGHT"
+    --torch-cosine-loss-weight "$TORCH_COSINE_LOSS_WEIGHT"
+    --torch-positive-loss-weight "$TORCH_POSITIVE_LOSS_WEIGHT"
     --torch-device "$TORCH_DEVICE"
   )
 fi

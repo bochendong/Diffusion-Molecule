@@ -40,6 +40,8 @@ def run_experiment(
     torch_diffusion_steps: int = 16,
     torch_train_noise: float = 0.35,
     torch_direct_loss_weight: float = 1.0,
+    torch_cosine_loss_weight: float = 1.0,
+    torch_positive_loss_weight: float = 8.0,
     torch_device: str = "auto",
     de_novo_latent_rerank_weight: float = 0.05,
 ) -> dict[str, float]:
@@ -69,6 +71,8 @@ def run_experiment(
         torch_diffusion_steps=torch_diffusion_steps,
         torch_train_noise=torch_train_noise,
         torch_direct_loss_weight=torch_direct_loss_weight,
+        torch_cosine_loss_weight=torch_cosine_loss_weight,
+        torch_positive_loss_weight=torch_positive_loss_weight,
         torch_device=torch_device,
         seed=seed,
     ).fit(train_conditions, train_targets, train_sources)
@@ -101,6 +105,8 @@ def run_experiment(
         "torch_diffusion_steps": torch_diffusion_steps if backend == "torch_denoiser" else None,
         "torch_train_noise": torch_train_noise if backend == "torch_denoiser" else None,
         "torch_direct_loss_weight": torch_direct_loss_weight if backend == "torch_denoiser" else None,
+        "torch_cosine_loss_weight": torch_cosine_loss_weight if backend == "torch_denoiser" else None,
+        "torch_positive_loss_weight": torch_positive_loss_weight if backend == "torch_denoiser" else None,
         "torch_device": getattr(model, "device_name", torch_device) if backend == "torch_denoiser" else None,
         "de_novo_latent_rerank_weight": de_novo_latent_rerank_weight,
         "train_image_context": train_image_meta,
@@ -150,6 +156,8 @@ def main() -> None:
     parser.add_argument("--torch-diffusion-steps", type=int, default=16)
     parser.add_argument("--torch-train-noise", type=float, default=0.35)
     parser.add_argument("--torch-direct-loss-weight", type=float, default=1.0)
+    parser.add_argument("--torch-cosine-loss-weight", type=float, default=1.0)
+    parser.add_argument("--torch-positive-loss-weight", type=float, default=8.0)
     parser.add_argument("--torch-device", default="auto")
     parser.add_argument("--de-novo-latent-rerank-weight", type=float, default=0.05)
     args = parser.parse_args()
@@ -176,6 +184,8 @@ def main() -> None:
         torch_diffusion_steps=args.torch_diffusion_steps,
         torch_train_noise=args.torch_train_noise,
         torch_direct_loss_weight=args.torch_direct_loss_weight,
+        torch_cosine_loss_weight=args.torch_cosine_loss_weight,
+        torch_positive_loss_weight=args.torch_positive_loss_weight,
         torch_device=args.torch_device,
         de_novo_latent_rerank_weight=args.de_novo_latent_rerank_weight,
     )
@@ -195,6 +205,8 @@ def _build_model(
     torch_diffusion_steps: int,
     torch_train_noise: float,
     torch_direct_loss_weight: float,
+    torch_cosine_loss_weight: float,
+    torch_positive_loss_weight: float,
     torch_device: str,
     seed: int,
 ):
@@ -215,6 +227,8 @@ def _build_model(
                 diffusion_steps=torch_diffusion_steps,
                 train_noise=torch_train_noise,
                 direct_loss_weight=torch_direct_loss_weight,
+                cosine_loss_weight=torch_cosine_loss_weight,
+                positive_loss_weight=torch_positive_loss_weight,
                 device=torch_device,
                 seed=seed,
             )
