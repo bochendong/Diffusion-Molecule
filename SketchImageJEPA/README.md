@@ -103,7 +103,7 @@ For faster iteration, submit a three-variant GPU sweep instead of waiting for
 one run at a time:
 
 ```bash
-SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v7_contrastive_sweep \
+SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v8_contrastive_focus \
 SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
@@ -112,11 +112,11 @@ SKETCHIMAGE_MAX_TASKS=10000 \
 bash scripts/submit_torch_sweep.sh
 ```
 
-The sweep submits `balanced`, `source_heavy`, and `latent_heavy` variants.
+The sweep submits `latent_heavy`, `contrastive_strong`, and `batch256` variants.
 Compare them after completion:
 
 ```bash
-SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v7_contrastive_sweep \
+SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v8_contrastive_focus \
 bash scripts/summarize_torch_sweep.sh
 ```
 
@@ -124,7 +124,7 @@ If the best sweep run has good top-k recall but weak top-1 ordering, run the
 CPU-only rerank diagnostic:
 
 ```bash
-bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v7_contrastive_sweep_balanced
+bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v8_contrastive_focus_latent_heavy
 ```
 
 Default GPU request:
