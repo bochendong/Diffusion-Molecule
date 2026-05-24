@@ -44,6 +44,9 @@ def run_experiment(
     torch_positive_loss_weight: float = 8.0,
     torch_device: str = "auto",
     de_novo_latent_rerank_weight: float = 0.05,
+    source_rerank_weight: float = 0.35,
+    property_rerank_weight: float = 0.25,
+    scaffold_rerank_bonus: float = 0.15,
 ) -> dict[str, float]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -77,8 +80,21 @@ def run_experiment(
         seed=seed,
     ).fit(train_conditions, train_targets, train_sources)
     pred_latents = model.predict(eval_conditions, eval_sources)
-    decoder = RetrievalDecoder([example.target_smiles for example in train_examples], train_targets, de_novo_latent_rerank_weight=de_novo_latent_rerank_weight)
-    decoded = decoder.decode(pred_latents, [example.source_smiles for example in eval_examples], top_k=top_k, examples=eval_examples)
+    decoder = RetrievalDecoder(
+        [example.target_smiles for example in train_examples],
+        train_targets,
+        de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+        source_rerank_weight=source_rerank_weight,
+        property_rerank_weight=property_rerank_weight,
+        scaffold_rerank_bonus=scaffold_rerank_bonus,
+    )
+    decoded = decoder.decode(
+        pred_latents,
+        [example.source_smiles for example in eval_examples],
+        top_k=top_k,
+        examples=eval_examples,
+        source_latents=eval_sources,
+    )
     scores_by_task = [score_candidates(example, candidates) for example, candidates in zip(eval_examples, decoded)]
     metrics = summarize_scores(scores_by_task)
     metrics.update({"train_tasks": float(len(train_examples)), "eval_tasks": float(len(eval_examples))})
@@ -109,13 +125,17 @@ def run_experiment(
         "torch_positive_loss_weight": torch_positive_loss_weight if backend == "torch_denoiser" else None,
         "torch_device": getattr(model, "device_name", torch_device) if backend == "torch_denoiser" else None,
         "de_novo_latent_rerank_weight": de_novo_latent_rerank_weight,
+        "source_rerank_weight": source_rerank_weight,
+        "property_rerank_weight": property_rerank_weight,
+        "scaffold_rerank_bonus": scaffold_rerank_bonus,
         "train_image_context": train_image_meta,
         "eval_image_context": eval_image_meta,
         "model_history": model.history,
         "decoder": {
             "de_novo": "property_guided_retrieval",
+            "source_conditioned": "task_guided_retrieval",
             "source_policy": "exclude_source_from_ranked_candidates",
-            "ranking": "model_order_no_target_oracle",
+            "ranking": "model_plus_source_property_scaffold_no_target_oracle",
         },
     }
     if preset == "sketchmol_aligned":
@@ -160,6 +180,9 @@ def main() -> None:
     parser.add_argument("--torch-positive-loss-weight", type=float, default=8.0)
     parser.add_argument("--torch-device", default="auto")
     parser.add_argument("--de-novo-latent-rerank-weight", type=float, default=0.05)
+    parser.add_argument("--source-rerank-weight", type=float, default=0.35)
+    parser.add_argument("--property-rerank-weight", type=float, default=0.25)
+    parser.add_argument("--scaffold-rerank-bonus", type=float, default=0.15)
     args = parser.parse_args()
     metrics = run_experiment(
         output_dir=args.output_dir,
@@ -188,6 +211,9 @@ def main() -> None:
         torch_positive_loss_weight=args.torch_positive_loss_weight,
         torch_device=args.torch_device,
         de_novo_latent_rerank_weight=args.de_novo_latent_rerank_weight,
+        source_rerank_weight=args.source_rerank_weight,
+        property_rerank_weight=args.property_rerank_weight,
+        scaffold_rerank_bonus=args.scaffold_rerank_bonus,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
 

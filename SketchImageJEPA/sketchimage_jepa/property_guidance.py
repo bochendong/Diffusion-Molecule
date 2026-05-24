@@ -17,7 +17,11 @@ PROPERTY_TOLERANCES = {
 def parse_property_targets(text: str) -> dict[str, float]:
     targets: dict[str, float] = {}
     for key in PROPERTY_KEYS:
-        match = re.search(rf"\b{re.escape(key)}\b\s*(?:around|=|:)?\s*([-+]?\d+(?:\.\d+)?)", text, flags=re.IGNORECASE)
+        match = re.search(
+            rf"\b{re.escape(key)}\b\s*(?:around|toward|to|=|:)?\s*([-+]?\d+(?:\.\d+)?)",
+            text,
+            flags=re.IGNORECASE,
+        )
         if match:
             targets[key] = float(match.group(1))
     return targets

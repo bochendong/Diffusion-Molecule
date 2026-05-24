@@ -12,6 +12,7 @@ from sketchimage_jepa.experiment import run_experiment
 from sketchimage_jepa.features import MOLECULE_LATENT_VERSION, context_vector, matrix_from_examples, molecule_latent
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
+from sketchimage_jepa.property_guidance import parse_property_targets
 from sketchimage_jepa.report import summarize_prediction_rows
 from sketchimage_jepa.schema import BenchmarkExample, Candidate, TaskType
 from sketchimage_jepa.task_builder import build_tasks_from_molecules, load_molecule_rows
@@ -164,6 +165,27 @@ class SketchImageJEPATests(unittest.TestCase):
         candidates = decoder.decode(np.zeros((1, 16), dtype=np.float32), [None], top_k=1, examples=[example])
         self.assertEqual(candidates[0][0].smiles, "CCO")
         self.assertEqual(candidates[0][0].origin, "property_guided_retrieval")
+
+    def test_property_parser_accepts_toward_language(self):
+        targets = parse_property_targets("Edit the source molecule to increase MW toward 45.08.")
+        self.assertAlmostEqual(targets["MW"], 45.08)
+
+    def test_source_conditioned_decoder_uses_task_guidance(self):
+        smiles = ["CCCCCCCC", "CCN"]
+        latents = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+        source_latent = np.asarray([[0.0, 1.0]], dtype=np.float32)
+        pred_latent = np.asarray([[1.0, 0.0]], dtype=np.float32)
+        example = BenchmarkExample(
+            task_id="edit_task_guidance",
+            task_type=TaskType.EDIT,
+            source_smiles="CCO",
+            target_smiles="CCN",
+            instruction="Edit the source molecule to increase MW toward 45.08. Keep the molecule structurally related to the source.",
+        )
+        decoder = RetrievalDecoder(smiles, latents, source_rerank_weight=1.0, property_rerank_weight=0.5)
+        candidates = decoder.decode(pred_latent, ["CCO"], top_k=1, examples=[example], source_latents=source_latent)
+        self.assertEqual(candidates[0][0].smiles, "CCN")
+        self.assertEqual(candidates[0][0].origin, "task_guided_retrieval")
 
     def test_decoder_does_not_return_source_as_top_candidate(self):
         smiles = ["CCO", "CCN"]
