@@ -81,6 +81,22 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/summarize_torch_sweep.sh
 ```
 
+If a run has high `mean_best_tanimoto` but low `top1_target_tanimoto`, sweep
+reranking weights on the completed `predictions.csv` without using more GPU:
+
+```bash
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v6_sweep_balanced
+```
+
+This writes:
+
+```text
+outputs/runs/<run_name>/rerank_diagnostics/rerank_sweep_summary.csv
+outputs/runs/<run_name>/rerank_diagnostics/best_task_type_summary.csv
+outputs/runs/<run_name>/rerank_diagnostics/best_reranked_predictions.csv
+```
+
 ```bash
 cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main

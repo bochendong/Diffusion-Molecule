@@ -14,6 +14,7 @@ from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
 from sketchimage_jepa.property_guidance import parse_property_targets
 from sketchimage_jepa.report import summarize_prediction_rows
+from sketchimage_jepa.rerank_predictions import rerank_predictions_csv
 from sketchimage_jepa.schema import BenchmarkExample, Candidate, TaskType
 from sketchimage_jepa.task_builder import build_tasks_from_molecules, load_molecule_rows
 from sketchimage_jepa.verifier import score_candidates
@@ -215,6 +216,74 @@ class SketchImageJEPATests(unittest.TestCase):
         self.assertEqual(latent.shape, (64,))
         self.assertTrue(np.isfinite(latent).all())
         self.assertGreater(float(np.linalg.norm(latent)), 0.0)
+
+    def test_rerank_predictions_can_promote_property_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "predictions.csv")
+            fieldnames = [
+                "task_id",
+                "task_type",
+                "instruction",
+                "source_smiles",
+                "target_smiles",
+                "rank",
+                "candidate_smiles",
+                "origin",
+                "valid",
+                "target_tanimoto",
+                "scaffold_match",
+                "score",
+                "property_mae",
+                "property_success",
+            ]
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "task_id": "d1",
+                        "task_type": "de_novo",
+                        "instruction": "Generate a molecule with MW around 40.",
+                        "source_smiles": "",
+                        "target_smiles": "CCO",
+                        "rank": "1",
+                        "candidate_smiles": "CCCCCCCC",
+                        "origin": "model",
+                        "valid": "True",
+                        "target_tanimoto": "0.1",
+                        "scaffold_match": "False",
+                        "score": "1.0",
+                        "property_mae": "1.0",
+                        "property_success": "False",
+                    }
+                )
+                writer.writerow(
+                    {
+                        "task_id": "d1",
+                        "task_type": "de_novo",
+                        "instruction": "Generate a molecule with MW around 40.",
+                        "source_smiles": "",
+                        "target_smiles": "CCO",
+                        "rank": "2",
+                        "candidate_smiles": "CCO",
+                        "origin": "model",
+                        "valid": "True",
+                        "target_tanimoto": "1.0",
+                        "scaffold_match": "True",
+                        "score": "0.0",
+                        "property_mae": "0.0",
+                        "property_success": "True",
+                    }
+                )
+            records = rerank_predictions_csv(
+                path,
+                out_dir=Path(tmp, "rerank"),
+                base_weights=[0.0],
+                source_weights=[0.0],
+                property_weights=[1.0],
+                scaffold_weights=[0.0],
+            )
+            self.assertEqual(records[0]["top1_target_tanimoto"], 1.0)
 
 
 if __name__ == "__main__":

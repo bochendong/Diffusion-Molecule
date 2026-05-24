@@ -120,6 +120,13 @@ SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v6_sweep \
 bash scripts/summarize_torch_sweep.sh
 ```
 
+If the best sweep run has good top-k recall but weak top-1 ordering, run the
+CPU-only rerank diagnostic:
+
+```bash
+bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v6_sweep_balanced
+```
+
 Default GPU request:
 
 ```text
