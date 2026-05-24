@@ -54,6 +54,33 @@ SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
 bash scripts/submit_torch_denoiser.sh
 ```
 
+To avoid waiting on one hyperparameter guess at a time, submit the three-job
+torch sweep. It launches `balanced`, `source_heavy`, and `latent_heavy`
+variants as separate 10GB MIG jobs:
+
+```bash
+cd "/path/to/Diffusion Molecule"
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v6_sweep \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_MAX_TASKS=10000 \
+bash scripts/submit_torch_sweep.sh
+```
+
+After the jobs finish:
+
+```bash
+SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v6_sweep \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/summarize_torch_sweep.sh
+```
+
 ```bash
 cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main
