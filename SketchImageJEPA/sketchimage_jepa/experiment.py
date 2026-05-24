@@ -42,6 +42,8 @@ def run_experiment(
     torch_direct_loss_weight: float = 1.0,
     torch_cosine_loss_weight: float = 1.0,
     torch_positive_loss_weight: float = 8.0,
+    torch_contrastive_loss_weight: float = 0.25,
+    torch_contrastive_temperature: float = 0.10,
     torch_device: str = "auto",
     de_novo_latent_rerank_weight: float = 0.05,
     source_rerank_weight: float = 0.35,
@@ -76,6 +78,8 @@ def run_experiment(
         torch_direct_loss_weight=torch_direct_loss_weight,
         torch_cosine_loss_weight=torch_cosine_loss_weight,
         torch_positive_loss_weight=torch_positive_loss_weight,
+        torch_contrastive_loss_weight=torch_contrastive_loss_weight,
+        torch_contrastive_temperature=torch_contrastive_temperature,
         torch_device=torch_device,
         seed=seed,
     ).fit(train_conditions, train_targets, train_sources)
@@ -123,6 +127,8 @@ def run_experiment(
         "torch_direct_loss_weight": torch_direct_loss_weight if backend == "torch_denoiser" else None,
         "torch_cosine_loss_weight": torch_cosine_loss_weight if backend == "torch_denoiser" else None,
         "torch_positive_loss_weight": torch_positive_loss_weight if backend == "torch_denoiser" else None,
+        "torch_contrastive_loss_weight": torch_contrastive_loss_weight if backend == "torch_denoiser" else None,
+        "torch_contrastive_temperature": torch_contrastive_temperature if backend == "torch_denoiser" else None,
         "torch_device": getattr(model, "device_name", torch_device) if backend == "torch_denoiser" else None,
         "de_novo_latent_rerank_weight": de_novo_latent_rerank_weight,
         "source_rerank_weight": source_rerank_weight,
@@ -178,6 +184,8 @@ def main() -> None:
     parser.add_argument("--torch-direct-loss-weight", type=float, default=1.0)
     parser.add_argument("--torch-cosine-loss-weight", type=float, default=1.0)
     parser.add_argument("--torch-positive-loss-weight", type=float, default=8.0)
+    parser.add_argument("--torch-contrastive-loss-weight", type=float, default=0.25)
+    parser.add_argument("--torch-contrastive-temperature", type=float, default=0.10)
     parser.add_argument("--torch-device", default="auto")
     parser.add_argument("--de-novo-latent-rerank-weight", type=float, default=0.05)
     parser.add_argument("--source-rerank-weight", type=float, default=0.35)
@@ -209,6 +217,8 @@ def main() -> None:
         torch_direct_loss_weight=args.torch_direct_loss_weight,
         torch_cosine_loss_weight=args.torch_cosine_loss_weight,
         torch_positive_loss_weight=args.torch_positive_loss_weight,
+        torch_contrastive_loss_weight=args.torch_contrastive_loss_weight,
+        torch_contrastive_temperature=args.torch_contrastive_temperature,
         torch_device=args.torch_device,
         de_novo_latent_rerank_weight=args.de_novo_latent_rerank_weight,
         source_rerank_weight=args.source_rerank_weight,
@@ -233,6 +243,8 @@ def _build_model(
     torch_direct_loss_weight: float,
     torch_cosine_loss_weight: float,
     torch_positive_loss_weight: float,
+    torch_contrastive_loss_weight: float,
+    torch_contrastive_temperature: float,
     torch_device: str,
     seed: int,
 ):
@@ -255,6 +267,8 @@ def _build_model(
                 direct_loss_weight=torch_direct_loss_weight,
                 cosine_loss_weight=torch_cosine_loss_weight,
                 positive_loss_weight=torch_positive_loss_weight,
+                contrastive_loss_weight=torch_contrastive_loss_weight,
+                contrastive_temperature=torch_contrastive_temperature,
                 device=torch_device,
                 seed=seed,
             )

@@ -24,6 +24,8 @@ class TorchDenoiserConfig:
     direct_loss_weight: float = 1.0
     cosine_loss_weight: float = 1.0
     positive_loss_weight: float = 8.0
+    contrastive_loss_weight: float = 0.25
+    contrastive_temperature: float = 0.10
     device: str = "auto"
     seed: int = 7
 
@@ -74,8 +76,10 @@ class TorchLatentDenoiser:
             total = 0.0
             recon_total = 0.0
             recon_cosine_total = 0.0
+            recon_contrastive_total = 0.0
             direct_total = 0.0
             direct_cosine_total = 0.0
+            direct_contrastive_total = 0.0
             seen = 0
             for batch_conditions, batch_targets, batch_sources in loader:
                 batch_conditions = batch_conditions.to(device)
@@ -90,6 +94,7 @@ class TorchLatentDenoiser:
                 pred = model(noisy, batch_conditions, batch_sources, source_mask, t)
                 recon_mse = _positive_weighted_mse(torch, pred, batch_targets, self.config.positive_loss_weight)
                 recon_cosine = _cosine_loss(torch, pred, batch_targets)
+                recon_contrastive = _batch_contrastive_loss(torch, pred, batch_targets, self.config.contrastive_temperature)
                 recon_loss = recon_mse + self.config.cosine_loss_weight * recon_cosine
                 delta_loss = torch.sum(((pred - batch_sources) - (batch_targets - batch_sources)) ** 2 * source_mask) / max(
                     1.0, float(torch.sum(source_mask).detach().cpu()) * self.config.latent_dim
@@ -100,8 +105,10 @@ class TorchLatentDenoiser:
                 direct_pred = model(direct_input, batch_conditions, batch_sources, source_mask, direct_t)
                 direct_mse = _positive_weighted_mse(torch, direct_pred, batch_targets, self.config.positive_loss_weight)
                 direct_cosine = _cosine_loss(torch, direct_pred, batch_targets)
+                direct_contrastive = _batch_contrastive_loss(torch, direct_pred, batch_targets, self.config.contrastive_temperature)
                 direct_loss = direct_mse + self.config.cosine_loss_weight * direct_cosine
-                loss = recon_loss + 0.2 * delta_loss + self.config.direct_loss_weight * direct_loss
+                contrastive_loss = 0.5 * recon_contrastive + direct_contrastive
+                loss = recon_loss + 0.2 * delta_loss + self.config.direct_loss_weight * direct_loss + self.config.contrastive_loss_weight * contrastive_loss
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
@@ -109,8 +116,10 @@ class TorchLatentDenoiser:
                 total += float(loss.detach().cpu()) * batch_size
                 recon_total += float(recon_mse.detach().cpu()) * batch_size
                 recon_cosine_total += float(recon_cosine.detach().cpu()) * batch_size
+                recon_contrastive_total += float(recon_contrastive.detach().cpu()) * batch_size
                 direct_total += float(direct_mse.detach().cpu()) * batch_size
                 direct_cosine_total += float(direct_cosine.detach().cpu()) * batch_size
+                direct_contrastive_total += float(direct_contrastive.detach().cpu()) * batch_size
                 seen += batch_size
             history.append(
                 {
@@ -118,8 +127,10 @@ class TorchLatentDenoiser:
                     "loss": total / max(1, seen),
                     "recon_loss": recon_total / max(1, seen),
                     "recon_cosine_loss": recon_cosine_total / max(1, seen),
+                    "recon_contrastive_loss": recon_contrastive_total / max(1, seen),
                     "direct_loss": direct_total / max(1, seen),
                     "direct_cosine_loss": direct_cosine_total / max(1, seen),
+                    "direct_contrastive_loss": direct_contrastive_total / max(1, seen),
                     "backend": self.backend_name,
                     "device": self.device_name,
                 }
@@ -220,6 +231,18 @@ def _cosine_loss(torch: Any, pred: Any, target: Any):
     pred_norm = torch.nn.functional.normalize(pred, p=2, dim=1, eps=1e-8)
     target_norm = torch.nn.functional.normalize(target, p=2, dim=1, eps=1e-8)
     return 1.0 - torch.mean(torch.sum(pred_norm * target_norm, dim=1))
+
+
+def _batch_contrastive_loss(torch: Any, pred: Any, target: Any, temperature: float):
+    pred_norm = torch.nn.functional.normalize(pred, p=2, dim=1, eps=1e-8)
+    target_norm = torch.nn.functional.normalize(target, p=2, dim=1, eps=1e-8)
+    logits = (pred_norm @ target_norm.T) / max(float(temperature), 1e-6)
+    target_self_similarity = target_norm @ target_norm.T
+    positive_mask = target_self_similarity > 0.999
+    positive_mask = positive_mask | torch.eye(target_norm.shape[0], dtype=torch.bool, device=target_norm.device)
+    log_probs = logits - torch.logsumexp(logits, dim=1, keepdim=True)
+    masked_log_probs = log_probs.masked_fill(~positive_mask, -1e9)
+    return -torch.mean(torch.logsumexp(masked_log_probs, dim=1))
 
 
 def _torch_deps():

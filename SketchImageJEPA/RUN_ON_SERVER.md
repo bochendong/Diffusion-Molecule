@@ -63,7 +63,7 @@ cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main
 cd SketchImageJEPA
 
-SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v6_sweep \
+SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v7_contrastive_sweep \
 SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
 SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
@@ -76,7 +76,7 @@ bash scripts/submit_torch_sweep.sh
 After the jobs finish:
 
 ```bash
-SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v6_sweep \
+SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v7_contrastive_sweep \
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/summarize_torch_sweep.sh
 ```
@@ -86,7 +86,7 @@ reranking weights on the completed `predictions.csv` without using more GPU:
 
 ```bash
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
-bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v6_sweep_balanced
+bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v7_contrastive_sweep_balanced
 ```
 
 This writes:

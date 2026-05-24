@@ -17,6 +17,7 @@ from sketchimage_jepa.report import summarize_prediction_rows
 from sketchimage_jepa.rerank_predictions import rerank_predictions_csv
 from sketchimage_jepa.schema import BenchmarkExample, Candidate, TaskType
 from sketchimage_jepa.task_builder import build_tasks_from_molecules, load_molecule_rows
+from sketchimage_jepa.torch_denoiser import TorchDenoiserConfig
 from sketchimage_jepa.verifier import score_candidates
 
 
@@ -284,6 +285,11 @@ class SketchImageJEPATests(unittest.TestCase):
                 scaffold_weights=[0.0],
             )
             self.assertEqual(records[0]["top1_target_tanimoto"], 1.0)
+
+    def test_torch_denoiser_config_has_contrastive_defaults(self):
+        config = TorchDenoiserConfig()
+        self.assertGreater(config.contrastive_loss_weight, 0.0)
+        self.assertGreater(config.contrastive_temperature, 0.0)
 
 
 if __name__ == "__main__":
