@@ -12,6 +12,7 @@ from sketchimage_jepa.experiment import run_experiment
 from sketchimage_jepa.features import MOLECULE_LATENT_VERSION, context_vector, matrix_from_examples, molecule_latent
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
+from sketchimage_jepa.paper_matrix import summarize_matrix
 from sketchimage_jepa.property_guidance import parse_property_targets
 from sketchimage_jepa.report import summarize_prediction_rows
 from sketchimage_jepa.rerank_predictions import rerank_predictions_csv
@@ -153,6 +154,45 @@ class SketchImageJEPATests(unittest.TestCase):
         self.assertAlmostEqual(summary["de_novo"]["top1_target_tanimoto"], 0.20)
         self.assertAlmostEqual(summary["de_novo"]["mean_best_tanimoto"], 0.70)
         self.assertAlmostEqual(summary["edit"]["top1_scaffold_match"], 1.0)
+
+    def test_paper_matrix_summarizes_seeded_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for seed, top1 in ((7, 0.4), (13, 0.6)):
+                run_dir = Path(tmp, f"paper_planner_best_seed{seed}")
+                run_dir.mkdir(parents=True)
+                with Path(run_dir, "task_type_summary.csv").open("w", newline="", encoding="utf-8") as handle:
+                    writer = csv.DictWriter(
+                        handle,
+                        fieldnames=[
+                            "task_type",
+                            "n",
+                            "top1_target_tanimoto",
+                            "mean_best_tanimoto",
+                            "topk_target_hit",
+                            "top1_scaffold_match",
+                            "top1_property_success",
+                            "topk_property_success",
+                        ],
+                    )
+                    writer.writeheader()
+                    writer.writerow(
+                        {
+                            "task_type": "overall",
+                            "n": "100",
+                            "top1_target_tanimoto": str(top1),
+                            "mean_best_tanimoto": "0.7",
+                            "topk_target_hit": "0.5",
+                            "top1_scaffold_match": "0.25",
+                            "top1_property_success": "0.55",
+                            "topk_property_success": "0.75",
+                        }
+                    )
+            rows, missing = summarize_matrix("paper", ["planner_best"], [7, 13, 23], run_root=tmp)
+            overall = next(row for row in rows if row["variant"] == "planner_best" and row["task_type"] == "overall")
+            self.assertEqual(overall["seeds_done"], 2)
+            self.assertEqual(overall["missing_seeds"], "23")
+            self.assertAlmostEqual(overall["top1_target_tanimoto_mean"], 0.5)
+            self.assertEqual(len(missing), 1)
 
     def test_denovo_decoder_uses_property_guidance(self):
         smiles = ["CCCCCCCC", "CCO", "c1ccccc1"]

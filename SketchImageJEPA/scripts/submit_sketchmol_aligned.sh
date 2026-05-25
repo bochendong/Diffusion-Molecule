@@ -14,6 +14,11 @@ if ! command -v sbatch >/dev/null 2>&1; then
   exit 2
 fi
 
+if [[ -n "${SKETCHIMAGE_MODULES:-}" ]] && command -v module >/dev/null 2>&1; then
+  # shellcheck disable=SC2086
+  module load $SKETCHIMAGE_MODULES
+fi
+
 DEFAULT_SERVER_PYTHON="/scratch/bdong/venvs/phystabmol/bin/python"
 if [[ -z "${SKETCHIMAGE_PYTHON_BIN:-}" ]]; then
   if [[ -x "$DEFAULT_SERVER_PYTHON" ]]; then

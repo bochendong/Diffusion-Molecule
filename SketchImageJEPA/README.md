@@ -129,6 +129,36 @@ CPU-only rerank diagnostic:
 bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v10_contrastive_temp_contrastive_cool
 ```
 
+## Paper Track
+
+The paper direction is documented in `docs/research_questions.md`. Instead of
+continuing open-ended temperature sweeps, run a controlled ablation matrix:
+
+```bash
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_MAX_TASKS=10000 \
+bash scripts/submit_paper_matrix.sh
+```
+
+The default pilot matrix runs one seed for `ridge_baseline`, `planner_best`,
+`no_contrastive`, and `no_image_context`. For a three-seed paper table, set:
+
+```bash
+SKETCHIMAGE_PAPER_MODE=full bash scripts/submit_paper_matrix.sh
+```
+
+Summarize completed matrix runs:
+
+```bash
+SKETCHIMAGE_PAPER_MODE=full \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/summarize_paper_matrix.sh
+```
+
 Default GPU request:
 
 ```text

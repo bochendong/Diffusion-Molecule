@@ -97,6 +97,48 @@ outputs/runs/<run_name>/rerank_diagnostics/best_task_type_summary.csv
 outputs/runs/<run_name>/rerank_diagnostics/best_reranked_predictions.csv
 ```
 
+## Paper Matrix
+
+For the top-conference track, switch from open-ended hyperparameter sweeps to
+the controlled ablation matrix:
+
+```bash
+cd "/path/to/Diffusion Molecule"
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_MAX_TASKS=10000 \
+bash scripts/submit_paper_matrix.sh
+```
+
+The default pilot matrix submits one seed for `ridge_baseline`,
+`planner_best`, `no_contrastive`, and `no_image_context`. Use the full matrix
+when the pilot trend is clean:
+
+```bash
+SKETCHIMAGE_PAPER_MODE=full \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_MAX_TASKS=10000 \
+bash scripts/submit_paper_matrix.sh
+```
+
+Summarize matrix results:
+
+```bash
+SKETCHIMAGE_PAPER_MODE=full \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/summarize_paper_matrix.sh
+```
+
 ```bash
 cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main
