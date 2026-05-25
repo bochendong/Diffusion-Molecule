@@ -10,8 +10,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-SWEEP_NAME="${SKETCHIMAGE_SWEEP_NAME:-sketchmol_aligned_torch_50k_10k_v8_contrastive_focus}"
-VARIANTS="${SKETCHIMAGE_SWEEP_VARIANTS:-latent_heavy contrastive_strong batch256}"
+SWEEP_NAME="${SKETCHIMAGE_SWEEP_NAME:-sketchmol_aligned_torch_50k_10k_v9_contrastive_peak}"
+VARIANTS="${SKETCHIMAGE_SWEEP_VARIANTS:-contrastive_strong contrastive_peak contrastive_cool}"
 
 export SKETCHIMAGE_GPU_PROFILE="${SKETCHIMAGE_GPU_PROFILE:-h100_10gb_mig}"
 export SKETCHIMAGE_MOLECULE_LIMIT="${SKETCHIMAGE_MOLECULE_LIMIT:-50000}"
@@ -92,6 +92,28 @@ for variant in $VARIANTS; do
         "SKETCHIMAGE_TORCH_CONTRASTIVE_LOSS_WEIGHT=0.75" \
         "SKETCHIMAGE_TORCH_CONTRASTIVE_TEMPERATURE=0.05"
       ;;
+    contrastive_peak)
+      submit_variant "$variant" \
+        "SKETCHIMAGE_DE_NOVO_LATENT_RERANK_WEIGHT=0.20" \
+        "SKETCHIMAGE_SOURCE_RERANK_WEIGHT=0.25" \
+        "SKETCHIMAGE_PROPERTY_RERANK_WEIGHT=0.20" \
+        "SKETCHIMAGE_SCAFFOLD_RERANK_BONUS=0.10" \
+        "SKETCHIMAGE_TORCH_COSINE_LOSS_WEIGHT=2.0" \
+        "SKETCHIMAGE_TORCH_POSITIVE_LOSS_WEIGHT=12.0" \
+        "SKETCHIMAGE_TORCH_CONTRASTIVE_LOSS_WEIGHT=1.00" \
+        "SKETCHIMAGE_TORCH_CONTRASTIVE_TEMPERATURE=0.05"
+      ;;
+    contrastive_cool)
+      submit_variant "$variant" \
+        "SKETCHIMAGE_DE_NOVO_LATENT_RERANK_WEIGHT=0.20" \
+        "SKETCHIMAGE_SOURCE_RERANK_WEIGHT=0.25" \
+        "SKETCHIMAGE_PROPERTY_RERANK_WEIGHT=0.20" \
+        "SKETCHIMAGE_SCAFFOLD_RERANK_BONUS=0.10" \
+        "SKETCHIMAGE_TORCH_COSINE_LOSS_WEIGHT=2.0" \
+        "SKETCHIMAGE_TORCH_POSITIVE_LOSS_WEIGHT=12.0" \
+        "SKETCHIMAGE_TORCH_CONTRASTIVE_LOSS_WEIGHT=0.75" \
+        "SKETCHIMAGE_TORCH_CONTRASTIVE_TEMPERATURE=0.04"
+      ;;
     batch256)
       submit_variant "$variant" \
         "SKETCHIMAGE_DE_NOVO_LATENT_RERANK_WEIGHT=0.20" \
@@ -106,7 +128,7 @@ for variant in $VARIANTS; do
       ;;
     *)
       echo "ERROR: unknown sweep variant '$variant'." >&2
-      echo "Supported variants: balanced source_heavy latent_heavy contrastive_strong batch256" >&2
+      echo "Supported variants: balanced source_heavy latent_heavy contrastive_strong contrastive_peak contrastive_cool batch256" >&2
       exit 2
       ;;
   esac
