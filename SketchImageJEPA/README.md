@@ -209,6 +209,42 @@ same `metrics.json`, `predictions.csv`, `task_type_summary.csv`, and
 `run_config.json` artifacts as the CPU run. The decoder still uses the shared
 RDKit/property evaluation path, so CPU and GPU runs are directly comparable.
 
+## Stage-C Generative Decoder Prototype
+
+The retrieval decoder can only rank molecules from the training target pool.
+For hard scaffold splits this creates a ceiling: if the desired scaffold is not
+already in the pool, top-k target hits collapse. The first Stage-C prototype
+keeps the current torch planner but switches the candidate surface to a hybrid
+generative decoder. It retrieves planner seeds, locally mutates them with
+RDKit-compatible edits, and ranks generated candidates using latent, source,
+property, and scaffold cues without using the hidden target.
+
+Submit the prototype on a Slurm login node:
+
+```bash
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_MAX_TASKS=10000 \
+SKETCHIMAGE_RUN_NAME=sketchmol_aligned_stage_c_generative_seed7 \
+bash scripts/submit_generative_decoder.sh
+```
+
+For the hard split, reuse the CPU-built train/eval CSVs:
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_stage_c_pilot \
+SKETCHIMAGE_PAPER_VARIANTS="planner_generative planner_generative_only no_contrastive" \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_paper_matrix.sh
+```
+
 The smoke run writes:
 
 ```text

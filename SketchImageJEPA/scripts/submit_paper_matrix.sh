@@ -26,7 +26,7 @@ fi
 if [[ -n "${SKETCHIMAGE_PAPER_VARIANTS:-}" ]]; then
   VARIANTS="$SKETCHIMAGE_PAPER_VARIANTS"
 elif [[ "$MODE" == "full" ]]; then
-  VARIANTS="ridge_baseline planner_best planner_v2 no_contrastive weak_contrastive no_image_context"
+  VARIANTS="ridge_baseline planner_best planner_v2 planner_generative planner_generative_only no_contrastive weak_contrastive no_image_context"
 else
   VARIANTS="ridge_baseline planner_best planner_v2 no_contrastive no_image_context"
 fi
@@ -59,6 +59,7 @@ submit_cpu_variant() {
     export SKETCHIMAGE_SEED="$seed"
     export SKETCHIMAGE_BACKEND="ridge"
     export SKETCHIMAGE_RENDER_IMAGE_CONTEXT="1"
+    export SKETCHIMAGE_DECODER_MODE="retrieval"
     for assignment in "$@"; do
       export "$assignment"
     done
@@ -76,6 +77,7 @@ submit_gpu_variant() {
     export SKETCHIMAGE_SEED="$seed"
     export SKETCHIMAGE_BACKEND="torch_denoiser"
     export SKETCHIMAGE_RENDER_IMAGE_CONTEXT="1"
+    export SKETCHIMAGE_DECODER_MODE="retrieval"
     export SKETCHIMAGE_DE_NOVO_LATENT_RERANK_WEIGHT="0.20"
     export SKETCHIMAGE_SOURCE_RERANK_WEIGHT="0.25"
     export SKETCHIMAGE_PROPERTY_RERANK_WEIGHT="0.20"
@@ -107,6 +109,22 @@ for seed in $SEEDS; do
           "SKETCHIMAGE_TORCH_HARD_NEGATIVE_LOSS_WEIGHT=0.25" \
           "SKETCHIMAGE_TORCH_HARD_NEGATIVE_MARGIN=0.10"
         ;;
+      planner_generative)
+        submit_gpu_variant "$variant" "$seed" \
+          "SKETCHIMAGE_DECODER_MODE=hybrid_generative" \
+          "SKETCHIMAGE_GENERATIVE_SEED_COUNT=24" \
+          "SKETCHIMAGE_GENERATIVE_MUTATION_ROUNDS=1" \
+          "SKETCHIMAGE_GENERATIVE_CANDIDATES_PER_SEED=8" \
+          "SKETCHIMAGE_GENERATIVE_NOVELTY_BONUS=0.05"
+        ;;
+      planner_generative_only)
+        submit_gpu_variant "$variant" "$seed" \
+          "SKETCHIMAGE_DECODER_MODE=generative" \
+          "SKETCHIMAGE_GENERATIVE_SEED_COUNT=24" \
+          "SKETCHIMAGE_GENERATIVE_MUTATION_ROUNDS=1" \
+          "SKETCHIMAGE_GENERATIVE_CANDIDATES_PER_SEED=8" \
+          "SKETCHIMAGE_GENERATIVE_NOVELTY_BONUS=0.05"
+        ;;
       no_contrastive)
         submit_gpu_variant "$variant" "$seed" \
           "SKETCHIMAGE_TORCH_CONTRASTIVE_LOSS_WEIGHT=0.0"
@@ -122,7 +140,7 @@ for seed in $SEEDS; do
         ;;
       *)
         echo "ERROR: unknown paper variant '$variant'." >&2
-        echo "Supported variants: ridge_baseline planner_best planner_v2 no_contrastive weak_contrastive no_image_context" >&2
+        echo "Supported variants: ridge_baseline planner_best planner_v2 planner_generative planner_generative_only no_contrastive weak_contrastive no_image_context" >&2
         exit 2
         ;;
     esac

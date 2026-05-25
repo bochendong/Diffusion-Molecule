@@ -183,6 +183,43 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/submit_paper_matrix.sh
 ```
 
+## Stage-C Generative Decoder Prototype
+
+This is the next experiment after the hard split shows the retrieval ceiling.
+It keeps the current torch planner, but sets
+`SKETCHIMAGE_DECODER_MODE=hybrid_generative`, so the decoder can mutate
+retrieved/source/template seeds into SMILES that are not restricted to the
+training target pool.
+
+Run the hard-split pilot from the login node:
+
+```bash
+cd "/scratch/bdong/projects/Diffusion-Molecule"
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=sketchmol_hard_stage_c_generative_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_generative_decoder.sh
+```
+
+Or submit it as a matrix variant against the strongest hard-split diagnostic:
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_stage_c_pilot \
+SKETCHIMAGE_PAPER_VARIANTS="planner_generative planner_generative_only no_contrastive" \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_paper_matrix.sh
+```
+
 ```bash
 cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main

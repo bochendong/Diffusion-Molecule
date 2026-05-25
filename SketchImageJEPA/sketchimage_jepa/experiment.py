@@ -9,7 +9,9 @@ from pathlib import Path
 
 from .dataset import load_examples_csv, split_examples, toy_examples, write_examples_csv
 from .decoder import RetrievalDecoder
+from .chem import canonicalize_smiles
 from .features import MOLECULE_LATENT_VERSION, matrix_from_examples
+from .generative_decoder import GenerativeMutationDecoder
 from .image_context import attach_rendered_image_context
 from .jepa import JEPAConfig, SketchImageJEPAPredictor
 from .report import summarize_predictions_csv
@@ -52,6 +54,11 @@ def run_experiment(
     source_rerank_weight: float = 0.35,
     property_rerank_weight: float = 0.25,
     scaffold_rerank_bonus: float = 0.15,
+    decoder_mode: str = "retrieval",
+    generative_seed_count: int = 24,
+    generative_mutation_rounds: int = 1,
+    generative_candidates_per_seed: int = 8,
+    generative_novelty_bonus: float = 0.05,
 ) -> dict[str, float]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -90,13 +97,18 @@ def run_experiment(
         seed=seed,
     ).fit(train_conditions, train_targets, train_sources)
     pred_latents = model.predict(eval_conditions, eval_sources)
-    decoder = RetrievalDecoder(
-        [example.target_smiles for example in train_examples],
-        train_targets,
+    decoder = _build_decoder(
+        decoder_mode=decoder_mode,
+        train_smiles=[example.target_smiles for example in train_examples],
+        train_targets=train_targets,
         de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
         source_rerank_weight=source_rerank_weight,
         property_rerank_weight=property_rerank_weight,
         scaffold_rerank_bonus=scaffold_rerank_bonus,
+        generative_seed_count=generative_seed_count,
+        generative_mutation_rounds=generative_mutation_rounds,
+        generative_candidates_per_seed=generative_candidates_per_seed,
+        generative_novelty_bonus=generative_novelty_bonus,
     )
     decoded = decoder.decode(
         pred_latents,
@@ -108,6 +120,8 @@ def run_experiment(
     scores_by_task = [score_candidates(example, candidates) for example, candidates in zip(eval_examples, decoded)]
     metrics = summarize_scores(scores_by_task)
     metrics.update({"train_tasks": float(len(train_examples)), "eval_tasks": float(len(eval_examples))})
+    train_pool = _canonical_pool(example.target_smiles for example in train_examples)
+    metrics.update(_candidate_surface_metrics(scores_by_task, train_pool))
     run_config = {
         "dataset_csv": str(dataset_csv) if dataset_csv else None,
         "train_csv": str(train_csv) if train_csv else None,
@@ -143,14 +157,21 @@ def run_experiment(
         "source_rerank_weight": source_rerank_weight,
         "property_rerank_weight": property_rerank_weight,
         "scaffold_rerank_bonus": scaffold_rerank_bonus,
+        "decoder_mode": decoder_mode,
+        "generative_seed_count": generative_seed_count if decoder_mode != "retrieval" else None,
+        "generative_mutation_rounds": generative_mutation_rounds if decoder_mode != "retrieval" else None,
+        "generative_candidates_per_seed": generative_candidates_per_seed if decoder_mode != "retrieval" else None,
+        "generative_novelty_bonus": generative_novelty_bonus if decoder_mode != "retrieval" else None,
         "train_image_context": train_image_meta,
         "eval_image_context": eval_image_meta,
         "model_history": model.history,
         "decoder": {
-            "de_novo": "property_guided_retrieval",
-            "source_conditioned": "task_guided_retrieval",
+            "mode": decoder_mode,
+            "de_novo": "property_guided_retrieval" if decoder_mode == "retrieval" else "property_guided_mutation",
+            "source_conditioned": "task_guided_retrieval" if decoder_mode == "retrieval" else "source_conditioned_mutation",
             "source_policy": "exclude_source_from_ranked_candidates",
             "ranking": "model_plus_source_property_scaffold_no_target_oracle",
+            "can_leave_training_pool": decoder_mode != "retrieval",
         },
     }
     if preset == "sketchmol_aligned":
@@ -162,7 +183,7 @@ def run_experiment(
     write_examples_csv(output_dir / "train_examples.csv", train_examples)
     write_examples_csv(output_dir / "eval_examples.csv", eval_examples)
     predictions_path = output_dir / "predictions.csv"
-    _write_predictions(predictions_path, eval_examples, scores_by_task)
+    _write_predictions(predictions_path, eval_examples, scores_by_task, train_pool=train_pool)
     summarize_predictions_csv(predictions_path, out_dir=output_dir)
     return metrics
 
@@ -203,6 +224,11 @@ def main() -> None:
     parser.add_argument("--source-rerank-weight", type=float, default=0.35)
     parser.add_argument("--property-rerank-weight", type=float, default=0.25)
     parser.add_argument("--scaffold-rerank-bonus", type=float, default=0.15)
+    parser.add_argument("--decoder-mode", choices=["retrieval", "hybrid_generative", "generative"], default="retrieval")
+    parser.add_argument("--generative-seed-count", type=int, default=24)
+    parser.add_argument("--generative-mutation-rounds", type=int, default=1)
+    parser.add_argument("--generative-candidates-per-seed", type=int, default=8)
+    parser.add_argument("--generative-novelty-bonus", type=float, default=0.05)
     args = parser.parse_args()
     metrics = run_experiment(
         output_dir=args.output_dir,
@@ -239,6 +265,11 @@ def main() -> None:
         source_rerank_weight=args.source_rerank_weight,
         property_rerank_weight=args.property_rerank_weight,
         scaffold_rerank_bonus=args.scaffold_rerank_bonus,
+        decoder_mode=args.decoder_mode,
+        generative_seed_count=args.generative_seed_count,
+        generative_mutation_rounds=args.generative_mutation_rounds,
+        generative_candidates_per_seed=args.generative_candidates_per_seed,
+        generative_novelty_bonus=args.generative_novelty_bonus,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
 
@@ -297,6 +328,45 @@ def _build_model(
     raise ValueError(f"Unsupported backend: {backend}")
 
 
+def _build_decoder(
+    decoder_mode: str,
+    train_smiles: list[str],
+    train_targets,
+    de_novo_latent_rerank_weight: float,
+    source_rerank_weight: float,
+    property_rerank_weight: float,
+    scaffold_rerank_bonus: float,
+    generative_seed_count: int,
+    generative_mutation_rounds: int,
+    generative_candidates_per_seed: int,
+    generative_novelty_bonus: float,
+):
+    if decoder_mode == "retrieval":
+        return RetrievalDecoder(
+            train_smiles,
+            train_targets,
+            de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+            source_rerank_weight=source_rerank_weight,
+            property_rerank_weight=property_rerank_weight,
+            scaffold_rerank_bonus=scaffold_rerank_bonus,
+        )
+    if decoder_mode in {"hybrid_generative", "generative"}:
+        return GenerativeMutationDecoder(
+            train_smiles,
+            train_targets,
+            de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+            source_rerank_weight=source_rerank_weight,
+            property_rerank_weight=property_rerank_weight,
+            scaffold_rerank_bonus=scaffold_rerank_bonus,
+            seed_count=generative_seed_count,
+            mutation_rounds=generative_mutation_rounds,
+            candidates_per_seed=generative_candidates_per_seed,
+            novelty_bonus=generative_novelty_bonus,
+            include_retrieval=decoder_mode == "hybrid_generative",
+        )
+    raise ValueError(f"Unsupported decoder mode: {decoder_mode}")
+
+
 def _load_splits(
     dataset_csv: str | Path | None,
     train_csv: str | Path | None,
@@ -325,7 +395,29 @@ def _load_splits(
     return train_examples, eval_examples
 
 
-def _write_predictions(path: Path, examples, scores_by_task) -> None:
+def _candidate_surface_metrics(scores_by_task, train_pool: set[str]) -> dict[str, float]:
+    n = max(1, len(scores_by_task))
+    top1 = [scores[0] for scores in scores_by_task if scores]
+    all_scores = [score for scores in scores_by_task for score in scores]
+    return {
+        "top1_generated_fraction": sum(1.0 for score in top1 if score.origin.startswith("generated")) / n,
+        "candidate_generated_fraction": sum(1.0 for score in all_scores if score.origin.startswith("generated")) / max(1, len(all_scores)),
+        "top1_train_pool_novelty": sum(1.0 for score in top1 if score.smiles not in train_pool) / n,
+        "topk_has_train_pool_novel_candidate": sum(1.0 for scores in scores_by_task if any(score.smiles not in train_pool for score in scores)) / n,
+    }
+
+
+def _canonical_pool(smiles_values) -> set[str]:
+    out: set[str] = set()
+    for smiles in smiles_values:
+        canonical = canonicalize_smiles(smiles)
+        if canonical:
+            out.add(canonical)
+    return out
+
+
+def _write_predictions(path: Path, examples, scores_by_task, train_pool: set[str] | None = None) -> None:
+    train_pool = train_pool or set()
     fieldnames = [
         "task_id",
         "task_type",
@@ -345,6 +437,7 @@ def _write_predictions(path: Path, examples, scores_by_task) -> None:
         "logp_abs_error",
         "qed_abs_error",
         "tpsa_abs_error",
+        "train_pool_member",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -370,6 +463,7 @@ def _write_predictions(path: Path, examples, scores_by_task) -> None:
                     "logp_abs_error": f"{score.property_errors.get('LogP', 0.0):.6f}",
                     "qed_abs_error": f"{score.property_errors.get('QED', 0.0):.6f}",
                     "tpsa_abs_error": f"{score.property_errors.get('TPSA', 0.0):.6f}",
+                    "train_pool_member": score.smiles in train_pool,
                 }
                 writer.writerow(row)
 
