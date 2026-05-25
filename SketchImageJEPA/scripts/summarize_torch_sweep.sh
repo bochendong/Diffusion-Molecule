@@ -6,8 +6,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-SWEEP_NAME="${SKETCHIMAGE_SWEEP_NAME:-${1:-sketchmol_aligned_torch_50k_10k_v9_contrastive_peak}}"
-VARIANTS="${SKETCHIMAGE_SWEEP_VARIANTS:-contrastive_strong contrastive_peak contrastive_cool}"
+SWEEP_NAME="${SKETCHIMAGE_SWEEP_NAME:-${1:-sketchmol_aligned_torch_50k_10k_v10_contrastive_temp}}"
+VARIANTS="${SKETCHIMAGE_SWEEP_VARIANTS:-contrastive_cool contrastive_cooler contrastive_cold}"
 PYTHON_BIN="${SKETCHIMAGE_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 
 "$PYTHON_BIN" - "$SWEEP_NAME" "$VARIANTS" <<'PY'

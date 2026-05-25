@@ -55,15 +55,15 @@ bash scripts/submit_torch_denoiser.sh
 ```
 
 To avoid waiting on one hyperparameter guess at a time, submit the three-job
-torch sweep. It launches `contrastive_strong`, `contrastive_peak`, and
-`contrastive_cool` variants as separate 10GB MIG jobs:
+torch sweep. It launches `contrastive_cool`, `contrastive_cooler`, and
+`contrastive_cold` variants as separate 10GB MIG jobs:
 
 ```bash
 cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main
 cd SketchImageJEPA
 
-SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v9_contrastive_peak \
+SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v10_contrastive_temp \
 SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
 SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
@@ -76,7 +76,7 @@ bash scripts/submit_torch_sweep.sh
 After the jobs finish:
 
 ```bash
-SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v9_contrastive_peak \
+SKETCHIMAGE_SWEEP_NAME=sketchmol_aligned_torch_50k_10k_v10_contrastive_temp \
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/summarize_torch_sweep.sh
 ```
@@ -86,7 +86,7 @@ reranking weights on the completed `predictions.csv` without using more GPU:
 
 ```bash
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
-bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v9_contrastive_peak_contrastive_strong
+bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v10_contrastive_temp_contrastive_cool
 ```
 
 This writes:
