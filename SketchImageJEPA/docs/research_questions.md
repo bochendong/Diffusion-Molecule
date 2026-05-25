@@ -84,9 +84,11 @@ Run a paper ablation matrix before further temperature sweeps:
 
 1. `ridge_baseline`: existing SketchMol-aligned CPU baseline.
 2. `planner_best`: best current contrastive planner.
-3. `no_contrastive`: same planner without contrastive loss.
-4. `weak_contrastive`: weaker contrastive setting.
-5. `no_image_context`: best planner without rendered image context.
+3. `planner_v2`: stronger edit planner with explicit delta and hard-negative
+   losses.
+4. `no_contrastive`: same planner without contrastive loss.
+5. `weak_contrastive`: weaker contrastive setting.
+6. `no_image_context`: best planner without rendered image context.
 
 The pilot matrix uses one seed to check direction. The full matrix uses three
 seeds and is the first paper-facing comparison table.
@@ -101,3 +103,11 @@ Stop treating hyperparameter tuning as the main work once:
 
 After that, move effort to the generative decoder and stronger external
 benchmarks.
+
+## Current Implementation Plan
+
+1. Audit the easy split to quantify nearest-neighbor shortcuts.
+2. Build a scaffold/nearest-neighbor controlled hard split.
+3. Run the paper matrix on both the easy split and the hard split.
+4. Promote `planner_v2` only if it improves over `planner_best` on the hard
+   split, not just on the easy split.

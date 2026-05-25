@@ -7,11 +7,13 @@ from pathlib import Path
 import numpy as np
 
 from sketchimage_jepa.dataset import toy_examples
+from sketchimage_jepa.benchmark_audit import audit_split
 from sketchimage_jepa.decoder import RetrievalDecoder
 from sketchimage_jepa.experiment import run_experiment
 from sketchimage_jepa.features import MOLECULE_LATENT_VERSION, context_vector, matrix_from_examples, molecule_latent
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
+from sketchimage_jepa.hard_split import build_hard_split
 from sketchimage_jepa.paper_matrix import summarize_matrix
 from sketchimage_jepa.property_guidance import parse_property_targets
 from sketchimage_jepa.report import summarize_prediction_rows
@@ -194,6 +196,25 @@ class SketchImageJEPATests(unittest.TestCase):
             self.assertAlmostEqual(overall["top1_target_tanimoto_mean"], 0.5)
             self.assertEqual(len(missing), 1)
 
+    def test_benchmark_audit_detects_train_nearest_shortcut(self):
+        examples = toy_examples()
+        train = examples[:4]
+        eval_examples = examples[4:]
+        rows, summary = audit_split(train, eval_examples)
+        self.assertEqual(len(rows), 2)
+        overall = next(row for row in summary if row["task_type"] == "overall")
+        self.assertIn("mean_nearest_train_target_tanimoto", overall)
+        self.assertGreaterEqual(overall["mean_nearest_train_target_tanimoto"], 0.0)
+
+    def test_hard_split_writes_non_overlapping_eval(self):
+        train, eval_examples, summary = build_hard_split(toy_examples(), eval_fraction=0.33, seed=5, max_train_target_tanimoto=0.95)
+        self.assertGreater(len(train), 0)
+        self.assertGreater(len(eval_examples), 0)
+        self.assertIn("audit_summary", summary)
+        train_ids = {example.task_id for example in train}
+        eval_ids = {example.task_id for example in eval_examples}
+        self.assertFalse(train_ids & eval_ids)
+
     def test_denovo_decoder_uses_property_guidance(self):
         smiles = ["CCCCCCCC", "CCO", "c1ccccc1"]
         latents = np.stack([molecule_latent(smiles_value, 16) for smiles_value in smiles])
@@ -330,6 +351,8 @@ class SketchImageJEPATests(unittest.TestCase):
         config = TorchDenoiserConfig()
         self.assertGreater(config.contrastive_loss_weight, 0.0)
         self.assertGreater(config.contrastive_temperature, 0.0)
+        self.assertGreater(config.delta_loss_weight, 0.0)
+        self.assertEqual(config.hard_negative_loss_weight, 0.0)
 
 
 if __name__ == "__main__":

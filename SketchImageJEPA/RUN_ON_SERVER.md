@@ -117,8 +117,9 @@ bash scripts/submit_paper_matrix.sh
 ```
 
 The default pilot matrix submits one seed for `ridge_baseline`,
-`planner_best`, `no_contrastive`, and `no_image_context`. Use the full matrix
-when the pilot trend is clean:
+`planner_best`, `planner_v2`, `no_contrastive`, and `no_image_context`.
+`planner_v2` adds explicit edit-delta and hard-negative losses. Use the full
+matrix when the pilot trend is clean:
 
 ```bash
 SKETCHIMAGE_PAPER_MODE=full \
@@ -137,6 +138,37 @@ Summarize matrix results:
 SKETCHIMAGE_PAPER_MODE=full \
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/summarize_paper_matrix.sh
+```
+
+Audit an existing run to quantify nearest-neighbor shortcut difficulty:
+
+```bash
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/audit_benchmark.sh outputs/runs/sketchmol_aligned_paper_pilot_ridge_baseline_seed7
+```
+
+Build a hard scaffold/nearest-neighbor-controlled split:
+
+```bash
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_MAX_TASKS=10000 \
+SKETCHIMAGE_HARD_SPLIT_NAME=sketchmol_hard_seed7 \
+bash scripts/build_hard_split.sh
+```
+
+Run the paper matrix on that hard split:
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_paper_pilot \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_paper_matrix.sh
 ```
 
 ```bash

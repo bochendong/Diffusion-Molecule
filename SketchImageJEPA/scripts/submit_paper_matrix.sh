@@ -26,9 +26,9 @@ fi
 if [[ -n "${SKETCHIMAGE_PAPER_VARIANTS:-}" ]]; then
   VARIANTS="$SKETCHIMAGE_PAPER_VARIANTS"
 elif [[ "$MODE" == "full" ]]; then
-  VARIANTS="ridge_baseline planner_best no_contrastive weak_contrastive no_image_context"
+  VARIANTS="ridge_baseline planner_best planner_v2 no_contrastive weak_contrastive no_image_context"
 else
-  VARIANTS="ridge_baseline planner_best no_contrastive no_image_context"
+  VARIANTS="ridge_baseline planner_best planner_v2 no_contrastive no_image_context"
 fi
 
 export SKETCHIMAGE_MODULES="${SKETCHIMAGE_MODULES:-gcc rdkit/2025.09.4}"
@@ -101,6 +101,12 @@ for seed in $SEEDS; do
       planner_best)
         submit_gpu_variant "$variant" "$seed"
         ;;
+      planner_v2)
+        submit_gpu_variant "$variant" "$seed" \
+          "SKETCHIMAGE_TORCH_DELTA_LOSS_WEIGHT=0.5" \
+          "SKETCHIMAGE_TORCH_HARD_NEGATIVE_LOSS_WEIGHT=0.25" \
+          "SKETCHIMAGE_TORCH_HARD_NEGATIVE_MARGIN=0.10"
+        ;;
       no_contrastive)
         submit_gpu_variant "$variant" "$seed" \
           "SKETCHIMAGE_TORCH_CONTRASTIVE_LOSS_WEIGHT=0.0"
@@ -116,7 +122,7 @@ for seed in $SEEDS; do
         ;;
       *)
         echo "ERROR: unknown paper variant '$variant'." >&2
-        echo "Supported variants: ridge_baseline planner_best no_contrastive weak_contrastive no_image_context" >&2
+        echo "Supported variants: ridge_baseline planner_best planner_v2 no_contrastive weak_contrastive no_image_context" >&2
         exit 2
         ;;
     esac

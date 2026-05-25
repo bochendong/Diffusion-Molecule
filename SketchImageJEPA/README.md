@@ -145,7 +145,9 @@ bash scripts/submit_paper_matrix.sh
 ```
 
 The default pilot matrix runs one seed for `ridge_baseline`, `planner_best`,
-`no_contrastive`, and `no_image_context`. For a three-seed paper table, set:
+`planner_v2`, `no_contrastive`, and `no_image_context`. `planner_v2` adds an
+explicit edit-delta loss and hard-negative loss. For a three-seed paper table,
+set:
 
 ```bash
 SKETCHIMAGE_PAPER_MODE=full bash scripts/submit_paper_matrix.sh
@@ -157,6 +159,32 @@ Summarize completed matrix runs:
 SKETCHIMAGE_PAPER_MODE=full \
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/summarize_paper_matrix.sh
+```
+
+Audit an existing run for train-set shortcut difficulty:
+
+```bash
+bash scripts/audit_benchmark.sh outputs/runs/sketchmol_aligned_paper_pilot_ridge_baseline_seed7
+```
+
+Build a hard split before running the matrix:
+
+```bash
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_MAX_TASKS=10000 \
+SKETCHIMAGE_HARD_SPLIT_NAME=sketchmol_hard_seed7 \
+bash scripts/build_hard_split.sh
+```
+
+Then run the paper matrix on the hard split:
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_paper_pilot \
+bash scripts/submit_paper_matrix.sh
 ```
 
 Default GPU request:

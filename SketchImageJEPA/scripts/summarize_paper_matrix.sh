@@ -26,9 +26,9 @@ fi
 if [[ -n "${SKETCHIMAGE_PAPER_VARIANTS:-}" ]]; then
   VARIANTS="$SKETCHIMAGE_PAPER_VARIANTS"
 elif [[ "$MODE" == "full" ]]; then
-  VARIANTS="ridge_baseline planner_best no_contrastive weak_contrastive no_image_context"
+  VARIANTS="ridge_baseline planner_best planner_v2 no_contrastive weak_contrastive no_image_context"
 else
-  VARIANTS="ridge_baseline planner_best no_contrastive no_image_context"
+  VARIANTS="ridge_baseline planner_best planner_v2 no_contrastive no_image_context"
 fi
 
 PYTHON_BIN="${SKETCHIMAGE_PYTHON_BIN:-${PYTHON_BIN:-python3}}"

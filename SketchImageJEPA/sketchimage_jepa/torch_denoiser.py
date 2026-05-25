@@ -22,10 +22,13 @@ class TorchDenoiserConfig:
     diffusion_steps: int = 16
     train_noise: float = 0.35
     direct_loss_weight: float = 1.0
+    delta_loss_weight: float = 0.2
     cosine_loss_weight: float = 1.0
     positive_loss_weight: float = 8.0
     contrastive_loss_weight: float = 0.25
     contrastive_temperature: float = 0.10
+    hard_negative_loss_weight: float = 0.0
+    hard_negative_margin: float = 0.10
     device: str = "auto"
     seed: int = 7
 
@@ -77,9 +80,11 @@ class TorchLatentDenoiser:
             recon_total = 0.0
             recon_cosine_total = 0.0
             recon_contrastive_total = 0.0
+            delta_total = 0.0
             direct_total = 0.0
             direct_cosine_total = 0.0
             direct_contrastive_total = 0.0
+            hard_negative_total = 0.0
             seen = 0
             for batch_conditions, batch_targets, batch_sources in loader:
                 batch_conditions = batch_conditions.to(device)
@@ -108,7 +113,16 @@ class TorchLatentDenoiser:
                 direct_contrastive = _batch_contrastive_loss(torch, direct_pred, batch_targets, self.config.contrastive_temperature)
                 direct_loss = direct_mse + self.config.cosine_loss_weight * direct_cosine
                 contrastive_loss = 0.5 * recon_contrastive + direct_contrastive
-                loss = recon_loss + 0.2 * delta_loss + self.config.direct_loss_weight * direct_loss + self.config.contrastive_loss_weight * contrastive_loss
+                hard_negative_loss = 0.5 * _batch_hard_negative_loss(torch, pred, batch_targets, self.config.hard_negative_margin) + _batch_hard_negative_loss(
+                    torch, direct_pred, batch_targets, self.config.hard_negative_margin
+                )
+                loss = (
+                    recon_loss
+                    + self.config.delta_loss_weight * delta_loss
+                    + self.config.direct_loss_weight * direct_loss
+                    + self.config.contrastive_loss_weight * contrastive_loss
+                    + self.config.hard_negative_loss_weight * hard_negative_loss
+                )
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
@@ -117,9 +131,11 @@ class TorchLatentDenoiser:
                 recon_total += float(recon_mse.detach().cpu()) * batch_size
                 recon_cosine_total += float(recon_cosine.detach().cpu()) * batch_size
                 recon_contrastive_total += float(recon_contrastive.detach().cpu()) * batch_size
+                delta_total += float(delta_loss.detach().cpu()) * batch_size
                 direct_total += float(direct_mse.detach().cpu()) * batch_size
                 direct_cosine_total += float(direct_cosine.detach().cpu()) * batch_size
                 direct_contrastive_total += float(direct_contrastive.detach().cpu()) * batch_size
+                hard_negative_total += float(hard_negative_loss.detach().cpu()) * batch_size
                 seen += batch_size
             history.append(
                 {
@@ -128,9 +144,11 @@ class TorchLatentDenoiser:
                     "recon_loss": recon_total / max(1, seen),
                     "recon_cosine_loss": recon_cosine_total / max(1, seen),
                     "recon_contrastive_loss": recon_contrastive_total / max(1, seen),
+                    "delta_loss": delta_total / max(1, seen),
                     "direct_loss": direct_total / max(1, seen),
                     "direct_cosine_loss": direct_cosine_total / max(1, seen),
                     "direct_contrastive_loss": direct_contrastive_total / max(1, seen),
+                    "hard_negative_loss": hard_negative_total / max(1, seen),
                     "backend": self.backend_name,
                     "device": self.device_name,
                 }
@@ -243,6 +261,21 @@ def _batch_contrastive_loss(torch: Any, pred: Any, target: Any, temperature: flo
     log_probs = logits - torch.logsumexp(logits, dim=1, keepdim=True)
     masked_log_probs = log_probs.masked_fill(~positive_mask, -1e9)
     return -torch.mean(torch.logsumexp(masked_log_probs, dim=1))
+
+
+def _batch_hard_negative_loss(torch: Any, pred: Any, target: Any, margin: float):
+    if int(target.shape[0]) < 2:
+        return torch.zeros((), dtype=pred.dtype, device=pred.device)
+    pred_norm = torch.nn.functional.normalize(pred, p=2, dim=1, eps=1e-8)
+    target_norm = torch.nn.functional.normalize(target, p=2, dim=1, eps=1e-8)
+    pred_target_sim = pred_norm @ target_norm.T
+    positive = torch.diag(pred_target_sim)
+    target_self_similarity = target_norm @ target_norm.T
+    eye = torch.eye(target_norm.shape[0], dtype=torch.bool, device=target_norm.device)
+    target_self_similarity = target_self_similarity.masked_fill(eye, -1e9)
+    hard_negative_idx = torch.argmax(target_self_similarity, dim=1)
+    hard_negative = pred_target_sim[torch.arange(target_norm.shape[0], device=target_norm.device), hard_negative_idx]
+    return torch.mean(torch.relu(float(margin) + hard_negative - positive))
 
 
 def _torch_deps():
