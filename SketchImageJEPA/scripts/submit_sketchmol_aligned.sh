@@ -55,6 +55,8 @@ check_csv_exists "SKETCHIMAGE_DATASET_CSV" "${SKETCHIMAGE_DATASET_CSV:-}"
 check_csv_exists "SKETCHIMAGE_TRAIN_CSV" "${SKETCHIMAGE_TRAIN_CSV:-}"
 check_csv_exists "SKETCHIMAGE_EVAL_CSV" "${SKETCHIMAGE_EVAL_CSV:-}"
 
+mkdir -p outputs/logs
+
 export SKETCHIMAGE_RUN_NAME="${SKETCHIMAGE_RUN_NAME:-sketchimage_aligned_${SKETCHIMAGE_MOLECULE_LIMIT:-10000}_$(date +%Y%m%d_%H%M%S)}"
 export SKETCHIMAGE_MOLECULE_LIMIT="${SKETCHIMAGE_MOLECULE_LIMIT:-10000}"
 export SKETCHIMAGE_MAX_TASKS="${SKETCHIMAGE_MAX_TASKS:-5000}"
@@ -79,4 +81,6 @@ sbatch \
   --time="$SLURM_TIME" \
   --mem="$SLURM_MEM" \
   --cpus-per-task="$SLURM_CPUS" \
+  --output="./outputs/logs/sketchimage-cpu-%j.log" \
+  --error="./outputs/logs/sketchimage-cpu-%j.log" \
   scripts/run_sketchmol_aligned.slurm.sh

@@ -164,7 +164,7 @@ bash scripts/summarize_paper_matrix.sh
 Audit an existing run for train-set shortcut difficulty:
 
 ```bash
-bash scripts/audit_benchmark.sh outputs/runs/sketchmol_aligned_paper_pilot_ridge_baseline_seed7
+bash scripts/submit_audit_benchmark.sh outputs/runs/sketchmol_aligned_paper_pilot_ridge_baseline_seed7
 ```
 
 Build a hard split before running the matrix:
@@ -175,7 +175,7 @@ SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/d
 SKETCHIMAGE_MOLECULE_LIMIT=50000 \
 SKETCHIMAGE_MAX_TASKS=10000 \
 SKETCHIMAGE_HARD_SPLIT_NAME=sketchmol_hard_seed7 \
-bash scripts/build_hard_split.sh
+bash scripts/submit_hard_split.sh
 ```
 
 Then run the paper matrix on the hard split:
@@ -186,6 +186,8 @@ SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
 SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_paper_pilot \
 bash scripts/submit_paper_matrix.sh
 ```
+
+New Slurm logs written by submit helpers go to `outputs/logs/`.
 
 Default GPU request:
 

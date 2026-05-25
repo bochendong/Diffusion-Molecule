@@ -120,6 +120,8 @@ check_csv_exists "SKETCHIMAGE_DATASET_CSV" "${SKETCHIMAGE_DATASET_CSV:-}"
 check_csv_exists "SKETCHIMAGE_TRAIN_CSV" "${SKETCHIMAGE_TRAIN_CSV:-}"
 check_csv_exists "SKETCHIMAGE_EVAL_CSV" "${SKETCHIMAGE_EVAL_CSV:-}"
 
+mkdir -p outputs/logs
+
 export SKETCHIMAGE_BACKEND="${SKETCHIMAGE_BACKEND:-torch_denoiser}"
 export SKETCHIMAGE_RUN_NAME="${SKETCHIMAGE_RUN_NAME:-sketchimage_torch_${SKETCHIMAGE_MOLECULE_LIMIT:-10000}_$(date +%Y%m%d_%H%M%S)}"
 export SKETCHIMAGE_MOLECULE_LIMIT="${SKETCHIMAGE_MOLECULE_LIMIT:-10000}"
@@ -197,6 +199,8 @@ for SLURM_GPUS in "${GPU_CANDIDATES[@]}"; do
     --time="$SLURM_TIME" \
     --mem="$SLURM_MEM" \
     --cpus-per-task="$SLURM_CPUS" \
+    --output="./outputs/logs/sketchimage-gpu-%j.log" \
+    --error="./outputs/logs/sketchimage-gpu-%j.log" \
     scripts/run_torch_denoiser.slurm.sh; then
     SUBMITTED=1
     break

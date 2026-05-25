@@ -12,6 +12,16 @@ bash scripts/run_sketchmol_aligned.sh
 Do not run a large experiment directly on a login node. Use the login node for
 `git pull` and `sbatch`; run the experiment on a Slurm compute node.
 
+Clean old root-level Slurm logs if they are no longer needed:
+
+```bash
+rm -f sketchimage-gpu-*.log sketchimage-jepa-*.log sketchimage-cpu-*.log
+mkdir -p outputs/logs
+```
+
+New submit helpers write logs under `outputs/logs/` instead of cluttering the
+project root.
+
 Submit from the login node:
 
 ```bash
@@ -140,14 +150,16 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/summarize_paper_matrix.sh
 ```
 
-Audit an existing run to quantify nearest-neighbor shortcut difficulty:
+Audit an existing run to quantify nearest-neighbor shortcut difficulty. This is
+a CPU job, so submit it to a CPU compute node:
 
 ```bash
 SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
-bash scripts/audit_benchmark.sh outputs/runs/sketchmol_aligned_paper_pilot_ridge_baseline_seed7
+bash scripts/submit_audit_benchmark.sh outputs/runs/sketchmol_aligned_paper_pilot_ridge_baseline_seed7
 ```
 
-Build a hard scaffold/nearest-neighbor-controlled split:
+Build a hard scaffold/nearest-neighbor-controlled split. This also runs on a
+CPU compute node:
 
 ```bash
 SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
@@ -156,7 +168,7 @@ SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/d
 SKETCHIMAGE_MOLECULE_LIMIT=50000 \
 SKETCHIMAGE_MAX_TASKS=10000 \
 SKETCHIMAGE_HARD_SPLIT_NAME=sketchmol_hard_seed7 \
-bash scripts/build_hard_split.sh
+bash scripts/submit_hard_split.sh
 ```
 
 Run the paper matrix on that hard split:
