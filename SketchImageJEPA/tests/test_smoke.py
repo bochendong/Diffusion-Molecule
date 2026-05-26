@@ -8,6 +8,7 @@ import numpy as np
 
 from sketchimage_jepa.dataset import toy_examples
 from sketchimage_jepa.benchmark_audit import audit_split
+from sketchimage_jepa.chem import _configure_rdkit_logging
 from sketchimage_jepa.decoder import RetrievalDecoder
 from sketchimage_jepa.experiment import run_experiment
 from sketchimage_jepa.features import MOLECULE_LATENT_VERSION, context_vector, matrix_from_examples, molecule_latent
@@ -322,6 +323,20 @@ class SketchImageJEPATests(unittest.TestCase):
     def test_property_parser_accepts_toward_language(self):
         targets = parse_property_targets("Edit the source molecule to increase MW toward 45.08.")
         self.assertAlmostEqual(targets["MW"], 45.08)
+
+    def test_rdkit_batch_logs_are_disabled_by_default(self):
+        class FakeRDKitLogger:
+            def __init__(self):
+                self.channels = []
+
+            def DisableLog(self, channel):
+                self.channels.append(channel)
+
+        rd_logger = FakeRDKitLogger()
+        rd_base = FakeRDKitLogger()
+        _configure_rdkit_logging(rd_logger, rd_base, enabled=False)
+        self.assertIn("rdApp.error", rd_logger.channels)
+        self.assertIn("rdApp.*", rd_base.channels)
 
     def test_source_conditioned_decoder_uses_task_guidance(self):
         smiles = ["CCCCCCCC", "CCN"]

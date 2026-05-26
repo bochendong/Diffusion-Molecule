@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -17,7 +18,25 @@ DataStructs = None
 rdMolDescriptors = None
 rdFingerprintGenerator = None
 
+
+def _configure_rdkit_logging(rd_logger, rd_base, enabled: bool | None = None) -> None:
+    if enabled is None:
+        enabled = os.environ.get("SKETCHIMAGE_RDKIT_LOGS", "").strip().lower() in {"1", "true", "yes", "y"}
+    if enabled:
+        return
+    for channel in ("rdApp.debug", "rdApp.info", "rdApp.warning", "rdApp.error", "rdApp.*"):
+        for logger in (rd_logger, rd_base):
+            if logger is None or not hasattr(logger, "DisableLog"):
+                continue
+            try:
+                logger.DisableLog(channel)
+            except Exception:
+                pass
+
+
 try:  # pragma: no cover - depends on local/server environment.
+    from rdkit import RDLogger as _RDLogger
+    from rdkit import rdBase as _rdBase
     from rdkit import Chem as _Chem
     from rdkit import DataStructs as _DataStructs
     from rdkit.Chem import Crippen as _Crippen
@@ -41,6 +60,7 @@ try:  # pragma: no cover - depends on local/server environment.
     DataStructs = _DataStructs
     rdFingerprintGenerator = _rdFingerprintGenerator
     rdMolDescriptors = _rdMolDescriptors
+    _configure_rdkit_logging(_RDLogger, _rdBase)
     RDKIT_AVAILABLE = True
 except Exception:  # pragma: no cover
     pass
