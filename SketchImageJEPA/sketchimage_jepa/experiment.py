@@ -13,6 +13,7 @@ from .chem import canonicalize_smiles
 from .features import MOLECULE_LATENT_VERSION, matrix_from_examples
 from .generative_decoder import (
     GenerativeMutationDecoder,
+    LatentConditionedTransformBeamDecoder,
     LearnedTransformDecoder,
     PropertyConditionedTransformDecoder,
     ScaffoldPreservingTransformDecoder,
@@ -245,6 +246,8 @@ def main() -> None:
             "scaffold_transform",
             "hybrid_property_transform",
             "property_transform",
+            "hybrid_latent_beam_transform",
+            "latent_beam_transform",
         ],
         default="retrieval",
     )
@@ -436,12 +439,30 @@ def _build_decoder(
             include_retrieval=decoder_mode == "hybrid_property_transform",
             include_mutation_fallback=decoder_mode == "hybrid_property_transform",
         )
+    if decoder_mode in {"hybrid_latent_beam_transform", "latent_beam_transform"}:
+        return LatentConditionedTransformBeamDecoder(
+            train_smiles,
+            train_targets,
+            train_examples=train_examples,
+            de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+            source_rerank_weight=source_rerank_weight,
+            property_rerank_weight=property_rerank_weight,
+            scaffold_rerank_bonus=scaffold_rerank_bonus,
+            seed_count=generative_seed_count,
+            mutation_rounds=generative_mutation_rounds,
+            candidates_per_seed=generative_candidates_per_seed,
+            novelty_bonus=generative_novelty_bonus,
+            include_retrieval=decoder_mode == "hybrid_latent_beam_transform",
+            include_mutation_fallback=decoder_mode == "hybrid_latent_beam_transform",
+        )
     raise ValueError(f"Unsupported decoder mode: {decoder_mode}")
 
 
 def _decoder_label(decoder_mode: str, task_family: str) -> str:
     if decoder_mode == "retrieval":
         return "property_guided_retrieval" if task_family == "de_novo" else "task_guided_retrieval"
+    if "latent_beam_transform" in decoder_mode:
+        return "property_guided_transform" if task_family == "de_novo" else "latent_conditioned_transform_beam"
     if "property_transform" in decoder_mode:
         return "property_guided_transform" if task_family == "de_novo" else "source_property_delta_transform"
     if "scaffold_transform" in decoder_mode:
@@ -519,6 +540,7 @@ def _is_generated_origin(origin: str) -> bool:
         or origin.startswith("learned_transform")
         or origin.startswith("scaffold_preserving")
         or origin.startswith("property_conditioned")
+        or origin.startswith("latent_beam")
     )
 
 

@@ -161,7 +161,7 @@ class GenerativeMutationDecoder:
                     self._maybe_add(row_by_smiles, candidate)
 
             seed_smiles = self._seed_smiles(seed_candidates, source, example)
-            generated = self._generate_candidates(seed_smiles, example, source)
+            generated = self._generate_candidates(seed_smiles, example, source, pred_latent=pred_latents[row_idx])
             for smiles, origin in generated:
                 if source and smiles == source:
                     continue
@@ -187,6 +187,7 @@ class GenerativeMutationDecoder:
         seeds: list[str],
         example: BenchmarkExample | None,
         source: str | None,
+        pred_latent: np.ndarray | None = None,
     ) -> list[tuple[str, str]]:
         return [(smiles, "generated_mutation") for smiles in self._generate(seeds, example, source)]
 
@@ -314,6 +315,7 @@ class LearnedTransformDecoder(GenerativeMutationDecoder):
         seeds: list[str],
         example: BenchmarkExample | None,
         source: str | None,
+        pred_latent: np.ndarray | None = None,
     ) -> list[tuple[str, str]]:
         generated: dict[str, str] = {}
         bases = self._transform_bases(seeds, example, source)
@@ -400,9 +402,10 @@ class ScaffoldPreservingTransformDecoder(LearnedTransformDecoder):
         seeds: list[str],
         example: BenchmarkExample | None,
         source: str | None,
+        pred_latent: np.ndarray | None = None,
     ) -> list[tuple[str, str]]:
         if not source or not example or example.task_type == TaskType.DE_NOVO:
-            return super()._generate_candidates(seeds, example, source)
+            return super()._generate_candidates(seeds, example, source, pred_latent=pred_latent)
 
         generated: dict[str, str] = {}
         for transform in self._select_transforms(example, source=source):
@@ -472,6 +475,96 @@ class PropertyConditionedTransformDecoder(ScaffoldPreservingTransformDecoder):
         desired = desired_property_delta(source, example)
         if desired:
             score += 0.75 * property_delta_match_score(source, smiles, example)
+        return float(score)
+
+
+class LatentConditionedTransformBeamDecoder(PropertyConditionedTransformDecoder):
+    """Expand learned source edits with a latent-conditioned beam search."""
+
+    transform_origin = "latent_beam_transform"
+
+    def _generate_candidates(
+        self,
+        seeds: list[str],
+        example: BenchmarkExample | None,
+        source: str | None,
+        pred_latent: np.ndarray | None = None,
+    ) -> list[tuple[str, str]]:
+        if pred_latent is None or not source or not example or example.task_type == TaskType.DE_NOVO:
+            return super()._generate_candidates(seeds, example, source, pred_latent=pred_latent)
+
+        transforms = self._select_transforms(example, source=source)
+        if not transforms:
+            return super()._generate_candidates(seeds, example, source, pred_latent=pred_latent)
+
+        generated: dict[str, str] = {}
+        best_scores: dict[str, float] = {}
+        frontier = [source]
+        beam_width = max(1, self.candidates_per_seed)
+        for _ in range(max(1, self.mutation_rounds)):
+            expanded: dict[str, float] = {}
+            for base in frontier:
+                for transform in transforms:
+                    for smiles in _apply_transform(base, transform):
+                        if not smiles or smiles == source or not source_core_retained(source, smiles):
+                            continue
+                        score = self._beam_score(smiles, pred_latent, source, example)
+                        if score > expanded.get(smiles, float("-inf")):
+                            expanded[smiles] = score
+                        if score > best_scores.get(smiles, float("-inf")):
+                            best_scores[smiles] = score
+                            generated[smiles] = self.transform_origin
+            frontier = [smiles for smiles, _ in sorted(expanded.items(), key=lambda item: (-item[1], item[0]))[:beam_width]]
+            if not frontier:
+                break
+
+        if not generated and self.include_mutation_fallback:
+            for smiles in self._generate([source], example, source):
+                if smiles != source and source_core_retained(source, smiles):
+                    generated.setdefault(smiles, "generated_mutation")
+
+        ranked = sorted(generated.keys(), key=lambda smiles: (-best_scores.get(smiles, self._score(smiles, pred_latent, source, example)), smiles))
+        return [(smiles, generated[smiles]) for smiles in ranked]
+
+    def _score(
+        self,
+        smiles: str,
+        pred_latent: np.ndarray,
+        source: str | None,
+        example: BenchmarkExample | None,
+    ) -> float:
+        if source and example and example.task_type in {TaskType.EDIT, TaskType.INPAINT, TaskType.FRAGMENT_GROW}:
+            return self._beam_score(smiles, pred_latent, source, example)
+        return super()._score(smiles, pred_latent, source, example)
+
+    def _beam_score(
+        self,
+        smiles: str,
+        pred_latent: np.ndarray,
+        source: str,
+        example: BenchmarkExample,
+    ) -> float:
+        candidate_latent = molecule_latent(smiles, self.latent_dim).reshape(1, -1)
+        latent_score = float(_cosine_similarity(pred_latent.reshape(1, -1), candidate_latent)[0, 0])
+        score = 1.5 * latent_score
+        score += 0.35 * tanimoto(source, smiles)
+
+        targets = parse_property_targets(example.instruction)
+        if targets:
+            desc = molecular_descriptors(smiles).descriptors
+            score += 0.25 * property_match_score(desc, targets)
+
+        desired = desired_property_delta(source, example)
+        if desired:
+            score += 0.75 * property_delta_match_score(source, smiles, example)
+
+        if source_core_retained(source, smiles):
+            score += self.scaffold_retention_bonus
+        else:
+            score -= self.scaffold_retention_bonus
+
+        if smiles not in self.train_smiles:
+            score += self.novelty_bonus
         return float(score)
 
 

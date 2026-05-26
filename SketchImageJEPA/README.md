@@ -337,6 +337,34 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/submit_paper_matrix.sh
 ```
 
+The latent-conditioned transform beam decoder addresses the failure mode where
+property-delta candidates exist in top-k but are structurally far from the
+target. It expands source edits as a beam and scores every expansion with the
+predicted molecular latent, property-delta match, and source-core retention.
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=sketchmol_hard_latent_beam_transform_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_latent_beam_transform_decoder.sh
+```
+
+Compact comparison:
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_latent_beam_transform_pilot \
+SKETCHIMAGE_PAPER_VARIANTS="planner_latent_beam_transform planner_latent_beam_transform_only planner_property_transform no_contrastive" \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_paper_matrix.sh
+```
+
 The smoke run writes:
 
 ```text

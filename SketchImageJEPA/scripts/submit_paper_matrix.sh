@@ -26,7 +26,7 @@ fi
 if [[ -n "${SKETCHIMAGE_PAPER_VARIANTS:-}" ]]; then
   VARIANTS="$SKETCHIMAGE_PAPER_VARIANTS"
 elif [[ "$MODE" == "full" ]]; then
-  VARIANTS="ridge_baseline planner_best planner_v2 planner_property_transform planner_property_transform_only planner_scaffold_transform planner_scaffold_transform_only planner_generative planner_generative_only planner_learned_transform planner_learned_transform_only no_contrastive weak_contrastive no_image_context"
+  VARIANTS="ridge_baseline planner_best planner_v2 planner_latent_beam_transform planner_latent_beam_transform_only planner_property_transform planner_property_transform_only planner_scaffold_transform planner_scaffold_transform_only planner_generative planner_generative_only planner_learned_transform planner_learned_transform_only no_contrastive weak_contrastive no_image_context"
 else
   VARIANTS="ridge_baseline planner_best planner_v2 no_contrastive no_image_context"
 fi
@@ -173,6 +173,22 @@ for seed in $SEEDS; do
           "SKETCHIMAGE_GENERATIVE_CANDIDATES_PER_SEED=8" \
           "SKETCHIMAGE_GENERATIVE_NOVELTY_BONUS=0.05"
         ;;
+      planner_latent_beam_transform)
+        submit_gpu_variant "$variant" "$seed" \
+          "SKETCHIMAGE_DECODER_MODE=hybrid_latent_beam_transform" \
+          "SKETCHIMAGE_GENERATIVE_SEED_COUNT=48" \
+          "SKETCHIMAGE_GENERATIVE_MUTATION_ROUNDS=2" \
+          "SKETCHIMAGE_GENERATIVE_CANDIDATES_PER_SEED=16" \
+          "SKETCHIMAGE_GENERATIVE_NOVELTY_BONUS=0.05"
+        ;;
+      planner_latent_beam_transform_only)
+        submit_gpu_variant "$variant" "$seed" \
+          "SKETCHIMAGE_DECODER_MODE=latent_beam_transform" \
+          "SKETCHIMAGE_GENERATIVE_SEED_COUNT=48" \
+          "SKETCHIMAGE_GENERATIVE_MUTATION_ROUNDS=2" \
+          "SKETCHIMAGE_GENERATIVE_CANDIDATES_PER_SEED=16" \
+          "SKETCHIMAGE_GENERATIVE_NOVELTY_BONUS=0.05"
+        ;;
       no_contrastive)
         submit_gpu_variant "$variant" "$seed" \
           "SKETCHIMAGE_TORCH_CONTRASTIVE_LOSS_WEIGHT=0.0"
@@ -188,7 +204,7 @@ for seed in $SEEDS; do
         ;;
       *)
         echo "ERROR: unknown paper variant '$variant'." >&2
-        echo "Supported variants: ridge_baseline planner_best planner_v2 planner_property_transform planner_property_transform_only planner_scaffold_transform planner_scaffold_transform_only planner_generative planner_generative_only planner_learned_transform planner_learned_transform_only no_contrastive weak_contrastive no_image_context" >&2
+        echo "Supported variants: ridge_baseline planner_best planner_v2 planner_latent_beam_transform planner_latent_beam_transform_only planner_property_transform planner_property_transform_only planner_scaffold_transform planner_scaffold_transform_only planner_generative planner_generative_only planner_learned_transform planner_learned_transform_only no_contrastive weak_contrastive no_image_context" >&2
         exit 2
         ;;
     esac
