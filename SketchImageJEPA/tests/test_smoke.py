@@ -643,6 +643,11 @@ class SketchImageJEPATests(unittest.TestCase):
             with Path(tmp, "rerank", "best_reranked_predictions.csv").open() as handle:
                 rows = list(csv.DictReader(handle))
             self.assertEqual(rows[0]["candidate_smiles"], "CCCN")
+            with Path(tmp, "rerank", "best_by_objective.csv").open() as handle:
+                objective_rows = list(csv.DictReader(handle))
+            objectives = {row["objective"] for row in objective_rows}
+            self.assertIn("property_delta", objectives)
+            self.assertTrue(Path(tmp, "rerank", "best_property_delta_task_type_summary.csv").exists())
 
     def test_torch_denoiser_config_has_contrastive_defaults(self):
         config = TorchDenoiserConfig()

@@ -111,6 +111,7 @@ This writes:
 
 ```text
 outputs/runs/<run_name>/rerank_diagnostics/rerank_sweep_summary.csv
+outputs/runs/<run_name>/rerank_diagnostics/best_by_objective.csv
 outputs/runs/<run_name>/rerank_diagnostics/best_task_type_summary.csv
 outputs/runs/<run_name>/rerank_diagnostics/best_reranked_predictions.csv
 ```

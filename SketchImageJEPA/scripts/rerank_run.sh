@@ -17,8 +17,8 @@ fi
 PYTHONPATH="$ROOT_DIR:${PYTHONPATH:-}" "$PYTHON_BIN" -m sketchimage_jepa.rerank_predictions \
   --predictions "$RUN_DIR/predictions.csv" \
   --out-dir "$RUN_DIR/rerank_diagnostics" \
-  --base-weights "${SKETCHIMAGE_RERANK_BASE_WEIGHTS:-0.25,0.5,0.75,1.0}" \
+  --base-weights "${SKETCHIMAGE_RERANK_BASE_WEIGHTS:-0,0.25,0.5,0.75,1.0}" \
   --source-weights "${SKETCHIMAGE_RERANK_SOURCE_WEIGHTS:-0,0.15,0.35,0.55}" \
   --property-weights "${SKETCHIMAGE_RERANK_PROPERTY_WEIGHTS:-0,0.10,0.25,0.40}" \
   --scaffold-weights "${SKETCHIMAGE_RERANK_SCAFFOLD_WEIGHTS:-0,0.10,0.20,0.30}" \
-  --property-delta-weights "${SKETCHIMAGE_RERANK_PROPERTY_DELTA_WEIGHTS:-0,0.25,0.50,0.75,1.0}"
+  --property-delta-weights "${SKETCHIMAGE_RERANK_PROPERTY_DELTA_WEIGHTS:-0,0.25,0.50,0.75,1.0,2.0,4.0,8.0}"

@@ -131,7 +131,9 @@ bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v10_cont
 
 For property-transform runs, the same command also sweeps
 `property_delta_weight` when `predictions.csv` contains `property_delta_mae`.
-Override the grid with `SKETCHIMAGE_RERANK_PROPERTY_DELTA_WEIGHTS` if needed.
+It writes `best_by_objective.csv` so target, property-delta, property, and
+balanced objectives can be inspected separately. Override the grid with
+`SKETCHIMAGE_RERANK_PROPERTY_DELTA_WEIGHTS` if needed.
 
 ## Paper Track
 

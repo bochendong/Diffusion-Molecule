@@ -76,6 +76,26 @@ def rerank_predictions_csv(
     _write_csv(out_dir / "rerank_sweep_summary.csv", records)
     (out_dir / "rerank_sweep_summary.json").write_text(json.dumps(records[:top_configs], indent=2, sort_keys=True) + "\n", encoding="utf-8")
     if records:
+        objective_rows = _best_by_objective(records)
+        _write_csv(out_dir / "best_by_objective.csv", objective_rows)
+        (out_dir / "best_by_objective.json").write_text(json.dumps(objective_rows, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        for row in objective_rows:
+            objective = str(row["objective"])
+            objective_rows_reranked = _rerank_rows(
+                enriched,
+                base_weight=float(row["base_weight"]),
+                source_weight=float(row["source_weight"]),
+                property_weight=float(row["property_weight"]),
+                scaffold_weight=float(row["scaffold_weight"]),
+                property_delta_weight=float(row["property_delta_weight"]),
+            )
+            _write_csv(out_dir / f"best_{objective}_reranked_predictions.csv", objective_rows_reranked)
+            objective_summary = summarize_prediction_rows(objective_rows_reranked)
+            _write_csv(out_dir / f"best_{objective}_task_type_summary.csv", objective_summary)
+            (out_dir / f"best_{objective}_task_type_summary.json").write_text(
+                json.dumps(objective_summary, indent=2, sort_keys=True) + "\n",
+                encoding="utf-8",
+            )
         best = records[0]
         best_rows = _rerank_rows(
             enriched,
@@ -96,11 +116,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Sweep non-oracle reranking weights over an existing predictions.csv.")
     parser.add_argument("--predictions", required=True)
     parser.add_argument("--out-dir", default=None)
-    parser.add_argument("--base-weights", default="0.25,0.5,0.75,1.0")
+    parser.add_argument("--base-weights", default="0,0.25,0.5,0.75,1.0")
     parser.add_argument("--source-weights", default="0,0.15,0.35,0.55")
     parser.add_argument("--property-weights", default="0,0.10,0.25,0.40")
     parser.add_argument("--scaffold-weights", default="0,0.10,0.20,0.30")
-    parser.add_argument("--property-delta-weights", default="0,0.25,0.50,0.75,1.0")
+    parser.add_argument("--property-delta-weights", default="0,0.25,0.50,0.75,1.0,2.0,4.0,8.0")
     parser.add_argument("--top-configs", type=int, default=20)
     args = parser.parse_args()
     predictions = Path(args.predictions)
@@ -116,6 +136,7 @@ def main() -> None:
         top_configs=args.top_configs,
     )
     print(json.dumps(records[: args.top_configs], indent=2, sort_keys=True))
+    print(f"best_by_objective={out_dir / 'best_by_objective.csv'}")
     print(f"wrote={out_dir}")
 
 
@@ -187,6 +208,39 @@ def _rerank_rows(
             updated["rank"] = str(rank)
             reranked.append(updated)
     return reranked
+
+
+def _best_by_objective(records: list[dict[str, object]]) -> list[dict[str, object]]:
+    objectives = {
+        "target": lambda row: (
+            _float(row.get("top1_target_tanimoto")),
+            _float(row.get("top1_property_delta_success")),
+            _float(row.get("top1_property_success")),
+        ),
+        "property_delta": lambda row: (
+            _float(row.get("top1_property_delta_success")),
+            -_float(row.get("top1_property_delta_mae")),
+            _float(row.get("top1_target_tanimoto")),
+        ),
+        "property": lambda row: (
+            _float(row.get("top1_property_success")),
+            _float(row.get("top1_property_delta_success")),
+            _float(row.get("top1_target_tanimoto")),
+        ),
+        "balanced": lambda row: (
+            _float(row.get("top1_target_tanimoto"))
+            + 0.25 * _float(row.get("top1_property_delta_success"))
+            + 0.25 * _float(row.get("top1_property_success")),
+            _float(row.get("top1_target_tanimoto")),
+        ),
+    }
+    out = []
+    for name, key_fn in objectives.items():
+        best = max(records, key=key_fn)
+        row = {"objective": name}
+        row.update(best)
+        out.append(row)
+    return out
 
 
 def _floats(text: str) -> list[float]:
