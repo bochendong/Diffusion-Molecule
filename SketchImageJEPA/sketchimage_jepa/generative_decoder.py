@@ -544,9 +544,12 @@ class LatentConditionedTransformBeamDecoder(PropertyConditionedTransformDecoder)
         source: str,
         example: BenchmarkExample,
     ) -> float:
-        candidate_latent = molecule_latent(smiles, self.latent_dim).reshape(1, -1)
-        latent_score = float(_cosine_similarity(pred_latent.reshape(1, -1), candidate_latent)[0, 0])
-        score = 1.5 * latent_score
+        candidate_latent = molecule_latent(smiles, self.latent_dim)
+        pred_unit = _unit_vector(pred_latent)
+        candidate_unit = _unit_vector(candidate_latent)
+        latent_score = float(_cosine_similarity(pred_unit.reshape(1, -1), candidate_unit.reshape(1, -1))[0, 0])
+        latent_distance = float(np.linalg.norm(pred_unit - candidate_unit))
+        score = 2.0 * latent_score - latent_distance
         score += 0.35 * tanimoto(source, smiles)
 
         targets = parse_property_targets(example.instruction)
@@ -566,6 +569,12 @@ class LatentConditionedTransformBeamDecoder(PropertyConditionedTransformDecoder)
         if smiles not in self.train_smiles:
             score += self.novelty_bonus
         return float(score)
+
+
+def _unit_vector(vector: np.ndarray) -> np.ndarray:
+    arr = np.asarray(vector, dtype=np.float32).reshape(-1)
+    norm = float(np.linalg.norm(arr))
+    return arr / norm if norm > 0 else arr
 
 
 def _mutate_smiles(smiles: str, limit: int, salt: str) -> list[str]:

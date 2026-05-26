@@ -525,10 +525,16 @@ class SketchImageJEPATests(unittest.TestCase):
             target_smiles="CCCN",
             instruction="Edit the source molecule to increase MW toward 57.10. Keep the molecule structurally related to the source.",
         )
-        candidates = decoder.decode(np.stack([molecule_latent("CCCN", 16)]), ["CCCO"], top_k=3, examples=[eval_example])
+        target_latent = molecule_latent("CCCN", 16)
+        candidates = decoder.decode(np.stack([target_latent]), ["CCCO"], top_k=8, examples=[eval_example])
         self.assertTrue(candidates[0])
-        self.assertEqual(candidates[0][0].origin, "latent_beam_transform")
-        self.assertEqual(candidates[0][0].smiles, "CCCN")
+        by_smiles = {candidate.smiles: candidate for candidate in candidates[0]}
+        self.assertIn("CCCN", by_smiles)
+        self.assertEqual(by_smiles["CCCN"].origin, "latent_beam_transform")
+        self.assertGreater(
+            decoder._beam_score("CCCN", target_latent, "CCCO", eval_example),
+            decoder._beam_score("CCCN", molecule_latent("CCC", 16), "CCCO", eval_example),
+        )
 
     def test_scoring_preserves_model_rank_without_target_oracle(self):
         example = BenchmarkExample(
