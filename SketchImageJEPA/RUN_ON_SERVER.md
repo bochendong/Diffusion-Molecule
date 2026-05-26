@@ -220,6 +220,37 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/submit_paper_matrix.sh
 ```
 
+The learned-transform decoder is the next Stage-C implementation. It learns
+source-target edit fragments from training tasks, then applies those transforms
+to eval sources:
+
+```bash
+cd "/scratch/bdong/projects/Diffusion-Molecule"
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=sketchmol_hard_learned_transform_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_learned_transform_decoder.sh
+```
+
+For a compact comparison:
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_learned_transform_pilot \
+SKETCHIMAGE_PAPER_VARIANTS="planner_learned_transform planner_learned_transform_only planner_generative no_contrastive" \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_paper_matrix.sh
+```
+
 ```bash
 cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main

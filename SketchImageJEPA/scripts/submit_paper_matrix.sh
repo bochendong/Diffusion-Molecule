@@ -26,7 +26,7 @@ fi
 if [[ -n "${SKETCHIMAGE_PAPER_VARIANTS:-}" ]]; then
   VARIANTS="$SKETCHIMAGE_PAPER_VARIANTS"
 elif [[ "$MODE" == "full" ]]; then
-  VARIANTS="ridge_baseline planner_best planner_v2 planner_generative planner_generative_only no_contrastive weak_contrastive no_image_context"
+  VARIANTS="ridge_baseline planner_best planner_v2 planner_generative planner_generative_only planner_learned_transform planner_learned_transform_only no_contrastive weak_contrastive no_image_context"
 else
   VARIANTS="ridge_baseline planner_best planner_v2 no_contrastive no_image_context"
 fi
@@ -125,6 +125,22 @@ for seed in $SEEDS; do
           "SKETCHIMAGE_GENERATIVE_CANDIDATES_PER_SEED=8" \
           "SKETCHIMAGE_GENERATIVE_NOVELTY_BONUS=0.05"
         ;;
+      planner_learned_transform)
+        submit_gpu_variant "$variant" "$seed" \
+          "SKETCHIMAGE_DECODER_MODE=hybrid_learned_transform" \
+          "SKETCHIMAGE_GENERATIVE_SEED_COUNT=32" \
+          "SKETCHIMAGE_GENERATIVE_MUTATION_ROUNDS=1" \
+          "SKETCHIMAGE_GENERATIVE_CANDIDATES_PER_SEED=8" \
+          "SKETCHIMAGE_GENERATIVE_NOVELTY_BONUS=0.05"
+        ;;
+      planner_learned_transform_only)
+        submit_gpu_variant "$variant" "$seed" \
+          "SKETCHIMAGE_DECODER_MODE=learned_transform" \
+          "SKETCHIMAGE_GENERATIVE_SEED_COUNT=32" \
+          "SKETCHIMAGE_GENERATIVE_MUTATION_ROUNDS=1" \
+          "SKETCHIMAGE_GENERATIVE_CANDIDATES_PER_SEED=8" \
+          "SKETCHIMAGE_GENERATIVE_NOVELTY_BONUS=0.05"
+        ;;
       no_contrastive)
         submit_gpu_variant "$variant" "$seed" \
           "SKETCHIMAGE_TORCH_CONTRASTIVE_LOSS_WEIGHT=0.0"
@@ -140,7 +156,7 @@ for seed in $SEEDS; do
         ;;
       *)
         echo "ERROR: unknown paper variant '$variant'." >&2
-        echo "Supported variants: ridge_baseline planner_best planner_v2 planner_generative planner_generative_only no_contrastive weak_contrastive no_image_context" >&2
+        echo "Supported variants: ridge_baseline planner_best planner_v2 planner_generative planner_generative_only planner_learned_transform planner_learned_transform_only no_contrastive weak_contrastive no_image_context" >&2
         exit 2
         ;;
     esac

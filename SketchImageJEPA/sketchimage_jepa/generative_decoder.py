@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -18,6 +19,11 @@ from .decoder import RetrievalDecoder, _asks_to_preserve_source, _cosine_similar
 from .features import molecule_latent
 from .property_guidance import parse_property_targets, property_match_score
 from .schema import BenchmarkExample, Candidate, TaskType
+
+try:  # pragma: no cover - depends on RDKit being available.
+    from rdkit.Chem import rdFMCS
+except Exception:  # pragma: no cover
+    rdFMCS = None
 
 
 DE_NOVO_TEMPLATES = (
@@ -35,6 +41,35 @@ DE_NOVO_TEMPLATES = (
     "CC(=O)Nc1ccccc1",
     "CCOC(=O)c1ccccc1",
 )
+
+
+@dataclass(frozen=True)
+class LearnedTransform:
+    kind: str
+    task_type: str
+    anchor_atomic_num: int = 0
+    anchor_is_aromatic: bool = False
+    root_atomic_num: int = 0
+    fragment_smiles: str = ""
+    bond_type: str = "SINGLE"
+    component_size: int = 0
+    source_token: str = ""
+    target_token: str = ""
+    support: int = 1
+
+    def signature(self) -> tuple[object, ...]:
+        return (
+            self.kind,
+            self.task_type,
+            self.anchor_atomic_num,
+            self.anchor_is_aromatic,
+            self.root_atomic_num,
+            self.fragment_smiles,
+            self.bond_type,
+            self.component_size,
+            self.source_token,
+            self.target_token,
+        )
 
 
 class GenerativeMutationDecoder:
@@ -106,12 +141,12 @@ class GenerativeMutationDecoder:
                     self._maybe_add(row_by_smiles, candidate)
 
             seed_smiles = self._seed_smiles(seed_candidates, source, example)
-            generated = self._generate(seed_smiles, example, source)
-            for smiles in generated:
+            generated = self._generate_candidates(seed_smiles, example, source)
+            for smiles, origin in generated:
                 if source and smiles == source:
                     continue
                 score = self._score(smiles, pred_latents[row_idx], source, example)
-                candidate = Candidate(smiles=smiles, origin="generated_mutation", score=score)
+                candidate = Candidate(smiles=smiles, origin=origin, score=score)
                 self._maybe_add(row_by_smiles, candidate)
 
             if not row_by_smiles:
@@ -126,6 +161,14 @@ class GenerativeMutationDecoder:
             ranked = sorted(row_by_smiles.values(), key=lambda candidate: (-candidate.score, candidate.smiles))
             all_rows.append([Candidate(smiles=c.smiles, origin=c.origin, score=c.score, rank=idx + 1) for idx, c in enumerate(ranked[:top_k])])
         return all_rows
+
+    def _generate_candidates(
+        self,
+        seeds: list[str],
+        example: BenchmarkExample | None,
+        source: str | None,
+    ) -> list[tuple[str, str]]:
+        return [(smiles, "generated_mutation") for smiles in self._generate(seeds, example, source)]
 
     def _seed_smiles(
         self,
@@ -204,12 +247,377 @@ class GenerativeMutationDecoder:
             row_by_smiles[smiles] = updated
 
 
+class LearnedTransformDecoder(GenerativeMutationDecoder):
+    """Generate candidates by applying transforms learned from train pairs."""
+
+    def __init__(
+        self,
+        smiles: list[str],
+        latents: np.ndarray,
+        train_examples: list[BenchmarkExample],
+        de_novo_latent_rerank_weight: float = 0.05,
+        source_rerank_weight: float = 0.35,
+        property_rerank_weight: float = 0.25,
+        scaffold_rerank_bonus: float = 0.15,
+        seed_count: int = 24,
+        mutation_rounds: int = 1,
+        candidates_per_seed: int = 8,
+        novelty_bonus: float = 0.05,
+        include_retrieval: bool = True,
+        include_mutation_fallback: bool = True,
+        max_transform_examples: int = 1200,
+    ):
+        super().__init__(
+            smiles,
+            latents,
+            de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+            source_rerank_weight=source_rerank_weight,
+            property_rerank_weight=property_rerank_weight,
+            scaffold_rerank_bonus=scaffold_rerank_bonus,
+            seed_count=seed_count,
+            mutation_rounds=mutation_rounds,
+            candidates_per_seed=candidates_per_seed,
+            novelty_bonus=novelty_bonus,
+            include_retrieval=include_retrieval,
+        )
+        self.transforms = _learn_transform_library(
+            train_examples,
+            max_transforms=max(32, self.seed_count * 12),
+            max_examples=max_transform_examples,
+        )
+        self.include_mutation_fallback = bool(include_mutation_fallback)
+
+    def _generate_candidates(
+        self,
+        seeds: list[str],
+        example: BenchmarkExample | None,
+        source: str | None,
+    ) -> list[tuple[str, str]]:
+        generated: dict[str, str] = {}
+        bases = self._transform_bases(seeds, example, source)
+        transforms = self._select_transforms(example)
+        for base in bases:
+            for transform in transforms:
+                for smiles in _apply_transform(base, transform):
+                    if smiles and smiles != base:
+                        generated.setdefault(smiles, "learned_transform")
+
+        if not generated and self.include_mutation_fallback:
+            for smiles in self._generate(seeds, example, source):
+                generated.setdefault(smiles, "generated_mutation")
+
+        ranked = _rank_generation_pool(generated.keys(), example, source)
+        return [(smiles, generated[smiles]) for smiles in ranked]
+
+    def _transform_bases(
+        self,
+        seeds: list[str],
+        example: BenchmarkExample | None,
+        source: str | None,
+    ) -> list[str]:
+        bases: list[str] = []
+        if source:
+            bases.append(source)
+        if example and example.task_type == TaskType.DE_NOVO:
+            bases.extend(DE_NOVO_TEMPLATES)
+        bases.extend(seeds[: max(1, min(4, self.seed_count))])
+        return _unique_valid(bases)
+
+    def _select_transforms(self, example: BenchmarkExample | None) -> list[LearnedTransform]:
+        if not self.transforms:
+            return []
+        task_type = example.task_type.value if example else ""
+        same_task = [transform for transform in self.transforms if transform.task_type == task_type]
+        other = [transform for transform in self.transforms if transform.task_type != task_type]
+        return (same_task + other)[: self.seed_count]
+
+
 def _mutate_smiles(smiles: str, limit: int, salt: str) -> list[str]:
     if RDKIT_AVAILABLE:
         variants = _rdkit_mutations(smiles)
     else:
         variants = _fallback_mutations(smiles)
     return _stable_select(variants, limit=limit, salt=salt)
+
+
+def _learn_transform_library(
+    examples: list[BenchmarkExample],
+    max_transforms: int,
+    max_examples: int,
+) -> list[LearnedTransform]:
+    counts: dict[tuple[object, ...], LearnedTransform] = {}
+    processed = 0
+    for example in examples:
+        if not example.source_smiles:
+            continue
+        source = canonicalize_smiles(example.source_smiles)
+        target = canonicalize_smiles(example.target_smiles)
+        if not source or not target or source == target:
+            continue
+        processed += 1
+        transforms = _extract_transforms(source, target, example.task_type.value)
+        for transform in transforms:
+            current = counts.get(transform.signature())
+            if current is None:
+                counts[transform.signature()] = transform
+            else:
+                counts[transform.signature()] = LearnedTransform(
+                    kind=current.kind,
+                    task_type=current.task_type,
+                    anchor_atomic_num=current.anchor_atomic_num,
+                    anchor_is_aromatic=current.anchor_is_aromatic,
+                    root_atomic_num=current.root_atomic_num,
+                    fragment_smiles=current.fragment_smiles,
+                    bond_type=current.bond_type,
+                    component_size=current.component_size,
+                    source_token=current.source_token,
+                    target_token=current.target_token,
+                    support=current.support + 1,
+                )
+        if len(counts) >= max_transforms or processed >= max_examples:
+            break
+    return sorted(counts.values(), key=lambda item: (-item.support, item.task_type, item.kind, item.fragment_smiles, item.source_token))[:max_transforms]
+
+
+def _extract_transforms(source: str, target: str, task_type: str) -> list[LearnedTransform]:
+    if RDKIT_AVAILABLE and rdFMCS is not None:
+        transforms = _extract_rdkit_transforms(source, target, task_type)
+        if transforms:
+            return transforms
+    return _extract_fallback_transforms(source, target, task_type)
+
+
+def _extract_rdkit_transforms(source: str, target: str, task_type: str) -> list[LearnedTransform]:
+    source_mol = Chem.MolFromSmiles(source) if Chem is not None else None
+    target_mol = Chem.MolFromSmiles(target) if Chem is not None else None
+    if source_mol is None or target_mol is None:
+        return []
+    try:
+        mcs = rdFMCS.FindMCS(
+            [source_mol, target_mol],
+            timeout=1,
+            ringMatchesRingOnly=True,
+            completeRingsOnly=True,
+        )
+    except Exception:
+        return []
+    if not mcs.smartsString:
+        return []
+    pattern = Chem.MolFromSmarts(mcs.smartsString)
+    if pattern is None:
+        return []
+    source_match = source_mol.GetSubstructMatch(pattern)
+    target_match = target_mol.GetSubstructMatch(pattern)
+    if len(source_match) < 2 or len(target_match) < 2:
+        return []
+    min_atoms = max(1, min(source_mol.GetNumAtoms(), target_mol.GetNumAtoms()))
+    if len(source_match) / min_atoms < 0.3:
+        return []
+
+    transforms: list[LearnedTransform] = []
+    target_core = set(target_match)
+    for anchor_idx, root_idx, component, bond_type in _side_components(target_mol, target_core):
+        fragment = _component_fragment_smiles(target_mol, component, root_idx)
+        if not fragment:
+            continue
+        anchor = target_mol.GetAtomWithIdx(anchor_idx)
+        root = target_mol.GetAtomWithIdx(root_idx)
+        transforms.append(
+            LearnedTransform(
+                kind="attach_fragment",
+                task_type=task_type,
+                anchor_atomic_num=int(anchor.GetAtomicNum()),
+                anchor_is_aromatic=bool(anchor.GetIsAromatic()),
+                root_atomic_num=int(root.GetAtomicNum()),
+                fragment_smiles=fragment,
+                bond_type=str(bond_type),
+                component_size=len(component),
+            )
+        )
+
+    source_core = set(source_match)
+    for anchor_idx, root_idx, component, bond_type in _side_components(source_mol, source_core):
+        if len(component) > 8:
+            continue
+        anchor = source_mol.GetAtomWithIdx(anchor_idx)
+        root = source_mol.GetAtomWithIdx(root_idx)
+        transforms.append(
+            LearnedTransform(
+                kind="remove_terminal",
+                task_type=task_type,
+                anchor_atomic_num=int(anchor.GetAtomicNum()),
+                anchor_is_aromatic=bool(anchor.GetIsAromatic()),
+                root_atomic_num=int(root.GetAtomicNum()),
+                bond_type=str(bond_type),
+                component_size=len(component),
+            )
+        )
+    return transforms
+
+
+def _side_components(mol, core_atoms: set[int]) -> list[tuple[int, int, set[int], object]]:
+    components: list[tuple[int, int, set[int], object]] = []
+    seen_roots: set[int] = set()
+    for bond in mol.GetBonds():
+        begin = bond.GetBeginAtomIdx()
+        end = bond.GetEndAtomIdx()
+        if (begin in core_atoms) == (end in core_atoms):
+            continue
+        anchor_idx = begin if begin in core_atoms else end
+        root_idx = end if begin in core_atoms else begin
+        if root_idx in seen_roots:
+            continue
+        component = _collect_side_component(mol, root_idx, core_atoms)
+        seen_roots.update(component)
+        if component:
+            components.append((anchor_idx, root_idx, component, bond.GetBondType()))
+    return components
+
+
+def _collect_side_component(mol, root_idx: int, core_atoms: set[int]) -> set[int]:
+    stack = [root_idx]
+    component: set[int] = set()
+    while stack:
+        atom_idx = stack.pop()
+        if atom_idx in component or atom_idx in core_atoms:
+            continue
+        component.add(atom_idx)
+        atom = mol.GetAtomWithIdx(atom_idx)
+        for neighbor in atom.GetNeighbors():
+            neighbor_idx = neighbor.GetIdx()
+            if neighbor_idx not in component and neighbor_idx not in core_atoms:
+                stack.append(neighbor_idx)
+    return component
+
+
+def _component_fragment_smiles(mol, component: set[int], root_idx: int) -> str:
+    try:
+        rw = Chem.RWMol()
+        ordered = [root_idx] + sorted(idx for idx in component if idx != root_idx)
+        old_to_new: dict[int, int] = {}
+        for old_idx in ordered:
+            atom = mol.GetAtomWithIdx(old_idx)
+            new_atom = Chem.Atom(atom.GetAtomicNum())
+            new_atom.SetFormalCharge(atom.GetFormalCharge())
+            new_atom.SetIsAromatic(atom.GetIsAromatic())
+            new_idx = rw.AddAtom(new_atom)
+            old_to_new[old_idx] = new_idx
+        for bond in mol.GetBonds():
+            begin = bond.GetBeginAtomIdx()
+            end = bond.GetEndAtomIdx()
+            if begin in old_to_new and end in old_to_new:
+                rw.AddBond(old_to_new[begin], old_to_new[end], bond.GetBondType())
+        frag = rw.GetMol()
+        frag.GetAtomWithIdx(old_to_new[root_idx]).SetAtomMapNum(1)
+        Chem.SanitizeMol(frag)
+        return Chem.MolToSmiles(frag, canonical=True)
+    except Exception:
+        return ""
+
+
+def _extract_fallback_transforms(source: str, target: str, task_type: str) -> list[LearnedTransform]:
+    for idx, (left, right) in enumerate(zip(source, target)):
+        if left != right:
+            return [LearnedTransform(kind="replace_token", task_type=task_type, source_token=left, target_token=right, component_size=1)]
+    if target.startswith(source) and len(target) > len(source):
+        return [LearnedTransform(kind="append_token", task_type=task_type, target_token=target[len(source) :], component_size=len(target) - len(source))]
+    if source.startswith(target) and len(source) > len(target):
+        return [LearnedTransform(kind="trim_suffix", task_type=task_type, source_token=source[len(target) :], component_size=len(source) - len(target))]
+    return []
+
+
+def _apply_transform(smiles: str, transform: LearnedTransform) -> list[str]:
+    if RDKIT_AVAILABLE and transform.kind in {"attach_fragment", "remove_terminal"}:
+        if transform.kind == "attach_fragment":
+            return _apply_attachment_transform(smiles, transform)
+        if transform.kind == "remove_terminal":
+            return _apply_removal_transform(smiles, transform)
+    return _apply_fallback_transform(smiles, transform)
+
+
+def _apply_attachment_transform(smiles: str, transform: LearnedTransform) -> list[str]:
+    base = Chem.MolFromSmiles(smiles) if Chem is not None else None
+    frag = Chem.MolFromSmiles(transform.fragment_smiles) if Chem is not None else None
+    if base is None or frag is None:
+        return []
+    root_idx = next((atom.GetIdx() for atom in frag.GetAtoms() if atom.GetAtomMapNum() == 1), None)
+    if root_idx is None:
+        return []
+    out: set[str] = set()
+    base_atoms = base.GetNumAtoms()
+    for atom in base.GetAtoms():
+        if atom.GetAtomicNum() != transform.anchor_atomic_num:
+            continue
+        if atom.GetIsAromatic() != transform.anchor_is_aromatic:
+            continue
+        if atom.GetTotalNumHs() <= 0:
+            continue
+        try:
+            combined = Chem.CombineMols(base, frag)
+            rw = Chem.RWMol(combined)
+            rw.GetAtomWithIdx(base_atoms + root_idx).SetAtomMapNum(0)
+            rw.AddBond(atom.GetIdx(), base_atoms + root_idx, _bond_type_from_name(transform.bond_type))
+            mol = rw.GetMol()
+            Chem.SanitizeMol(mol)
+            out.add(Chem.MolToSmiles(mol, canonical=True))
+        except Exception:
+            continue
+    return sorted(out)
+
+
+def _apply_removal_transform(smiles: str, transform: LearnedTransform) -> list[str]:
+    mol = Chem.MolFromSmiles(smiles) if Chem is not None else None
+    if mol is None:
+        return []
+    out: set[str] = set()
+    for bond in mol.GetBonds():
+        begin_atom = bond.GetBeginAtom()
+        end_atom = bond.GetEndAtom()
+        pairs = ((begin_atom, end_atom), (end_atom, begin_atom))
+        for anchor, root in pairs:
+            if anchor.GetAtomicNum() != transform.anchor_atomic_num:
+                continue
+            if anchor.GetIsAromatic() != transform.anchor_is_aromatic:
+                continue
+            if root.GetAtomicNum() != transform.root_atomic_num:
+                continue
+            if root.IsInRing():
+                continue
+            component = _collect_side_component(mol, root.GetIdx(), {anchor.GetIdx()})
+            if not component or len(component) > max(1, transform.component_size + 2):
+                continue
+            try:
+                rw = Chem.RWMol(mol)
+                for atom_idx in sorted(component, reverse=True):
+                    rw.RemoveAtom(atom_idx)
+                edited = rw.GetMol()
+                Chem.SanitizeMol(edited)
+                out.add(Chem.MolToSmiles(edited, canonical=True))
+            except Exception:
+                continue
+    return sorted(out)
+
+
+def _bond_type_from_name(name: str):
+    text = str(name).upper()
+    if "DOUBLE" in text:
+        return Chem.BondType.DOUBLE
+    if "TRIPLE" in text:
+        return Chem.BondType.TRIPLE
+    if "AROMATIC" in text:
+        return Chem.BondType.AROMATIC
+    return Chem.BondType.SINGLE
+
+
+def _apply_fallback_transform(smiles: str, transform: LearnedTransform) -> list[str]:
+    text = str(smiles)
+    if transform.kind == "replace_token" and transform.source_token in text:
+        return _unique_valid([text.replace(transform.source_token, transform.target_token, 1)])
+    if transform.kind == "append_token" and transform.target_token:
+        return _unique_valid([text + transform.target_token])
+    if transform.kind == "trim_suffix" and transform.source_token and text.endswith(transform.source_token):
+        return _unique_valid([text[: -len(transform.source_token)]])
+    return []
 
 
 def _rdkit_mutations(smiles: str) -> set[str]:

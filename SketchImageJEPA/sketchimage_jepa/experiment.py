@@ -11,7 +11,7 @@ from .dataset import load_examples_csv, split_examples, toy_examples, write_exam
 from .decoder import RetrievalDecoder
 from .chem import canonicalize_smiles
 from .features import MOLECULE_LATENT_VERSION, matrix_from_examples
-from .generative_decoder import GenerativeMutationDecoder
+from .generative_decoder import GenerativeMutationDecoder, LearnedTransformDecoder
 from .image_context import attach_rendered_image_context
 from .jepa import JEPAConfig, SketchImageJEPAPredictor
 from .report import summarize_predictions_csv
@@ -99,6 +99,7 @@ def run_experiment(
     pred_latents = model.predict(eval_conditions, eval_sources)
     decoder = _build_decoder(
         decoder_mode=decoder_mode,
+        train_examples=train_examples,
         train_smiles=[example.target_smiles for example in train_examples],
         train_targets=train_targets,
         de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
@@ -167,8 +168,8 @@ def run_experiment(
         "model_history": model.history,
         "decoder": {
             "mode": decoder_mode,
-            "de_novo": "property_guided_retrieval" if decoder_mode == "retrieval" else "property_guided_mutation",
-            "source_conditioned": "task_guided_retrieval" if decoder_mode == "retrieval" else "source_conditioned_mutation",
+            "de_novo": _decoder_label(decoder_mode, "de_novo"),
+            "source_conditioned": _decoder_label(decoder_mode, "source_conditioned"),
             "source_policy": "exclude_source_from_ranked_candidates",
             "ranking": "model_plus_source_property_scaffold_no_target_oracle",
             "can_leave_training_pool": decoder_mode != "retrieval",
@@ -224,7 +225,11 @@ def main() -> None:
     parser.add_argument("--source-rerank-weight", type=float, default=0.35)
     parser.add_argument("--property-rerank-weight", type=float, default=0.25)
     parser.add_argument("--scaffold-rerank-bonus", type=float, default=0.15)
-    parser.add_argument("--decoder-mode", choices=["retrieval", "hybrid_generative", "generative"], default="retrieval")
+    parser.add_argument(
+        "--decoder-mode",
+        choices=["retrieval", "hybrid_generative", "generative", "hybrid_learned_transform", "learned_transform"],
+        default="retrieval",
+    )
     parser.add_argument("--generative-seed-count", type=int, default=24)
     parser.add_argument("--generative-mutation-rounds", type=int, default=1)
     parser.add_argument("--generative-candidates-per-seed", type=int, default=8)
@@ -330,6 +335,7 @@ def _build_model(
 
 def _build_decoder(
     decoder_mode: str,
+    train_examples: list,
     train_smiles: list[str],
     train_targets,
     de_novo_latent_rerank_weight: float,
@@ -364,7 +370,31 @@ def _build_decoder(
             novelty_bonus=generative_novelty_bonus,
             include_retrieval=decoder_mode == "hybrid_generative",
         )
+    if decoder_mode in {"hybrid_learned_transform", "learned_transform"}:
+        return LearnedTransformDecoder(
+            train_smiles,
+            train_targets,
+            train_examples=train_examples,
+            de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+            source_rerank_weight=source_rerank_weight,
+            property_rerank_weight=property_rerank_weight,
+            scaffold_rerank_bonus=scaffold_rerank_bonus,
+            seed_count=generative_seed_count,
+            mutation_rounds=generative_mutation_rounds,
+            candidates_per_seed=generative_candidates_per_seed,
+            novelty_bonus=generative_novelty_bonus,
+            include_retrieval=decoder_mode == "hybrid_learned_transform",
+            include_mutation_fallback=decoder_mode == "hybrid_learned_transform",
+        )
     raise ValueError(f"Unsupported decoder mode: {decoder_mode}")
+
+
+def _decoder_label(decoder_mode: str, task_family: str) -> str:
+    if decoder_mode == "retrieval":
+        return "property_guided_retrieval" if task_family == "de_novo" else "task_guided_retrieval"
+    if "learned_transform" in decoder_mode:
+        return "property_guided_learned_transform" if task_family == "de_novo" else "source_conditioned_learned_transform"
+    return "property_guided_mutation" if task_family == "de_novo" else "source_conditioned_mutation"
 
 
 def _load_splits(
@@ -400,11 +430,15 @@ def _candidate_surface_metrics(scores_by_task, train_pool: set[str]) -> dict[str
     top1 = [scores[0] for scores in scores_by_task if scores]
     all_scores = [score for scores in scores_by_task for score in scores]
     return {
-        "top1_generated_fraction": sum(1.0 for score in top1 if score.origin.startswith("generated")) / n,
-        "candidate_generated_fraction": sum(1.0 for score in all_scores if score.origin.startswith("generated")) / max(1, len(all_scores)),
+        "top1_generated_fraction": sum(1.0 for score in top1 if _is_generated_origin(score.origin)) / n,
+        "candidate_generated_fraction": sum(1.0 for score in all_scores if _is_generated_origin(score.origin)) / max(1, len(all_scores)),
         "top1_train_pool_novelty": sum(1.0 for score in top1 if score.smiles not in train_pool) / n,
         "topk_has_train_pool_novel_candidate": sum(1.0 for scores in scores_by_task if any(score.smiles not in train_pool for score in scores)) / n,
     }
+
+
+def _is_generated_origin(origin: str) -> bool:
+    return origin.startswith("generated") or origin.startswith("learned_transform")
 
 
 def _canonical_pool(smiles_values) -> set[str]:
