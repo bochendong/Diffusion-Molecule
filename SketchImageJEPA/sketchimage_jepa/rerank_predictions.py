@@ -20,6 +20,7 @@ def rerank_predictions_csv(
     source_weights: list[float],
     property_weights: list[float],
     scaffold_weights: list[float],
+    property_delta_weights: list[float] | None = None,
     top_configs: int = 20,
 ) -> list[dict[str, object]]:
     predictions_csv = Path(predictions_csv)
@@ -27,37 +28,46 @@ def rerank_predictions_csv(
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = _read_rows(predictions_csv)
     enriched = _enrich_rows(rows)
+    property_delta_weights = property_delta_weights or [0.0]
     records = []
     for base_weight in base_weights:
         for source_weight in source_weights:
             for property_weight in property_weights:
                 for scaffold_weight in scaffold_weights:
-                    reranked = _rerank_rows(
-                        enriched,
-                        base_weight=base_weight,
-                        source_weight=source_weight,
-                        property_weight=property_weight,
-                        scaffold_weight=scaffold_weight,
-                    )
-                    summary = summarize_prediction_rows(reranked)
-                    overall = next(row for row in summary if row["task_type"] == "overall")
-                    records.append(
-                        {
-                            "base_weight": base_weight,
-                            "source_weight": source_weight,
-                            "property_weight": property_weight,
-                            "scaffold_weight": scaffold_weight,
-                            "top1_target_tanimoto": overall["top1_target_tanimoto"],
-                            "mean_best_tanimoto": overall["mean_best_tanimoto"],
-                            "topk_target_hit": overall["topk_target_hit"],
-                            "top1_scaffold_match": overall["top1_scaffold_match"],
-                            "top1_property_success": overall.get("top1_property_success", 0.0),
-                            "topk_property_success": overall.get("topk_property_success", 0.0),
-                        }
-                    )
+                    for property_delta_weight in property_delta_weights:
+                        reranked = _rerank_rows(
+                            enriched,
+                            base_weight=base_weight,
+                            source_weight=source_weight,
+                            property_weight=property_weight,
+                            scaffold_weight=scaffold_weight,
+                            property_delta_weight=property_delta_weight,
+                        )
+                        summary = summarize_prediction_rows(reranked)
+                        overall = next(row for row in summary if row["task_type"] == "overall")
+                        records.append(
+                            {
+                                "base_weight": base_weight,
+                                "source_weight": source_weight,
+                                "property_weight": property_weight,
+                                "scaffold_weight": scaffold_weight,
+                                "property_delta_weight": property_delta_weight,
+                                "top1_target_tanimoto": overall["top1_target_tanimoto"],
+                                "mean_best_tanimoto": overall["mean_best_tanimoto"],
+                                "topk_target_hit": overall["topk_target_hit"],
+                                "top1_scaffold_match": overall["top1_scaffold_match"],
+                                "top1_property_success": overall.get("top1_property_success", 0.0),
+                                "topk_property_success": overall.get("topk_property_success", 0.0),
+                                "top1_property_delta_mae": overall.get("top1_property_delta_mae", 0.0),
+                                "mean_best_property_delta_mae": overall.get("mean_best_property_delta_mae", 0.0),
+                                "top1_property_delta_success": overall.get("top1_property_delta_success", 0.0),
+                                "topk_property_delta_success": overall.get("topk_property_delta_success", 0.0),
+                            }
+                        )
     records.sort(
         key=lambda row: (
             float(row["top1_target_tanimoto"]),
+            float(row["top1_property_delta_success"]),
             float(row["top1_property_success"]),
             float(row["top1_scaffold_match"]),
         ),
@@ -73,6 +83,7 @@ def rerank_predictions_csv(
             source_weight=float(best["source_weight"]),
             property_weight=float(best["property_weight"]),
             scaffold_weight=float(best["scaffold_weight"]),
+            property_delta_weight=float(best["property_delta_weight"]),
         )
         _write_csv(out_dir / "best_reranked_predictions.csv", best_rows)
         best_summary = summarize_prediction_rows(best_rows)
@@ -89,6 +100,7 @@ def main() -> None:
     parser.add_argument("--source-weights", default="0,0.15,0.35,0.55")
     parser.add_argument("--property-weights", default="0,0.10,0.25,0.40")
     parser.add_argument("--scaffold-weights", default="0,0.10,0.20,0.30")
+    parser.add_argument("--property-delta-weights", default="0,0.25,0.50,0.75,1.0")
     parser.add_argument("--top-configs", type=int, default=20)
     args = parser.parse_args()
     predictions = Path(args.predictions)
@@ -100,6 +112,7 @@ def main() -> None:
         source_weights=_floats(args.source_weights),
         property_weights=_floats(args.property_weights),
         scaffold_weights=_floats(args.scaffold_weights),
+        property_delta_weights=_floats(args.property_delta_weights),
         top_configs=args.top_configs,
     )
     print(json.dumps(records[: args.top_configs], indent=2, sort_keys=True))
@@ -137,6 +150,8 @@ def _enrich_rows(rows: list[dict[str, str]]) -> list[dict[str, str]]:
             candidate_scaffold = scaffold_key(candidate)
             updated["_scaffold_score"] = "1.00000000" if source_scaffold and source_scaffold == candidate_scaffold else "0.00000000"
             updated["_property_score"] = f"{desc_score:.8f}"
+            delta_mae = _float(updated.get("property_delta_mae"))
+            updated["_property_delta_score"] = f"{max(0.0, 1.0 - delta_mae):.8f}" if updated.get("property_delta_mae") else "0.00000000"
             out.append(updated)
     return out
 
@@ -147,6 +162,7 @@ def _rerank_rows(
     source_weight: float,
     property_weight: float,
     scaffold_weight: float,
+    property_delta_weight: float = 0.0,
 ) -> list[dict[str, str]]:
     by_task: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in rows:
@@ -160,6 +176,7 @@ def _rerank_rows(
                 + source_weight * _float(row.get("_source_score"))
                 + property_weight * _float(row.get("_property_score"))
                 + scaffold_weight * _float(row.get("_scaffold_score"))
+                + property_delta_weight * _float(row.get("_property_delta_score"))
             )
             updated = {key: value for key, value in row.items() if not key.startswith("_")}
             updated["rerank_score"] = f"{score:.8f}"

@@ -99,6 +99,14 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v10_contrastive_temp_contrastive_cool
 ```
 
+For property-transform runs, use the same CPU command. It now includes a
+`property_delta_weight` sweep when `predictions.csv` has `property_delta_mae`:
+
+```bash
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/rerank_run.sh outputs/runs/sketchmol_hard_property_transform_seed7
+```
+
 This writes:
 
 ```text

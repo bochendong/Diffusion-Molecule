@@ -129,6 +129,10 @@ CPU-only rerank diagnostic:
 bash scripts/rerank_run.sh outputs/runs/sketchmol_aligned_torch_50k_10k_v10_contrastive_temp_contrastive_cool
 ```
 
+For property-transform runs, the same command also sweeps
+`property_delta_weight` when `predictions.csv` contains `property_delta_mae`.
+Override the grid with `SKETCHIMAGE_RERANK_PROPERTY_DELTA_WEIGHTS` if needed.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of

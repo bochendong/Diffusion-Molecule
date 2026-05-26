@@ -566,6 +566,84 @@ class SketchImageJEPATests(unittest.TestCase):
             )
             self.assertEqual(records[0]["top1_target_tanimoto"], 1.0)
 
+    def test_rerank_predictions_can_promote_property_delta_match(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp, "predictions.csv")
+            fieldnames = [
+                "task_id",
+                "task_type",
+                "instruction",
+                "source_smiles",
+                "target_smiles",
+                "rank",
+                "candidate_smiles",
+                "origin",
+                "valid",
+                "target_tanimoto",
+                "scaffold_match",
+                "score",
+                "property_mae",
+                "property_success",
+                "property_delta_mae",
+                "property_delta_success",
+            ]
+            with path.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=fieldnames)
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "task_id": "e1",
+                        "task_type": "edit",
+                        "instruction": "Edit the source molecule to increase MW toward 57.10.",
+                        "source_smiles": "CCCO",
+                        "target_smiles": "CCCN",
+                        "rank": "1",
+                        "candidate_smiles": "CCCCCCCC",
+                        "origin": "model",
+                        "valid": "True",
+                        "target_tanimoto": "0.1",
+                        "scaffold_match": "False",
+                        "score": "1.0",
+                        "property_mae": "1.0",
+                        "property_success": "False",
+                        "property_delta_mae": "3.0",
+                        "property_delta_success": "False",
+                    }
+                )
+                writer.writerow(
+                    {
+                        "task_id": "e1",
+                        "task_type": "edit",
+                        "instruction": "Edit the source molecule to increase MW toward 57.10.",
+                        "source_smiles": "CCCO",
+                        "target_smiles": "CCCN",
+                        "rank": "2",
+                        "candidate_smiles": "CCCN",
+                        "origin": "model",
+                        "valid": "True",
+                        "target_tanimoto": "1.0",
+                        "scaffold_match": "True",
+                        "score": "0.0",
+                        "property_mae": "0.0",
+                        "property_success": "True",
+                        "property_delta_mae": "0.1",
+                        "property_delta_success": "True",
+                    }
+                )
+            records = rerank_predictions_csv(
+                path,
+                out_dir=Path(tmp, "rerank"),
+                base_weights=[0.0],
+                source_weights=[0.0],
+                property_weights=[0.0],
+                scaffold_weights=[0.0],
+                property_delta_weights=[1.0],
+            )
+            self.assertEqual(records[0]["top1_property_delta_success"], 1.0)
+            with Path(tmp, "rerank", "best_reranked_predictions.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertEqual(rows[0]["candidate_smiles"], "CCCN")
+
     def test_torch_denoiser_config_has_contrastive_defaults(self):
         config = TorchDenoiserConfig()
         self.assertGreater(config.contrastive_loss_weight, 0.0)
