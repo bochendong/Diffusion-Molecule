@@ -11,7 +11,7 @@ from sketchimage_jepa.benchmark_audit import audit_split
 from sketchimage_jepa.decoder import RetrievalDecoder
 from sketchimage_jepa.experiment import run_experiment
 from sketchimage_jepa.features import MOLECULE_LATENT_VERSION, context_vector, matrix_from_examples, molecule_latent
-from sketchimage_jepa.generative_decoder import GenerativeMutationDecoder, LearnedTransformDecoder
+from sketchimage_jepa.generative_decoder import GenerativeMutationDecoder, LearnedTransformDecoder, ScaffoldPreservingTransformDecoder
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
 from sketchimage_jepa.hard_split import build_hard_split
@@ -94,6 +94,27 @@ class SketchImageJEPATests(unittest.TestCase):
             config = json.loads(Path(tmp, "run_config.json").read_text(encoding="utf-8"))
             self.assertEqual(config["decoder_mode"], "hybrid_learned_transform")
             self.assertEqual(config["decoder"]["source_conditioned"], "source_conditioned_learned_transform")
+
+    def test_scaffold_transform_experiment_records_retention_metrics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            metrics = run_experiment(
+                output_dir=tmp,
+                feature_dim=32,
+                latent_dim=16,
+                top_k=3,
+                train_fraction=0.67,
+                seed=7,
+                decoder_mode="hybrid_scaffold_transform",
+                generative_seed_count=4,
+                generative_candidates_per_seed=3,
+            )
+            self.assertIn("top1_source_scaffold_retained", metrics)
+            config = json.loads(Path(tmp, "run_config.json").read_text(encoding="utf-8"))
+            self.assertEqual(config["decoder_mode"], "hybrid_scaffold_transform")
+            self.assertEqual(config["decoder"]["source_conditioned"], "source_scaffold_preserving_transform")
+            with Path(tmp, "predictions.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertIn("source_scaffold_retained", rows[0])
 
     def test_sketchmol_aligned_preset_records_reference(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -344,6 +365,39 @@ class SketchImageJEPATests(unittest.TestCase):
         candidates = decoder.decode(np.stack([molecule_latent("CCCN", 16)]), ["CCCO"], top_k=3, examples=[eval_example])
         self.assertTrue(candidates[0])
         self.assertTrue(any(candidate.origin == "learned_transform" for candidate in candidates[0]))
+        self.assertTrue(any(candidate.smiles not in set(smiles) for candidate in candidates[0]))
+
+    def test_scaffold_transform_decoder_preserves_source_core(self):
+        train_examples = [
+            BenchmarkExample(
+                task_id="learn_replace",
+                task_type=TaskType.EDIT,
+                source_smiles="CCO",
+                target_smiles="CCN",
+                instruction="Change the terminal hetero atom.",
+            )
+        ]
+        smiles = ["CCN"]
+        latents = np.stack([molecule_latent(smiles_value, 16) for smiles_value in smiles])
+        decoder = ScaffoldPreservingTransformDecoder(
+            smiles,
+            latents,
+            train_examples=train_examples,
+            seed_count=4,
+            candidates_per_seed=4,
+            include_retrieval=False,
+            include_mutation_fallback=False,
+        )
+        eval_example = BenchmarkExample(
+            task_id="apply_replace",
+            task_type=TaskType.EDIT,
+            source_smiles="CCCO",
+            target_smiles="CCCN",
+            instruction="Change the terminal hetero atom.",
+        )
+        candidates = decoder.decode(np.stack([molecule_latent("CCCN", 16)]), ["CCCO"], top_k=3, examples=[eval_example])
+        self.assertTrue(candidates[0])
+        self.assertTrue(all(candidate.origin == "scaffold_preserving_transform" for candidate in candidates[0]))
         self.assertTrue(any(candidate.smiles not in set(smiles) for candidate in candidates[0]))
 
     def test_scoring_preserves_model_rank_without_target_oracle(self):

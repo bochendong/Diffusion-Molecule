@@ -11,7 +11,7 @@ from .dataset import load_examples_csv, split_examples, toy_examples, write_exam
 from .decoder import RetrievalDecoder
 from .chem import canonicalize_smiles
 from .features import MOLECULE_LATENT_VERSION, matrix_from_examples
-from .generative_decoder import GenerativeMutationDecoder, LearnedTransformDecoder
+from .generative_decoder import GenerativeMutationDecoder, LearnedTransformDecoder, ScaffoldPreservingTransformDecoder, source_core_retained
 from .image_context import attach_rendered_image_context
 from .jepa import JEPAConfig, SketchImageJEPAPredictor
 from .report import summarize_predictions_csv
@@ -122,7 +122,7 @@ def run_experiment(
     metrics = summarize_scores(scores_by_task)
     metrics.update({"train_tasks": float(len(train_examples)), "eval_tasks": float(len(eval_examples))})
     train_pool = _canonical_pool(example.target_smiles for example in train_examples)
-    metrics.update(_candidate_surface_metrics(scores_by_task, train_pool))
+    metrics.update(_candidate_surface_metrics(scores_by_task, train_pool, eval_examples))
     run_config = {
         "dataset_csv": str(dataset_csv) if dataset_csv else None,
         "train_csv": str(train_csv) if train_csv else None,
@@ -227,7 +227,15 @@ def main() -> None:
     parser.add_argument("--scaffold-rerank-bonus", type=float, default=0.15)
     parser.add_argument(
         "--decoder-mode",
-        choices=["retrieval", "hybrid_generative", "generative", "hybrid_learned_transform", "learned_transform"],
+        choices=[
+            "retrieval",
+            "hybrid_generative",
+            "generative",
+            "hybrid_learned_transform",
+            "learned_transform",
+            "hybrid_scaffold_transform",
+            "scaffold_transform",
+        ],
         default="retrieval",
     )
     parser.add_argument("--generative-seed-count", type=int, default=24)
@@ -386,12 +394,30 @@ def _build_decoder(
             include_retrieval=decoder_mode == "hybrid_learned_transform",
             include_mutation_fallback=decoder_mode == "hybrid_learned_transform",
         )
+    if decoder_mode in {"hybrid_scaffold_transform", "scaffold_transform"}:
+        return ScaffoldPreservingTransformDecoder(
+            train_smiles,
+            train_targets,
+            train_examples=train_examples,
+            de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+            source_rerank_weight=source_rerank_weight,
+            property_rerank_weight=property_rerank_weight,
+            scaffold_rerank_bonus=scaffold_rerank_bonus,
+            seed_count=generative_seed_count,
+            mutation_rounds=generative_mutation_rounds,
+            candidates_per_seed=generative_candidates_per_seed,
+            novelty_bonus=generative_novelty_bonus,
+            include_retrieval=decoder_mode == "hybrid_scaffold_transform",
+            include_mutation_fallback=decoder_mode == "hybrid_scaffold_transform",
+        )
     raise ValueError(f"Unsupported decoder mode: {decoder_mode}")
 
 
 def _decoder_label(decoder_mode: str, task_family: str) -> str:
     if decoder_mode == "retrieval":
         return "property_guided_retrieval" if task_family == "de_novo" else "task_guided_retrieval"
+    if "scaffold_transform" in decoder_mode:
+        return "property_guided_scaffold_transform" if task_family == "de_novo" else "source_scaffold_preserving_transform"
     if "learned_transform" in decoder_mode:
         return "property_guided_learned_transform" if task_family == "de_novo" else "source_conditioned_learned_transform"
     return "property_guided_mutation" if task_family == "de_novo" else "source_conditioned_mutation"
@@ -425,20 +451,33 @@ def _load_splits(
     return train_examples, eval_examples
 
 
-def _candidate_surface_metrics(scores_by_task, train_pool: set[str]) -> dict[str, float]:
+def _candidate_surface_metrics(scores_by_task, train_pool: set[str], examples) -> dict[str, float]:
     n = max(1, len(scores_by_task))
     top1 = [scores[0] for scores in scores_by_task if scores]
     all_scores = [score for scores in scores_by_task for score in scores]
+    source_pairs = [(example, scores) for example, scores in zip(examples, scores_by_task) if example.source_smiles and scores]
+    source_top1 = [(example, scores[0]) for example, scores in source_pairs]
+    source_candidates = [(example, score) for example, scores in source_pairs for score in scores]
+    source_n = max(1, len(source_pairs))
     return {
         "top1_generated_fraction": sum(1.0 for score in top1 if _is_generated_origin(score.origin)) / n,
         "candidate_generated_fraction": sum(1.0 for score in all_scores if _is_generated_origin(score.origin)) / max(1, len(all_scores)),
         "top1_train_pool_novelty": sum(1.0 for score in top1 if score.smiles not in train_pool) / n,
         "topk_has_train_pool_novel_candidate": sum(1.0 for scores in scores_by_task if any(score.smiles not in train_pool for score in scores)) / n,
+        "top1_source_scaffold_retained": sum(1.0 for example, score in source_top1 if source_core_retained(example.source_smiles, score.smiles)) / source_n,
+        "candidate_source_scaffold_retained_fraction": sum(
+            1.0 for example, score in source_candidates if source_core_retained(example.source_smiles, score.smiles)
+        )
+        / max(1, len(source_candidates)),
+        "topk_has_source_scaffold_retained_candidate": sum(
+            1.0 for example, scores in source_pairs if any(source_core_retained(example.source_smiles, score.smiles) for score in scores)
+        )
+        / source_n,
     }
 
 
 def _is_generated_origin(origin: str) -> bool:
-    return origin.startswith("generated") or origin.startswith("learned_transform")
+    return origin.startswith("generated") or origin.startswith("learned_transform") or origin.startswith("scaffold_preserving")
 
 
 def _canonical_pool(smiles_values) -> set[str]:
@@ -472,6 +511,7 @@ def _write_predictions(path: Path, examples, scores_by_task, train_pool: set[str
         "qed_abs_error",
         "tpsa_abs_error",
         "train_pool_member",
+        "source_scaffold_retained",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -498,6 +538,7 @@ def _write_predictions(path: Path, examples, scores_by_task, train_pool: set[str
                     "qed_abs_error": f"{score.property_errors.get('QED', 0.0):.6f}",
                     "tpsa_abs_error": f"{score.property_errors.get('TPSA', 0.0):.6f}",
                     "train_pool_member": score.smiles in train_pool,
+                    "source_scaffold_retained": source_core_retained(example.source_smiles, score.smiles) if example.source_smiles else "",
                 }
                 writer.writerow(row)
 

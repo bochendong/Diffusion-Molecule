@@ -332,6 +332,84 @@ class LearnedTransformDecoder(GenerativeMutationDecoder):
         return (same_task + other)[: self.seed_count]
 
 
+class ScaffoldPreservingTransformDecoder(LearnedTransformDecoder):
+    """Apply learned transforms while preserving the source scaffold/core."""
+
+    def __init__(
+        self,
+        smiles: list[str],
+        latents: np.ndarray,
+        train_examples: list[BenchmarkExample],
+        de_novo_latent_rerank_weight: float = 0.05,
+        source_rerank_weight: float = 0.35,
+        property_rerank_weight: float = 0.25,
+        scaffold_rerank_bonus: float = 0.15,
+        seed_count: int = 24,
+        mutation_rounds: int = 1,
+        candidates_per_seed: int = 8,
+        novelty_bonus: float = 0.05,
+        include_retrieval: bool = True,
+        include_mutation_fallback: bool = True,
+        max_transform_examples: int = 1200,
+        scaffold_retention_bonus: float = 0.75,
+    ):
+        super().__init__(
+            smiles,
+            latents,
+            train_examples=train_examples,
+            de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+            source_rerank_weight=source_rerank_weight,
+            property_rerank_weight=property_rerank_weight,
+            scaffold_rerank_bonus=scaffold_rerank_bonus,
+            seed_count=seed_count,
+            mutation_rounds=mutation_rounds,
+            candidates_per_seed=candidates_per_seed,
+            novelty_bonus=novelty_bonus,
+            include_retrieval=include_retrieval,
+            include_mutation_fallback=include_mutation_fallback,
+            max_transform_examples=max_transform_examples,
+        )
+        self.scaffold_retention_bonus = float(scaffold_retention_bonus)
+
+    def _generate_candidates(
+        self,
+        seeds: list[str],
+        example: BenchmarkExample | None,
+        source: str | None,
+    ) -> list[tuple[str, str]]:
+        if not source or not example or example.task_type == TaskType.DE_NOVO:
+            return super()._generate_candidates(seeds, example, source)
+
+        generated: dict[str, str] = {}
+        for transform in self._select_transforms(example):
+            for smiles in _apply_transform(source, transform):
+                if smiles and smiles != source and source_core_retained(source, smiles):
+                    generated.setdefault(smiles, "scaffold_preserving_transform")
+
+        if not generated and self.include_mutation_fallback:
+            for smiles in self._generate([source], example, source):
+                if smiles != source and source_core_retained(source, smiles):
+                    generated.setdefault(smiles, "generated_mutation")
+
+        ranked = _rank_generation_pool(generated.keys(), example, source)
+        return [(smiles, generated[smiles]) for smiles in ranked]
+
+    def _score(
+        self,
+        smiles: str,
+        pred_latent: np.ndarray,
+        source: str | None,
+        example: BenchmarkExample | None,
+    ) -> float:
+        score = super()._score(smiles, pred_latent, source, example)
+        if source and example and example.task_type in {TaskType.EDIT, TaskType.INPAINT, TaskType.FRAGMENT_GROW}:
+            if source_core_retained(source, smiles):
+                score += self.scaffold_retention_bonus
+            else:
+                score -= self.scaffold_retention_bonus
+        return score
+
+
 def _mutate_smiles(smiles: str, limit: int, salt: str) -> list[str]:
     if RDKIT_AVAILABLE:
         variants = _rdkit_mutations(smiles)
@@ -618,6 +696,35 @@ def _apply_fallback_transform(smiles: str, transform: LearnedTransform) -> list[
     if transform.kind == "trim_suffix" and transform.source_token and text.endswith(transform.source_token):
         return _unique_valid([text[: -len(transform.source_token)]])
     return []
+
+
+def source_core_retained(source_smiles: str | None, candidate_smiles: str | None) -> bool:
+    source = canonicalize_smiles(source_smiles)
+    candidate = canonicalize_smiles(candidate_smiles)
+    if not source or not candidate:
+        return False
+    if source == candidate:
+        return True
+
+    source_scaffold = scaffold_key(source)
+    candidate_scaffold = scaffold_key(candidate)
+    if source_scaffold and candidate_scaffold:
+        if source_scaffold == candidate_scaffold:
+            return True
+        if _is_substructure(source_scaffold, candidate):
+            return True
+
+    return tanimoto(source, candidate) >= 0.30
+
+
+def _is_substructure(query_smiles: str, candidate_smiles: str) -> bool:
+    if not RDKIT_AVAILABLE or Chem is None:
+        return False
+    query = Chem.MolFromSmiles(query_smiles)
+    candidate = Chem.MolFromSmiles(candidate_smiles)
+    if query is None or candidate is None:
+        return False
+    return bool(candidate.HasSubstructMatch(query))
 
 
 def _rdkit_mutations(smiles: str) -> set[str]:
