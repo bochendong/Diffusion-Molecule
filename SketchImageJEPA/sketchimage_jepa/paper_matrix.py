@@ -18,6 +18,10 @@ DEFAULT_METRICS = (
     "top1_scaffold_match",
     "top1_property_success",
     "topk_property_success",
+    "top1_property_delta_mae",
+    "mean_best_property_delta_mae",
+    "top1_property_delta_success",
+    "topk_property_delta_success",
 )
 
 DEFAULT_TASK_TYPES = ("overall", "de_novo", "edit", "fragment_grow", "inpaint")

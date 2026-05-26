@@ -302,6 +302,35 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/submit_paper_matrix.sh
 ```
 
+The property-conditioned transform decoder is the next stricter variant. It
+keeps source-core retention, but selects learned transforms whose training
+property delta matches the requested edit direction. The run writes
+`property_delta_mae` and `property_delta_success` in `predictions.csv`, plus
+aggregate delta metrics in `metrics.json` and `task_type_summary.csv`.
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=sketchmol_hard_property_transform_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_property_transform_decoder.sh
+```
+
+Compact comparison:
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_property_transform_pilot \
+SKETCHIMAGE_PAPER_VARIANTS="planner_property_transform planner_property_transform_only planner_scaffold_transform no_contrastive" \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_paper_matrix.sh
+```
+
 The smoke run writes:
 
 ```text

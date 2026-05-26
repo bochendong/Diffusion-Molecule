@@ -11,7 +11,15 @@ from .dataset import load_examples_csv, split_examples, toy_examples, write_exam
 from .decoder import RetrievalDecoder
 from .chem import canonicalize_smiles
 from .features import MOLECULE_LATENT_VERSION, matrix_from_examples
-from .generative_decoder import GenerativeMutationDecoder, LearnedTransformDecoder, ScaffoldPreservingTransformDecoder, source_core_retained
+from .generative_decoder import (
+    GenerativeMutationDecoder,
+    LearnedTransformDecoder,
+    PropertyConditionedTransformDecoder,
+    ScaffoldPreservingTransformDecoder,
+    desired_property_delta,
+    property_delta_mae,
+    source_core_retained,
+)
 from .image_context import attach_rendered_image_context
 from .jepa import JEPAConfig, SketchImageJEPAPredictor
 from .report import summarize_predictions_csv
@@ -235,6 +243,8 @@ def main() -> None:
             "learned_transform",
             "hybrid_scaffold_transform",
             "scaffold_transform",
+            "hybrid_property_transform",
+            "property_transform",
         ],
         default="retrieval",
     )
@@ -410,12 +420,30 @@ def _build_decoder(
             include_retrieval=decoder_mode == "hybrid_scaffold_transform",
             include_mutation_fallback=decoder_mode == "hybrid_scaffold_transform",
         )
+    if decoder_mode in {"hybrid_property_transform", "property_transform"}:
+        return PropertyConditionedTransformDecoder(
+            train_smiles,
+            train_targets,
+            train_examples=train_examples,
+            de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+            source_rerank_weight=source_rerank_weight,
+            property_rerank_weight=property_rerank_weight,
+            scaffold_rerank_bonus=scaffold_rerank_bonus,
+            seed_count=generative_seed_count,
+            mutation_rounds=generative_mutation_rounds,
+            candidates_per_seed=generative_candidates_per_seed,
+            novelty_bonus=generative_novelty_bonus,
+            include_retrieval=decoder_mode == "hybrid_property_transform",
+            include_mutation_fallback=decoder_mode == "hybrid_property_transform",
+        )
     raise ValueError(f"Unsupported decoder mode: {decoder_mode}")
 
 
 def _decoder_label(decoder_mode: str, task_family: str) -> str:
     if decoder_mode == "retrieval":
         return "property_guided_retrieval" if task_family == "de_novo" else "task_guided_retrieval"
+    if "property_transform" in decoder_mode:
+        return "property_guided_transform" if task_family == "de_novo" else "source_property_delta_transform"
     if "scaffold_transform" in decoder_mode:
         return "property_guided_scaffold_transform" if task_family == "de_novo" else "source_scaffold_preserving_transform"
     if "learned_transform" in decoder_mode:
@@ -459,6 +487,10 @@ def _candidate_surface_metrics(scores_by_task, train_pool: set[str], examples) -
     source_top1 = [(example, scores[0]) for example, scores in source_pairs]
     source_candidates = [(example, score) for example, scores in source_pairs for score in scores]
     source_n = max(1, len(source_pairs))
+    delta_pairs = [(example, scores) for example, scores in source_pairs if desired_property_delta(example.source_smiles, example)]
+    delta_top1_maes = [property_delta_mae(example.source_smiles, scores[0].smiles, example) for example, scores in delta_pairs]
+    delta_best_maes = [min(property_delta_mae(example.source_smiles, score.smiles, example) for score in scores) for example, scores in delta_pairs]
+    delta_n = max(1, len(delta_pairs))
     return {
         "top1_generated_fraction": sum(1.0 for score in top1 if _is_generated_origin(score.origin)) / n,
         "candidate_generated_fraction": sum(1.0 for score in all_scores if _is_generated_origin(score.origin)) / max(1, len(all_scores)),
@@ -473,11 +505,21 @@ def _candidate_surface_metrics(scores_by_task, train_pool: set[str], examples) -
             1.0 for example, scores in source_pairs if any(source_core_retained(example.source_smiles, score.smiles) for score in scores)
         )
         / source_n,
+        "top1_property_delta_mae": sum(delta_top1_maes) / delta_n,
+        "mean_best_property_delta_mae": sum(delta_best_maes) / delta_n,
+        "top1_property_delta_success": sum(1.0 for value in delta_top1_maes if value <= 1.0) / delta_n,
+        "topk_property_delta_success": sum(1.0 for value in delta_best_maes if value <= 1.0) / delta_n,
+        "property_delta_tasks": float(len(delta_pairs)),
     }
 
 
 def _is_generated_origin(origin: str) -> bool:
-    return origin.startswith("generated") or origin.startswith("learned_transform") or origin.startswith("scaffold_preserving")
+    return (
+        origin.startswith("generated")
+        or origin.startswith("learned_transform")
+        or origin.startswith("scaffold_preserving")
+        or origin.startswith("property_conditioned")
+    )
 
 
 def _canonical_pool(smiles_values) -> set[str]:
@@ -512,12 +554,16 @@ def _write_predictions(path: Path, examples, scores_by_task, train_pool: set[str
         "tpsa_abs_error",
         "train_pool_member",
         "source_scaffold_retained",
+        "property_delta_mae",
+        "property_delta_success",
     ]
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         for example, scores in zip(examples, scores_by_task):
             for score in scores:
+                delta_goal = desired_property_delta(example.source_smiles, example)
+                delta_mae = property_delta_mae(example.source_smiles, score.smiles, example) if delta_goal else None
                 row = {
                     "task_id": example.task_id,
                     "task_type": example.task_type.value,
@@ -539,6 +585,8 @@ def _write_predictions(path: Path, examples, scores_by_task, train_pool: set[str
                     "tpsa_abs_error": f"{score.property_errors.get('TPSA', 0.0):.6f}",
                     "train_pool_member": score.smiles in train_pool,
                     "source_scaffold_retained": source_core_retained(example.source_smiles, score.smiles) if example.source_smiles else "",
+                    "property_delta_mae": f"{delta_mae:.6f}" if delta_mae is not None else "",
+                    "property_delta_success": delta_mae <= 1.0 if delta_mae is not None else "",
                 }
                 writer.writerow(row)
 

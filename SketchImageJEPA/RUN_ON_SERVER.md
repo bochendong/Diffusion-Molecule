@@ -281,6 +281,37 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/submit_paper_matrix.sh
 ```
 
+Run the property-conditioned transform decoder when scaffold retention works
+but property success collapses. It selects learned source edits by matching the
+requested property delta:
+
+```bash
+cd "/scratch/bdong/projects/Diffusion-Molecule"
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=sketchmol_hard_property_transform_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_property_transform_decoder.sh
+```
+
+Or compare it against scaffold-only and the no-contrastive diagnostic:
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_property_transform_pilot \
+SKETCHIMAGE_PAPER_VARIANTS="planner_property_transform planner_property_transform_only planner_scaffold_transform no_contrastive" \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_paper_matrix.sh
+```
+
 ```bash
 cd "/path/to/Diffusion Molecule"
 git pull --rebase origin main

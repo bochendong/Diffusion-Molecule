@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import hashlib
 from collections.abc import Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from typing import Mapping
 
 import numpy as np
 
-from .chem import Chem, RDKIT_AVAILABLE, canonicalize_smiles, molecular_descriptors, scaffold_key, tanimoto
+from .chem import Chem, RDKIT_AVAILABLE, canonicalize_smiles, descriptor_delta, molecular_descriptors, scaffold_key, tanimoto
 from .decoder import RetrievalDecoder, _asks_to_preserve_source, _cosine_similarity
 from .features import molecule_latent
-from .property_guidance import parse_property_targets, property_match_score
+from .property_guidance import PROPERTY_KEYS, PROPERTY_TOLERANCES, parse_property_targets, property_match_score
 from .schema import BenchmarkExample, Candidate, TaskType
 
 try:  # pragma: no cover - depends on RDKit being available.
@@ -42,6 +43,13 @@ DE_NOVO_TEMPLATES = (
     "CCOC(=O)c1ccccc1",
 )
 
+_DELTA_FIELDS = {
+    "MW": "delta_mw",
+    "LogP": "delta_logp",
+    "QED": "delta_qed",
+    "TPSA": "delta_tpsa",
+}
+
 
 @dataclass(frozen=True)
 class LearnedTransform:
@@ -56,6 +64,10 @@ class LearnedTransform:
     source_token: str = ""
     target_token: str = ""
     support: int = 1
+    delta_mw: float = 0.0
+    delta_logp: float = 0.0
+    delta_qed: float = 0.0
+    delta_tpsa: float = 0.0
 
     def signature(self) -> tuple[object, ...]:
         return (
@@ -70,6 +82,14 @@ class LearnedTransform:
             self.source_token,
             self.target_token,
         )
+
+    def property_delta(self) -> dict[str, float]:
+        return {
+            "MW": float(self.delta_mw),
+            "LogP": float(self.delta_logp),
+            "QED": float(self.delta_qed),
+            "TPSA": float(self.delta_tpsa),
+        }
 
 
 class GenerativeMutationDecoder:
@@ -250,6 +270,8 @@ class GenerativeMutationDecoder:
 class LearnedTransformDecoder(GenerativeMutationDecoder):
     """Generate candidates by applying transforms learned from train pairs."""
 
+    transform_origin = "learned_transform"
+
     def __init__(
         self,
         smiles: list[str],
@@ -295,12 +317,12 @@ class LearnedTransformDecoder(GenerativeMutationDecoder):
     ) -> list[tuple[str, str]]:
         generated: dict[str, str] = {}
         bases = self._transform_bases(seeds, example, source)
-        transforms = self._select_transforms(example)
+        transforms = self._select_transforms(example, source=source)
         for base in bases:
             for transform in transforms:
                 for smiles in _apply_transform(base, transform):
                     if smiles and smiles != base:
-                        generated.setdefault(smiles, "learned_transform")
+                        generated.setdefault(smiles, self.transform_origin)
 
         if not generated and self.include_mutation_fallback:
             for smiles in self._generate(seeds, example, source):
@@ -323,7 +345,7 @@ class LearnedTransformDecoder(GenerativeMutationDecoder):
         bases.extend(seeds[: max(1, min(4, self.seed_count))])
         return _unique_valid(bases)
 
-    def _select_transforms(self, example: BenchmarkExample | None) -> list[LearnedTransform]:
+    def _select_transforms(self, example: BenchmarkExample | None, source: str | None = None) -> list[LearnedTransform]:
         if not self.transforms:
             return []
         task_type = example.task_type.value if example else ""
@@ -334,6 +356,8 @@ class LearnedTransformDecoder(GenerativeMutationDecoder):
 
 class ScaffoldPreservingTransformDecoder(LearnedTransformDecoder):
     """Apply learned transforms while preserving the source scaffold/core."""
+
+    transform_origin = "scaffold_preserving_transform"
 
     def __init__(
         self,
@@ -381,10 +405,10 @@ class ScaffoldPreservingTransformDecoder(LearnedTransformDecoder):
             return super()._generate_candidates(seeds, example, source)
 
         generated: dict[str, str] = {}
-        for transform in self._select_transforms(example):
+        for transform in self._select_transforms(example, source=source):
             for smiles in _apply_transform(source, transform):
                 if smiles and smiles != source and source_core_retained(source, smiles):
-                    generated.setdefault(smiles, "scaffold_preserving_transform")
+                    generated.setdefault(smiles, self.transform_origin)
 
         if not generated and self.include_mutation_fallback:
             for smiles in self._generate([source], example, source):
@@ -408,6 +432,47 @@ class ScaffoldPreservingTransformDecoder(LearnedTransformDecoder):
             else:
                 score -= self.scaffold_retention_bonus
         return score
+
+
+class PropertyConditionedTransformDecoder(ScaffoldPreservingTransformDecoder):
+    """Prefer learned transforms whose property delta matches the requested edit."""
+
+    transform_origin = "property_conditioned_transform"
+
+    def _select_transforms(self, example: BenchmarkExample | None, source: str | None = None) -> list[LearnedTransform]:
+        if not self.transforms:
+            return []
+        desired = desired_property_delta(source, example)
+        if not desired:
+            return super()._select_transforms(example, source=source)
+        task_type = example.task_type.value if example else ""
+
+        def sort_key(transform: LearnedTransform) -> tuple[object, ...]:
+            delta_mae = _normalized_delta_mae(transform.property_delta(), desired)
+            return (
+                transform.task_type != task_type,
+                delta_mae,
+                -transform.support,
+                transform.kind,
+                transform.fragment_smiles,
+                transform.source_token,
+                transform.target_token,
+            )
+
+        return sorted(self.transforms, key=sort_key)[: self.seed_count]
+
+    def _score(
+        self,
+        smiles: str,
+        pred_latent: np.ndarray,
+        source: str | None,
+        example: BenchmarkExample | None,
+    ) -> float:
+        score = super()._score(smiles, pred_latent, source, example)
+        desired = desired_property_delta(source, example)
+        if desired:
+            score += 0.75 * property_delta_match_score(source, smiles, example)
+        return float(score)
 
 
 def _mutate_smiles(smiles: str, limit: int, salt: str) -> list[str]:
@@ -439,30 +504,34 @@ def _learn_transform_library(
             if current is None:
                 counts[transform.signature()] = transform
             else:
-                counts[transform.signature()] = LearnedTransform(
-                    kind=current.kind,
-                    task_type=current.task_type,
-                    anchor_atomic_num=current.anchor_atomic_num,
-                    anchor_is_aromatic=current.anchor_is_aromatic,
-                    root_atomic_num=current.root_atomic_num,
-                    fragment_smiles=current.fragment_smiles,
-                    bond_type=current.bond_type,
-                    component_size=current.component_size,
-                    source_token=current.source_token,
-                    target_token=current.target_token,
-                    support=current.support + 1,
-                )
+                counts[transform.signature()] = _merge_transform(current, transform)
         if len(counts) >= max_transforms or processed >= max_examples:
             break
     return sorted(counts.values(), key=lambda item: (-item.support, item.task_type, item.kind, item.fragment_smiles, item.source_token))[:max_transforms]
 
 
 def _extract_transforms(source: str, target: str, task_type: str) -> list[LearnedTransform]:
+    delta = descriptor_delta(source, target)
     if RDKIT_AVAILABLE and rdFMCS is not None:
         transforms = _extract_rdkit_transforms(source, target, task_type)
         if transforms:
-            return transforms
-    return _extract_fallback_transforms(source, target, task_type)
+            return [_with_transform_delta(transform, delta) for transform in transforms]
+    return [_with_transform_delta(transform, delta) for transform in _extract_fallback_transforms(source, target, task_type)]
+
+
+def _with_transform_delta(transform: LearnedTransform, delta: Mapping[str, float]) -> LearnedTransform:
+    values = {field: float(delta.get(key, 0.0)) for key, field in _DELTA_FIELDS.items()}
+    return replace(transform, **values)
+
+
+def _merge_transform(current: LearnedTransform, transform: LearnedTransform) -> LearnedTransform:
+    support = current.support + transform.support
+    values = {}
+    for key, field in _DELTA_FIELDS.items():
+        current_value = float(getattr(current, field))
+        transform_value = float(getattr(transform, field))
+        values[field] = (current_value * current.support + transform_value * transform.support) / max(1, support)
+    return replace(current, support=support, **values)
 
 
 def _extract_rdkit_transforms(source: str, target: str, task_type: str) -> list[LearnedTransform]:
@@ -696,6 +765,45 @@ def _apply_fallback_transform(smiles: str, transform: LearnedTransform) -> list[
     if transform.kind == "trim_suffix" and transform.source_token and text.endswith(transform.source_token):
         return _unique_valid([text[: -len(transform.source_token)]])
     return []
+
+
+def desired_property_delta(source_smiles: str | None, example: BenchmarkExample | None) -> dict[str, float]:
+    """Return requested target-property movement relative to the source."""
+
+    source = canonicalize_smiles(source_smiles)
+    if not source or example is None:
+        return {}
+    targets = parse_property_targets(example.instruction)
+    if not targets:
+        return {}
+    source_desc = molecular_descriptors(source).descriptors
+    return {key: float(targets[key]) - float(source_desc.get(key, 0.0)) for key in PROPERTY_KEYS if key in targets}
+
+
+def property_delta_mae(source_smiles: str | None, candidate_smiles: str | None, example: BenchmarkExample | None) -> float:
+    desired = desired_property_delta(source_smiles, example)
+    source = canonicalize_smiles(source_smiles)
+    candidate = canonicalize_smiles(candidate_smiles)
+    if not desired or not source or not candidate:
+        return 0.0
+    actual = descriptor_delta(source, candidate)
+    return _normalized_delta_mae(actual, desired)
+
+
+def property_delta_match_score(source_smiles: str | None, candidate_smiles: str | None, example: BenchmarkExample | None) -> float:
+    desired = desired_property_delta(source_smiles, example)
+    if not desired:
+        return 0.0
+    return max(0.0, 1.0 - property_delta_mae(source_smiles, candidate_smiles, example))
+
+
+def _normalized_delta_mae(actual: Mapping[str, float], desired: Mapping[str, float]) -> float:
+    errors = []
+    for key in PROPERTY_KEYS:
+        if key not in desired:
+            continue
+        errors.append(abs(float(actual.get(key, 0.0)) - float(desired[key])) / PROPERTY_TOLERANCES[key])
+    return float(sum(errors) / len(errors)) if errors else 0.0
 
 
 def source_core_retained(source_smiles: str | None, candidate_smiles: str | None) -> bool:
