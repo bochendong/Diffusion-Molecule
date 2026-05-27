@@ -614,11 +614,12 @@ def _learn_transform_library(
 
 def _extract_transforms(source: str, target: str, task_type: str) -> list[LearnedTransform]:
     delta = descriptor_delta(source, target)
+    transforms: list[LearnedTransform] = []
     if RDKIT_AVAILABLE and rdFMCS is not None:
-        transforms = _extract_rdkit_transforms(source, target, task_type)
-        if transforms:
-            return [_with_transform_delta(transform, delta) for transform in transforms]
-    return [_with_transform_delta(transform, delta) for transform in _extract_fallback_transforms(source, target, task_type)]
+        transforms.extend(_extract_rdkit_transforms(source, target, task_type))
+    transforms.extend(_extract_fallback_transforms(source, target, task_type))
+    unique = {transform.signature(): transform for transform in transforms}
+    return [_with_transform_delta(transform, delta) for transform in unique.values()]
 
 
 def _with_transform_delta(transform: LearnedTransform, delta: Mapping[str, float]) -> LearnedTransform:
