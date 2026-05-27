@@ -251,6 +251,57 @@ SKETCHIMAGE_MOLECULE_LIMIT=100 \
 bash scripts/submit_oracle_latent_diffusion.sh
 ```
 
+## Phase 2A Planned Decoder
+
+Use this after a Phase 1 oracle decoder exists. The point is to test the next
+link in the chain:
+
+```text
+task condition/source/image context -> JEPA planner latent -> frozen Phase 1 decoder -> SMILES
+```
+
+Submit the 2048-latent version from the login node:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase2_planned_decoder_2048_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+bash scripts/submit_phase2_planned_decoder.sh
+```
+
+Outputs:
+
+```text
+outputs/runs/phase2_planned_decoder_2048_seed7/metrics.json
+outputs/runs/phase2_planned_decoder_2048_seed7/predictions.csv
+outputs/runs/phase2_planned_decoder_2048_seed7/task_type_summary.csv
+outputs/runs/phase2_planned_decoder_2048_seed7/run_config.json
+```
+
+Key metrics to read first:
+
+```text
+planner_latent_mse
+planner_latent_cosine
+top1_target_tanimoto
+mean_best_tanimoto
+topk_target_hit
+top1_decoder_train_pool_member
+candidate_decoder_train_pool_member_fraction
+```
+
+If `planner_latent_cosine` is low, the planner is the bottleneck. If the
+planner cosine is high but target metrics are weak, the frozen decoder or
+latent representation is the bottleneck.
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.

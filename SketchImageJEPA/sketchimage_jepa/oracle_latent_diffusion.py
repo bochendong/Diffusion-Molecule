@@ -11,7 +11,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any
 
@@ -222,6 +222,37 @@ class OracleLatentSmilesDiffusion:
         if self.model is not None:
             torch, _, _, _ = _torch_deps()
             torch.save(self.model.state_dict(), out_dir / "model.pt")
+
+    @classmethod
+    def load(cls, out_dir: str | Path, device: str = "auto") -> "OracleLatentSmilesDiffusion":
+        out_dir = Path(out_dir)
+        config_payload = json.loads((out_dir / "config.json").read_text(encoding="utf-8"))
+        valid_fields = {field.name for field in fields(OracleLatentDiffusionConfig)}
+        config = OracleLatentDiffusionConfig(**{key: value for key, value in config_payload.items() if key in valid_fields})
+        config.device = device
+        vocab = SmilesVocabulary.from_dict(json.loads((out_dir / "vocab.json").read_text(encoding="utf-8")))
+        torch, nn, _, _ = _torch_deps()
+        target_device = _resolve_device(torch, device)
+        model = _TokenDenoisingTransformer(
+            vocab_size=len(vocab),
+            condition_dim=config.condition_dim,
+            hidden_dim=config.hidden_dim,
+            max_length=config.max_length,
+            layers=config.transformer_layers,
+            heads=config.attention_heads,
+            dropout=config.dropout,
+            nn=nn,
+        ).to(target_device)
+        model.load_state_dict(torch.load(out_dir / "model.pt", map_location=target_device))
+        model.eval()
+        obj = cls(config)
+        obj.vocab = vocab
+        obj.model = model
+        obj.device_name = str(target_device)
+        metadata_path = out_dir / "metadata.json"
+        if metadata_path.exists():
+            obj.history = list(json.loads(metadata_path.read_text(encoding="utf-8")).get("history", []))
+        return obj
 
     def _sample_batch(self, condition_latents: np.ndarray) -> list[tuple[str, float]]:
         if self.model is None or self.vocab is None:

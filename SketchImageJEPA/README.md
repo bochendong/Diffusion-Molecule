@@ -169,6 +169,38 @@ It is not the final SketchMol-style image decoder yet. It is a Phase 1.0
 capability check: if this oracle-latent decoder is weak, adding a JEPA planner
 cannot fix the generation bottleneck.
 
+## Phase 2A Planned Decoder
+
+After Phase 1 proves the frozen decoder can use oracle molecular latents, Phase
+2A trains the JEPA planner to predict that decoder latent and then samples
+through the frozen Phase 1 model:
+
+```text
+condition / source / mask / image context
+  -> JEPA planner predicted molecular latent
+  -> frozen Phase 1 latent-conditioned token decoder
+  -> sampled SMILES candidates
+  -> RDKit verification and train-pool diagnostics
+```
+
+Start with the 2048-dimensional Phase 1 decoder because it was close to the
+4096-dimensional decoder but cheaper to train and decode:
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=phase2_planned_decoder_2048_seed7 \
+bash scripts/submit_phase2_planned_decoder.sh
+```
+
+This writes the normal run artifacts plus `planner_latent_mse` and
+`planner_latent_cosine`, which separate planner failure from decoder failure.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of
