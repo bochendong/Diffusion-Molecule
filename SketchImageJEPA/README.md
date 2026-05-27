@@ -151,12 +151,16 @@ SKETCHIMAGE_RUN_NAME=phase1_oracle_latent_diffusion_seed7 \
 bash scripts/submit_oracle_latent_diffusion.sh
 ```
 
-This run trains a latent-conditioned token denoising decoder:
+This run now defaults to a latent-conditioned autoregressive token decoder,
+because the first denoising-only pilot produced zero valid SMILES. The
+denoising objective is still available with
+`SKETCHIMAGE_ORACLE_OBJECTIVE=denoising`, but it should be treated as a failed
+diagnostic until the decoder is redesigned around image or graph latents.
 
 ```text
 target molecule SMILES
   -> oracle molecular latent
-  -> denoising diffusion decoder
+  -> latent-conditioned token decoder
   -> sampled SMILES candidates
   -> RDKit validity, Tanimoto, exact-match, and train-pool diagnostics
 ```

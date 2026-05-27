@@ -195,11 +195,14 @@ bash scripts/submit_paper_matrix.sh
 ## Phase 1 Oracle Latent Decoder
 
 This is the first step toward replacing the current heuristic/generative
-decoder with a learned diffusion decoder. It removes the JEPA planner and gives
-the decoder the target molecule latent directly:
+decoder with a learned decoder. It removes the JEPA planner and gives the
+decoder the target molecule latent directly. The first denoising-only pilot
+returned zero valid SMILES, so this script now defaults to an autoregressive
+SMILES objective while preserving `SKETCHIMAGE_ORACLE_OBJECTIVE=denoising` as a
+diagnostic.
 
 ```text
-oracle target latent -> SMILES denoising diffusion -> sampled molecules
+oracle target latent -> latent-conditioned SMILES decoder -> sampled molecules
 ```
 
 Run it from the login node with a 10GB MIG GPU:

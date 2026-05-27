@@ -31,6 +31,7 @@ class OracleLatentDiffusionConfig:
     hidden_dim: int = 256
     transformer_layers: int = 3
     attention_heads: int = 4
+    objective: str = "autoregressive"
     dropout: float = 0.10
     max_length: int = 128
     epochs: int = 20
@@ -41,9 +42,10 @@ class OracleLatentDiffusionConfig:
     noise_max: float = 0.85
     sample_steps: int = 16
     samples_per_condition: int = 8
-    sample_multiplier: int = 4
+    sample_multiplier: int = 1
     sample_batch_size: int = 256
     temperature: float = 0.9
+    top_p: float = 0.95
     validity_bonus: float = 1.0
     train_fraction: float = 0.8
     device: str = "auto"
@@ -146,14 +148,25 @@ class OracleLatentSmilesDiffusion:
             for batch_tokens, batch_conditions in loader:
                 batch_tokens = batch_tokens.to(device)
                 batch_conditions = batch_conditions.to(device)
-                noise_level = torch.empty((batch_tokens.shape[0], 1), device=device).uniform_(self.config.noise_min, self.config.noise_max)
-                corrupted = _corrupt_tokens(torch, batch_tokens, noise_level, self.vocab)
-                logits = model(corrupted, batch_conditions, noise_level)
-                loss = torch.nn.functional.cross_entropy(
-                    logits.reshape(-1, len(self.vocab)),
-                    batch_tokens.reshape(-1),
-                    ignore_index=self.vocab.pad_id,
-                )
+                if self.config.objective == "denoising":
+                    noise_level = torch.empty((batch_tokens.shape[0], 1), device=device).uniform_(self.config.noise_min, self.config.noise_max)
+                    corrupted = _corrupt_tokens(torch, batch_tokens, noise_level, self.vocab)
+                    logits = model(corrupted, batch_conditions, noise_level)
+                    loss = torch.nn.functional.cross_entropy(
+                        logits.reshape(-1, len(self.vocab)),
+                        batch_tokens.reshape(-1),
+                        ignore_index=self.vocab.pad_id,
+                    )
+                elif self.config.objective == "autoregressive":
+                    noise_level = torch.zeros((batch_tokens.shape[0], 1), device=device)
+                    logits = model(batch_tokens, batch_conditions, noise_level, causal=True)
+                    loss = torch.nn.functional.cross_entropy(
+                        logits[:, :-1, :].reshape(-1, len(self.vocab)),
+                        batch_tokens[:, 1:].reshape(-1),
+                        ignore_index=self.vocab.pad_id,
+                    )
+                else:
+                    raise ValueError(f"Unknown oracle latent decoder objective: {self.config.objective}")
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
@@ -218,13 +231,48 @@ class OracleLatentSmilesDiffusion:
         model = self.model.to(device)
         model.eval()
         conditions = torch.from_numpy(np.asarray(condition_latents, dtype=np.float32)).to(device)
-        tokens = torch.full((conditions.shape[0], self.config.max_length), self.vocab.mask_id, dtype=torch.long, device=device)
+        if self.config.objective == "autoregressive":
+            return self._sample_batch_autoregressive(torch, model, conditions)
+        return self._sample_batch_denoising(torch, model, conditions)
+
+    def _sample_batch_autoregressive(self, torch: Any, model: Any, conditions: Any) -> list[tuple[str, float]]:
+        if self.vocab is None:
+            raise RuntimeError("OracleLatentSmilesDiffusion must be fit before sampling.")
+        tokens = torch.full((conditions.shape[0], self.config.max_length), self.vocab.pad_id, dtype=torch.long, device=conditions.device)
         tokens[:, 0] = self.vocab.bos_id
-        final_log_probs = torch.zeros((conditions.shape[0], self.config.max_length), dtype=torch.float32, device=device)
+        final_log_probs = torch.zeros((conditions.shape[0], self.config.max_length), dtype=torch.float32, device=conditions.device)
+        done = torch.zeros((conditions.shape[0],), dtype=torch.bool, device=conditions.device)
+        noise_level = torch.zeros((conditions.shape[0], 1), device=conditions.device)
+
+        with torch.no_grad():
+            for pos in range(1, self.config.max_length):
+                logits = model(tokens, conditions, noise_level, causal=True)[:, pos - 1, :] / max(float(self.config.temperature), 1e-6)
+                logits = _mask_special_logits(logits, self.vocab)
+                if pos == 1:
+                    logits[:, self.vocab.eos_id] = -1e9
+                logits = _top_p_filter(torch, logits, self.config.top_p)
+                probs = torch.nn.functional.softmax(logits, dim=-1)
+                sampled = torch.multinomial(probs, num_samples=1).squeeze(1)
+                selected = torch.gather(torch.log(torch.clamp(probs, min=1e-12)), 1, sampled.unsqueeze(1)).squeeze(1)
+                sampled = torch.where(done, torch.full_like(sampled, self.vocab.pad_id), sampled)
+                selected = torch.where(done, torch.zeros_like(selected), selected)
+                tokens[:, pos] = sampled
+                final_log_probs[:, pos] = selected
+                done = done | (sampled == self.vocab.eos_id)
+                if bool(torch.all(done).detach().cpu()):
+                    break
+        return _decode_sampled_rows(tokens, final_log_probs, self.vocab)
+
+    def _sample_batch_denoising(self, torch: Any, model: Any, conditions: Any) -> list[tuple[str, float]]:
+        if self.vocab is None:
+            raise RuntimeError("OracleLatentSmilesDiffusion must be fit before sampling.")
+        tokens = torch.full((conditions.shape[0], self.config.max_length), self.vocab.mask_id, dtype=torch.long, device=conditions.device)
+        tokens[:, 0] = self.vocab.bos_id
+        final_log_probs = torch.zeros((conditions.shape[0], self.config.max_length), dtype=torch.float32, device=conditions.device)
 
         with torch.no_grad():
             for step in range(max(1, int(self.config.sample_steps)), 0, -1):
-                noise_level = torch.full((conditions.shape[0], 1), step / max(1, int(self.config.sample_steps)), device=device)
+                noise_level = torch.full((conditions.shape[0], 1), step / max(1, int(self.config.sample_steps)), device=conditions.device)
                 logits = model(tokens, conditions, noise_level) / max(float(self.config.temperature), 1e-6)
                 logits[:, :, self.vocab.pad_id] = -1e9
                 logits[:, :, self.vocab.bos_id] = -1e9
@@ -237,14 +285,7 @@ class OracleLatentSmilesDiffusion:
                 final_log_probs[:, 1:] = selected[:, 1:]
             tokens[:, 0] = self.vocab.bos_id
 
-        rows: list[tuple[str, float]] = []
-        token_rows = tokens.detach().cpu().numpy()
-        score_rows = final_log_probs.detach().cpu().numpy()
-        for token_row, score_row in zip(token_rows, score_rows):
-            smiles = self.vocab.decode([int(item) for item in token_row])
-            score = _sequence_score([int(item) for item in token_row], [float(item) for item in score_row], self.vocab.eos_id)
-            rows.append((smiles, score))
-        return rows
+        return _decode_sampled_rows(tokens, final_log_probs, self.vocab)
 
 
 def run_oracle_latent_diffusion(
@@ -296,7 +337,7 @@ def run_oracle_latent_diffusion(
         "smiles_column": smiles_column,
         "limit": limit,
         "molecule_latent_version": MOLECULE_LATENT_VERSION,
-        "decoder": "latent_conditioned_token_denoising_diffusion",
+        "decoder": "latent_conditioned_autoregressive_token_decoder" if config.objective == "autoregressive" else "latent_conditioned_token_denoising_diffusion",
         "condition_source": "oracle_target_molecule_latent",
         "ranking": "model_confidence_plus_rdkit_validity_no_target_oracle",
         "config": asdict(config),
@@ -322,6 +363,7 @@ def main() -> None:
     parser.add_argument("--hidden-dim", type=int, default=256)
     parser.add_argument("--transformer-layers", type=int, default=3)
     parser.add_argument("--attention-heads", type=int, default=4)
+    parser.add_argument("--objective", choices=["autoregressive", "denoising"], default="autoregressive")
     parser.add_argument("--dropout", type=float, default=0.10)
     parser.add_argument("--max-length", type=int, default=128)
     parser.add_argument("--epochs", type=int, default=20)
@@ -335,6 +377,7 @@ def main() -> None:
     parser.add_argument("--sample-multiplier", type=int, default=4)
     parser.add_argument("--sample-batch-size", type=int, default=256)
     parser.add_argument("--temperature", type=float, default=0.9)
+    parser.add_argument("--top-p", type=float, default=0.95)
     parser.add_argument("--validity-bonus", type=float, default=1.0)
     parser.add_argument("--train-fraction", type=float, default=0.8)
     parser.add_argument("--device", default="auto")
@@ -345,6 +388,7 @@ def main() -> None:
         hidden_dim=args.hidden_dim,
         transformer_layers=args.transformer_layers,
         attention_heads=args.attention_heads,
+        objective=args.objective,
         dropout=args.dropout,
         max_length=args.max_length,
         epochs=args.epochs,
@@ -358,6 +402,7 @@ def main() -> None:
         sample_multiplier=args.sample_multiplier,
         sample_batch_size=args.sample_batch_size,
         temperature=args.temperature,
+        top_p=args.top_p,
         validity_bonus=args.validity_bonus,
         train_fraction=args.train_fraction,
         device=args.device,
@@ -402,13 +447,18 @@ def _TokenDenoisingTransformer(
             self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=layers)
             self.output = nn.Linear(hidden_dim, vocab_size)
 
-        def forward(self, input_ids, conditions, noise_level):
+        def forward(self, input_ids, conditions, noise_level, causal: bool = False):
             import torch
 
             positions = torch.arange(input_ids.shape[1], device=input_ids.device).unsqueeze(0).expand_as(input_ids)
             x = self.token_embedding(input_ids) + self.position_embedding(positions)
             x = x + self.condition_projection(conditions).unsqueeze(1) + self.noise_projection(noise_level).unsqueeze(1)
-            return self.output(self.encoder(x))
+            attn_mask = None
+            if causal:
+                length = int(input_ids.shape[1])
+                attn_mask = torch.full((length, length), float("-inf"), device=input_ids.device)
+                attn_mask = torch.triu(attn_mask, diagonal=1)
+            return self.output(self.encoder(x, mask=attn_mask))
 
     return Model()
 
@@ -442,6 +492,39 @@ def _rank_generated_group(raw_group: list[tuple[str, float]], top_k: int, validi
             best_by_key[key] = candidate
     ranked = sorted(best_by_key.values(), key=lambda item: item.score, reverse=True)[:top_k]
     return [Candidate(smiles=item.smiles, origin=item.origin, score=item.score, rank=idx) for idx, item in enumerate(ranked, start=1)]
+
+
+def _decode_sampled_rows(tokens: Any, log_probs: Any, vocab: SmilesVocabulary) -> list[tuple[str, float]]:
+    rows: list[tuple[str, float]] = []
+    token_rows = tokens.detach().cpu().numpy()
+    score_rows = log_probs.detach().cpu().numpy()
+    for token_row, score_row in zip(token_rows, score_rows):
+        token_ids = [int(item) for item in token_row]
+        smiles = vocab.decode(token_ids)
+        score = _sequence_score(token_ids, [float(item) for item in score_row], vocab.eos_id)
+        rows.append((smiles, score))
+    return rows
+
+
+def _mask_special_logits(logits: Any, vocab: SmilesVocabulary):
+    logits = logits.clone()
+    for token_id in (vocab.pad_id, vocab.bos_id, vocab.mask_id, vocab.unk_id):
+        logits[:, token_id] = -1e9
+    return logits
+
+
+def _top_p_filter(torch: Any, logits: Any, top_p: float):
+    top_p = float(top_p)
+    if top_p <= 0.0 or top_p >= 1.0:
+        return logits
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+    sorted_probs = torch.nn.functional.softmax(sorted_logits, dim=-1)
+    cumulative_probs = torch.cumsum(sorted_probs, dim=-1)
+    remove_sorted = cumulative_probs > top_p
+    remove_sorted[:, 1:] = remove_sorted[:, :-1].clone()
+    remove_sorted[:, 0] = False
+    remove = torch.zeros_like(remove_sorted).scatter(1, sorted_indices, remove_sorted)
+    return logits.masked_fill(remove, -1e9)
 
 
 def _sequence_score(token_ids: list[int], log_probs: list[float], eos_id: int) -> float:
