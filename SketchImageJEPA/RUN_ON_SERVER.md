@@ -302,6 +302,63 @@ If `planner_latent_cosine` is low, the planner is the bottleneck. If the
 planner cosine is high but target metrics are weak, the frozen decoder or
 latent representation is the bottleneck.
 
+## Phase 2B Robust Decoder
+
+Phase 2A can fail because the frozen decoder only learned oracle target latents.
+Phase 2B starts from that Phase 1 decoder and fine-tunes it on oracle, noisy,
+planner-predicted, and interpolated latents paired to the same target SMILES.
+The goal is to make the decoder robust to realistic planner error.
+
+Submit from the login node:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase2_robust_decoder_2048_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+bash scripts/submit_phase2_robust_decoder.sh
+```
+
+Default Phase 2B resource request:
+
+```text
+h100 10GB MIG = 1
+cpus-per-task = 8
+mem = 64G
+time = 10h
+```
+
+Default robust fine-tune mix:
+
+```text
+oracle repeats = 1
+planner-predicted repeats = 2
+noisy oracle repeats = 1
+oracle/planner interpolation repeats = 1
+noise std = 0.05
+decoder fine-tune epochs = 8
+decoder fine-tune lr = 1e-4
+```
+
+Primary comparison:
+
+```text
+Phase 2A frozen decoder validity/top1/mean_best
+vs.
+Phase 2B robust decoder validity/top1/mean_best
+```
+
+If validity recovers but target Tanimoto remains weak, tune the planner or
+condition representation. If validity remains low, the latent-conditioned
+token decoder itself is still not robust enough.
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.

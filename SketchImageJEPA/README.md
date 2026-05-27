@@ -201,6 +201,39 @@ bash scripts/submit_phase2_planned_decoder.sh
 This writes the normal run artifacts plus `planner_latent_mse` and
 `planner_latent_cosine`, which separate planner failure from decoder failure.
 
+## Phase 2B Robust Decoder
+
+Phase 2A showed that a decoder trained only on oracle latents can collapse when
+fed JEPA-predicted latents. Phase 2B starts from the Phase 1 decoder weights and
+fine-tunes the decoder on mixed conditions:
+
+```text
+target SMILES paired with:
+  oracle target latent
+  planner-predicted latent
+  noisy target latent
+  interpolation between oracle and planner latents
+```
+
+Run this after Phase 2A or directly after Phase 1 plus the hard split:
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=phase2_robust_decoder_2048_seed7 \
+bash scripts/submit_phase2_robust_decoder.sh
+```
+
+Read this against Phase 2A first: if validity recovers, the main issue was
+decoder robustness to off-manifold planner latents. If validity stays low, the
+planner latent distribution or molecular latent representation needs a deeper
+change.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of

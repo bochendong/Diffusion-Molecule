@@ -27,6 +27,7 @@ from sketchimage_jepa.hard_split import build_hard_split
 from sketchimage_jepa.oracle_latent_diffusion import OracleLatentDiffusionConfig, SmilesVocabulary, run_oracle_latent_diffusion
 from sketchimage_jepa.paper_matrix import summarize_matrix
 from sketchimage_jepa.phase2_planned_decoder import run_phase2_planned_decoder
+from sketchimage_jepa.phase2_robust_decoder import run_phase2_robust_decoder
 from sketchimage_jepa.property_guidance import parse_property_targets
 from sketchimage_jepa.report import summarize_prediction_rows
 from sketchimage_jepa.rerank_predictions import rerank_predictions_csv
@@ -762,6 +763,108 @@ class SketchImageJEPATests(unittest.TestCase):
             self.assertTrue(rows)
             self.assertEqual(rows[0]["origin"], "phase2_jepa_planned_decoder")
             self.assertIn("decoder_train_pool_member", rows[0])
+
+    @unittest.skipUnless(_torch_available(), "PyTorch is not installed")
+    def test_phase2_robust_decoder_writes_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            molecule_csv = Path(tmp, "molecules.csv")
+            with molecule_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["CCO", "CCN", "CCC", "CCCl", "CCBr", "CC(=O)O"]:
+                    writer.writerow({"smiles": smiles})
+            oracle_dir = Path(tmp, "oracle")
+            config = OracleLatentDiffusionConfig(
+                condition_dim=16,
+                hidden_dim=32,
+                transformer_layers=1,
+                attention_heads=4,
+                max_length=24,
+                epochs=1,
+                batch_size=2,
+                sample_steps=2,
+                samples_per_condition=2,
+                sample_multiplier=1,
+                sample_batch_size=4,
+                device="cpu",
+                seed=5,
+            )
+            run_oracle_latent_diffusion(molecule_csv=molecule_csv, output_dir=oracle_dir, config=config)
+            train_examples = [
+                BenchmarkExample(
+                    task_id="train_edit_1",
+                    task_type=TaskType.EDIT,
+                    source_smiles="CCO",
+                    target_smiles="CCN",
+                    instruction="Change the terminal hetero atom.",
+                ),
+                BenchmarkExample(
+                    task_id="train_edit_2",
+                    task_type=TaskType.EDIT,
+                    source_smiles="CCC",
+                    target_smiles="CCCl",
+                    instruction="Replace one terminal atom with chlorine.",
+                ),
+                BenchmarkExample(
+                    task_id="train_denovo",
+                    task_type=TaskType.DE_NOVO,
+                    target_smiles="CCO",
+                    instruction="Generate a small polar molecule.",
+                ),
+            ]
+            eval_examples = [
+                BenchmarkExample(
+                    task_id="eval_edit",
+                    task_type=TaskType.EDIT,
+                    source_smiles="CCO",
+                    target_smiles="CCC",
+                    instruction="Edit the source molecule to increase MW toward 44.10.",
+                ),
+                BenchmarkExample(
+                    task_id="eval_denovo",
+                    task_type=TaskType.DE_NOVO,
+                    target_smiles="CCCl",
+                    instruction="Generate a small molecule with chlorine.",
+                ),
+            ]
+            train_csv = Path(tmp, "train.csv")
+            eval_csv = Path(tmp, "eval.csv")
+            write_examples_csv(train_csv, train_examples)
+            write_examples_csv(eval_csv, eval_examples)
+
+            phase2_dir = Path(tmp, "phase2b")
+            metrics = run_phase2_robust_decoder(
+                oracle_decoder_dir=oracle_dir,
+                output_dir=phase2_dir,
+                train_csv=train_csv,
+                eval_csv=eval_csv,
+                feature_dim=16,
+                top_k=2,
+                backend="ridge",
+                render_image_context=False,
+                decoder_device="cpu",
+                decoder_finetune_epochs=1,
+                decoder_finetune_batch_size=2,
+                decoder_finetune_lr=1e-4,
+                decoder_oracle_repeats=1,
+                decoder_planner_repeats=1,
+                decoder_noise_repeats=1,
+                decoder_interpolation_repeats=1,
+                seed=5,
+            )
+            self.assertIn("planner_latent_mse", metrics)
+            self.assertIn("decoder_finetune_rows", metrics)
+            self.assertGreater(metrics["decoder_finetune_rows"], 0.0)
+            self.assertTrue(Path(phase2_dir, "metrics.json").exists())
+            self.assertTrue(Path(phase2_dir, "predictions.csv").exists())
+            self.assertTrue(Path(phase2_dir, "task_type_summary.csv").exists())
+            self.assertTrue(Path(phase2_dir, "planner", "config.json").exists())
+            self.assertTrue(Path(phase2_dir, "decoder", "model.pt").exists())
+            self.assertTrue(Path(phase2_dir, "planner_eval_latents.npy").exists())
+            with Path(phase2_dir, "predictions.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertTrue(rows)
+            self.assertEqual(rows[0]["origin"], "phase2_jepa_planned_robust_decoder")
 
     def test_rerank_predictions_can_promote_property_match(self):
         with tempfile.TemporaryDirectory() as tmp:

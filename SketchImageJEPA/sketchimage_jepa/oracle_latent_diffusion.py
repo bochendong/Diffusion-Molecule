@@ -115,33 +115,54 @@ class OracleLatentSmilesDiffusion:
         self.history: list[dict[str, float | str]] = []
 
     def fit(self, smiles: list[str]) -> "OracleLatentSmilesDiffusion":
+        return self.fit_conditioned(smiles, condition_latents=None, reset_model=True)
+
+    def fit_conditioned(
+        self,
+        smiles: list[str],
+        condition_latents: np.ndarray | None = None,
+        reset_model: bool = True,
+        history_backend: str | None = None,
+    ) -> "OracleLatentSmilesDiffusion":
         torch, nn, DataLoader, TensorDataset = _torch_deps()
         _set_torch_seed(torch, self.config.seed)
-        smiles = _canonical_smiles_list(smiles, self.config.max_length)
+        if condition_latents is None:
+            smiles = _canonical_smiles_list(smiles, self.config.max_length)
+            conditions = np.stack([molecule_latent(value, self.config.condition_dim) for value in smiles]).astype(np.float32) if smiles else np.zeros((0, self.config.condition_dim), dtype=np.float32)
+        else:
+            smiles, conditions = _canonical_condition_rows(smiles, condition_latents, self.config.max_length)
         if not smiles:
             raise ValueError("No valid training SMILES remain after canonicalization and max_length filtering.")
-        self.vocab = SmilesVocabulary.build(smiles)
+        if conditions.shape[1] != self.config.condition_dim:
+            raise ValueError(f"condition_latents dim={conditions.shape[1]} must match decoder condition_dim={self.config.condition_dim}.")
+        if reset_model or self.vocab is None:
+            self.vocab = SmilesVocabulary.build(smiles)
+        if self.vocab is None:
+            raise RuntimeError("A vocabulary is required before decoder fine-tuning.")
         tokens = np.asarray([self.vocab.encode(value, self.config.max_length) for value in smiles], dtype=np.int64)
-        conditions = np.stack([molecule_latent(value, self.config.condition_dim) for value in smiles]).astype(np.float32)
         device = _resolve_device(torch, self.config.device)
         self.device_name = str(device)
 
-        model = _TokenDenoisingTransformer(
-            vocab_size=len(self.vocab),
-            condition_dim=self.config.condition_dim,
-            hidden_dim=self.config.hidden_dim,
-            max_length=self.config.max_length,
-            layers=self.config.transformer_layers,
-            heads=self.config.attention_heads,
-            dropout=self.config.dropout,
-            nn=nn,
-        ).to(device)
+        if reset_model or self.model is None:
+            model = _TokenDenoisingTransformer(
+                vocab_size=len(self.vocab),
+                condition_dim=self.config.condition_dim,
+                hidden_dim=self.config.hidden_dim,
+                max_length=self.config.max_length,
+                layers=self.config.transformer_layers,
+                heads=self.config.attention_heads,
+                dropout=self.config.dropout,
+                nn=nn,
+            ).to(device)
+        else:
+            model = self.model.to(device)
         dataset = TensorDataset(torch.from_numpy(tokens), torch.from_numpy(conditions))
         loader = DataLoader(dataset, batch_size=self.config.batch_size, shuffle=True, drop_last=False)
         optimizer = torch.optim.AdamW(model.parameters(), lr=self.config.lr, weight_decay=self.config.weight_decay)
 
         model.train()
-        history: list[dict[str, float | str]] = []
+        history: list[dict[str, float | str]] = [] if reset_model else list(self.history)
+        backend_label = history_backend or self.backend_name
         for epoch in range(1, self.config.epochs + 1):
             total_loss = 0.0
             total_tokens = 0
@@ -178,7 +199,7 @@ class OracleLatentSmilesDiffusion:
                 {
                     "epoch": float(epoch),
                     "token_loss": total_loss / max(1, total_tokens),
-                    "backend": self.backend_name,
+                    "backend": backend_label,
                     "device": self.device_name,
                 }
             )
@@ -599,6 +620,26 @@ def _canonical_smiles_list(smiles: list[str], max_length: int) -> list[str]:
         seen.add(can)
         out.append(can)
     return out
+
+
+def _canonical_condition_rows(smiles: list[str], condition_latents: np.ndarray, max_length: int) -> tuple[list[str], np.ndarray]:
+    condition_latents = np.asarray(condition_latents, dtype=np.float32)
+    if len(smiles) != len(condition_latents):
+        raise ValueError(f"smiles rows={len(smiles)} must match condition rows={len(condition_latents)}.")
+    out_smiles: list[str] = []
+    out_conditions: list[np.ndarray] = []
+    for value, condition in zip(smiles, condition_latents):
+        can = canonicalize_smiles(value)
+        if not can:
+            continue
+        if len(_tokenize_smiles(can)) + 2 > max_length:
+            continue
+        out_smiles.append(can)
+        out_conditions.append(np.asarray(condition, dtype=np.float32))
+    if not out_conditions:
+        width = int(condition_latents.shape[1]) if condition_latents.ndim == 2 else 0
+        return [], np.zeros((0, width), dtype=np.float32)
+    return out_smiles, np.stack(out_conditions).astype(np.float32)
 
 
 def _split_smiles(smiles: list[str], train_fraction: float, seed: int) -> tuple[list[str], list[str]]:
