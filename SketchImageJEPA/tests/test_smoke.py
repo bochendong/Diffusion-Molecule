@@ -628,6 +628,7 @@ class SketchImageJEPATests(unittest.TestCase):
         latent = molecule_latent("CCO", 64)
         self.assertEqual(latent.shape, (64,))
         self.assertTrue(np.isfinite(latent).all())
+        self.assertGreater(float(np.linalg.norm(latent)), 0.0)
 
     def test_smiles_vocabulary_round_trip(self):
         vocab = SmilesVocabulary.build(["CCO", "CCN"])
@@ -667,7 +668,6 @@ class SketchImageJEPATests(unittest.TestCase):
             self.assertTrue(Path(output_dir, "predictions.csv").exists())
             self.assertTrue(Path(output_dir, "task_type_summary.csv").exists())
             self.assertTrue(Path(output_dir, "model", "model.pt").exists())
-        self.assertGreater(float(np.linalg.norm(latent)), 0.0)
 
     def test_rerank_predictions_can_promote_property_match(self):
         with tempfile.TemporaryDirectory() as tmp:

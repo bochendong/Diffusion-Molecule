@@ -397,7 +397,7 @@ def _TokenDenoisingTransformer(
                 dropout=dropout,
                 activation="gelu",
                 batch_first=True,
-                norm_first=True,
+                norm_first=False,
             )
             self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=layers)
             self.output = nn.Linear(hidden_dim, vocab_size)
