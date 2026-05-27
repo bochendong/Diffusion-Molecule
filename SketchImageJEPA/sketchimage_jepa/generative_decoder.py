@@ -17,7 +17,7 @@ import numpy as np
 
 from .chem import Chem, RDKIT_AVAILABLE, canonicalize_smiles, descriptor_delta, molecular_descriptors, scaffold_key, tanimoto
 from .decoder import RetrievalDecoder, _asks_to_preserve_source, _cosine_similarity
-from .features import molecule_latent
+from .features import molecule_latent, stable_hash_vector
 from .property_guidance import PROPERTY_KEYS, PROPERTY_TOLERANCES, parse_property_targets, property_match_score
 from .schema import BenchmarkExample, Candidate, TaskType
 
@@ -347,7 +347,12 @@ class LearnedTransformDecoder(GenerativeMutationDecoder):
         bases.extend(seeds[: max(1, min(4, self.seed_count))])
         return _unique_valid(bases)
 
-    def _select_transforms(self, example: BenchmarkExample | None, source: str | None = None) -> list[LearnedTransform]:
+    def _select_transforms(
+        self,
+        example: BenchmarkExample | None,
+        source: str | None = None,
+        pred_latent: np.ndarray | None = None,
+    ) -> list[LearnedTransform]:
         if not self.transforms:
             return []
         task_type = example.task_type.value if example else ""
@@ -442,12 +447,17 @@ class PropertyConditionedTransformDecoder(ScaffoldPreservingTransformDecoder):
 
     transform_origin = "property_conditioned_transform"
 
-    def _select_transforms(self, example: BenchmarkExample | None, source: str | None = None) -> list[LearnedTransform]:
+    def _select_transforms(
+        self,
+        example: BenchmarkExample | None,
+        source: str | None = None,
+        pred_latent: np.ndarray | None = None,
+    ) -> list[LearnedTransform]:
         if not self.transforms:
             return []
         desired = desired_property_delta(source, example)
         if not desired:
-            return super()._select_transforms(example, source=source)
+            return super()._select_transforms(example, source=source, pred_latent=pred_latent)
         task_type = example.task_type.value if example else ""
 
         def sort_key(transform: LearnedTransform) -> tuple[object, ...]:
@@ -493,7 +503,7 @@ class LatentConditionedTransformBeamDecoder(PropertyConditionedTransformDecoder)
         if pred_latent is None or not source or not example or example.task_type == TaskType.DE_NOVO:
             return super()._generate_candidates(seeds, example, source, pred_latent=pred_latent)
 
-        transforms = self._select_transforms(example, source=source)
+        transforms = self._select_transforms(example, source=source, pred_latent=pred_latent)
         if not transforms:
             return super()._generate_candidates(seeds, example, source, pred_latent=pred_latent)
 
@@ -571,6 +581,85 @@ class LatentConditionedTransformBeamDecoder(PropertyConditionedTransformDecoder)
         return float(score)
 
 
+class EditPolicyTransformDecoder(LatentConditionedTransformBeamDecoder):
+    """Use supervised source-target edit examples to rank transform actions."""
+
+    transform_origin = "edit_policy_transform"
+
+    def __init__(
+        self,
+        smiles: list[str],
+        latents: np.ndarray,
+        train_examples: list[BenchmarkExample],
+        de_novo_latent_rerank_weight: float = 0.05,
+        source_rerank_weight: float = 0.35,
+        property_rerank_weight: float = 0.25,
+        scaffold_rerank_bonus: float = 0.15,
+        seed_count: int = 24,
+        mutation_rounds: int = 1,
+        candidates_per_seed: int = 8,
+        novelty_bonus: float = 0.05,
+        include_retrieval: bool = True,
+        include_mutation_fallback: bool = True,
+        max_transform_examples: int = 1200,
+        scaffold_retention_bonus: float = 0.75,
+    ):
+        super().__init__(
+            smiles,
+            latents,
+            train_examples=train_examples,
+            de_novo_latent_rerank_weight=de_novo_latent_rerank_weight,
+            source_rerank_weight=source_rerank_weight,
+            property_rerank_weight=property_rerank_weight,
+            scaffold_rerank_bonus=scaffold_rerank_bonus,
+            seed_count=seed_count,
+            mutation_rounds=mutation_rounds,
+            candidates_per_seed=candidates_per_seed,
+            novelty_bonus=novelty_bonus,
+            include_retrieval=include_retrieval,
+            include_mutation_fallback=include_mutation_fallback,
+            max_transform_examples=max_transform_examples,
+            scaffold_retention_bonus=scaffold_retention_bonus,
+        )
+        self.transform_policy = _learn_transform_policy(train_examples, self.transforms, self.latent_dim)
+
+    def _select_transforms(
+        self,
+        example: BenchmarkExample | None,
+        source: str | None = None,
+        pred_latent: np.ndarray | None = None,
+    ) -> list[LearnedTransform]:
+        if not self.transforms or not source or example is None or example.task_type == TaskType.DE_NOVO:
+            return super()._select_transforms(example, source=source, pred_latent=pred_latent)
+
+        query = _edit_policy_feature(example, source, pred_latent, self.latent_dim)
+        desired = desired_property_delta(source, example)
+        task_type = example.task_type.value
+
+        def score(transform: LearnedTransform) -> float:
+            prototype = self.transform_policy.get(transform.signature())
+            policy_score = float(np.dot(query, prototype)) if prototype is not None else 0.0
+            delta_score = 0.0
+            if desired:
+                delta_score = max(0.0, 1.0 - _normalized_delta_mae(transform.property_delta(), desired))
+            task_score = 1.0 if transform.task_type == task_type else 0.0
+            support_score = float(np.log1p(max(0, transform.support)))
+            return 2.0 * policy_score + 0.75 * delta_score + 0.35 * task_score + 0.10 * support_score
+
+        ranked = sorted(
+            self.transforms,
+            key=lambda transform: (
+                -score(transform),
+                transform.task_type != task_type,
+                transform.kind,
+                transform.fragment_smiles,
+                transform.source_token,
+                transform.target_token,
+            ),
+        )
+        return ranked[: self.seed_count]
+
+
 def _unit_vector(vector: np.ndarray) -> np.ndarray:
     arr = np.asarray(vector, dtype=np.float32).reshape(-1)
     norm = float(np.linalg.norm(arr))
@@ -610,6 +699,53 @@ def _learn_transform_library(
         if len(counts) >= max_transforms or processed >= max_examples:
             break
     return sorted(counts.values(), key=lambda item: (-item.support, item.task_type, item.kind, item.fragment_smiles, item.source_token))[:max_transforms]
+
+
+def _learn_transform_policy(
+    examples: list[BenchmarkExample],
+    transforms: list[LearnedTransform],
+    latent_dim: int,
+) -> dict[tuple[object, ...], np.ndarray]:
+    signatures = {transform.signature() for transform in transforms}
+    sums: dict[tuple[object, ...], np.ndarray] = {}
+    counts: dict[tuple[object, ...], int] = {}
+    for example in examples:
+        source = canonicalize_smiles(example.source_smiles)
+        target = canonicalize_smiles(example.target_smiles)
+        if not source or not target or source == target:
+            continue
+        feature = _edit_policy_feature(example, source, molecule_latent(target, latent_dim), latent_dim)
+        for transform in _extract_transforms(source, target, example.task_type.value):
+            signature = transform.signature()
+            if signature not in signatures:
+                continue
+            sums[signature] = sums.get(signature, np.zeros(latent_dim, dtype=np.float32)) + feature
+            counts[signature] = counts.get(signature, 0) + 1
+    return {signature: _unit_vector(total / max(1, counts[signature])) for signature, total in sums.items()}
+
+
+def _edit_policy_feature(
+    example: BenchmarkExample,
+    source: str | None,
+    pred_latent: np.ndarray | None,
+    latent_dim: int,
+) -> np.ndarray:
+    pred = _unit_vector(pred_latent if pred_latent is not None else np.zeros(latent_dim, dtype=np.float32))
+    source_vec = molecule_latent(source, latent_dim)
+    task_vec = stable_hash_vector(example.task_type.value, latent_dim, salt="edit-policy-task")
+    instruction_vec = stable_hash_vector(example.instruction, latent_dim, salt="edit-policy-instruction")
+    delta_vec = _property_delta_vector(desired_property_delta(source, example), latent_dim)
+    return _unit_vector(0.40 * pred + 0.20 * source_vec + 0.20 * delta_vec + 0.12 * task_vec + 0.08 * instruction_vec)
+
+
+def _property_delta_vector(delta: Mapping[str, float], latent_dim: int) -> np.ndarray:
+    vec = np.zeros(latent_dim, dtype=np.float32)
+    for idx, key in enumerate(PROPERTY_KEYS):
+        if idx >= latent_dim:
+            break
+        if key in delta:
+            vec[idx] = float(delta[key]) / PROPERTY_TOLERANCES[key]
+    return _unit_vector(vec)
 
 
 def _extract_transforms(source: str, target: str, task_type: str) -> list[LearnedTransform]:

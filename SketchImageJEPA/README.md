@@ -365,6 +365,35 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/submit_paper_matrix.sh
 ```
 
+The supervised edit-policy transform decoder tests the next research
+hypothesis: the planner should not only rank heuristic mutations, but should
+select learned molecular edit actions supervised by source-target pairs. It
+learns a lightweight transform policy from training edits, then uses the
+predicted latent plan to rank edit actions during generation.
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=sketchmol_hard_edit_policy_transform_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_edit_policy_transform_decoder.sh
+```
+
+Compact comparison:
+
+```bash
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_PAPER_MATRIX_NAME=sketchmol_hard_edit_policy_transform_pilot \
+SKETCHIMAGE_PAPER_VARIANTS="planner_edit_policy_transform planner_edit_policy_transform_only planner_latent_beam_transform planner_property_transform no_contrastive" \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/submit_paper_matrix.sh
+```
+
 The smoke run writes:
 
 ```text

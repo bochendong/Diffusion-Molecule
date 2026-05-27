@@ -13,6 +13,7 @@ from sketchimage_jepa.decoder import RetrievalDecoder
 from sketchimage_jepa.experiment import run_experiment
 from sketchimage_jepa.features import MOLECULE_LATENT_VERSION, context_vector, matrix_from_examples, molecule_latent
 from sketchimage_jepa.generative_decoder import (
+    EditPolicyTransformDecoder,
     GenerativeMutationDecoder,
     LatentConditionedTransformBeamDecoder,
     LearnedTransformDecoder,
@@ -164,6 +165,25 @@ class SketchImageJEPATests(unittest.TestCase):
             config = json.loads(Path(tmp, "run_config.json").read_text(encoding="utf-8"))
             self.assertEqual(config["decoder_mode"], "hybrid_latent_beam_transform")
             self.assertEqual(config["decoder"]["source_conditioned"], "latent_conditioned_transform_beam")
+
+    def test_edit_policy_transform_experiment_records_mode(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            metrics = run_experiment(
+                output_dir=tmp,
+                feature_dim=32,
+                latent_dim=16,
+                top_k=3,
+                train_fraction=0.67,
+                seed=7,
+                decoder_mode="hybrid_edit_policy_transform",
+                generative_seed_count=4,
+                generative_mutation_rounds=2,
+                generative_candidates_per_seed=3,
+            )
+            self.assertIn("candidate_generated_fraction", metrics)
+            config = json.loads(Path(tmp, "run_config.json").read_text(encoding="utf-8"))
+            self.assertEqual(config["decoder_mode"], "hybrid_edit_policy_transform")
+            self.assertEqual(config["decoder"]["source_conditioned"], "supervised_edit_policy_transform")
 
     def test_sketchmol_aligned_preset_records_reference(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -535,6 +555,48 @@ class SketchImageJEPATests(unittest.TestCase):
             decoder._beam_score("CCCN", target_latent, "CCCO", eval_example),
             decoder._beam_score("CCCN", molecule_latent("CCC", 16), "CCCO", eval_example),
         )
+
+    def test_edit_policy_transform_decoder_uses_supervised_policy(self):
+        train_examples = [
+            BenchmarkExample(
+                task_id="learn_replace",
+                task_type=TaskType.EDIT,
+                source_smiles="CCO",
+                target_smiles="CCN",
+                instruction="Edit the source molecule to increase MW toward 45.08. Keep the molecule structurally related to the source.",
+            ),
+            BenchmarkExample(
+                task_id="learn_trim",
+                task_type=TaskType.EDIT,
+                source_smiles="CCCC",
+                target_smiles="CCC",
+                instruction="Edit the source molecule to decrease MW toward 44.10. Keep the molecule structurally related to the source.",
+            ),
+        ]
+        smiles = ["CCN", "CCC"]
+        latents = np.stack([molecule_latent(smiles_value, 16) for smiles_value in smiles])
+        decoder = EditPolicyTransformDecoder(
+            smiles,
+            latents,
+            train_examples=train_examples,
+            seed_count=4,
+            mutation_rounds=2,
+            candidates_per_seed=4,
+            include_retrieval=False,
+            include_mutation_fallback=False,
+        )
+        eval_example = BenchmarkExample(
+            task_id="apply_replace",
+            task_type=TaskType.EDIT,
+            source_smiles="CCCO",
+            target_smiles="CCCN",
+            instruction="Edit the source molecule to increase MW toward 57.10. Keep the molecule structurally related to the source.",
+        )
+        candidates = decoder.decode(np.stack([molecule_latent("CCCN", 16)]), ["CCCO"], top_k=8, examples=[eval_example])
+        self.assertTrue(candidates[0])
+        by_smiles = {candidate.smiles: candidate for candidate in candidates[0]}
+        self.assertIn("CCCN", by_smiles)
+        self.assertEqual(by_smiles["CCCN"].origin, "edit_policy_transform")
 
     def test_scoring_preserves_model_rank_without_target_oracle(self):
         example = BenchmarkExample(
