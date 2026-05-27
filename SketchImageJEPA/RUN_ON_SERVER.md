@@ -192,6 +192,62 @@ SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash scripts/submit_paper_matrix.sh
 ```
 
+## Phase 1 Oracle Latent Decoder
+
+This is the first step toward replacing the current heuristic/generative
+decoder with a learned diffusion decoder. It removes the JEPA planner and gives
+the decoder the target molecule latent directly:
+
+```text
+oracle target latent -> SMILES denoising diffusion -> sampled molecules
+```
+
+Run it from the login node with a 10GB MIG GPU:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase1_oracle_latent_diffusion_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHIMAGE_MOLECULE_LIMIT=50000 \
+SKETCHIMAGE_ORACLE_EPOCHS=20 \
+SKETCHIMAGE_ORACLE_BATCH_SIZE=128 \
+bash scripts/submit_oracle_latent_diffusion.sh
+```
+
+Outputs:
+
+```text
+outputs/runs/phase1_oracle_latent_diffusion_seed7/metrics.json
+outputs/runs/phase1_oracle_latent_diffusion_seed7/predictions.csv
+outputs/runs/phase1_oracle_latent_diffusion_seed7/task_type_summary.csv
+outputs/runs/phase1_oracle_latent_diffusion_seed7/run_config.json
+```
+
+Resource default:
+
+```text
+h100 10GB MIG = 1
+cpus-per-task = 4
+mem = 32G
+time = 4h
+```
+
+For a quick sanity check before a full run:
+
+```bash
+SKETCHIMAGE_MOLECULE_CSV=data/example_molecules.csv \
+SKETCHIMAGE_RUN_NAME=phase1_oracle_latent_diffusion_smoke \
+SKETCHIMAGE_ORACLE_EPOCHS=2 \
+SKETCHIMAGE_MOLECULE_LIMIT=100 \
+bash scripts/submit_oracle_latent_diffusion.sh
+```
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.

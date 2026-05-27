@@ -65,6 +65,19 @@ Minimum evidence:
 - Report validity, novelty, diversity, property success, and local-edit
   preservation.
 
+Phase 1 isolates this question before the planner is involved:
+
+```text
+oracle target molecular latent
+  -> learned denoising decoder
+  -> sampled SMILES candidates
+```
+
+If the oracle-latent decoder cannot recover valid and similar molecules, then
+the immediate bottleneck is decoder capacity rather than JEPA planning. If it
+works, the next question becomes whether the JEPA planner can predict a latent
+that this decoder can use.
+
 ### RQ5: Benchmark Contract
 
 Do current SketchMol-style systems solve realistic local-control molecule
@@ -109,5 +122,9 @@ benchmarks.
 1. Audit the easy split to quantify nearest-neighbor shortcuts.
 2. Build a scaffold/nearest-neighbor controlled hard split.
 3. Run the paper matrix on both the easy split and the hard split.
-4. Promote `planner_v2` only if it improves over `planner_best` on the hard
+4. Isolate Phase 1 decoder capability with `oracle target latent -> SMILES`
+   denoising diffusion.
+5. Promote `planner_v2` only if it improves over `planner_best` on the hard
    split, not just on the easy split.
+6. Connect the JEPA planner only after the decoder shows enough oracle-latent
+   capacity to justify the combined experiment.

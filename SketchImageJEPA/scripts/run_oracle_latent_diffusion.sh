@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Run Phase 1: oracle molecular latent -> SMILES denoising diffusion decoder.
+
+set -euo pipefail
+
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT_DIR"
+
+PYTHON_BIN="${SKETCHIMAGE_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
+RUN_NAME="${SKETCHIMAGE_RUN_NAME:-phase1_oracle_latent_diffusion_seed${SKETCHIMAGE_SEED:-7}}"
+OUTPUT_DIR="${SKETCHIMAGE_OUTPUT_DIR:-outputs/runs/$RUN_NAME}"
+MOLECULE_CSV="${SKETCHIMAGE_MOLECULE_CSV:-data/example_molecules.csv}"
+
+export SKETCHIMAGE_SEED="${SKETCHIMAGE_SEED:-7}"
+export SKETCHIMAGE_ORACLE_CONDITION_DIM="${SKETCHIMAGE_ORACLE_CONDITION_DIM:-256}"
+export SKETCHIMAGE_ORACLE_HIDDEN_DIM="${SKETCHIMAGE_ORACLE_HIDDEN_DIM:-256}"
+export SKETCHIMAGE_ORACLE_TRANSFORMER_LAYERS="${SKETCHIMAGE_ORACLE_TRANSFORMER_LAYERS:-3}"
+export SKETCHIMAGE_ORACLE_ATTENTION_HEADS="${SKETCHIMAGE_ORACLE_ATTENTION_HEADS:-4}"
+export SKETCHIMAGE_ORACLE_MAX_LENGTH="${SKETCHIMAGE_ORACLE_MAX_LENGTH:-128}"
+export SKETCHIMAGE_ORACLE_EPOCHS="${SKETCHIMAGE_ORACLE_EPOCHS:-20}"
+export SKETCHIMAGE_ORACLE_BATCH_SIZE="${SKETCHIMAGE_ORACLE_BATCH_SIZE:-128}"
+export SKETCHIMAGE_ORACLE_LR="${SKETCHIMAGE_ORACLE_LR:-0.0003}"
+export SKETCHIMAGE_ORACLE_SAMPLE_STEPS="${SKETCHIMAGE_ORACLE_SAMPLE_STEPS:-16}"
+export SKETCHIMAGE_ORACLE_SAMPLES_PER_CONDITION="${SKETCHIMAGE_ORACLE_SAMPLES_PER_CONDITION:-8}"
+export SKETCHIMAGE_ORACLE_SAMPLE_MULTIPLIER="${SKETCHIMAGE_ORACLE_SAMPLE_MULTIPLIER:-4}"
+export SKETCHIMAGE_ORACLE_TEMPERATURE="${SKETCHIMAGE_ORACLE_TEMPERATURE:-0.9}"
+export SKETCHIMAGE_ORACLE_VALIDITY_BONUS="${SKETCHIMAGE_ORACLE_VALIDITY_BONUS:-1.0}"
+export SKETCHIMAGE_ORACLE_TRAIN_FRACTION="${SKETCHIMAGE_ORACLE_TRAIN_FRACTION:-0.8}"
+export SKETCHIMAGE_ORACLE_DEVICE="${SKETCHIMAGE_ORACLE_DEVICE:-auto}"
+
+echo "SketchImage-JEPA Phase 1 oracle latent diffusion"
+echo "  python=$PYTHON_BIN"
+echo "  run_root=$OUTPUT_DIR"
+echo "  molecule_csv=$MOLECULE_CSV"
+echo "  molecule_limit=${SKETCHIMAGE_MOLECULE_LIMIT:-<all>}"
+echo "  condition_dim=$SKETCHIMAGE_ORACLE_CONDITION_DIM"
+echo "  hidden_dim=$SKETCHIMAGE_ORACLE_HIDDEN_DIM"
+echo "  transformer_layers=$SKETCHIMAGE_ORACLE_TRANSFORMER_LAYERS"
+echo "  attention_heads=$SKETCHIMAGE_ORACLE_ATTENTION_HEADS"
+echo "  max_length=$SKETCHIMAGE_ORACLE_MAX_LENGTH"
+echo "  epochs=$SKETCHIMAGE_ORACLE_EPOCHS"
+echo "  batch_size=$SKETCHIMAGE_ORACLE_BATCH_SIZE"
+echo "  sample_steps=$SKETCHIMAGE_ORACLE_SAMPLE_STEPS"
+echo "  samples_per_condition=$SKETCHIMAGE_ORACLE_SAMPLES_PER_CONDITION"
+echo "  sample_multiplier=$SKETCHIMAGE_ORACLE_SAMPLE_MULTIPLIER"
+echo "  temperature=$SKETCHIMAGE_ORACLE_TEMPERATURE"
+echo "  validity_bonus=$SKETCHIMAGE_ORACLE_VALIDITY_BONUS"
+echo "  seed=$SKETCHIMAGE_SEED"
+echo
+
+if [[ "${SKETCHIMAGE_RUN_TESTS:-1}" == "1" ]]; then
+  echo "[1/2] Running tests"
+  "$PYTHON_BIN" -m unittest discover -s tests
+  echo
+else
+  echo "[1/2] Skipping tests because SKETCHIMAGE_RUN_TESTS=$SKETCHIMAGE_RUN_TESTS"
+  echo
+fi
+
+echo "[2/2] Training oracle latent diffusion decoder"
+LIMIT_ARGS=()
+if [[ -n "${SKETCHIMAGE_MOLECULE_LIMIT:-}" ]]; then
+  LIMIT_ARGS+=(--limit "$SKETCHIMAGE_MOLECULE_LIMIT")
+fi
+if [[ -n "${SKETCHIMAGE_SMILES_COLUMN:-}" ]]; then
+  LIMIT_ARGS+=(--smiles-column "$SKETCHIMAGE_SMILES_COLUMN")
+fi
+
+"$PYTHON_BIN" -m sketchimage_jepa.oracle_latent_diffusion \
+  --molecule-csv "$MOLECULE_CSV" \
+  --output-dir "$OUTPUT_DIR" \
+  "${LIMIT_ARGS[@]}" \
+  --condition-dim "$SKETCHIMAGE_ORACLE_CONDITION_DIM" \
+  --hidden-dim "$SKETCHIMAGE_ORACLE_HIDDEN_DIM" \
+  --transformer-layers "$SKETCHIMAGE_ORACLE_TRANSFORMER_LAYERS" \
+  --attention-heads "$SKETCHIMAGE_ORACLE_ATTENTION_HEADS" \
+  --max-length "$SKETCHIMAGE_ORACLE_MAX_LENGTH" \
+  --epochs "$SKETCHIMAGE_ORACLE_EPOCHS" \
+  --batch-size "$SKETCHIMAGE_ORACLE_BATCH_SIZE" \
+  --lr "$SKETCHIMAGE_ORACLE_LR" \
+  --sample-steps "$SKETCHIMAGE_ORACLE_SAMPLE_STEPS" \
+  --samples-per-condition "$SKETCHIMAGE_ORACLE_SAMPLES_PER_CONDITION" \
+  --sample-multiplier "$SKETCHIMAGE_ORACLE_SAMPLE_MULTIPLIER" \
+  --temperature "$SKETCHIMAGE_ORACLE_TEMPERATURE" \
+  --validity-bonus "$SKETCHIMAGE_ORACLE_VALIDITY_BONUS" \
+  --train-fraction "$SKETCHIMAGE_ORACLE_TRAIN_FRACTION" \
+  --device "$SKETCHIMAGE_ORACLE_DEVICE" \
+  --seed "$SKETCHIMAGE_SEED"
+
+echo
+echo "Phase 1 oracle latent diffusion finished: $OUTPUT_DIR"
+echo "  metrics=$OUTPUT_DIR/metrics.json"
+echo "  predictions=$OUTPUT_DIR/predictions.csv"
+echo "  config=$OUTPUT_DIR/run_config.json"

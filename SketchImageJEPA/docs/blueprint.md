@@ -30,8 +30,12 @@ source constraints, and local edit mask?
 3. RDKit-rendered molecule image statistics as optional context.
 4. Torch JEPA with target, delta, contrastive, and variance regularization
    losses.
-5. Source-guided graph edits and SELFIES/graph decoder.
-6. SketchMol-aligned benchmark comparison.
+5. Phase 1 decoder check: oracle molecular latent to SMILES denoising
+   diffusion, with no JEPA planner in the loop.
+6. Source-guided graph edits and SELFIES/graph/image decoder.
+7. JEPA-planned decoder: predicted target latent conditions the learned
+   decoder.
+8. SketchMol-aligned benchmark comparison.
 
 ## Paper-Facing Metrics
 

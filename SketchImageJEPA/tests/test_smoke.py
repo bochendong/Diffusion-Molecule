@@ -24,6 +24,7 @@ from sketchimage_jepa.generative_decoder import (
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
 from sketchimage_jepa.hard_split import build_hard_split
+from sketchimage_jepa.oracle_latent_diffusion import OracleLatentDiffusionConfig, SmilesVocabulary, run_oracle_latent_diffusion
 from sketchimage_jepa.paper_matrix import summarize_matrix
 from sketchimage_jepa.property_guidance import parse_property_targets
 from sketchimage_jepa.report import summarize_prediction_rows
@@ -32,6 +33,15 @@ from sketchimage_jepa.schema import BenchmarkExample, Candidate, TaskType
 from sketchimage_jepa.task_builder import build_tasks_from_molecules, load_molecule_rows
 from sketchimage_jepa.torch_denoiser import TorchDenoiserConfig
 from sketchimage_jepa.verifier import score_candidates
+
+
+def _torch_available():
+    try:
+        import torch  # noqa: F401
+
+        return True
+    except Exception:
+        return False
 
 
 class SketchImageJEPATests(unittest.TestCase):
@@ -618,6 +628,45 @@ class SketchImageJEPATests(unittest.TestCase):
         latent = molecule_latent("CCO", 64)
         self.assertEqual(latent.shape, (64,))
         self.assertTrue(np.isfinite(latent).all())
+
+    def test_smiles_vocabulary_round_trip(self):
+        vocab = SmilesVocabulary.build(["CCO", "CCN"])
+        encoded = vocab.encode("CCO", max_length=8)
+        self.assertEqual(vocab.decode(encoded), "CCO")
+        self.assertEqual(len(encoded), 8)
+
+    @unittest.skipUnless(_torch_available(), "PyTorch is not installed")
+    def test_oracle_latent_diffusion_writes_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            molecule_csv = Path(tmp, "molecules.csv")
+            with molecule_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["CCO", "CCN", "CCC", "CCCl", "c1ccccc1", "CC(=O)O"]:
+                    writer.writerow({"smiles": smiles})
+            config = OracleLatentDiffusionConfig(
+                condition_dim=16,
+                hidden_dim=32,
+                transformer_layers=1,
+                attention_heads=4,
+                max_length=24,
+                epochs=1,
+                batch_size=2,
+                sample_steps=2,
+                samples_per_condition=2,
+                sample_multiplier=1,
+                sample_batch_size=4,
+                device="cpu",
+                seed=3,
+            )
+            output_dir = Path(tmp, "run")
+            metrics = run_oracle_latent_diffusion(molecule_csv=molecule_csv, output_dir=output_dir, config=config)
+            self.assertIn("top1_target_tanimoto", metrics)
+            self.assertIn("top1_exact_match", metrics)
+            self.assertTrue(Path(output_dir, "metrics.json").exists())
+            self.assertTrue(Path(output_dir, "predictions.csv").exists())
+            self.assertTrue(Path(output_dir, "task_type_summary.csv").exists())
+            self.assertTrue(Path(output_dir, "model", "model.pt").exists())
         self.assertGreater(float(np.linalg.norm(latent)), 0.0)
 
     def test_rerank_predictions_can_promote_property_match(self):

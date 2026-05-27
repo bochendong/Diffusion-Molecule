@@ -135,6 +135,36 @@ It writes `best_by_objective.csv` so target, property-delta, property, and
 balanced objectives can be inspected separately. Override the grid with
 `SKETCHIMAGE_RERANK_PROPERTY_DELTA_WEIGHTS` if needed.
 
+## Phase 1 Decoder Check
+
+Before adding the JEPA planner, test whether a decoder can generate molecules
+from an oracle molecular latent. This follows the staged SketchMol logic:
+first make the decoder capable, then connect the planner.
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_MOLECULE_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHIMAGE_RUN_NAME=phase1_oracle_latent_diffusion_seed7 \
+bash scripts/submit_oracle_latent_diffusion.sh
+```
+
+This run trains a latent-conditioned token denoising decoder:
+
+```text
+target molecule SMILES
+  -> oracle molecular latent
+  -> denoising diffusion decoder
+  -> sampled SMILES candidates
+  -> RDKit validity, Tanimoto, exact-match, and train-pool diagnostics
+```
+
+It is not the final SketchMol-style image decoder yet. It is a Phase 1.0
+capability check: if this oracle-latent decoder is weak, adding a JEPA planner
+cannot fix the generation bottleneck.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of
