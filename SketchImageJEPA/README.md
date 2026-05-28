@@ -266,6 +266,40 @@ Compare `planner_latent_cosine` with `calibrated_latent_cosine`, then compare
 Phase 2B against Phase 2C on validity, `top1_target_tanimoto`, and
 `mean_best_tanimoto`.
 
+## Latent Sensitivity Diagnostic
+
+After Phase 2C, run the diagnostic that keeps the decoder fixed and compares
+controlled latent sources:
+
+```text
+oracle target latent
+noisy oracle latent at matched cosine levels
+planner-predicted latent
+calibrated planner latent
+target/planner interpolations
+```
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_DECODER_DIR=outputs/runs/phase2_robust_decoder_2048_seed7/decoder \
+SKETCHIMAGE_DECODER_POOL_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_PLANNER_RUN_DIR=outputs/runs/phase2_robust_decoder_2048_seed7 \
+SKETCHIMAGE_CALIBRATED_RUN_DIR=outputs/runs/phase2_calibrated_decoder_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=phase2_latent_sensitivity_2048_seed7 \
+bash scripts/submit_latent_sensitivity.sh
+```
+
+Read `outputs/runs/<run_name>/source_summary.csv` first. If noisy oracle
+latents fail at the same cosine as planner latents, the planner needs stronger
+latent alignment. If noisy oracle stays strong but planner/calibrated fail, the
+decoder needs planner-distribution conditioning rather than more oracle-only
+training.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of

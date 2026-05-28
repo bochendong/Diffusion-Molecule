@@ -413,6 +413,62 @@ Phase 2B robust decoder. If calibration improves neither cosine nor Tanimoto,
 the planner representation needs a stronger alignment loss rather than another
 decoder-side fix.
 
+## Latent Sensitivity Diagnostic
+
+This is the next run after Phase 2C. It does not train a new planner or decoder.
+It freezes the same decoder and decodes several latent sources:
+
+```text
+oracle_target
+noisy_oracle_c0_32
+noisy_oracle_c0_38
+noisy_oracle_c0_63
+noisy_oracle_c0_78
+planner_predicted
+calibrated_predicted
+target/planner interpolations
+```
+
+Submit from the login node:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase2_latent_sensitivity_2048_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_DECODER_DIR=outputs/runs/phase2_robust_decoder_2048_seed7/decoder \
+SKETCHIMAGE_DECODER_POOL_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_PLANNER_RUN_DIR=outputs/runs/phase2_robust_decoder_2048_seed7 \
+SKETCHIMAGE_CALIBRATED_RUN_DIR=outputs/runs/phase2_calibrated_decoder_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+bash scripts/submit_latent_sensitivity.sh
+```
+
+The first file to read is:
+
+```text
+outputs/runs/phase2_latent_sensitivity_2048_seed7/source_summary.csv
+```
+
+Interpretation:
+
+```text
+oracle_target strong, noisy_oracle_c0_38 weak:
+  planner latent accuracy is not high enough for this decoder.
+
+oracle_target strong, noisy_oracle_c0_38 strong, planner/calibrated weak:
+  planner latents are directionally off-distribution, not just low-cosine.
+
+oracle_target weak:
+  robust decoder fine-tuning damaged oracle control or the decoder is not
+  sensitive enough to molecular latents.
+```
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.

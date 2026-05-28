@@ -24,6 +24,7 @@ from sketchimage_jepa.generative_decoder import (
 from sketchimage_jepa.image_context import attach_rendered_image_context
 from sketchimage_jepa.jepa import JEPAConfig, SketchImageJEPAPredictor
 from sketchimage_jepa.hard_split import build_hard_split
+from sketchimage_jepa.latent_sensitivity import run_latent_sensitivity_diagnostic
 from sketchimage_jepa.oracle_latent_diffusion import OracleLatentDiffusionConfig, SmilesVocabulary, run_oracle_latent_diffusion
 from sketchimage_jepa.paper_matrix import summarize_matrix
 from sketchimage_jepa.phase2_calibrated_decoder import run_phase2_calibrated_decoder
@@ -965,6 +966,100 @@ class SketchImageJEPATests(unittest.TestCase):
                 rows = list(csv.DictReader(handle))
             self.assertTrue(rows)
             self.assertEqual(rows[0]["origin"], "phase2_jepa_calibrated_decoder")
+
+    @unittest.skipUnless(_torch_available(), "PyTorch is not installed")
+    def test_latent_sensitivity_diagnostic_writes_source_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            molecule_csv = Path(tmp, "molecules.csv")
+            with molecule_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["CCO", "CCN", "CCC", "CCCl", "CCBr", "CC(=O)O"]:
+                    writer.writerow({"smiles": smiles})
+            decoder_run = Path(tmp, "oracle")
+            config = OracleLatentDiffusionConfig(
+                condition_dim=16,
+                hidden_dim=32,
+                transformer_layers=1,
+                attention_heads=4,
+                max_length=24,
+                epochs=1,
+                batch_size=2,
+                sample_steps=2,
+                samples_per_condition=2,
+                sample_multiplier=1,
+                sample_batch_size=4,
+                device="cpu",
+                seed=13,
+            )
+            run_oracle_latent_diffusion(molecule_csv=molecule_csv, output_dir=decoder_run, config=config)
+            train_examples = [
+                BenchmarkExample(
+                    task_id="train_edit",
+                    task_type=TaskType.EDIT,
+                    source_smiles="CCO",
+                    target_smiles="CCN",
+                    instruction="Change the terminal hetero atom.",
+                ),
+                BenchmarkExample(
+                    task_id="train_denovo",
+                    task_type=TaskType.DE_NOVO,
+                    target_smiles="CCO",
+                    instruction="Generate a small polar molecule.",
+                ),
+            ]
+            eval_examples = [
+                BenchmarkExample(
+                    task_id="eval_edit",
+                    task_type=TaskType.EDIT,
+                    source_smiles="CCO",
+                    target_smiles="CCC",
+                    instruction="Edit the source molecule to increase MW toward 44.10.",
+                ),
+                BenchmarkExample(
+                    task_id="eval_denovo",
+                    task_type=TaskType.DE_NOVO,
+                    target_smiles="CCCl",
+                    instruction="Generate a small molecule with chlorine.",
+                ),
+            ]
+            train_csv = Path(tmp, "train.csv")
+            eval_csv = Path(tmp, "eval.csv")
+            write_examples_csv(train_csv, train_examples)
+            write_examples_csv(eval_csv, eval_examples)
+            _, eval_targets, _ = matrix_from_examples(eval_examples, feature_dim=16, latent_dim=16)
+            planner_dir = Path(tmp, "planner")
+            planner_dir.mkdir()
+            calibrated_dir = Path(tmp, "calibrated")
+            calibrated_dir.mkdir()
+            np.save(planner_dir / "planner_eval_latents.npy", eval_targets.astype(np.float32))
+            np.save(calibrated_dir / "calibrated_eval_latents.npy", eval_targets.astype(np.float32))
+
+            output_dir = Path(tmp, "sensitivity")
+            summary = run_latent_sensitivity_diagnostic(
+                decoder_dir=decoder_run,
+                decoder_pool_dir=decoder_run,
+                planner_run_dir=planner_dir,
+                calibrated_run_dir=calibrated_dir,
+                output_dir=output_dir,
+                train_csv=train_csv,
+                eval_csv=eval_csv,
+                feature_dim=16,
+                top_k=2,
+                noisy_cosines=(0.5,),
+                interpolation_alphas=(0.5,),
+                decoder_device="cpu",
+                seed=13,
+            )
+            self.assertTrue(Path(output_dir, "source_summary.csv").exists())
+            self.assertTrue(Path(output_dir, "source_summary.json").exists())
+            self.assertTrue(Path(output_dir, "run_config.json").exists())
+            names = {row["latent_source"] for row in summary}
+            self.assertIn("oracle_target", names)
+            self.assertIn("noisy_oracle_c0_50", names)
+            self.assertIn("planner_predicted", names)
+            self.assertIn("calibrated_predicted", names)
+            self.assertTrue(Path(output_dir, "oracle_target", "predictions.csv").exists())
 
     def test_rerank_predictions_can_promote_property_match(self):
         with tempfile.TemporaryDirectory() as tmp:
