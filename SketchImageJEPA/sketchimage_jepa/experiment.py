@@ -564,6 +564,7 @@ def _is_generated_origin(origin: str) -> bool:
         or origin.startswith("latent_beam")
         or origin.startswith("edit_policy")
         or origin.startswith("phase2_jepa_planned")
+        or origin.startswith("phase2_jepa_calibrated")
         or origin.startswith("oracle_latent")
     )
 

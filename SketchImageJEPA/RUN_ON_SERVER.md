@@ -359,6 +359,60 @@ If validity recovers but target Tanimoto remains weak, tune the planner or
 condition representation. If validity remains low, the latent-conditioned
 token decoder itself is still not robust enough.
 
+## Phase 2C Latent Calibration
+
+Phase 2B made the decoder valid again, but target similarity can still be weak
+because planner latents remain off the oracle latent manifold. Phase 2C trains
+a small residual ridge adapter:
+
+```text
+planner latent -> calibrated latent -> fixed robust decoder -> SMILES
+```
+
+Submit from the login node after Phase 2B has completed:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase2_calibrated_decoder_2048_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_DECODER_DIR=outputs/runs/phase2_robust_decoder_2048_seed7/decoder \
+SKETCHIMAGE_DECODER_POOL_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+bash scripts/submit_phase2_calibrated_decoder.sh
+```
+
+Primary metrics:
+
+```text
+planner_latent_cosine
+calibrated_latent_cosine
+top1_validity
+top1_target_tanimoto
+mean_best_tanimoto
+topk_target_hit
+top1_decoder_train_pool_member
+```
+
+Default adapter:
+
+```text
+mode = residual_ridge
+ridge = 0.01
+blend = 1.0
+normalize = true
+```
+
+If calibration improves cosine but hurts validity, compare against the original
+Phase 2B robust decoder. If calibration improves neither cosine nor Tanimoto,
+the planner representation needs a stronger alignment loss rather than another
+decoder-side fix.
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.

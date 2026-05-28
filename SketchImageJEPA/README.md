@@ -234,6 +234,38 @@ decoder robustness to off-manifold planner latents. If validity stays low, the
 planner latent distribution or molecular latent representation needs a deeper
 change.
 
+## Phase 2C Latent Calibration
+
+Phase 2B can recover validity while still leaving target similarity weak. Phase
+2C keeps the robust decoder fixed and trains a small adapter:
+
+```text
+planner-predicted latent
+  -> residual ridge calibration adapter
+  -> calibrated latent closer to oracle molecular latent
+  -> frozen robust decoder
+  -> sampled SMILES candidates
+```
+
+Run it after Phase 2B:
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_DECODER_DIR=outputs/runs/phase2_robust_decoder_2048_seed7/decoder \
+SKETCHIMAGE_DECODER_POOL_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=phase2_calibrated_decoder_2048_seed7 \
+bash scripts/submit_phase2_calibrated_decoder.sh
+```
+
+Compare `planner_latent_cosine` with `calibrated_latent_cosine`, then compare
+Phase 2B against Phase 2C on validity, `top1_target_tanimoto`, and
+`mean_best_tanimoto`.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of
