@@ -1,0 +1,422 @@
+"""Phase 4A: source-conditioned edit/action latent planner."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+from pathlib import Path
+
+import numpy as np
+
+from .chem import canonicalize_smiles
+from .dataset import write_examples_csv
+from .experiment import _build_model, _candidate_surface_metrics, _canonical_pool, _write_predictions
+from .features import MOLECULE_LATENT_VERSION, matrix_from_examples
+from .image_context import attach_rendered_image_context
+from .oracle_latent_diffusion import OracleLatentSmilesDiffusion
+from .phase2_planned_decoder import (
+    _append_decoder_pool_membership,
+    _decoder_pool_metrics,
+    _load_decoder_train_pool,
+    _load_splits,
+    _mean_cosine,
+    _resolve_oracle_model_dir,
+    _retag_candidates,
+)
+from .report import summarize_predictions_csv
+from .schema import BenchmarkExample, Candidate, TaskType
+from .verifier import score_candidates, summarize_scores
+
+
+SOURCE_CONDITIONED_TASKS = {TaskType.EDIT, TaskType.INPAINT, TaskType.FRAGMENT_GROW}
+
+
+def run_phase4_edit_action_planner(
+    oracle_decoder_dir: str | Path,
+    output_dir: str | Path = "outputs/runs/phase4_edit_action_planner",
+    dataset_csv: str | Path | None = None,
+    train_csv: str | Path | None = None,
+    eval_csv: str | Path | None = None,
+    feature_dim: int = 256,
+    latent_dim: int | None = None,
+    top_k: int = 8,
+    samples_per_alpha: int = 2,
+    action_alphas: tuple[float, ...] = (0.25, 0.50, 0.75, 1.0, 1.25),
+    alpha_score_penalty: float = 0.02,
+    ridge: float = 1e-3,
+    train_fraction: float = 0.8,
+    seed: int = 7,
+    render_image_context: bool = True,
+    backend: str = "torch_denoiser",
+    torch_hidden_dim: int = 1024,
+    torch_epochs: int = 35,
+    torch_batch_size: int = 128,
+    torch_lr: float = 1e-3,
+    torch_weight_decay: float = 1e-4,
+    torch_diffusion_steps: int = 16,
+    torch_train_noise: float = 0.35,
+    torch_direct_loss_weight: float = 1.0,
+    torch_delta_loss_weight: float = 0.0,
+    torch_cosine_loss_weight: float = 2.0,
+    torch_positive_loss_weight: float = 12.0,
+    torch_contrastive_loss_weight: float = 0.75,
+    torch_contrastive_temperature: float = 0.04,
+    torch_hard_negative_loss_weight: float = 0.0,
+    torch_hard_negative_margin: float = 0.10,
+    torch_device: str = "auto",
+    decoder_device: str = "auto",
+    oracle_action_control: bool = True,
+) -> dict[str, float]:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    oracle_model_dir = _resolve_oracle_model_dir(oracle_decoder_dir)
+    decoder = OracleLatentSmilesDiffusion.load(oracle_model_dir, device=decoder_device)
+    decoder_config = json.loads((oracle_model_dir / "config.json").read_text(encoding="utf-8"))
+    decoder_dim = int(decoder.config.condition_dim)
+    latent_dim = int(latent_dim or decoder_dim)
+    if latent_dim != decoder_dim:
+        raise ValueError(f"Planner latent_dim={latent_dim} must match oracle decoder condition_dim={decoder_dim}.")
+
+    raw_train_examples, raw_eval_examples = _load_splits(dataset_csv, train_csv, eval_csv, train_fraction=train_fraction, seed=seed)
+    train_examples, train_excluded = _source_conditioned_examples(raw_train_examples)
+    eval_examples, eval_excluded = _source_conditioned_examples(raw_eval_examples)
+    if not train_examples:
+        raise ValueError("Phase 4A needs at least one source-conditioned train example.")
+    if not eval_examples:
+        raise ValueError("Phase 4A needs at least one source-conditioned eval example.")
+
+    if render_image_context:
+        train_examples, train_image_meta = attach_rendered_image_context(train_examples, output_dir / "rendered_context" / "train")
+        eval_examples, eval_image_meta = attach_rendered_image_context(eval_examples, output_dir / "rendered_context" / "eval")
+    else:
+        train_image_meta = {"rdkit_available": None, "rendered_images": 0, "masked_images": 0, "skipped_images": len(train_examples)}
+        eval_image_meta = {"rdkit_available": None, "rendered_images": 0, "masked_images": 0, "skipped_images": len(eval_examples)}
+
+    train_base_conditions, train_targets, train_sources = matrix_from_examples(train_examples, feature_dim=feature_dim, latent_dim=latent_dim)
+    eval_base_conditions, eval_targets, eval_sources = matrix_from_examples(eval_examples, feature_dim=feature_dim, latent_dim=latent_dim)
+    train_conditions = _action_conditions(train_base_conditions, train_sources)
+    eval_conditions = _action_conditions(eval_base_conditions, eval_sources)
+    train_actions = train_targets - train_sources
+    eval_actions = eval_targets - eval_sources
+    zero_train_sources = np.zeros_like(train_sources, dtype=np.float32)
+    zero_eval_sources = np.zeros_like(eval_sources, dtype=np.float32)
+
+    planner = _build_model(
+        backend=backend,
+        feature_dim=int(train_conditions.shape[1]),
+        latent_dim=latent_dim,
+        ridge=ridge,
+        torch_hidden_dim=torch_hidden_dim,
+        torch_epochs=torch_epochs,
+        torch_batch_size=torch_batch_size,
+        torch_lr=torch_lr,
+        torch_weight_decay=torch_weight_decay,
+        torch_diffusion_steps=torch_diffusion_steps,
+        torch_train_noise=torch_train_noise,
+        torch_direct_loss_weight=torch_direct_loss_weight,
+        torch_delta_loss_weight=torch_delta_loss_weight,
+        torch_cosine_loss_weight=torch_cosine_loss_weight,
+        torch_positive_loss_weight=torch_positive_loss_weight,
+        torch_contrastive_loss_weight=torch_contrastive_loss_weight,
+        torch_contrastive_temperature=torch_contrastive_temperature,
+        torch_hard_negative_loss_weight=torch_hard_negative_loss_weight,
+        torch_hard_negative_margin=torch_hard_negative_margin,
+        torch_device=torch_device,
+        seed=seed,
+    ).fit(train_conditions, train_actions, zero_train_sources)
+
+    train_pred_actions = planner.predict(train_conditions, zero_train_sources)
+    eval_pred_actions = planner.predict(eval_conditions, zero_eval_sources)
+    train_composed = _normalize_rows(train_sources + train_pred_actions)
+    eval_composed = _normalize_rows(eval_sources + eval_pred_actions)
+
+    alpha_summary, decoded = _decode_action_beam(
+        decoder=decoder,
+        examples=eval_examples,
+        source_latents=eval_sources,
+        action_latents=eval_pred_actions,
+        target_latents=eval_targets,
+        action_alphas=action_alphas,
+        top_k=top_k,
+        samples_per_alpha=samples_per_alpha,
+        alpha_score_penalty=alpha_score_penalty,
+    )
+    scores_by_task = [score_candidates(example, candidates) for example, candidates in zip(eval_examples, decoded)]
+    metrics = summarize_scores(scores_by_task)
+    metrics.update(
+        {
+            "train_tasks": float(len(train_examples)),
+            "eval_tasks": float(len(eval_examples)),
+            "excluded_train_tasks": float(train_excluded),
+            "excluded_eval_tasks": float(eval_excluded),
+            "action_latent_mse": float(np.mean((eval_pred_actions - eval_actions) ** 2)),
+            "action_train_latent_mse": float(np.mean((train_pred_actions - train_actions) ** 2)),
+            "action_latent_cosine": _mean_cosine(eval_pred_actions, eval_actions),
+            "action_train_latent_cosine": _mean_cosine(train_pred_actions, train_actions),
+            "composed_latent_mse": float(np.mean((eval_composed - eval_targets) ** 2)),
+            "composed_train_latent_mse": float(np.mean((train_composed - train_targets) ** 2)),
+            "composed_latent_cosine": _mean_cosine(eval_composed, eval_targets),
+            "composed_train_latent_cosine": _mean_cosine(train_composed, train_targets),
+            "mean_candidate_count": float(np.mean([len(candidates) for candidates in decoded])) if decoded else 0.0,
+        }
+    )
+    metrics.update(_action_norm_metrics("action_eval", eval_pred_actions, eval_actions))
+    metrics.update(_action_norm_metrics("action_train", train_pred_actions, train_actions))
+    planner_train_pool = _canonical_pool(example.target_smiles for example in train_examples)
+    metrics.update(_candidate_surface_metrics(scores_by_task, planner_train_pool, eval_examples))
+    decoder_train_pool = _load_decoder_train_pool(oracle_model_dir.parent)
+    if decoder_train_pool:
+        metrics.update(_decoder_pool_metrics(scores_by_task, decoder_train_pool))
+
+    if oracle_action_control:
+        oracle_decoded = _retag_candidates(decoder.decode(eval_targets, top_k=top_k), origin="phase4_oracle_action_control")
+        oracle_scores_by_task = [score_candidates(example, candidates) for example, candidates in zip(eval_examples, oracle_decoded)]
+        oracle_metrics = summarize_scores(oracle_scores_by_task)
+        metrics.update({f"oracle_action_{key}": value for key, value in oracle_metrics.items()})
+        oracle_predictions_path = output_dir / "oracle_action_predictions.csv"
+        _write_predictions(oracle_predictions_path, eval_examples, oracle_scores_by_task, train_pool=planner_train_pool)
+        _append_decoder_pool_membership(oracle_predictions_path, decoder_train_pool)
+
+    run_config = {
+        "phase": "phase4a_source_conditioned_edit_action_planner",
+        "research_question": "Can source-conditioned molecular editing be learned as an action latent instead of direct target latent prediction?",
+        "oracle_decoder_dir": str(oracle_model_dir),
+        "oracle_decoder_config": decoder_config,
+        "dataset_csv": str(dataset_csv) if dataset_csv else None,
+        "train_csv": str(train_csv) if train_csv else None,
+        "eval_csv": str(eval_csv) if eval_csv else None,
+        "raw_train_tasks": len(raw_train_examples),
+        "raw_eval_tasks": len(raw_eval_examples),
+        "excluded_train_tasks": train_excluded,
+        "excluded_eval_tasks": eval_excluded,
+        "included_task_types": sorted(task.value for task in SOURCE_CONDITIONED_TASKS),
+        "feature_dim": feature_dim,
+        "action_condition_dim": int(train_conditions.shape[1]),
+        "latent_dim": latent_dim,
+        "molecule_latent_version": MOLECULE_LATENT_VERSION,
+        "top_k": top_k,
+        "samples_per_alpha": samples_per_alpha,
+        "action_alphas": list(action_alphas),
+        "alpha_score_penalty": alpha_score_penalty,
+        "ridge": ridge,
+        "train_fraction": train_fraction,
+        "seed": seed,
+        "render_image_context": render_image_context,
+        "backend": backend,
+        "torch_hidden_dim": torch_hidden_dim if backend == "torch_denoiser" else None,
+        "torch_epochs": torch_epochs if backend == "torch_denoiser" else None,
+        "torch_batch_size": torch_batch_size if backend == "torch_denoiser" else None,
+        "torch_lr": torch_lr if backend == "torch_denoiser" else None,
+        "torch_weight_decay": torch_weight_decay if backend == "torch_denoiser" else None,
+        "torch_diffusion_steps": torch_diffusion_steps if backend == "torch_denoiser" else None,
+        "torch_train_noise": torch_train_noise if backend == "torch_denoiser" else None,
+        "torch_direct_loss_weight": torch_direct_loss_weight if backend == "torch_denoiser" else None,
+        "torch_delta_loss_weight": torch_delta_loss_weight if backend == "torch_denoiser" else None,
+        "torch_cosine_loss_weight": torch_cosine_loss_weight if backend == "torch_denoiser" else None,
+        "torch_positive_loss_weight": torch_positive_loss_weight if backend == "torch_denoiser" else None,
+        "torch_contrastive_loss_weight": torch_contrastive_loss_weight if backend == "torch_denoiser" else None,
+        "torch_contrastive_temperature": torch_contrastive_temperature if backend == "torch_denoiser" else None,
+        "torch_hard_negative_loss_weight": torch_hard_negative_loss_weight if backend == "torch_denoiser" else None,
+        "torch_hard_negative_margin": torch_hard_negative_margin if backend == "torch_denoiser" else None,
+        "torch_device": getattr(planner, "device_name", torch_device) if backend == "torch_denoiser" else None,
+        "decoder_device": getattr(decoder, "device_name", decoder_device),
+        "train_image_context": train_image_meta,
+        "eval_image_context": eval_image_meta,
+        "planner_history": planner.history,
+        "decoder": {
+            "mode": "frozen_phase1_oracle_latent_decoder",
+            "latent_composition": "normalize(source_latent + alpha * predicted_action_latent)",
+            "ranking": "decoder_likelihood_plus_validity_minus_alpha_distance_penalty_no_target_oracle",
+            "can_leave_training_pool": True,
+        },
+    }
+
+    planner.save(output_dir / "planner")
+    np.save(output_dir / "planner_train_actions.npy", train_pred_actions.astype(np.float32))
+    np.save(output_dir / "planner_eval_actions.npy", eval_pred_actions.astype(np.float32))
+    np.save(output_dir / "train_target_actions.npy", train_actions.astype(np.float32))
+    np.save(output_dir / "eval_target_actions.npy", eval_actions.astype(np.float32))
+    np.save(output_dir / "planner_eval_composed_latents.npy", eval_composed.astype(np.float32))
+    np.save(output_dir / "eval_target_latents.npy", eval_targets.astype(np.float32))
+    (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (output_dir / "run_config.json").write_text(json.dumps(run_config, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    _write_alpha_summary(output_dir / "alpha_summary.csv", alpha_summary)
+    (output_dir / "alpha_summary.json").write_text(json.dumps(alpha_summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_examples_csv(output_dir / "train_examples.csv", train_examples)
+    write_examples_csv(output_dir / "eval_examples.csv", eval_examples)
+    predictions_path = output_dir / "predictions.csv"
+    _write_predictions(predictions_path, eval_examples, scores_by_task, train_pool=planner_train_pool)
+    _append_decoder_pool_membership(predictions_path, decoder_train_pool)
+    summarize_predictions_csv(predictions_path, out_dir=output_dir)
+    return metrics
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run Phase 4A source-conditioned edit/action latent planner.")
+    parser.add_argument("--oracle-decoder-dir", required=True)
+    parser.add_argument("--output-dir", default="outputs/runs/phase4_edit_action_planner")
+    parser.add_argument("--dataset-csv", default=None)
+    parser.add_argument("--train-csv", default=None)
+    parser.add_argument("--eval-csv", default=None)
+    parser.add_argument("--feature-dim", type=int, default=256)
+    parser.add_argument("--latent-dim", type=int, default=None)
+    parser.add_argument("--top-k", type=int, default=8)
+    parser.add_argument("--samples-per-alpha", type=int, default=2)
+    parser.add_argument("--action-alphas", default="0.25,0.50,0.75,1.00,1.25")
+    parser.add_argument("--alpha-score-penalty", type=float, default=0.02)
+    parser.add_argument("--ridge", type=float, default=1e-3)
+    parser.add_argument("--train-fraction", type=float, default=0.8)
+    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--render-image-context", action="store_true")
+    parser.add_argument("--backend", choices=["ridge", "torch_denoiser"], default="torch_denoiser")
+    parser.add_argument("--torch-hidden-dim", type=int, default=1024)
+    parser.add_argument("--torch-epochs", type=int, default=35)
+    parser.add_argument("--torch-batch-size", type=int, default=128)
+    parser.add_argument("--torch-lr", type=float, default=1e-3)
+    parser.add_argument("--torch-weight-decay", type=float, default=1e-4)
+    parser.add_argument("--torch-diffusion-steps", type=int, default=16)
+    parser.add_argument("--torch-train-noise", type=float, default=0.35)
+    parser.add_argument("--torch-direct-loss-weight", type=float, default=1.0)
+    parser.add_argument("--torch-delta-loss-weight", type=float, default=0.0)
+    parser.add_argument("--torch-cosine-loss-weight", type=float, default=2.0)
+    parser.add_argument("--torch-positive-loss-weight", type=float, default=12.0)
+    parser.add_argument("--torch-contrastive-loss-weight", type=float, default=0.75)
+    parser.add_argument("--torch-contrastive-temperature", type=float, default=0.04)
+    parser.add_argument("--torch-hard-negative-loss-weight", type=float, default=0.0)
+    parser.add_argument("--torch-hard-negative-margin", type=float, default=0.10)
+    parser.add_argument("--torch-device", default="auto")
+    parser.add_argument("--decoder-device", default="auto")
+    parser.add_argument("--oracle-action-control", action=argparse.BooleanOptionalAction, default=True)
+    args = parser.parse_args()
+    metrics = run_phase4_edit_action_planner(
+        oracle_decoder_dir=args.oracle_decoder_dir,
+        output_dir=args.output_dir,
+        dataset_csv=args.dataset_csv,
+        train_csv=args.train_csv,
+        eval_csv=args.eval_csv,
+        feature_dim=args.feature_dim,
+        latent_dim=args.latent_dim,
+        top_k=args.top_k,
+        samples_per_alpha=args.samples_per_alpha,
+        action_alphas=_parse_float_tuple(args.action_alphas, (0.25, 0.50, 0.75, 1.0, 1.25)),
+        alpha_score_penalty=args.alpha_score_penalty,
+        ridge=args.ridge,
+        train_fraction=args.train_fraction,
+        seed=args.seed,
+        render_image_context=args.render_image_context,
+        backend=args.backend,
+        torch_hidden_dim=args.torch_hidden_dim,
+        torch_epochs=args.torch_epochs,
+        torch_batch_size=args.torch_batch_size,
+        torch_lr=args.torch_lr,
+        torch_weight_decay=args.torch_weight_decay,
+        torch_diffusion_steps=args.torch_diffusion_steps,
+        torch_train_noise=args.torch_train_noise,
+        torch_direct_loss_weight=args.torch_direct_loss_weight,
+        torch_delta_loss_weight=args.torch_delta_loss_weight,
+        torch_cosine_loss_weight=args.torch_cosine_loss_weight,
+        torch_positive_loss_weight=args.torch_positive_loss_weight,
+        torch_contrastive_loss_weight=args.torch_contrastive_loss_weight,
+        torch_contrastive_temperature=args.torch_contrastive_temperature,
+        torch_hard_negative_loss_weight=args.torch_hard_negative_loss_weight,
+        torch_hard_negative_margin=args.torch_hard_negative_margin,
+        torch_device=args.torch_device,
+        decoder_device=args.decoder_device,
+        oracle_action_control=args.oracle_action_control,
+    )
+    print(json.dumps(metrics, indent=2, sort_keys=True))
+
+
+def _source_conditioned_examples(examples: list[BenchmarkExample]) -> tuple[list[BenchmarkExample], int]:
+    kept = [example for example in examples if example.source_smiles and example.task_type in SOURCE_CONDITIONED_TASKS]
+    return kept, len(examples) - len(kept)
+
+
+def _action_conditions(base_conditions: np.ndarray, source_latents: np.ndarray) -> np.ndarray:
+    return np.concatenate([base_conditions, source_latents], axis=1).astype(np.float32)
+
+
+def _decode_action_beam(
+    decoder: OracleLatentSmilesDiffusion,
+    examples: list[BenchmarkExample],
+    source_latents: np.ndarray,
+    action_latents: np.ndarray,
+    target_latents: np.ndarray,
+    action_alphas: tuple[float, ...],
+    top_k: int,
+    samples_per_alpha: int,
+    alpha_score_penalty: float,
+) -> tuple[list[dict[str, float | str]], list[list[Candidate]]]:
+    per_alpha_scores: list[dict[str, float | str]] = []
+    decoded_by_alpha: list[tuple[float, list[list[Candidate]]]] = []
+    for alpha in action_alphas:
+        composed = _normalize_rows(source_latents + float(alpha) * action_latents)
+        decoded = _retag_candidates(decoder.decode(composed, top_k=max(1, int(samples_per_alpha))), origin=f"phase4_edit_action_alpha{_format_float(alpha)}")
+        scores_by_task = [score_candidates(example, candidates) for example, candidates in zip(examples, decoded)]
+        summary = summarize_scores(scores_by_task)
+        summary.update(
+            {
+                "alpha": float(alpha),
+                "latent_cosine": _mean_cosine(composed, target_latents),
+                "latent_mse": float(np.mean((composed - target_latents) ** 2)),
+            }
+        )
+        per_alpha_scores.append(summary)
+        decoded_by_alpha.append((float(alpha), decoded))
+
+    combined: list[list[Candidate]] = []
+    task_count = len(examples)
+    for task_idx in range(task_count):
+        best_by_key: dict[str, Candidate] = {}
+        for alpha, decoded in decoded_by_alpha:
+            for candidate in decoded[task_idx]:
+                key = canonicalize_smiles(candidate.smiles) or f"invalid:{candidate.smiles}"
+                adjusted = float(candidate.score) - float(alpha_score_penalty) * abs(float(alpha) - 1.0)
+                updated = Candidate(smiles=candidate.smiles, origin=candidate.origin, score=adjusted, rank=0)
+                if key not in best_by_key or updated.score > best_by_key[key].score:
+                    best_by_key[key] = updated
+        ranked = sorted(best_by_key.values(), key=lambda item: item.score, reverse=True)[:top_k]
+        combined.append([Candidate(smiles=item.smiles, origin=item.origin, score=item.score, rank=idx) for idx, item in enumerate(ranked, start=1)])
+    return per_alpha_scores, combined
+
+
+def _normalize_rows(values: np.ndarray) -> np.ndarray:
+    values = np.asarray(values, dtype=np.float32)
+    return values / np.clip(np.linalg.norm(values, axis=1, keepdims=True), 1e-8, None)
+
+
+def _action_norm_metrics(prefix: str, pred: np.ndarray, target: np.ndarray) -> dict[str, float]:
+    pred_norm = np.linalg.norm(pred, axis=1)
+    target_norm = np.linalg.norm(target, axis=1)
+    return {
+        f"{prefix}_pred_norm_mean": float(np.mean(pred_norm)),
+        f"{prefix}_pred_norm_std": float(np.std(pred_norm)),
+        f"{prefix}_target_norm_mean": float(np.mean(target_norm)),
+        f"{prefix}_norm_mae": float(np.mean(np.abs(pred_norm - target_norm))),
+    }
+
+
+def _write_alpha_summary(path: Path, rows: list[dict[str, float | str]]) -> None:
+    if not rows:
+        return
+    fieldnames = sorted({key for row in rows for key in row.keys()})
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _parse_float_tuple(value: str, default: tuple[float, ...]) -> tuple[float, ...]:
+    if not value:
+        return default
+    parsed = tuple(float(part.strip()) for part in value.split(",") if part.strip())
+    return parsed or default
+
+
+def _format_float(value: float) -> str:
+    return f"{float(value):.2f}".replace(".", "_").replace("-", "m")
+
+
+if __name__ == "__main__":
+    main()

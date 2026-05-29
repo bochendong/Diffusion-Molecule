@@ -585,6 +585,60 @@ top1_validity stays high through the frozen Phase 1 decoder.
 top1_target_tanimoto or mean_best_tanimoto improves over Phase 2A/2C frozen-decoder runs.
 ```
 
+## Phase 4A Edit-Action Planner
+
+Run this after Phase 1 and the hard split exist. It excludes de novo rows and
+tests whether source-conditioned tasks are easier when the planner predicts an
+edit/action latent instead of the complete target latent.
+
+```text
+condition vector + source latent -> predicted action
+candidate latent = normalize(source latent + alpha * predicted action)
+alpha beam = 0.25, 0.50, 0.75, 1.00, 1.25
+```
+
+Submit from the login node:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase4_edit_action_planner_2048_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+bash scripts/submit_phase4_edit_action_planner.sh
+```
+
+Default action-planner recipe:
+
+```text
+epochs = 35
+samples_per_alpha = 2
+action_alphas = 0.25,0.50,0.75,1.00,1.25
+oracle_action_control = 1
+```
+
+Read these first:
+
+```text
+outputs/runs/phase4_edit_action_planner_2048_seed7/metrics.json
+outputs/runs/phase4_edit_action_planner_2048_seed7/alpha_summary.csv
+outputs/runs/phase4_edit_action_planner_2048_seed7/predictions.csv
+```
+
+Success criteria:
+
+```text
+composed_latent_cosine improves over direct target-latent planner cosine.
+top1_target_tanimoto or mean_best_tanimoto improves for edit/inpaint/fragment_grow rows.
+oracle_action metrics remain strong, confirming the frozen decoder is not the bottleneck.
+```
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.

@@ -32,6 +32,7 @@ from sketchimage_jepa.phase2_oracle_anchored_decoder import run_phase2_oracle_an
 from sketchimage_jepa.phase2_planned_decoder import run_phase2_planned_decoder
 from sketchimage_jepa.phase2_robust_decoder import run_phase2_robust_decoder
 from sketchimage_jepa.phase3_decoder_compatible_planner import run_phase3_decoder_compatible_planner
+from sketchimage_jepa.phase4_edit_action_planner import run_phase4_edit_action_planner
 from sketchimage_jepa.property_guidance import parse_property_targets
 from sketchimage_jepa.report import summarize_prediction_rows
 from sketchimage_jepa.rerank_predictions import rerank_predictions_csv
@@ -1255,6 +1256,114 @@ class SketchImageJEPATests(unittest.TestCase):
                 rows = list(csv.DictReader(handle))
             self.assertTrue(rows)
             self.assertEqual(rows[0]["origin"], "phase3_decoder_compatible_planner")
+
+    @unittest.skipUnless(_torch_available(), "PyTorch is not installed")
+    def test_phase4_edit_action_planner_writes_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            molecule_csv = Path(tmp, "molecules.csv")
+            with molecule_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["CCO", "CCN", "CCC", "CCCl", "CCBr", "CC(=O)O"]:
+                    writer.writerow({"smiles": smiles})
+            decoder_run = Path(tmp, "oracle")
+            config = OracleLatentDiffusionConfig(
+                condition_dim=16,
+                hidden_dim=32,
+                transformer_layers=1,
+                attention_heads=4,
+                max_length=24,
+                epochs=1,
+                batch_size=2,
+                sample_steps=2,
+                samples_per_condition=2,
+                sample_multiplier=1,
+                sample_batch_size=4,
+                device="cpu",
+                seed=23,
+            )
+            run_oracle_latent_diffusion(molecule_csv=molecule_csv, output_dir=decoder_run, config=config)
+            train_examples = [
+                BenchmarkExample(
+                    task_id="train_edit",
+                    task_type=TaskType.EDIT,
+                    source_smiles="CCO",
+                    target_smiles="CCN",
+                    instruction="Change the terminal hetero atom.",
+                ),
+                BenchmarkExample(
+                    task_id="train_grow",
+                    task_type=TaskType.FRAGMENT_GROW,
+                    source_smiles="CC",
+                    target_smiles="CCC",
+                    instruction="Grow the carbon chain.",
+                ),
+                BenchmarkExample(
+                    task_id="train_denovo",
+                    task_type=TaskType.DE_NOVO,
+                    target_smiles="CCO",
+                    instruction="Generate a small polar molecule.",
+                ),
+            ]
+            eval_examples = [
+                BenchmarkExample(
+                    task_id="eval_edit",
+                    task_type=TaskType.EDIT,
+                    source_smiles="CCO",
+                    target_smiles="CCC",
+                    instruction="Edit the source molecule to increase MW toward 44.10.",
+                ),
+                BenchmarkExample(
+                    task_id="eval_inpaint",
+                    task_type=TaskType.INPAINT,
+                    source_smiles="CC",
+                    target_smiles="CCCl",
+                    instruction="Fill in a chlorine substituent.",
+                ),
+                BenchmarkExample(
+                    task_id="eval_denovo",
+                    task_type=TaskType.DE_NOVO,
+                    target_smiles="CCBr",
+                    instruction="Generate a brominated molecule.",
+                ),
+            ]
+            train_csv = Path(tmp, "train.csv")
+            eval_csv = Path(tmp, "eval.csv")
+            write_examples_csv(train_csv, train_examples)
+            write_examples_csv(eval_csv, eval_examples)
+
+            output_dir = Path(tmp, "phase4")
+            metrics = run_phase4_edit_action_planner(
+                oracle_decoder_dir=decoder_run,
+                output_dir=output_dir,
+                train_csv=train_csv,
+                eval_csv=eval_csv,
+                feature_dim=16,
+                top_k=2,
+                samples_per_alpha=1,
+                action_alphas=(0.5, 1.0),
+                torch_hidden_dim=32,
+                torch_epochs=1,
+                torch_batch_size=2,
+                torch_diffusion_steps=2,
+                torch_device="cpu",
+                decoder_device="cpu",
+                render_image_context=False,
+                oracle_action_control=True,
+                seed=23,
+            )
+            self.assertIn("action_latent_cosine", metrics)
+            self.assertEqual(metrics["excluded_train_tasks"], 1.0)
+            self.assertEqual(metrics["excluded_eval_tasks"], 1.0)
+            self.assertTrue(Path(output_dir, "planner", "model.pt").exists())
+            self.assertTrue(Path(output_dir, "planner_eval_actions.npy").exists())
+            self.assertTrue(Path(output_dir, "alpha_summary.csv").exists())
+            self.assertTrue(Path(output_dir, "oracle_action_predictions.csv").exists())
+            self.assertTrue(Path(output_dir, "predictions.csv").exists())
+            with Path(output_dir, "predictions.csv").open() as handle:
+                rows = list(csv.DictReader(handle))
+            self.assertTrue(rows)
+            self.assertTrue(rows[0]["origin"].startswith("phase4_edit_action_alpha"))
 
     def test_rerank_predictions_can_promote_property_match(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -364,6 +364,37 @@ Read `metrics.json` first. The new planner diagnostics are
 `planner_latent_cosine`, `planner_cosine_ge_margin`, and the
 `planner_eval_*_norm_*` fields.
 
+## Phase 4A Edit-Action Planner
+
+Phase 4A changes the interface instead of asking the planner to guess the full
+target latent. It filters to source-conditioned tasks (`edit`, `inpaint`, and
+`fragment_grow`), learns an action latent, and composes candidates by moving
+from the source latent:
+
+```text
+source molecule latent + task condition
+  -> predicted edit/action latent
+  -> normalize(source latent + alpha * action latent)
+  -> frozen Phase 1 latent-conditioned token decoder
+```
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=phase4_edit_action_planner_2048_seed7 \
+bash scripts/submit_phase4_edit_action_planner.sh
+```
+
+Read `metrics.json` and `alpha_summary.csv` first. This run reports excluded
+de novo rows separately, plus `action_latent_cosine` and
+`composed_latent_cosine` so we can tell whether the edit action or the decoder
+is limiting quality.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of

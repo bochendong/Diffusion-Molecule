@@ -595,6 +595,7 @@ def _is_generated_origin(origin: str) -> bool:
         or origin.startswith("phase2_jepa_calibrated")
         or origin.startswith("phase2_jepa_oracle_anchored")
         or origin.startswith("phase3_decoder_compatible")
+        or origin.startswith("phase4_edit_action")
         or origin.startswith("latent_sensitivity")
         or origin.startswith("oracle_latent")
     )
