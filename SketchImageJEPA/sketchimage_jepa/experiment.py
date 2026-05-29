@@ -59,6 +59,10 @@ def run_experiment(
     torch_contrastive_temperature: float = 0.10,
     torch_hard_negative_loss_weight: float = 0.0,
     torch_hard_negative_margin: float = 0.10,
+    torch_norm_loss_weight: float = 0.0,
+    torch_decoder_compat_loss_weight: float = 0.0,
+    torch_decoder_compat_cosine_margin: float = 0.78,
+    torch_normalize_predictions: bool = False,
     torch_device: str = "auto",
     de_novo_latent_rerank_weight: float = 0.05,
     source_rerank_weight: float = 0.35,
@@ -103,6 +107,10 @@ def run_experiment(
         torch_contrastive_temperature=torch_contrastive_temperature,
         torch_hard_negative_loss_weight=torch_hard_negative_loss_weight,
         torch_hard_negative_margin=torch_hard_negative_margin,
+        torch_norm_loss_weight=torch_norm_loss_weight,
+        torch_decoder_compat_loss_weight=torch_decoder_compat_loss_weight,
+        torch_decoder_compat_cosine_margin=torch_decoder_compat_cosine_margin,
+        torch_normalize_predictions=torch_normalize_predictions,
         torch_device=torch_device,
         seed=seed,
     ).fit(train_conditions, train_targets, train_sources)
@@ -163,6 +171,10 @@ def run_experiment(
         "torch_contrastive_temperature": torch_contrastive_temperature if backend == "torch_denoiser" else None,
         "torch_hard_negative_loss_weight": torch_hard_negative_loss_weight if backend == "torch_denoiser" else None,
         "torch_hard_negative_margin": torch_hard_negative_margin if backend == "torch_denoiser" else None,
+        "torch_norm_loss_weight": torch_norm_loss_weight if backend == "torch_denoiser" else None,
+        "torch_decoder_compat_loss_weight": torch_decoder_compat_loss_weight if backend == "torch_denoiser" else None,
+        "torch_decoder_compat_cosine_margin": torch_decoder_compat_cosine_margin if backend == "torch_denoiser" else None,
+        "torch_normalize_predictions": torch_normalize_predictions if backend == "torch_denoiser" else None,
         "torch_device": getattr(model, "device_name", torch_device) if backend == "torch_denoiser" else None,
         "de_novo_latent_rerank_weight": de_novo_latent_rerank_weight,
         "source_rerank_weight": source_rerank_weight,
@@ -230,6 +242,10 @@ def main() -> None:
     parser.add_argument("--torch-contrastive-temperature", type=float, default=0.10)
     parser.add_argument("--torch-hard-negative-loss-weight", type=float, default=0.0)
     parser.add_argument("--torch-hard-negative-margin", type=float, default=0.10)
+    parser.add_argument("--torch-norm-loss-weight", type=float, default=0.0)
+    parser.add_argument("--torch-decoder-compat-loss-weight", type=float, default=0.0)
+    parser.add_argument("--torch-decoder-compat-cosine-margin", type=float, default=0.78)
+    parser.add_argument("--torch-normalize-predictions", action="store_true")
     parser.add_argument("--torch-device", default="auto")
     parser.add_argument("--de-novo-latent-rerank-weight", type=float, default=0.05)
     parser.add_argument("--source-rerank-weight", type=float, default=0.35)
@@ -289,6 +305,10 @@ def main() -> None:
         torch_contrastive_temperature=args.torch_contrastive_temperature,
         torch_hard_negative_loss_weight=args.torch_hard_negative_loss_weight,
         torch_hard_negative_margin=args.torch_hard_negative_margin,
+        torch_norm_loss_weight=args.torch_norm_loss_weight,
+        torch_decoder_compat_loss_weight=args.torch_decoder_compat_loss_weight,
+        torch_decoder_compat_cosine_margin=args.torch_decoder_compat_cosine_margin,
+        torch_normalize_predictions=args.torch_normalize_predictions,
         torch_device=args.torch_device,
         de_novo_latent_rerank_weight=args.de_novo_latent_rerank_weight,
         source_rerank_weight=args.source_rerank_weight,
@@ -325,6 +345,10 @@ def _build_model(
     torch_hard_negative_margin: float,
     torch_device: str,
     seed: int,
+    torch_norm_loss_weight: float = 0.0,
+    torch_decoder_compat_loss_weight: float = 0.0,
+    torch_decoder_compat_cosine_margin: float = 0.78,
+    torch_normalize_predictions: bool = False,
 ):
     if backend == "ridge":
         return SketchImageJEPAPredictor(JEPAConfig(feature_dim=feature_dim, latent_dim=latent_dim, ridge=ridge))
@@ -350,6 +374,10 @@ def _build_model(
                 contrastive_temperature=torch_contrastive_temperature,
                 hard_negative_loss_weight=torch_hard_negative_loss_weight,
                 hard_negative_margin=torch_hard_negative_margin,
+                norm_loss_weight=torch_norm_loss_weight,
+                decoder_compat_loss_weight=torch_decoder_compat_loss_weight,
+                decoder_compat_cosine_margin=torch_decoder_compat_cosine_margin,
+                normalize_predictions=torch_normalize_predictions,
                 device=torch_device,
                 seed=seed,
             )
@@ -566,6 +594,7 @@ def _is_generated_origin(origin: str) -> bool:
         or origin.startswith("phase2_jepa_planned")
         or origin.startswith("phase2_jepa_calibrated")
         or origin.startswith("phase2_jepa_oracle_anchored")
+        or origin.startswith("phase3_decoder_compatible")
         or origin.startswith("latent_sensitivity")
         or origin.startswith("oracle_latent")
     )

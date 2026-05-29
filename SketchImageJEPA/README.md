@@ -333,6 +333,37 @@ Read `source_summary.csv` first. The target is to keep `oracle_target`
 substantially stronger than Phase 2B while improving `planner_predicted` or
 `calibrated_predicted` over the prior robust decoder.
 
+## Phase 3A Decoder-Compatible Planner
+
+Phase 2D suggests decoder-only tuning is not enough: oracle latents decode
+well, but planner latents remain decoder-hostile. Phase 3A keeps the Phase 1
+decoder frozen and changes the planner objective. It adds optional norm and
+decoder-compatibility losses so the predicted latent is pushed toward the
+oracle/noisy-oracle basin that the decoder can read.
+
+```text
+condition / source / mask / image context
+  -> JEPA planner with norm + cosine-floor compatibility loss
+  -> frozen Phase 1 latent-conditioned token decoder
+  -> sampled SMILES candidates
+```
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=phase3_decoder_compatible_planner_2048_seed7 \
+bash scripts/submit_phase3_decoder_compatible_planner.sh
+```
+
+Read `metrics.json` first. The new planner diagnostics are
+`planner_latent_cosine`, `planner_cosine_ge_margin`, and the
+`planner_eval_*_norm_*` fields.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of

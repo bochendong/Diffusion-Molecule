@@ -29,6 +29,10 @@ class TorchDenoiserConfig:
     contrastive_temperature: float = 0.10
     hard_negative_loss_weight: float = 0.0
     hard_negative_margin: float = 0.10
+    norm_loss_weight: float = 0.0
+    decoder_compat_loss_weight: float = 0.0
+    decoder_compat_cosine_margin: float = 0.78
+    normalize_predictions: bool = False
     device: str = "auto"
     seed: int = 7
 
@@ -85,6 +89,8 @@ class TorchLatentDenoiser:
             direct_cosine_total = 0.0
             direct_contrastive_total = 0.0
             hard_negative_total = 0.0
+            norm_total = 0.0
+            decoder_compat_total = 0.0
             seen = 0
             for batch_conditions, batch_targets, batch_sources in loader:
                 batch_conditions = batch_conditions.to(device)
@@ -116,12 +122,26 @@ class TorchLatentDenoiser:
                 hard_negative_loss = 0.5 * _batch_hard_negative_loss(torch, pred, batch_targets, self.config.hard_negative_margin) + _batch_hard_negative_loss(
                     torch, direct_pred, batch_targets, self.config.hard_negative_margin
                 )
+                norm_loss = 0.5 * _norm_match_loss(torch, pred, batch_targets) + _norm_match_loss(torch, direct_pred, batch_targets)
+                decoder_compat_loss = 0.5 * _decoder_compat_loss(
+                    torch,
+                    pred,
+                    batch_targets,
+                    self.config.decoder_compat_cosine_margin,
+                ) + _decoder_compat_loss(
+                    torch,
+                    direct_pred,
+                    batch_targets,
+                    self.config.decoder_compat_cosine_margin,
+                )
                 loss = (
                     recon_loss
                     + self.config.delta_loss_weight * delta_loss
                     + self.config.direct_loss_weight * direct_loss
                     + self.config.contrastive_loss_weight * contrastive_loss
                     + self.config.hard_negative_loss_weight * hard_negative_loss
+                    + self.config.norm_loss_weight * norm_loss
+                    + self.config.decoder_compat_loss_weight * decoder_compat_loss
                 )
                 optimizer.zero_grad(set_to_none=True)
                 loss.backward()
@@ -136,6 +156,8 @@ class TorchLatentDenoiser:
                 direct_cosine_total += float(direct_cosine.detach().cpu()) * batch_size
                 direct_contrastive_total += float(direct_contrastive.detach().cpu()) * batch_size
                 hard_negative_total += float(hard_negative_loss.detach().cpu()) * batch_size
+                norm_total += float(norm_loss.detach().cpu()) * batch_size
+                decoder_compat_total += float(decoder_compat_loss.detach().cpu()) * batch_size
                 seen += batch_size
             history.append(
                 {
@@ -149,6 +171,8 @@ class TorchLatentDenoiser:
                     "direct_cosine_loss": direct_cosine_total / max(1, seen),
                     "direct_contrastive_loss": direct_contrastive_total / max(1, seen),
                     "hard_negative_loss": hard_negative_total / max(1, seen),
+                    "norm_loss": norm_total / max(1, seen),
+                    "decoder_compat_loss": decoder_compat_total / max(1, seen),
                     "backend": self.backend_name,
                     "device": self.device_name,
                 }
@@ -178,6 +202,8 @@ class TorchLatentDenoiser:
                 pred = model(x, conditions_tensor, sources_tensor, source_mask, t)
                 blend = 1.0 / float(step)
                 x = (1.0 - blend) * x + blend * pred
+            if self.config.normalize_predictions:
+                x = torch.nn.functional.normalize(x, p=2, dim=1, eps=1e-8)
             return x.detach().cpu().numpy().astype(np.float32)
 
     def save(self, out_dir: str | Path) -> None:
@@ -276,6 +302,19 @@ def _batch_hard_negative_loss(torch: Any, pred: Any, target: Any, margin: float)
     hard_negative_idx = torch.argmax(target_self_similarity, dim=1)
     hard_negative = pred_target_sim[torch.arange(target_norm.shape[0], device=target_norm.device), hard_negative_idx]
     return torch.mean(torch.relu(float(margin) + hard_negative - positive))
+
+
+def _norm_match_loss(torch: Any, pred: Any, target: Any):
+    pred_norm = torch.linalg.norm(pred, dim=1)
+    target_norm = torch.linalg.norm(target, dim=1)
+    return torch.mean((pred_norm - target_norm) ** 2)
+
+
+def _decoder_compat_loss(torch: Any, pred: Any, target: Any, cosine_margin: float):
+    pred_norm = torch.nn.functional.normalize(pred, p=2, dim=1, eps=1e-8)
+    target_norm = torch.nn.functional.normalize(target, p=2, dim=1, eps=1e-8)
+    cosine = torch.sum(pred_norm * target_norm, dim=1)
+    return torch.mean(torch.relu(float(cosine_margin) - cosine) ** 2)
 
 
 def _torch_deps():

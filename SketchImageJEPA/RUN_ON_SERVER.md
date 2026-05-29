@@ -529,6 +529,62 @@ planner_predicted or calibrated_predicted improves over Phase 2B/2C.
 validity does not collapse.
 ```
 
+## Phase 3A Decoder-Compatible Planner
+
+Run this after Phase 1 and the hard split exist. It keeps the Phase 1 decoder
+frozen and changes the planner training objective instead of trying another
+decoder-only fine-tune.
+
+```text
+planner objective = existing denoising losses
+                  + latent norm matching
+                  + cosine-floor decoder compatibility loss
+                  + optional prediction normalization
+```
+
+Submit from the login node:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase3_decoder_compatible_planner_2048_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+bash scripts/submit_phase3_decoder_compatible_planner.sh
+```
+
+Default planner compatibility recipe:
+
+```text
+epochs = 35
+norm_loss_weight = 2.0
+decoder_compat_loss_weight = 4.0
+decoder_compat_cosine_margin = 0.78
+normalize_predictions = 1
+```
+
+Read these first:
+
+```text
+outputs/runs/phase3_decoder_compatible_planner_2048_seed7/metrics.json
+outputs/runs/phase3_decoder_compatible_planner_2048_seed7/predictions.csv
+outputs/runs/phase3_decoder_compatible_planner_2048_seed7/run_config.json
+```
+
+Success criteria:
+
+```text
+planner_latent_cosine and planner_cosine_ge_margin improve over Phase 2B.
+top1_validity stays high through the frozen Phase 1 decoder.
+top1_target_tanimoto or mean_best_tanimoto improves over Phase 2A/2C frozen-decoder runs.
+```
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.
