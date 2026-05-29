@@ -639,6 +639,61 @@ top1_target_tanimoto or mean_best_tanimoto improves for edit/inpaint/fragment_gr
 oracle_action metrics remain strong, confirming the frozen decoder is not the bottleneck.
 ```
 
+## Phase 4B: Normalized Edit/Action Planner
+
+Run this after Phase 4A shows predicted action norms are too large. It keeps
+the same source-conditioned task filter, but trains the planner on edit
+direction and uses the training action-norm median as the step size before
+decoding an alpha beam.
+
+```text
+condition vector + source latent -> predicted unit action direction
+candidate latent = normalize(source latent + alpha * median_train_step * direction)
+alpha beam = 0.05, 0.10, 0.15, 0.25, 0.50, 0.75, 1.00
+```
+
+Submit from the login node:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase4b_normalized_action_planner_2048_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+bash scripts/submit_phase4b_normalized_action_planner.sh
+```
+
+Default normalized-action recipe:
+
+```text
+action_target_mode = unit_direction
+action_step_mode = target_norm_median
+action_alphas = 0.05,0.10,0.15,0.25,0.50,0.75,1.00
+alpha_score_penalty = 0.01
+```
+
+Read these first:
+
+```text
+outputs/runs/phase4b_normalized_action_planner_2048_seed7/metrics.json
+outputs/runs/phase4b_normalized_action_planner_2048_seed7/alpha_summary.csv
+outputs/runs/phase4b_normalized_action_planner_2048_seed7/predictions.csv
+```
+
+Success criteria:
+
+```text
+action_eval_step_pred_mean is close to action_eval_step_target_mean.
+composed_latent_cosine improves over Phase 4A.
+target similarity improves without collapsing top1_validity.
+```
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.

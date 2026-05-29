@@ -395,6 +395,38 @@ de novo rows separately, plus `action_latent_cosine` and
 `composed_latent_cosine` so we can tell whether the edit action or the decoder
 is limiting quality.
 
+## Phase 4B Normalized Edit-Action Planner
+
+Phase 4B keeps the Phase 4 interface, but fixes a failure mode where the
+planner predicts action vectors with much larger norm than the true edit. It
+trains the planner on the edit direction and restores the step size from the
+training action-norm distribution before composing the latent:
+
+```text
+source molecule latent + task condition
+  -> predicted unit edit direction
+  -> median train edit step * direction
+  -> normalize(source latent + alpha * scaled direction)
+  -> frozen Phase 1 latent-conditioned token decoder
+```
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=phase4b_normalized_action_planner_2048_seed7 \
+bash scripts/submit_phase4b_normalized_action_planner.sh
+```
+
+Read `action_eval_step_*`, `action_train_step_*`, `action_latent_cosine`, and
+`composed_latent_cosine` first. If Phase 4A was limited by over-large action
+norms, Phase 4B should improve composed latent cosine and the alpha-beam
+target metrics without changing the frozen decoder.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of

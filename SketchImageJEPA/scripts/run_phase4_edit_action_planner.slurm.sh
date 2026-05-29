@@ -70,4 +70,4 @@ PY
 
 bash scripts/run_phase4_edit_action_planner.sh
 
-echo "SketchImage-JEPA Phase 4A Slurm job finished at $(date +"%Y-%m-%dT%H:%M:%S%z")"
+echo "SketchImage-JEPA ${SKETCHIMAGE_PHASE_TITLE:-Phase 4A} Slurm job finished at $(date +"%Y-%m-%dT%H:%M:%S%z")"

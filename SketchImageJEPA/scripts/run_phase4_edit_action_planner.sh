@@ -19,6 +19,10 @@ export SKETCHIMAGE_TOP_K="${SKETCHIMAGE_TOP_K:-8}"
 export SKETCHIMAGE_SAMPLES_PER_ALPHA="${SKETCHIMAGE_SAMPLES_PER_ALPHA:-2}"
 export SKETCHIMAGE_ACTION_ALPHAS="${SKETCHIMAGE_ACTION_ALPHAS:-0.25,0.50,0.75,1.00,1.25}"
 export SKETCHIMAGE_ALPHA_SCORE_PENALTY="${SKETCHIMAGE_ALPHA_SCORE_PENALTY:-0.02}"
+export SKETCHIMAGE_ACTION_TARGET_MODE="${SKETCHIMAGE_ACTION_TARGET_MODE:-raw_delta}"
+export SKETCHIMAGE_ACTION_STEP_MODE="${SKETCHIMAGE_ACTION_STEP_MODE:-implicit}"
+export SKETCHIMAGE_ACTION_STEP_RIDGE="${SKETCHIMAGE_ACTION_STEP_RIDGE:-0.01}"
+export SKETCHIMAGE_ACTION_STEP_CLIP_QUANTILE="${SKETCHIMAGE_ACTION_STEP_CLIP_QUANTILE:-0.98}"
 export SKETCHIMAGE_RIDGE="${SKETCHIMAGE_RIDGE:-0.001}"
 export SKETCHIMAGE_BACKEND="${SKETCHIMAGE_BACKEND:-torch_denoiser}"
 export SKETCHIMAGE_TORCH_HIDDEN_DIM="${SKETCHIMAGE_TORCH_HIDDEN_DIM:-1024}"
@@ -41,7 +45,7 @@ export SKETCHIMAGE_DECODER_DEVICE="${SKETCHIMAGE_DECODER_DEVICE:-auto}"
 export SKETCHIMAGE_ORACLE_ACTION_CONTROL="${SKETCHIMAGE_ORACLE_ACTION_CONTROL:-1}"
 export SKETCHIMAGE_RENDER_IMAGE_CONTEXT="${SKETCHIMAGE_RENDER_IMAGE_CONTEXT:-1}"
 
-echo "SketchImage-JEPA Phase 4A edit/action planner"
+echo "SketchImage-JEPA ${SKETCHIMAGE_PHASE_TITLE:-Phase 4A edit/action planner}"
 echo "  python=$PYTHON_BIN"
 echo "  run_root=$OUTPUT_DIR"
 echo "  oracle_decoder_dir=$SKETCHIMAGE_ORACLE_DECODER_DIR"
@@ -53,6 +57,10 @@ echo "  top_k=$SKETCHIMAGE_TOP_K"
 echo "  samples_per_alpha=$SKETCHIMAGE_SAMPLES_PER_ALPHA"
 echo "  action_alphas=$SKETCHIMAGE_ACTION_ALPHAS"
 echo "  alpha_score_penalty=$SKETCHIMAGE_ALPHA_SCORE_PENALTY"
+echo "  action_target_mode=$SKETCHIMAGE_ACTION_TARGET_MODE"
+echo "  action_step_mode=$SKETCHIMAGE_ACTION_STEP_MODE"
+echo "  action_step_ridge=$SKETCHIMAGE_ACTION_STEP_RIDGE"
+echo "  action_step_clip_quantile=$SKETCHIMAGE_ACTION_STEP_CLIP_QUANTILE"
 echo "  backend=$SKETCHIMAGE_BACKEND"
 echo "  torch_device=$SKETCHIMAGE_TORCH_DEVICE"
 echo "  decoder_device=$SKETCHIMAGE_DECODER_DEVICE"
@@ -118,6 +126,10 @@ fi
   --samples-per-alpha "$SKETCHIMAGE_SAMPLES_PER_ALPHA" \
   --action-alphas "$SKETCHIMAGE_ACTION_ALPHAS" \
   --alpha-score-penalty "$SKETCHIMAGE_ALPHA_SCORE_PENALTY" \
+  --action-target-mode "$SKETCHIMAGE_ACTION_TARGET_MODE" \
+  --action-step-mode "$SKETCHIMAGE_ACTION_STEP_MODE" \
+  --action-step-ridge "$SKETCHIMAGE_ACTION_STEP_RIDGE" \
+  --action-step-clip-quantile "$SKETCHIMAGE_ACTION_STEP_CLIP_QUANTILE" \
   --ridge "$SKETCHIMAGE_RIDGE" \
   --backend "$SKETCHIMAGE_BACKEND" \
   --torch-hidden-dim "$SKETCHIMAGE_TORCH_HIDDEN_DIM" \
@@ -142,7 +154,7 @@ fi
   "${RENDER_ARGS[@]}"
 
 echo
-echo "Phase 4A edit/action planner finished: $OUTPUT_DIR"
+echo "${SKETCHIMAGE_PHASE_TITLE:-Phase 4A edit/action planner} finished: $OUTPUT_DIR"
 echo "  metrics=$OUTPUT_DIR/metrics.json"
 echo "  predictions=$OUTPUT_DIR/predictions.csv"
 echo "  alpha_summary=$OUTPUT_DIR/alpha_summary.csv"

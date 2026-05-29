@@ -1353,10 +1353,12 @@ class SketchImageJEPATests(unittest.TestCase):
                 seed=23,
             )
             self.assertIn("action_latent_cosine", metrics)
+            self.assertIn("action_eval_step_mae", metrics)
             self.assertEqual(metrics["excluded_train_tasks"], 1.0)
             self.assertEqual(metrics["excluded_eval_tasks"], 1.0)
             self.assertTrue(Path(output_dir, "planner", "model.pt").exists())
             self.assertTrue(Path(output_dir, "planner_eval_actions.npy").exists())
+            self.assertTrue(Path(output_dir, "planner_eval_action_outputs.npy").exists())
             self.assertTrue(Path(output_dir, "alpha_summary.csv").exists())
             self.assertTrue(Path(output_dir, "oracle_action_predictions.csv").exists())
             self.assertTrue(Path(output_dir, "predictions.csv").exists())
@@ -1364,6 +1366,36 @@ class SketchImageJEPATests(unittest.TestCase):
                 rows = list(csv.DictReader(handle))
             self.assertTrue(rows)
             self.assertTrue(rows[0]["origin"].startswith("phase4_edit_action_alpha"))
+            run_config = json.loads(Path(output_dir, "run_config.json").read_text(encoding="utf-8"))
+            self.assertEqual(run_config["action_target_mode"], "raw_delta")
+            self.assertEqual(run_config["action_step_mode"], "implicit")
+
+            normalized_output_dir = Path(tmp, "phase4b")
+            normalized_metrics = run_phase4_edit_action_planner(
+                oracle_decoder_dir=decoder_run,
+                output_dir=normalized_output_dir,
+                train_csv=train_csv,
+                eval_csv=eval_csv,
+                feature_dim=16,
+                top_k=2,
+                samples_per_alpha=1,
+                action_alphas=(0.1, 0.5, 1.0),
+                action_target_mode="unit_direction",
+                action_step_mode="target_norm_median",
+                torch_hidden_dim=32,
+                torch_epochs=1,
+                torch_batch_size=2,
+                torch_diffusion_steps=2,
+                torch_device="cpu",
+                decoder_device="cpu",
+                render_image_context=False,
+                oracle_action_control=False,
+                seed=23,
+            )
+            self.assertIn("action_eval_step_pred_mean", normalized_metrics)
+            normalized_config = json.loads(Path(normalized_output_dir, "run_config.json").read_text(encoding="utf-8"))
+            self.assertEqual(normalized_config["action_target_mode"], "unit_direction")
+            self.assertEqual(normalized_config["action_step_mode"], "target_norm_median")
 
     def test_rerank_predictions_can_promote_property_match(self):
         with tempfile.TemporaryDirectory() as tmp:

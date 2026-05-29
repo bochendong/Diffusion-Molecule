@@ -67,6 +67,10 @@ def run_phase4_edit_action_planner(
     torch_device: str = "auto",
     decoder_device: str = "auto",
     oracle_action_control: bool = True,
+    action_target_mode: str = "raw_delta",
+    action_step_mode: str = "implicit",
+    action_step_ridge: float = 1e-2,
+    action_step_clip_quantile: float = 0.98,
 ) -> dict[str, float]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -99,6 +103,16 @@ def run_phase4_edit_action_planner(
     eval_conditions = _action_conditions(eval_base_conditions, eval_sources)
     train_actions = train_targets - train_sources
     eval_actions = eval_targets - eval_sources
+    train_action_targets = _action_training_targets(train_actions, action_target_mode)
+    train_action_steps = _row_norms(train_actions)
+    eval_action_steps = _row_norms(eval_actions)
+    step_calibrator = _fit_action_step_calibrator(
+        action_step_mode=action_step_mode,
+        train_conditions=train_conditions,
+        train_steps=train_action_steps,
+        ridge=action_step_ridge,
+        clip_quantile=action_step_clip_quantile,
+    )
     zero_train_sources = np.zeros_like(train_sources, dtype=np.float32)
     zero_eval_sources = np.zeros_like(eval_sources, dtype=np.float32)
 
@@ -124,10 +138,22 @@ def run_phase4_edit_action_planner(
         torch_hard_negative_margin=torch_hard_negative_margin,
         torch_device=torch_device,
         seed=seed,
-    ).fit(train_conditions, train_actions, zero_train_sources)
+    ).fit(train_conditions, train_action_targets, zero_train_sources)
 
-    train_pred_actions = planner.predict(train_conditions, zero_train_sources)
-    eval_pred_actions = planner.predict(eval_conditions, zero_eval_sources)
+    train_pred_action_outputs = planner.predict(train_conditions, zero_train_sources)
+    eval_pred_action_outputs = planner.predict(eval_conditions, zero_eval_sources)
+    train_pred_actions, train_pred_steps = _planned_action_vectors(
+        action_outputs=train_pred_action_outputs,
+        conditions=train_conditions,
+        action_target_mode=action_target_mode,
+        step_calibrator=step_calibrator,
+    )
+    eval_pred_actions, eval_pred_steps = _planned_action_vectors(
+        action_outputs=eval_pred_action_outputs,
+        conditions=eval_conditions,
+        action_target_mode=action_target_mode,
+        step_calibrator=step_calibrator,
+    )
     train_composed = _normalize_rows(train_sources + train_pred_actions)
     eval_composed = _normalize_rows(eval_sources + eval_pred_actions)
 
@@ -163,6 +189,8 @@ def run_phase4_edit_action_planner(
     )
     metrics.update(_action_norm_metrics("action_eval", eval_pred_actions, eval_actions))
     metrics.update(_action_norm_metrics("action_train", train_pred_actions, train_actions))
+    metrics.update(_action_step_metrics("action_eval_step", eval_pred_steps, eval_action_steps))
+    metrics.update(_action_step_metrics("action_train_step", train_pred_steps, train_action_steps))
     planner_train_pool = _canonical_pool(example.target_smiles for example in train_examples)
     metrics.update(_candidate_surface_metrics(scores_by_task, planner_train_pool, eval_examples))
     decoder_train_pool = _load_decoder_train_pool(oracle_model_dir.parent)
@@ -178,8 +206,18 @@ def run_phase4_edit_action_planner(
         _write_predictions(oracle_predictions_path, eval_examples, oracle_scores_by_task, train_pool=planner_train_pool)
         _append_decoder_pool_membership(oracle_predictions_path, decoder_train_pool)
 
+    phase_name = (
+        "phase4a_source_conditioned_edit_action_planner"
+        if action_target_mode == "raw_delta" and action_step_mode == "implicit"
+        else "phase4b_normalized_source_conditioned_edit_action_planner"
+    )
+    latent_composition = (
+        "normalize(source_latent + alpha * predicted_action_latent)"
+        if action_target_mode == "raw_delta" and action_step_mode == "implicit"
+        else "normalize(source_latent + alpha * predicted_step * normalized_predicted_action_direction)"
+    )
     run_config = {
-        "phase": "phase4a_source_conditioned_edit_action_planner",
+        "phase": phase_name,
         "research_question": "Can source-conditioned molecular editing be learned as an action latent instead of direct target latent prediction?",
         "oracle_decoder_dir": str(oracle_model_dir),
         "oracle_decoder_config": decoder_config,
@@ -199,6 +237,11 @@ def run_phase4_edit_action_planner(
         "samples_per_alpha": samples_per_alpha,
         "action_alphas": list(action_alphas),
         "alpha_score_penalty": alpha_score_penalty,
+        "action_target_mode": action_target_mode,
+        "action_step_mode": action_step_mode,
+        "action_step_ridge": action_step_ridge,
+        "action_step_clip_quantile": action_step_clip_quantile,
+        "action_step_calibrator": step_calibrator,
         "ridge": ridge,
         "train_fraction": train_fraction,
         "seed": seed,
@@ -226,7 +269,7 @@ def run_phase4_edit_action_planner(
         "planner_history": planner.history,
         "decoder": {
             "mode": "frozen_phase1_oracle_latent_decoder",
-            "latent_composition": "normalize(source_latent + alpha * predicted_action_latent)",
+            "latent_composition": latent_composition,
             "ranking": "decoder_likelihood_plus_validity_minus_alpha_distance_penalty_no_target_oracle",
             "can_leave_training_pool": True,
         },
@@ -235,6 +278,8 @@ def run_phase4_edit_action_planner(
     planner.save(output_dir / "planner")
     np.save(output_dir / "planner_train_actions.npy", train_pred_actions.astype(np.float32))
     np.save(output_dir / "planner_eval_actions.npy", eval_pred_actions.astype(np.float32))
+    np.save(output_dir / "planner_train_action_outputs.npy", train_pred_action_outputs.astype(np.float32))
+    np.save(output_dir / "planner_eval_action_outputs.npy", eval_pred_action_outputs.astype(np.float32))
     np.save(output_dir / "train_target_actions.npy", train_actions.astype(np.float32))
     np.save(output_dir / "eval_target_actions.npy", eval_actions.astype(np.float32))
     np.save(output_dir / "planner_eval_composed_latents.npy", eval_composed.astype(np.float32))
@@ -288,6 +333,10 @@ def main() -> None:
     parser.add_argument("--torch-device", default="auto")
     parser.add_argument("--decoder-device", default="auto")
     parser.add_argument("--oracle-action-control", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--action-target-mode", choices=["raw_delta", "unit_direction"], default="raw_delta")
+    parser.add_argument("--action-step-mode", choices=["implicit", "target_norm_median", "condition_ridge"], default="implicit")
+    parser.add_argument("--action-step-ridge", type=float, default=1e-2)
+    parser.add_argument("--action-step-clip-quantile", type=float, default=0.98)
     args = parser.parse_args()
     metrics = run_phase4_edit_action_planner(
         oracle_decoder_dir=args.oracle_decoder_dir,
@@ -324,6 +373,10 @@ def main() -> None:
         torch_device=args.torch_device,
         decoder_device=args.decoder_device,
         oracle_action_control=args.oracle_action_control,
+        action_target_mode=args.action_target_mode,
+        action_step_mode=args.action_step_mode,
+        action_step_ridge=args.action_step_ridge,
+        action_step_clip_quantile=args.action_step_clip_quantile,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
 
@@ -335,6 +388,100 @@ def _source_conditioned_examples(examples: list[BenchmarkExample]) -> tuple[list
 
 def _action_conditions(base_conditions: np.ndarray, source_latents: np.ndarray) -> np.ndarray:
     return np.concatenate([base_conditions, source_latents], axis=1).astype(np.float32)
+
+
+def _action_training_targets(raw_actions: np.ndarray, action_target_mode: str) -> np.ndarray:
+    if action_target_mode == "raw_delta":
+        return np.asarray(raw_actions, dtype=np.float32)
+    if action_target_mode == "unit_direction":
+        return _normalize_rows(raw_actions)
+    raise ValueError(f"Unsupported action_target_mode={action_target_mode!r}.")
+
+
+def _planned_action_vectors(
+    action_outputs: np.ndarray,
+    conditions: np.ndarray,
+    action_target_mode: str,
+    step_calibrator: dict[str, object],
+) -> tuple[np.ndarray, np.ndarray]:
+    action_outputs = np.asarray(action_outputs, dtype=np.float32)
+    mode = str(step_calibrator.get("mode", "implicit"))
+    if action_target_mode == "raw_delta" and mode == "implicit":
+        return action_outputs, _row_norms(action_outputs)
+
+    directions = _normalize_rows(action_outputs)
+    if mode == "implicit":
+        steps = np.ones((action_outputs.shape[0],), dtype=np.float32)
+    else:
+        steps = _predict_action_steps(step_calibrator, conditions)
+    return (directions * steps[:, None]).astype(np.float32), steps.astype(np.float32)
+
+
+def _fit_action_step_calibrator(
+    action_step_mode: str,
+    train_conditions: np.ndarray,
+    train_steps: np.ndarray,
+    ridge: float,
+    clip_quantile: float,
+) -> dict[str, object]:
+    train_steps = np.asarray(train_steps, dtype=np.float32)
+    low, high = _step_clip_bounds(train_steps, clip_quantile)
+    if action_step_mode == "implicit":
+        return {"mode": "implicit", "clip_low": low, "clip_high": high}
+    if action_step_mode == "target_norm_median":
+        return {
+            "mode": "target_norm_median",
+            "value": float(np.median(train_steps)),
+            "clip_low": low,
+            "clip_high": high,
+        }
+    if action_step_mode == "condition_ridge":
+        x = np.asarray(train_conditions, dtype=np.float64)
+        y = np.asarray(train_steps, dtype=np.float64)
+        design = np.concatenate([np.ones((x.shape[0], 1), dtype=np.float64), x], axis=1)
+        xtx = design.T @ design
+        reg = np.eye(xtx.shape[0], dtype=np.float64) * max(float(ridge), 0.0)
+        reg[0, 0] = 0.0
+        try:
+            weights = np.linalg.solve(xtx + reg, design.T @ y)
+        except np.linalg.LinAlgError:
+            weights = np.linalg.pinv(xtx + reg) @ design.T @ y
+        train_pred = np.clip(design @ weights, low, high).astype(np.float32)
+        return {
+            "mode": "condition_ridge",
+            "weights": weights.astype(np.float32).tolist(),
+            "clip_low": low,
+            "clip_high": high,
+            "train_step_mae": float(np.mean(np.abs(train_pred - train_steps))),
+            "train_step_pred_mean": float(np.mean(train_pred)),
+        }
+    raise ValueError(f"Unsupported action_step_mode={action_step_mode!r}.")
+
+
+def _predict_action_steps(step_calibrator: dict[str, object], conditions: np.ndarray) -> np.ndarray:
+    mode = str(step_calibrator.get("mode", "implicit"))
+    low = float(step_calibrator.get("clip_low", 0.0))
+    high = float(step_calibrator.get("clip_high", np.inf))
+    if mode == "target_norm_median":
+        steps = np.full((conditions.shape[0],), float(step_calibrator["value"]), dtype=np.float32)
+    elif mode == "condition_ridge":
+        weights = np.asarray(step_calibrator["weights"], dtype=np.float32)
+        x = np.asarray(conditions, dtype=np.float32)
+        design = np.concatenate([np.ones((x.shape[0], 1), dtype=np.float32), x], axis=1)
+        steps = design @ weights
+    else:
+        steps = np.ones((conditions.shape[0],), dtype=np.float32)
+    return np.clip(steps, low, high).astype(np.float32)
+
+
+def _step_clip_bounds(train_steps: np.ndarray, clip_quantile: float) -> tuple[float, float]:
+    quantile = min(max(float(clip_quantile), 0.5), 1.0)
+    low_quantile = 1.0 - quantile
+    low = float(np.quantile(train_steps, low_quantile))
+    high = float(np.quantile(train_steps, quantile))
+    if high < low:
+        high = low
+    return low, high
 
 
 def _decode_action_beam(
@@ -386,6 +533,10 @@ def _normalize_rows(values: np.ndarray) -> np.ndarray:
     return values / np.clip(np.linalg.norm(values, axis=1, keepdims=True), 1e-8, None)
 
 
+def _row_norms(values: np.ndarray) -> np.ndarray:
+    return np.linalg.norm(np.asarray(values, dtype=np.float32), axis=1).astype(np.float32)
+
+
 def _action_norm_metrics(prefix: str, pred: np.ndarray, target: np.ndarray) -> dict[str, float]:
     pred_norm = np.linalg.norm(pred, axis=1)
     target_norm = np.linalg.norm(target, axis=1)
@@ -394,6 +545,17 @@ def _action_norm_metrics(prefix: str, pred: np.ndarray, target: np.ndarray) -> d
         f"{prefix}_pred_norm_std": float(np.std(pred_norm)),
         f"{prefix}_target_norm_mean": float(np.mean(target_norm)),
         f"{prefix}_norm_mae": float(np.mean(np.abs(pred_norm - target_norm))),
+    }
+
+
+def _action_step_metrics(prefix: str, pred_steps: np.ndarray, target_steps: np.ndarray) -> dict[str, float]:
+    pred_steps = np.asarray(pred_steps, dtype=np.float32)
+    target_steps = np.asarray(target_steps, dtype=np.float32)
+    return {
+        f"{prefix}_pred_mean": float(np.mean(pred_steps)),
+        f"{prefix}_pred_std": float(np.std(pred_steps)),
+        f"{prefix}_target_mean": float(np.mean(target_steps)),
+        f"{prefix}_mae": float(np.mean(np.abs(pred_steps - target_steps))),
     }
 
 
