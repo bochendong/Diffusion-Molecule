@@ -300,6 +300,39 @@ latent alignment. If noisy oracle stays strong but planner/calibrated fail, the
 decoder needs planner-distribution conditioning rather than more oracle-only
 training.
 
+## Phase 2D Oracle-Anchored Robust Decoder
+
+Phase 2D tries to keep the strong Phase 1 oracle control while adding light
+planner-latent robustness. It starts from the Phase 1 decoder, then fine-tunes
+with many oracle target rows and only small exposure to noisy, planner,
+calibrated, and interpolation latents:
+
+```text
+mostly oracle target latent
+  + small noisy oracle basin
+  + light planner/calibrated/interpolation exposure
+  -> oracle-anchored robust decoder
+```
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_DECODER_POOL_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_PLANNER_RUN_DIR=outputs/runs/phase2_robust_decoder_2048_seed7 \
+SKETCHIMAGE_CALIBRATED_RUN_DIR=outputs/runs/phase2_calibrated_decoder_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=phase2_oracle_anchored_decoder_2048_seed7 \
+bash scripts/submit_phase2_oracle_anchored_decoder.sh
+```
+
+Read `source_summary.csv` first. The target is to keep `oracle_target`
+substantially stronger than Phase 2B while improving `planner_predicted` or
+`calibrated_predicted` over the prior robust decoder.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of

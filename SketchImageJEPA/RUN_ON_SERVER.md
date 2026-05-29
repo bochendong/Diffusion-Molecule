@@ -469,6 +469,66 @@ oracle_target weak:
   sensitive enough to molecular latents.
 ```
 
+## Phase 2D Oracle-Anchored Robust Decoder
+
+Phase 1 has strong oracle control, while Phase 2B recovers validity but weakens
+that control. Phase 2D starts again from the Phase 1 decoder and fine-tunes with
+a much stronger oracle anchor:
+
+```text
+many oracle target rows
+small noisy-oracle basin
+light planner/calibrated/interpolation exposure
+low learning rate
+```
+
+Submit from the login node after Phase 2B, Phase 2C, and the hard split exist:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase2_oracle_anchored_decoder_2048_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_DECODER_POOL_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_PLANNER_RUN_DIR=outputs/runs/phase2_robust_decoder_2048_seed7 \
+SKETCHIMAGE_CALIBRATED_RUN_DIR=outputs/runs/phase2_calibrated_decoder_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+bash scripts/submit_phase2_oracle_anchored_decoder.sh
+```
+
+Default decoder fine-tune recipe:
+
+```text
+epochs = 4
+lr = 0.00002
+oracle_repeats = 8
+noisy_cosines = 0.78,0.90
+planner_repeats = 1
+calibrated_repeats = 1
+interpolation_alphas = 0.10,0.25
+```
+
+Read these first:
+
+```text
+outputs/runs/phase2_oracle_anchored_decoder_2048_seed7/source_summary.csv
+outputs/runs/phase2_oracle_anchored_decoder_2048_seed7/metrics.json
+```
+
+Success criteria:
+
+```text
+oracle_target mean_best_tanimoto stays much closer to Phase 1 than Phase 2B.
+planner_predicted or calibrated_predicted improves over Phase 2B/2C.
+validity does not collapse.
+```
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.
