@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+from sketch_smiles.audit_pairs import audit_pair_manifest
 from sketch_smiles.build_pairs import PairRecord, build_pair_manifest, summarize_pairs
 
 
@@ -44,6 +45,32 @@ class SketchSMILESTests(unittest.TestCase):
             self.assertTrue(Path(records[0].image_path).exists())
             self.assertTrue(records[0].valid)
             self.assertFalse(records[1].valid)
+
+    def test_audit_pair_manifest_writes_summary_without_optional_deps(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pair_dir = Path(tmp, "pairs")
+            pair_dir.mkdir()
+            pairs_csv = pair_dir / "pairs.csv"
+            with pairs_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["pair_id", "input_smiles", "canonical_smiles", "valid", "image_path", "error"])
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "pair_id": "mol_000000",
+                        "input_smiles": "CCO",
+                        "canonical_smiles": "CCO",
+                        "valid": "True",
+                        "image_path": "missing.png",
+                        "error": "",
+                    }
+                )
+
+            summary = audit_pair_manifest(pair_dir=pair_dir, sample_count=1)
+            self.assertEqual(summary["pairs"], 1.0)
+            self.assertEqual(summary["image_exists"], 0.0)
+            self.assertTrue(Path(pair_dir, "audit_summary.json").exists())
+            self.assertTrue(Path(pair_dir, "audit_rows.csv").exists())
+            self.assertTrue(Path(pair_dir, "sample_pairs.csv").exists())
 
 
 if __name__ == "__main__":

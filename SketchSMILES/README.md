@@ -92,3 +92,22 @@ SKETCHSMILES_OUTPUT_DIR=outputs/pairs/phys_50k \
 SKETCHSMILES_LIMIT=50000 \
 bash scripts/run_phase0_pairs.sh
 ```
+
+Audit the paired manifest and create a visual sample sheet:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_SAMPLE_COUNT=64 \
+bash scripts/run_phase0_audit.sh
+```
+
+The audit writes:
+
+```text
+outputs/pairs/phys_50k/audit_summary.json
+outputs/pairs/phys_50k/audit_rows.csv
+outputs/pairs/phys_50k/sample_pairs.csv
+outputs/pairs/phys_50k/sample_contact_sheet.png
+```
