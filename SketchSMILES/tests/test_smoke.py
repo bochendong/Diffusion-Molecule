@@ -1,4 +1,5 @@
 import csv
+import contextlib
 import tempfile
 import unittest
 from pathlib import Path
@@ -15,6 +16,21 @@ def _rdkit_available() -> bool:
         return True
     except Exception:
         return False
+
+
+@contextlib.contextmanager
+def _quiet_rdkit_errors():
+    try:
+        from rdkit import RDLogger
+    except Exception:
+        yield
+        return
+
+    RDLogger.DisableLog("rdApp.error")
+    try:
+        yield
+    finally:
+        RDLogger.EnableLog("rdApp.error")
 
 
 class SketchSMILESTests(unittest.TestCase):
@@ -39,7 +55,8 @@ class SketchSMILESTests(unittest.TestCase):
                 writer.writerow({"smiles": "not_a_smiles"})
 
             output_dir = Path(tmp, "pairs")
-            records = build_pair_manifest(input_csv=input_csv, output_dir=output_dir)
+            with _quiet_rdkit_errors():
+                records = build_pair_manifest(input_csv=input_csv, output_dir=output_dir)
             self.assertEqual(len(records), 2)
             self.assertTrue(Path(output_dir, "pairs.csv").exists())
             self.assertTrue(Path(output_dir, "summary.json").exists())
