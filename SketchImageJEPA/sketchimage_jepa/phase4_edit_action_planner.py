@@ -71,6 +71,11 @@ def run_phase4_edit_action_planner(
     action_step_mode: str = "implicit",
     action_step_ridge: float = 1e-2,
     action_step_clip_quantile: float = 0.98,
+    action_correction_mode: str = "none",
+    action_neighbor_key: str = "condition_source",
+    action_neighbor_count: int = 16,
+    action_neighbor_temperature: float = 0.07,
+    action_neighbor_blend: float = 0.5,
 ) -> dict[str, float]:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -81,6 +86,8 @@ def run_phase4_edit_action_planner(
     latent_dim = int(latent_dim or decoder_dim)
     if latent_dim != decoder_dim:
         raise ValueError(f"Planner latent_dim={latent_dim} must match oracle decoder condition_dim={decoder_dim}.")
+    if action_correction_mode != "none" and action_target_mode != "unit_direction":
+        raise ValueError("Action correction requires action_target_mode='unit_direction'.")
 
     raw_train_examples, raw_eval_examples = _load_splits(dataset_csv, train_csv, eval_csv, train_fraction=train_fraction, seed=seed)
     train_examples, train_excluded = _source_conditioned_examples(raw_train_examples)
@@ -142,14 +149,54 @@ def run_phase4_edit_action_planner(
 
     train_pred_action_outputs = planner.predict(train_conditions, zero_train_sources)
     eval_pred_action_outputs = planner.predict(eval_conditions, zero_eval_sources)
-    train_pred_actions, train_pred_steps = _planned_action_vectors(
+    train_uncorrected_actions, train_uncorrected_steps = _planned_action_vectors(
         action_outputs=train_pred_action_outputs,
         conditions=train_conditions,
         action_target_mode=action_target_mode,
         step_calibrator=step_calibrator,
     )
-    eval_pred_actions, eval_pred_steps = _planned_action_vectors(
+    eval_uncorrected_actions, eval_uncorrected_steps = _planned_action_vectors(
         action_outputs=eval_pred_action_outputs,
+        conditions=eval_conditions,
+        action_target_mode=action_target_mode,
+        step_calibrator=step_calibrator,
+    )
+    train_neighbor_keys = _action_neighbor_keys(action_neighbor_key, train_base_conditions, train_sources, train_conditions)
+    eval_neighbor_keys = _action_neighbor_keys(action_neighbor_key, eval_base_conditions, eval_sources, eval_conditions)
+    train_corrected_outputs, train_correction_metrics = _correct_action_outputs(
+        action_outputs=train_pred_action_outputs,
+        query_keys=train_neighbor_keys,
+        train_keys=train_neighbor_keys,
+        train_target_actions=train_actions,
+        train_pred_action_outputs=train_pred_action_outputs,
+        correction_mode=action_correction_mode,
+        neighbor_count=action_neighbor_count,
+        temperature=action_neighbor_temperature,
+        blend=action_neighbor_blend,
+        exclude_self=True,
+        prefix="action_train_correction",
+    )
+    eval_corrected_outputs, eval_correction_metrics = _correct_action_outputs(
+        action_outputs=eval_pred_action_outputs,
+        query_keys=eval_neighbor_keys,
+        train_keys=train_neighbor_keys,
+        train_target_actions=train_actions,
+        train_pred_action_outputs=train_pred_action_outputs,
+        correction_mode=action_correction_mode,
+        neighbor_count=action_neighbor_count,
+        temperature=action_neighbor_temperature,
+        blend=action_neighbor_blend,
+        exclude_self=False,
+        prefix="action_eval_correction",
+    )
+    train_pred_actions, train_pred_steps = _planned_action_vectors(
+        action_outputs=train_corrected_outputs,
+        conditions=train_conditions,
+        action_target_mode=action_target_mode,
+        step_calibrator=step_calibrator,
+    )
+    eval_pred_actions, eval_pred_steps = _planned_action_vectors(
+        action_outputs=eval_corrected_outputs,
         conditions=eval_conditions,
         action_target_mode=action_target_mode,
         step_calibrator=step_calibrator,
@@ -176,6 +223,14 @@ def run_phase4_edit_action_planner(
             "eval_tasks": float(len(eval_examples)),
             "excluded_train_tasks": float(train_excluded),
             "excluded_eval_tasks": float(eval_excluded),
+            "uncorrected_action_latent_mse": float(np.mean((eval_uncorrected_actions - eval_actions) ** 2)),
+            "uncorrected_action_train_latent_mse": float(np.mean((train_uncorrected_actions - train_actions) ** 2)),
+            "uncorrected_action_latent_cosine": _mean_cosine(eval_uncorrected_actions, eval_actions),
+            "uncorrected_action_train_latent_cosine": _mean_cosine(train_uncorrected_actions, train_actions),
+            "uncorrected_composed_latent_mse": float(np.mean((_normalize_rows(eval_sources + eval_uncorrected_actions) - eval_targets) ** 2)),
+            "uncorrected_composed_train_latent_mse": float(np.mean((_normalize_rows(train_sources + train_uncorrected_actions) - train_targets) ** 2)),
+            "uncorrected_composed_latent_cosine": _mean_cosine(_normalize_rows(eval_sources + eval_uncorrected_actions), eval_targets),
+            "uncorrected_composed_train_latent_cosine": _mean_cosine(_normalize_rows(train_sources + train_uncorrected_actions), train_targets),
             "action_latent_mse": float(np.mean((eval_pred_actions - eval_actions) ** 2)),
             "action_train_latent_mse": float(np.mean((train_pred_actions - train_actions) ** 2)),
             "action_latent_cosine": _mean_cosine(eval_pred_actions, eval_actions),
@@ -191,6 +246,10 @@ def run_phase4_edit_action_planner(
     metrics.update(_action_norm_metrics("action_train", train_pred_actions, train_actions))
     metrics.update(_action_step_metrics("action_eval_step", eval_pred_steps, eval_action_steps))
     metrics.update(_action_step_metrics("action_train_step", train_pred_steps, train_action_steps))
+    metrics.update(_action_step_metrics("uncorrected_action_eval_step", eval_uncorrected_steps, eval_action_steps))
+    metrics.update(_action_step_metrics("uncorrected_action_train_step", train_uncorrected_steps, train_action_steps))
+    metrics.update(train_correction_metrics)
+    metrics.update(eval_correction_metrics)
     planner_train_pool = _canonical_pool(example.target_smiles for example in train_examples)
     metrics.update(_candidate_surface_metrics(scores_by_task, planner_train_pool, eval_examples))
     decoder_train_pool = _load_decoder_train_pool(oracle_model_dir.parent)
@@ -206,16 +265,18 @@ def run_phase4_edit_action_planner(
         _write_predictions(oracle_predictions_path, eval_examples, oracle_scores_by_task, train_pool=planner_train_pool)
         _append_decoder_pool_membership(oracle_predictions_path, decoder_train_pool)
 
-    phase_name = (
-        "phase4a_source_conditioned_edit_action_planner"
-        if action_target_mode == "raw_delta" and action_step_mode == "implicit"
-        else "phase4b_normalized_source_conditioned_edit_action_planner"
-    )
-    latent_composition = (
-        "normalize(source_latent + alpha * predicted_action_latent)"
-        if action_target_mode == "raw_delta" and action_step_mode == "implicit"
-        else "normalize(source_latent + alpha * predicted_step * normalized_predicted_action_direction)"
-    )
+    if action_correction_mode != "none":
+        phase_name = "phase4c_retrieval_guided_source_conditioned_edit_action_planner"
+    elif action_target_mode == "raw_delta" and action_step_mode == "implicit":
+        phase_name = "phase4a_source_conditioned_edit_action_planner"
+    else:
+        phase_name = "phase4b_normalized_source_conditioned_edit_action_planner"
+    if action_correction_mode != "none":
+        latent_composition = "normalize(source_latent + alpha * predicted_step * corrected_action_direction)"
+    elif action_target_mode == "raw_delta" and action_step_mode == "implicit":
+        latent_composition = "normalize(source_latent + alpha * predicted_action_latent)"
+    else:
+        latent_composition = "normalize(source_latent + alpha * predicted_step * normalized_predicted_action_direction)"
     run_config = {
         "phase": phase_name,
         "research_question": "Can source-conditioned molecular editing be learned as an action latent instead of direct target latent prediction?",
@@ -242,6 +303,11 @@ def run_phase4_edit_action_planner(
         "action_step_ridge": action_step_ridge,
         "action_step_clip_quantile": action_step_clip_quantile,
         "action_step_calibrator": step_calibrator,
+        "action_correction_mode": action_correction_mode,
+        "action_neighbor_key": action_neighbor_key,
+        "action_neighbor_count": action_neighbor_count,
+        "action_neighbor_temperature": action_neighbor_temperature,
+        "action_neighbor_blend": action_neighbor_blend,
         "ridge": ridge,
         "train_fraction": train_fraction,
         "seed": seed,
@@ -278,6 +344,10 @@ def run_phase4_edit_action_planner(
     planner.save(output_dir / "planner")
     np.save(output_dir / "planner_train_actions.npy", train_pred_actions.astype(np.float32))
     np.save(output_dir / "planner_eval_actions.npy", eval_pred_actions.astype(np.float32))
+    np.save(output_dir / "planner_train_uncorrected_actions.npy", train_uncorrected_actions.astype(np.float32))
+    np.save(output_dir / "planner_eval_uncorrected_actions.npy", eval_uncorrected_actions.astype(np.float32))
+    np.save(output_dir / "planner_train_corrected_action_outputs.npy", train_corrected_outputs.astype(np.float32))
+    np.save(output_dir / "planner_eval_corrected_action_outputs.npy", eval_corrected_outputs.astype(np.float32))
     np.save(output_dir / "planner_train_action_outputs.npy", train_pred_action_outputs.astype(np.float32))
     np.save(output_dir / "planner_eval_action_outputs.npy", eval_pred_action_outputs.astype(np.float32))
     np.save(output_dir / "train_target_actions.npy", train_actions.astype(np.float32))
@@ -337,6 +407,11 @@ def main() -> None:
     parser.add_argument("--action-step-mode", choices=["implicit", "target_norm_median", "condition_ridge"], default="implicit")
     parser.add_argument("--action-step-ridge", type=float, default=1e-2)
     parser.add_argument("--action-step-clip-quantile", type=float, default=0.98)
+    parser.add_argument("--action-correction-mode", choices=["none", "neighbor_direction", "neighbor_residual"], default="none")
+    parser.add_argument("--action-neighbor-key", choices=["condition", "source", "condition_source"], default="condition_source")
+    parser.add_argument("--action-neighbor-count", type=int, default=16)
+    parser.add_argument("--action-neighbor-temperature", type=float, default=0.07)
+    parser.add_argument("--action-neighbor-blend", type=float, default=0.5)
     args = parser.parse_args()
     metrics = run_phase4_edit_action_planner(
         oracle_decoder_dir=args.oracle_decoder_dir,
@@ -377,6 +452,11 @@ def main() -> None:
         action_step_mode=args.action_step_mode,
         action_step_ridge=args.action_step_ridge,
         action_step_clip_quantile=args.action_step_clip_quantile,
+        action_correction_mode=args.action_correction_mode,
+        action_neighbor_key=args.action_neighbor_key,
+        action_neighbor_count=args.action_neighbor_count,
+        action_neighbor_temperature=args.action_neighbor_temperature,
+        action_neighbor_blend=args.action_neighbor_blend,
     )
     print(json.dumps(metrics, indent=2, sort_keys=True))
 
@@ -388,6 +468,21 @@ def _source_conditioned_examples(examples: list[BenchmarkExample]) -> tuple[list
 
 def _action_conditions(base_conditions: np.ndarray, source_latents: np.ndarray) -> np.ndarray:
     return np.concatenate([base_conditions, source_latents], axis=1).astype(np.float32)
+
+
+def _action_neighbor_keys(
+    action_neighbor_key: str,
+    base_conditions: np.ndarray,
+    source_latents: np.ndarray,
+    action_conditions: np.ndarray,
+) -> np.ndarray:
+    if action_neighbor_key == "condition":
+        return np.asarray(base_conditions, dtype=np.float32)
+    if action_neighbor_key == "source":
+        return np.asarray(source_latents, dtype=np.float32)
+    if action_neighbor_key == "condition_source":
+        return np.asarray(action_conditions, dtype=np.float32)
+    raise ValueError(f"Unsupported action_neighbor_key={action_neighbor_key!r}.")
 
 
 def _action_training_targets(raw_actions: np.ndarray, action_target_mode: str) -> np.ndarray:
@@ -415,6 +510,86 @@ def _planned_action_vectors(
     else:
         steps = _predict_action_steps(step_calibrator, conditions)
     return (directions * steps[:, None]).astype(np.float32), steps.astype(np.float32)
+
+
+def _correct_action_outputs(
+    action_outputs: np.ndarray,
+    query_keys: np.ndarray,
+    train_keys: np.ndarray,
+    train_target_actions: np.ndarray,
+    train_pred_action_outputs: np.ndarray,
+    correction_mode: str,
+    neighbor_count: int,
+    temperature: float,
+    blend: float,
+    exclude_self: bool,
+    prefix: str,
+) -> tuple[np.ndarray, dict[str, float]]:
+    action_outputs = np.asarray(action_outputs, dtype=np.float32)
+    if correction_mode == "none":
+        return action_outputs, {
+            f"{prefix}_neighbor_similarity_mean": 0.0,
+            f"{prefix}_direction_cosine_to_base": 1.0,
+            f"{prefix}_blend": 0.0,
+        }
+    base_dirs = _normalize_rows(action_outputs)
+    train_target_dirs = _normalize_rows(train_target_actions)
+    train_pred_dirs = _normalize_rows(train_pred_action_outputs)
+    top_indices, top_similarities, weights = _weighted_neighbors(
+        query_keys=query_keys,
+        train_keys=train_keys,
+        neighbor_count=neighbor_count,
+        temperature=temperature,
+        exclude_self=exclude_self,
+    )
+    neighbor_target_dirs = train_target_dirs[top_indices]
+    weighted_target_dirs = np.einsum("nk,nkd->nd", weights, neighbor_target_dirs).astype(np.float32)
+    if correction_mode == "neighbor_direction":
+        corrected_dirs = _normalize_rows((1.0 - float(blend)) * base_dirs + float(blend) * weighted_target_dirs)
+    elif correction_mode == "neighbor_residual":
+        neighbor_residuals = train_target_dirs[top_indices] - train_pred_dirs[top_indices]
+        weighted_residuals = np.einsum("nk,nkd->nd", weights, neighbor_residuals).astype(np.float32)
+        corrected_dirs = _normalize_rows(base_dirs + float(blend) * weighted_residuals)
+    else:
+        raise ValueError(f"Unsupported action_correction_mode={correction_mode!r}.")
+    return corrected_dirs.astype(np.float32), {
+        f"{prefix}_neighbor_similarity_mean": float(np.mean(top_similarities[:, 0])) if top_similarities.size else 0.0,
+        f"{prefix}_neighbor_similarity_weighted_mean": float(np.mean(np.sum(weights * top_similarities, axis=1))) if top_similarities.size else 0.0,
+        f"{prefix}_direction_cosine_to_base": _mean_cosine(corrected_dirs, base_dirs),
+        f"{prefix}_blend": float(blend),
+    }
+
+
+def _weighted_neighbors(
+    query_keys: np.ndarray,
+    train_keys: np.ndarray,
+    neighbor_count: int,
+    temperature: float,
+    exclude_self: bool,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    query = _normalize_rows(query_keys)
+    train = _normalize_rows(train_keys)
+    similarities = query @ train.T
+    if exclude_self and similarities.shape[0] == similarities.shape[1] and similarities.shape[0] > 1:
+        np.fill_diagonal(similarities, -np.inf)
+    count = max(1, min(int(neighbor_count), similarities.shape[1]))
+    if count == similarities.shape[1]:
+        top_indices = np.argsort(-similarities, axis=1)[:, :count]
+    else:
+        top_indices = np.argpartition(-similarities, kth=count - 1, axis=1)[:, :count]
+        top_values = np.take_along_axis(similarities, top_indices, axis=1)
+        order = np.argsort(-top_values, axis=1)
+        top_indices = np.take_along_axis(top_indices, order, axis=1)
+    top_similarities = np.take_along_axis(similarities, top_indices, axis=1)
+    weights = _softmax(top_similarities / max(float(temperature), 1e-6), axis=1)
+    return top_indices, top_similarities.astype(np.float32), weights.astype(np.float32)
+
+
+def _softmax(values: np.ndarray, axis: int = 1) -> np.ndarray:
+    finite_values = np.where(np.isfinite(values), values, -1e9)
+    shifted = finite_values - np.max(finite_values, axis=axis, keepdims=True)
+    exp = np.exp(shifted)
+    return exp / np.clip(np.sum(exp, axis=axis, keepdims=True), 1e-12, None)
 
 
 def _fit_action_step_calibrator(

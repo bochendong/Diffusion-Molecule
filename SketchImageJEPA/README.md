@@ -427,6 +427,41 @@ Read `action_eval_step_*`, `action_train_step_*`, `action_latent_cosine`, and
 norms, Phase 4B should improve composed latent cosine and the alpha-beam
 target metrics without changing the frozen decoder.
 
+## Phase 4C Retrieval-Guided Edit-Action Planner
+
+Phase 4C targets the remaining Phase 4B failure mode: the action step is now
+well calibrated, but the edit direction still generalizes poorly. It predicts
+the normalized edit direction, retrieves nearby training edits in
+condition-plus-source latent space, and blends the predicted direction with
+neighbor target directions before composing the candidate latent.
+
+```text
+source molecule latent + task condition
+  -> predicted unit edit direction
+  -> nearest train edit directions
+  -> blended/corrected edit direction
+  -> median train edit step * corrected direction
+  -> frozen Phase 1 latent-conditioned token decoder
+```
+
+```bash
+cd SketchImageJEPA
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+SKETCHIMAGE_RUN_NAME=phase4c_retrieval_action_planner_2048_seed7 \
+bash scripts/submit_phase4c_retrieval_action_planner.sh
+```
+
+Read the corrected and uncorrected diagnostics side by side:
+`action_latent_cosine` vs `uncorrected_action_latent_cosine`,
+`composed_latent_cosine` vs `uncorrected_composed_latent_cosine`, and the
+`action_eval_correction_*` fields. If retrieval helps, the corrected cosine
+and target metrics should move together.
+
 ## Paper Track
 
 The paper direction is documented in `docs/research_questions.md`. Instead of

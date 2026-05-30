@@ -694,6 +694,65 @@ composed_latent_cosine improves over Phase 4A.
 target similarity improves without collapsing top1_validity.
 ```
 
+## Phase 4C: Retrieval-Guided Edit/Action Planner
+
+Run this after Phase 4B confirms the action norm is fixed but direction
+generalization is still weak. It retrieves nearby source-conditioned training
+edits and blends their target edit directions into the predicted direction.
+
+```text
+condition vector + source latent -> predicted unit action direction
+nearest train edits in condition+source space -> neighbor target directions
+corrected direction = 0.5 * predicted direction + 0.5 * neighbor direction prior
+candidate latent = normalize(source latent + alpha * median_train_step * corrected direction)
+```
+
+Submit from the login node:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull --rebase origin main
+cd SketchImageJEPA
+
+SKETCHIMAGE_RUN_NAME=phase4c_retrieval_action_planner_2048_seed7 \
+SKETCHIMAGE_MODULES="gcc rdkit/2025.09.4" \
+SKETCHIMAGE_GPU_PROFILE=h100_10gb_mig \
+SKETCHIMAGE_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHIMAGE_ORACLE_DECODER_DIR=outputs/runs/phase1_oracle_latent_ar_2048_seed7 \
+SKETCHIMAGE_TRAIN_CSV=outputs/tasks/sketchmol_hard_seed7_train.csv \
+SKETCHIMAGE_EVAL_CSV=outputs/tasks/sketchmol_hard_seed7_eval.csv \
+bash scripts/submit_phase4c_retrieval_action_planner.sh
+```
+
+Default retrieval-action recipe:
+
+```text
+action_target_mode = unit_direction
+action_step_mode = target_norm_median
+action_correction_mode = neighbor_direction
+action_neighbor_key = condition_source
+action_neighbor_count = 24
+action_neighbor_temperature = 0.07
+action_neighbor_blend = 0.50
+action_alphas = 0.05,0.10,0.15,0.25,0.50,0.75,1.00
+```
+
+Read these first:
+
+```text
+outputs/runs/phase4c_retrieval_action_planner_2048_seed7/metrics.json
+outputs/runs/phase4c_retrieval_action_planner_2048_seed7/alpha_summary.csv
+outputs/runs/phase4c_retrieval_action_planner_2048_seed7/predictions.csv
+```
+
+Success criteria:
+
+```text
+action_latent_cosine improves over uncorrected_action_latent_cosine.
+composed_latent_cosine improves over uncorrected_composed_latent_cosine.
+target similarity improves without simply copying decoder-train molecules.
+```
+
 ## Stage-C Generative Decoder Prototype
 
 This is the next experiment after the hard split shows the retrieval ceiling.

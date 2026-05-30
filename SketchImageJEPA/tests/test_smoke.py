@@ -32,7 +32,7 @@ from sketchimage_jepa.phase2_oracle_anchored_decoder import run_phase2_oracle_an
 from sketchimage_jepa.phase2_planned_decoder import run_phase2_planned_decoder
 from sketchimage_jepa.phase2_robust_decoder import run_phase2_robust_decoder
 from sketchimage_jepa.phase3_decoder_compatible_planner import run_phase3_decoder_compatible_planner
-from sketchimage_jepa.phase4_edit_action_planner import run_phase4_edit_action_planner
+from sketchimage_jepa.phase4_edit_action_planner import _correct_action_outputs, run_phase4_edit_action_planner
 from sketchimage_jepa.property_guidance import parse_property_targets
 from sketchimage_jepa.report import summarize_prediction_rows
 from sketchimage_jepa.rerank_predictions import rerank_predictions_csv
@@ -1370,10 +1370,10 @@ class SketchImageJEPATests(unittest.TestCase):
             self.assertEqual(run_config["action_target_mode"], "raw_delta")
             self.assertEqual(run_config["action_step_mode"], "implicit")
 
-            normalized_output_dir = Path(tmp, "phase4b")
-            normalized_metrics = run_phase4_edit_action_planner(
+            corrected_output_dir = Path(tmp, "phase4c")
+            corrected_metrics = run_phase4_edit_action_planner(
                 oracle_decoder_dir=decoder_run,
-                output_dir=normalized_output_dir,
+                output_dir=corrected_output_dir,
                 train_csv=train_csv,
                 eval_csv=eval_csv,
                 feature_dim=16,
@@ -1382,6 +1382,9 @@ class SketchImageJEPATests(unittest.TestCase):
                 action_alphas=(0.1, 0.5, 1.0),
                 action_target_mode="unit_direction",
                 action_step_mode="target_norm_median",
+                action_correction_mode="neighbor_direction",
+                action_neighbor_count=1,
+                action_neighbor_blend=0.5,
                 torch_hidden_dim=32,
                 torch_epochs=1,
                 torch_batch_size=2,
@@ -1392,10 +1395,32 @@ class SketchImageJEPATests(unittest.TestCase):
                 oracle_action_control=False,
                 seed=23,
             )
-            self.assertIn("action_eval_step_pred_mean", normalized_metrics)
-            normalized_config = json.loads(Path(normalized_output_dir, "run_config.json").read_text(encoding="utf-8"))
-            self.assertEqual(normalized_config["action_target_mode"], "unit_direction")
-            self.assertEqual(normalized_config["action_step_mode"], "target_norm_median")
+            self.assertIn("action_eval_step_pred_mean", corrected_metrics)
+            self.assertIn("uncorrected_action_latent_cosine", corrected_metrics)
+            self.assertIn("action_eval_correction_neighbor_similarity_mean", corrected_metrics)
+            corrected_config = json.loads(Path(corrected_output_dir, "run_config.json").read_text(encoding="utf-8"))
+            self.assertEqual(corrected_config["phase"], "phase4c_retrieval_guided_source_conditioned_edit_action_planner")
+            self.assertEqual(corrected_config["action_target_mode"], "unit_direction")
+            self.assertEqual(corrected_config["action_step_mode"], "target_norm_median")
+            self.assertEqual(corrected_config["action_correction_mode"], "neighbor_direction")
+
+    def test_action_correction_blends_neighbor_direction(self):
+        corrected, metrics = _correct_action_outputs(
+            action_outputs=np.array([[1.0, 0.0]], dtype=np.float32),
+            query_keys=np.array([[1.0, 0.0]], dtype=np.float32),
+            train_keys=np.array([[1.0, 0.0]], dtype=np.float32),
+            train_target_actions=np.array([[0.0, 1.0]], dtype=np.float32),
+            train_pred_action_outputs=np.array([[1.0, 0.0]], dtype=np.float32),
+            correction_mode="neighbor_direction",
+            neighbor_count=1,
+            temperature=0.1,
+            blend=1.0,
+            exclude_self=False,
+            prefix="test",
+        )
+        self.assertAlmostEqual(float(corrected[0, 0]), 0.0, places=5)
+        self.assertAlmostEqual(float(corrected[0, 1]), 1.0, places=5)
+        self.assertAlmostEqual(metrics["test_neighbor_similarity_mean"], 1.0, places=5)
 
     def test_rerank_predictions_can_promote_property_match(self):
         with tempfile.TemporaryDirectory() as tmp:
