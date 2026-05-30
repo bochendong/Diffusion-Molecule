@@ -107,9 +107,9 @@ def _load_rdkit() -> dict[str, Any] | None:
 
 def _load_pillow() -> dict[str, Any] | None:
     try:
-        from PIL import Image, ImageDraw
+        from PIL import Image, ImageChops, ImageDraw, ImageStat
 
-        return {"Image": Image, "ImageDraw": ImageDraw}
+        return {"Image": Image, "ImageChops": ImageChops, "ImageDraw": ImageDraw, "ImageStat": ImageStat}
     except Exception:
         return None
 

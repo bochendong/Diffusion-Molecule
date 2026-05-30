@@ -111,3 +111,27 @@ outputs/pairs/phys_50k/audit_rows.csv
 outputs/pairs/phys_50k/sample_pairs.csv
 outputs/pairs/phys_50k/sample_contact_sheet.png
 ```
+
+## Phase 5A-0 Oracle Paired Baseline
+
+Run the oracle baseline that emits canonical SMILES and an RDKit-rendered sketch
+from the same molecule, then verifies the paired-output contract:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_RUN_NAME=phase5a0_oracle_baseline_seed7 \
+SKETCHSMILES_SAMPLE_COUNT=64 \
+bash scripts/run_phase5a0_oracle_baseline.sh
+```
+
+The run writes:
+
+```text
+outputs/runs/phase5a0_oracle_baseline_seed7/metrics.json
+outputs/runs/phase5a0_oracle_baseline_seed7/oracle_predictions.csv
+outputs/runs/phase5a0_oracle_baseline_seed7/train_pairs.csv
+outputs/runs/phase5a0_oracle_baseline_seed7/eval_pairs.csv
+outputs/runs/phase5a0_oracle_baseline_seed7/sample_contact_sheet.png
+```
