@@ -135,3 +135,35 @@ outputs/runs/phase5a0_oracle_baseline_seed7/train_pairs.csv
 outputs/runs/phase5a0_oracle_baseline_seed7/eval_pairs.csv
 outputs/runs/phase5a0_oracle_baseline_seed7/sample_contact_sheet.png
 ```
+
+## Phase 5A-1 Learned SMILES Decoder
+
+Train a learned oracle-conditioned SMILES decoder. The model consumes an RDKit
+Morgan fingerprint, emits SMILES directly, renders the top generated SMILES back
+to a sketch, and evaluates both molecular accuracy and paired-output
+consistency:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_RUN_NAME=phase5a1_learned_smiles_decoder_seed7 \
+SKETCHSMILES_EPOCHS=20 \
+SKETCHSMILES_BATCH_SIZE=128 \
+SKETCHSMILES_DEVICE=auto \
+bash scripts/run_phase5a1_learned_smiles_decoder.sh
+```
+
+For a short CPU sanity run, add `SKETCHSMILES_LIMIT=2000` and
+`SKETCHSMILES_EPOCHS=2`.
+
+The run writes:
+
+```text
+outputs/runs/phase5a1_learned_smiles_decoder_seed7/metrics.json
+outputs/runs/phase5a1_learned_smiles_decoder_seed7/predictions.csv
+outputs/runs/phase5a1_learned_smiles_decoder_seed7/model.pt
+outputs/runs/phase5a1_learned_smiles_decoder_seed7/vocab.json
+outputs/runs/phase5a1_learned_smiles_decoder_seed7/train_history.json
+outputs/runs/phase5a1_learned_smiles_decoder_seed7/sample_contact_sheet.png
+```

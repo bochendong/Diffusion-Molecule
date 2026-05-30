@@ -7,11 +7,21 @@ from pathlib import Path
 from sketch_smiles.audit_pairs import audit_pair_manifest
 from sketch_smiles.build_pairs import PairRecord, build_pair_manifest, summarize_pairs
 from sketch_smiles.phase5a0_oracle_baseline import run_oracle_paired_baseline
+from sketch_smiles.phase5a1_learned_smiles_decoder import run_learned_smiles_decoder
 
 
 def _rdkit_available() -> bool:
     try:
         import rdkit  # noqa: F401
+
+        return True
+    except Exception:
+        return False
+
+
+def _torch_available() -> bool:
+    try:
+        import torch  # noqa: F401
 
         return True
     except Exception:
@@ -127,6 +137,45 @@ class SketchSMILESTests(unittest.TestCase):
             self.assertTrue(Path(run_dir, "oracle_predictions.csv").exists())
             self.assertTrue(Path(run_dir, "sample_predictions.csv").exists())
             self.assertTrue(Path(run_dir, "sample_contact_sheet.png").exists())
+
+    @unittest.skipUnless(_rdkit_available() and _torch_available(), "RDKit and PyTorch are not installed")
+    def test_learned_smiles_decoder_writes_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_csv = Path(tmp, "molecules.csv")
+            with input_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["CCO", "CCN", "CCC", "COC", "CCCl", "CCBr"]:
+                    writer.writerow({"smiles": smiles})
+
+            pair_dir = Path(tmp, "pairs")
+            build_pair_manifest(input_csv=input_csv, output_dir=pair_dir, image_size=128)
+            run_dir = Path(tmp, "run")
+            metrics = run_learned_smiles_decoder(
+                pair_dir=pair_dir,
+                output_dir=run_dir,
+                train_fraction=0.67,
+                seed=5,
+                fingerprint_bits=128,
+                max_length=24,
+                hidden_dim=32,
+                embedding_dim=16,
+                epochs=1,
+                batch_size=2,
+                samples_per_condition=2,
+                sample_top_k=4,
+                image_size=128,
+                sample_count=2,
+                device="cpu",
+            )
+            self.assertEqual(metrics["pairs"], 6.0)
+            self.assertGreater(metrics["train_examples"], 0.0)
+            self.assertGreater(metrics["eval_examples"], 0.0)
+            self.assertTrue(Path(run_dir, "metrics.json").exists())
+            self.assertTrue(Path(run_dir, "model.pt").exists())
+            self.assertTrue(Path(run_dir, "vocab.json").exists())
+            self.assertTrue(Path(run_dir, "predictions.csv").exists())
+            self.assertTrue(Path(run_dir, "train_history.json").exists())
 
 
 if __name__ == "__main__":
