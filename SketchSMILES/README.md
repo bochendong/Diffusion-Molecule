@@ -72,10 +72,23 @@ cd SketchSMILES
 python3 -m unittest discover -s tests
 ```
 
-If RDKit is installed, this can also render a paired manifest:
+On the server, load the same RDKit module used by the SketchImageJEPA jobs:
 
 ```bash
-python3 -m sketch_smiles.build_pairs \
-  --input-csv data/example_molecules.csv \
-  --output-dir outputs/pairs/example
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/run_smoke.sh
+```
+
+## Phase 0 Pairs
+
+Build a paired SMILES/rendered-image manifest:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_INPUT_CSV=/scratch/bdong/projects/Diffusion-Molecule/PhysTabMol/data/molecules.csv \
+SKETCHSMILES_OUTPUT_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_LIMIT=50000 \
+bash scripts/run_phase0_pairs.sh
 ```
