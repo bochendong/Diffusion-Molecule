@@ -1,0 +1,8 @@
+[project]
+name = "sketch-smiles"
+version = "0.1.0"
+description = "OCR-free synchronized molecular sketch and SMILES generation experiments"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+include = ["sketch_smiles*"]
