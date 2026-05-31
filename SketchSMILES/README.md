@@ -231,3 +231,28 @@ bash scripts/submit_phase5a3_transformer_decoder.sh
 
 For a short sanity run, add `SKETCHSMILES_LIMIT=2000`,
 `SKETCHSMILES_EPOCHS=2`, and set a separate `SKETCHSMILES_RUN_NAME`.
+
+## Phase 5B Joint SMILES/Sketch Decoder
+
+Run a shared-latent two-head model. The model consumes the same oracle molecular
+fingerprint, then jointly decodes a SMILES string and a learned sketch image.
+The run also renders the generated SMILES with RDKit so the learned image can be
+checked against both the target sketch and the generated molecule sketch:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_RUN_NAME=phase5b_joint_decoder_seed7 \
+SKETCHSMILES_GPU_PROFILE=h100_10gb_mig \
+SKETCHSMILES_EPOCHS=20 \
+SKETCHSMILES_BATCH_SIZE=128 \
+SKETCHSMILES_IMAGE_SIZE=128 \
+SKETCHSMILES_BEAM_SIZE=8 \
+bash scripts/submit_phase5b_joint_decoder.sh
+```
+
+The sample contact sheet shows three columns per example:
+target sketch, learned sketch, and RDKit-rendered generated SMILES. For a short
+sanity run, add `SKETCHSMILES_LIMIT=2000`, `SKETCHSMILES_EPOCHS=2`, and set a
+separate `SKETCHSMILES_RUN_NAME`.
