@@ -7,7 +7,12 @@ from pathlib import Path
 from sketch_smiles.audit_pairs import audit_pair_manifest
 from sketch_smiles.build_pairs import PairRecord, build_pair_manifest, summarize_pairs
 from sketch_smiles.phase5a0_oracle_baseline import run_oracle_paired_baseline
-from sketch_smiles.phase5a1_learned_smiles_decoder import _fingerprint_tanimoto, _tokenize_smiles, run_learned_smiles_decoder
+from sketch_smiles.phase5a1_learned_smiles_decoder import (
+    _fingerprint_tanimoto,
+    _tokenize_smiles,
+    evaluate_saved_smiles_decoder,
+    run_learned_smiles_decoder,
+)
 from sketch_smiles.phase5b_joint_decoder import run_joint_paired_decoder
 
 
@@ -242,6 +247,23 @@ class SketchSMILESTests(unittest.TestCase):
             self.assertTrue(Path(run_dir, "metrics.json").exists())
             self.assertTrue(Path(run_dir, "model.pt").exists())
             self.assertTrue(Path(run_dir, "predictions.csv").exists())
+
+            eval_metrics = evaluate_saved_smiles_decoder(
+                pair_dir=pair_dir,
+                output_dir=run_dir,
+                train_fraction=0.67,
+                seed=6,
+                tokenization="smiles_token",
+                decoding="beam",
+                beam_size=2,
+                rerank_mode="condition_fingerprint",
+                image_size=128,
+                sample_count=2,
+                device="cpu",
+            )
+            self.assertTrue(eval_metrics["eval_only"])
+            self.assertEqual(eval_metrics["phase"], "phase5a4_condition_reranked_transformer_decoder")
+            self.assertTrue(Path(run_dir, "sample_contact_sheet.png").exists())
 
     @unittest.skipUnless(_rdkit_available() and _torch_available(), "RDKit and PyTorch are not installed")
     def test_joint_paired_decoder_writes_artifacts(self):

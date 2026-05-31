@@ -155,6 +155,7 @@ def run_learned_smiles_decoder(
         },
         model_path,
     )
+    (output_dir / "train_history.json").write_text(json.dumps(history, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     generated_image_dir = output_dir / "generated_images"
     generated_image_dir.mkdir(parents=True, exist_ok=True)
@@ -244,6 +245,244 @@ def run_learned_smiles_decoder(
                 "pair_dir": str(pair_dir),
                 "pairs_csv": str(pairs_path),
                 "output_dir": str(output_dir),
+                "train_fraction": train_fraction,
+                "seed": seed,
+                "limit": limit,
+                "fingerprint_bits": fingerprint_bits,
+                "max_length": max_length,
+                "hidden_dim": hidden_dim,
+                "embedding_dim": embedding_dim,
+                "epochs": epochs,
+                "batch_size": batch_size,
+                "learning_rate": learning_rate,
+                "samples_per_condition": samples_per_condition,
+                "temperature": temperature,
+                "sample_top_k": sample_top_k,
+                "tokenization": tokenization,
+                "decoding": decoding,
+                "beam_size": beam_size,
+                "length_penalty": length_penalty,
+                "rerank_mode": rerank_mode,
+                "model_type": model_type,
+                "transformer_layers": transformer_layers,
+                "attention_heads": attention_heads,
+                "condition_tokens": condition_tokens,
+                "dropout": dropout,
+                "image_size": image_size,
+                "device": str(resolved_device),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return metrics
+
+
+def evaluate_saved_smiles_decoder(
+    pair_dir: str | Path,
+    output_dir: str | Path = "outputs/runs/phase5a1_learned_smiles_decoder",
+    train_fraction: float = 0.8,
+    seed: int = 7,
+    limit: int | None = None,
+    fingerprint_bits: int = 2048,
+    max_length: int = 128,
+    hidden_dim: int = 384,
+    embedding_dim: int = 96,
+    epochs: int = 20,
+    batch_size: int = 128,
+    learning_rate: float = 0.001,
+    samples_per_condition: int = 8,
+    temperature: float = 0.9,
+    sample_top_k: int = 16,
+    tokenization: str = "char",
+    decoding: str = "sample",
+    beam_size: int = 8,
+    length_penalty: float = 0.0,
+    rerank_mode: str = "beam",
+    model_type: str = "gru",
+    transformer_layers: int = 4,
+    attention_heads: int = 8,
+    condition_tokens: int = 8,
+    dropout: float = 0.1,
+    image_size: int = 256,
+    sample_count: int = 64,
+    contact_sheet_cols: int = 8,
+    contact_thumb_size: int = 144,
+    device: str = "auto",
+) -> dict[str, Any]:
+    pair_dir = Path(pair_dir)
+    output_dir = Path(output_dir)
+    pairs_path = pair_dir / "pairs.csv"
+    model_path = output_dir / "model.pt"
+    vocab_path = output_dir / "vocab.json"
+    if not pairs_path.exists():
+        raise FileNotFoundError(f"Missing paired manifest: {pairs_path}")
+    if not model_path.exists():
+        raise FileNotFoundError(f"Missing trained model checkpoint for eval-only run: {model_path}")
+    if not vocab_path.exists():
+        raise FileNotFoundError(f"Missing vocab for eval-only run: {vocab_path}")
+
+    rdkit = _load_rdkit()
+    pillow = _load_pillow()
+    if not rdkit:
+        raise RuntimeError("RDKit is required for Phase 5A eval-only rendering.")
+    if not pillow:
+        raise RuntimeError("Pillow is required for Phase 5A eval-only image consistency metrics.")
+    _set_rdkit_error_logging(enabled=False)
+
+    torch = _load_torch()
+    np = _load_numpy()
+    _set_seeds(seed, torch=torch, np=np)
+    resolved_device = _resolve_device(device, torch)
+
+    checkpoint = _load_torch_checkpoint(model_path, torch=torch, map_location=resolved_device)
+    checkpoint_config = checkpoint.get("config", {})
+    fingerprint_bits = int(checkpoint_config.get("feature_dim", fingerprint_bits))
+    hidden_dim = int(checkpoint_config.get("hidden_dim", hidden_dim))
+    embedding_dim = int(checkpoint_config.get("embedding_dim", embedding_dim))
+    max_length = int(checkpoint_config.get("max_length", max_length))
+    model_type = _normalize_model_type(str(checkpoint_config.get("model_type", model_type)))
+    transformer_layers = int(checkpoint_config.get("transformer_layers", transformer_layers))
+    attention_heads = int(checkpoint_config.get("attention_heads", attention_heads))
+    condition_tokens = int(checkpoint_config.get("condition_tokens", condition_tokens))
+    dropout = float(checkpoint_config.get("dropout", dropout))
+
+    tokenization = _normalize_tokenization(tokenization)
+    decoding = _normalize_decoding(decoding)
+    rerank_mode = _normalize_rerank_mode(rerank_mode)
+    vocab = json.loads(vocab_path.read_text(encoding="utf-8"))
+    stoi = {str(token): int(index) for token, index in vocab["stoi"].items()}
+    itos = [str(token) for token in vocab["itos"]]
+
+    split_paths = (output_dir / "train_pairs.csv", output_dir / "eval_pairs.csv")
+    if split_paths[0].exists() and split_paths[1].exists():
+        train_rows = _read_rows(split_paths[0])
+        eval_rows = _read_rows(split_paths[1])
+    else:
+        rows = _read_rows(pairs_path)
+        if limit is not None:
+            rows = rows[: int(limit)]
+        rows = [row for row in rows if row.get("valid", "True") == "True" and (row.get("canonical_smiles") or row.get("input_smiles"))]
+        train_rows, eval_rows = _split_rows(rows, train_fraction=train_fraction, seed=seed)
+        _write_rows(split_paths[0], train_rows)
+        _write_rows(split_paths[1], eval_rows)
+
+    fingerprint_fn = _make_fingerprint_fn(rdkit, np=np, fingerprint_bits=fingerprint_bits)
+    train_examples = _prepare_examples(train_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization)
+    eval_examples = _prepare_examples(eval_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization, allow_unknown=True)
+    if not eval_examples:
+        raise RuntimeError("No eval examples available for Phase 5A eval-only run.")
+
+    model = _build_model(
+        model_type=model_type,
+        vocab_size=len(itos),
+        feature_dim=fingerprint_bits,
+        embedding_dim=embedding_dim,
+        hidden_dim=hidden_dim,
+        pad_idx=stoi[PAD],
+        max_length=max_length,
+        transformer_layers=transformer_layers,
+        attention_heads=attention_heads,
+        condition_tokens=condition_tokens,
+        dropout=dropout,
+    ).to(resolved_device)
+    model.load_state_dict(checkpoint["model_state"])
+
+    generated_image_dir = output_dir / "generated_images"
+    generated_image_dir.mkdir(parents=True, exist_ok=True)
+    prediction_rows = _evaluate_model(
+        model=model,
+        eval_examples=eval_examples,
+        stoi=stoi,
+        itos=itos,
+        pair_dir=pair_dir,
+        generated_image_dir=generated_image_dir,
+        rdkit=rdkit,
+        pillow=pillow,
+        torch=torch,
+        device=resolved_device,
+        max_length=max_length,
+        samples_per_condition=samples_per_condition,
+        temperature=temperature,
+        sample_top_k=sample_top_k,
+        decoding=decoding,
+        beam_size=beam_size,
+        length_penalty=length_penalty,
+        rerank_mode=rerank_mode,
+        fingerprint_fn=fingerprint_fn,
+        np=np,
+        image_size=image_size,
+    )
+
+    predictions_path = output_dir / "predictions.csv"
+    _write_rows(predictions_path, prediction_rows)
+    sample_rows = _sample_rows(prediction_rows, sample_count=sample_count, seed=seed)
+    sample_predictions_path = output_dir / "sample_predictions.csv"
+    _write_rows(sample_predictions_path, sample_rows)
+    contact_sheet_path = _write_oracle_contact_sheet(
+        sample_rows=sample_rows,
+        pillow=pillow,
+        cols=contact_sheet_cols,
+        thumb_size=contact_thumb_size,
+        output_path=output_dir / "sample_contact_sheet.png",
+    )
+
+    history_path = output_dir / "train_history.json"
+    history = json.loads(history_path.read_text(encoding="utf-8")) if history_path.exists() else []
+    metrics = _summarize_learned_decoder(
+        prediction_rows=prediction_rows,
+        train_rows=train_rows,
+        eval_rows=eval_rows,
+        train_examples=train_examples,
+        eval_examples=eval_examples,
+        history=history,
+        pair_dir=pair_dir,
+        output_dir=output_dir,
+        predictions_path=predictions_path,
+        sample_predictions_path=sample_predictions_path,
+        contact_sheet_path=contact_sheet_path,
+        model_path=model_path,
+        vocab_path=vocab_path,
+        train_fraction=train_fraction,
+        seed=seed,
+        fingerprint_bits=fingerprint_bits,
+        max_length=max_length,
+        hidden_dim=hidden_dim,
+        embedding_dim=embedding_dim,
+        epochs=epochs,
+        batch_size=batch_size,
+        learning_rate=learning_rate,
+        samples_per_condition=samples_per_condition,
+        temperature=temperature,
+        sample_top_k=sample_top_k,
+        tokenization=tokenization,
+        decoding=decoding,
+        beam_size=beam_size,
+        length_penalty=length_penalty,
+        rerank_mode=rerank_mode,
+        model_type=model_type,
+        transformer_layers=transformer_layers,
+        attention_heads=attention_heads,
+        condition_tokens=condition_tokens,
+        dropout=dropout,
+        image_size=image_size,
+        device=str(resolved_device),
+    )
+    metrics["eval_only"] = True
+    (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    (output_dir / "run_config.json").write_text(
+        json.dumps(
+            {
+                "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type, rerank_mode=rerank_mode),
+                "research_question": "Can a trained paired SMILES decoder be resumed at evaluation time without retraining when reranking/rendering exceeds the scheduler limit?",
+                "eval_only": True,
+                "pair_dir": str(pair_dir),
+                "pairs_csv": str(pairs_path),
+                "output_dir": str(output_dir),
+                "model": str(model_path),
+                "vocab": str(vocab_path),
                 "train_fraction": train_fraction,
                 "seed": seed,
                 "limit": limit,
@@ -1037,6 +1276,13 @@ def _load_torch() -> Any:
         raise RuntimeError(f"PyTorch is required for Phase 5A-1: {exc}") from exc
 
 
+def _load_torch_checkpoint(path: Path, torch: Any, map_location: Any) -> dict[str, Any]:
+    try:
+        return torch.load(path, map_location=map_location, weights_only=False)
+    except TypeError:
+        return torch.load(path, map_location=map_location)
+
+
 def _load_numpy() -> Any:
     try:
         import numpy as np
@@ -1106,9 +1352,11 @@ def main() -> None:
     parser.add_argument("--contact-sheet-cols", type=int, default=8)
     parser.add_argument("--contact-thumb-size", type=int, default=144)
     parser.add_argument("--device", default="auto")
+    parser.add_argument("--eval-only", action="store_true", help="Load an existing model.pt/vocab.json and run only evaluation/rendering.")
     args = parser.parse_args()
 
-    metrics = run_learned_smiles_decoder(
+    runner = evaluate_saved_smiles_decoder if args.eval_only else run_learned_smiles_decoder
+    metrics = runner(
         pair_dir=args.pair_dir,
         output_dir=args.output_dir,
         train_fraction=args.train_fraction,

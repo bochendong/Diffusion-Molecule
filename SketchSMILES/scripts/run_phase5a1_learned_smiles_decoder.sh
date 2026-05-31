@@ -38,6 +38,7 @@ SAMPLE_COUNT="${SKETCHSMILES_SAMPLE_COUNT:-64}"
 CONTACT_SHEET_COLS="${SKETCHSMILES_CONTACT_SHEET_COLS:-8}"
 CONTACT_THUMB_SIZE="${SKETCHSMILES_CONTACT_THUMB_SIZE:-144}"
 DEVICE="${SKETCHSMILES_DEVICE:-auto}"
+EVAL_ONLY="${SKETCHSMILES_EVAL_ONLY:-0}"
 PHASE_LABEL="Phase 5A-1 learned SMILES decoder"
 if [[ "$MODEL_TYPE" == "transformer" && "$RERANK_MODE" != "beam" ]]; then
   PHASE_LABEL="Phase 5A-4 reranked Transformer decoder"
@@ -78,6 +79,7 @@ echo "  attention_heads=$ATTENTION_HEADS"
 echo "  condition_tokens=$CONDITION_TOKENS"
 echo "  dropout=$DROPOUT"
 echo "  device=$DEVICE"
+echo "  eval_only=$EVAL_ONLY"
 
 "$PYTHON_BIN" - <<'PY'
 import torch
@@ -90,6 +92,11 @@ PY
 if [[ ! -f "$PAIR_DIR/pairs.csv" ]]; then
   echo "ERROR: pairs.csv not found under $PAIR_DIR" >&2
   echo "Run scripts/run_phase0_pairs.sh first, or set SKETCHSMILES_PAIR_DIR." >&2
+  exit 2
+fi
+if [[ "$EVAL_ONLY" == "1" && ! -f "$OUTPUT_DIR/model.pt" ]]; then
+  echo "ERROR: eval-only requested but model.pt not found under $OUTPUT_DIR" >&2
+  echo "Use the same SKETCHSMILES_RUN_NAME as the completed training run." >&2
   exit 2
 fi
 
@@ -149,8 +156,15 @@ ARGS=(
 if [[ -n "$LIMIT" ]]; then
   ARGS+=(--limit "$LIMIT")
 fi
+if [[ "$EVAL_ONLY" == "1" ]]; then
+  ARGS+=(--eval-only)
+fi
 
-echo "[2/2] Training learned SMILES decoder and rendering top predictions"
+if [[ "$EVAL_ONLY" == "1" ]]; then
+  echo "[2/2] Evaluating saved learned SMILES decoder and rendering top predictions"
+else
+  echo "[2/2] Training learned SMILES decoder and rendering top predictions"
+fi
 "$PYTHON_BIN" "${ARGS[@]}"
 
 echo

@@ -255,6 +255,19 @@ bash scripts/submit_phase5a4_reranked_transformer_decoder.sh
 This is the fastest way to test whether 5A-3 already places the correct
 molecule in the beam but under-ranks it.
 
+If the training epochs finish but Slurm kills the job during the expensive
+eval/rerank/render step, resume from the saved `model.pt` without retraining:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_RUN_NAME=phase5a4_reranked_transformer_decoder_seed7 \
+SKETCHSMILES_GPU_PROFILE=h100_10gb_mig \
+SKETCHSMILES_SLURM_TIME=06:00:00 \
+bash scripts/submit_phase5a4_eval_only.sh
+```
+
 ## Phase 5B Joint SMILES/Sketch Decoder
 
 Run a shared-latent two-head model. The model consumes the same oracle molecular
