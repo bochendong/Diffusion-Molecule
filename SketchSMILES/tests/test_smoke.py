@@ -37,10 +37,12 @@ def _quiet_rdkit_errors():
         return
 
     RDLogger.DisableLog("rdApp.error")
+    RDLogger.DisableLog("rdApp.warning")
     try:
         yield
     finally:
         RDLogger.EnableLog("rdApp.error")
+        RDLogger.EnableLog("rdApp.warning")
 
 
 class SketchSMILESTests(unittest.TestCase):

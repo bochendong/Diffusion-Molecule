@@ -556,25 +556,16 @@ def _build_vocab(rows: list[dict[str, str]]) -> tuple[dict[str, int], list[str]]
 
 
 def _make_fingerprint_fn(rdkit: dict[str, Any], np: Any, fingerprint_bits: int) -> Any:
-    generator = None
-    try:
-        from rdkit.Chem import rdFingerprintGenerator
-
-        generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=int(fingerprint_bits))
-    except Exception:
-        generator = None
-
     from rdkit import DataStructs
-    from rdkit.Chem import AllChem
+    from rdkit.Chem import rdFingerprintGenerator
+
+    generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=int(fingerprint_bits))
 
     def _fingerprint(smiles: str) -> Any:
         mol = rdkit["Chem"].MolFromSmiles(smiles)
         if mol is None:
             return None
-        if generator is not None:
-            fp = generator.GetFingerprint(mol)
-        else:
-            fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=int(fingerprint_bits))
+        fp = generator.GetFingerprint(mol)
         arr = np.zeros((int(fingerprint_bits),), dtype=np.float32)
         DataStructs.ConvertToNumpyArray(fp, arr)
         return arr
@@ -587,10 +578,11 @@ def _tanimoto(left_mol: Any, right_mol: Any, rdkit: dict[str, Any]) -> float:
         return 0.0
     try:
         from rdkit import DataStructs
-        from rdkit.Chem import AllChem
+        from rdkit.Chem import rdFingerprintGenerator
 
-        left = AllChem.GetMorganFingerprintAsBitVect(left_mol, radius=2, nBits=2048)
-        right = AllChem.GetMorganFingerprintAsBitVect(right_mol, radius=2, nBits=2048)
+        generator = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048)
+        left = generator.GetFingerprint(left_mol)
+        right = generator.GetFingerprint(right_mol)
         return float(DataStructs.TanimotoSimilarity(left, right))
     except Exception:
         return 0.0
@@ -665,8 +657,10 @@ def _set_rdkit_error_logging(enabled: bool) -> None:
 
         if enabled:
             RDLogger.EnableLog("rdApp.error")
+            RDLogger.EnableLog("rdApp.warning")
         else:
             RDLogger.DisableLog("rdApp.error")
+            RDLogger.DisableLog("rdApp.warning")
     except Exception:
         return
 
