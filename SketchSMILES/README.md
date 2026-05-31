@@ -232,6 +232,29 @@ bash scripts/submit_phase5a3_transformer_decoder.sh
 For a short sanity run, add `SKETCHSMILES_LIMIT=2000`,
 `SKETCHSMILES_EPOCHS=2`, and set a separate `SKETCHSMILES_RUN_NAME`.
 
+## Phase 5A-4 Reranked Transformer Decoder
+
+Run the 5A-3 Transformer decoder with a wider beam and condition-fingerprint
+reranking. The reranker scores each valid beam candidate by Morgan fingerprint
+Tanimoto to the conditioning fingerprint, then renders the selected top-1
+SMILES:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_RUN_NAME=phase5a4_reranked_transformer_decoder_seed7 \
+SKETCHSMILES_GPU_PROFILE=h100_10gb_mig \
+SKETCHSMILES_EPOCHS=20 \
+SKETCHSMILES_BATCH_SIZE=128 \
+SKETCHSMILES_BEAM_SIZE=16 \
+SKETCHSMILES_RERANK_MODE=condition_fingerprint \
+bash scripts/submit_phase5a4_reranked_transformer_decoder.sh
+```
+
+This is the fastest way to test whether 5A-3 already places the correct
+molecule in the beam but under-ranks it.
+
 ## Phase 5B Joint SMILES/Sketch Decoder
 
 Run a shared-latent two-head model. The model consumes the same oracle molecular

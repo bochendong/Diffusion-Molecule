@@ -7,7 +7,7 @@ from pathlib import Path
 from sketch_smiles.audit_pairs import audit_pair_manifest
 from sketch_smiles.build_pairs import PairRecord, build_pair_manifest, summarize_pairs
 from sketch_smiles.phase5a0_oracle_baseline import run_oracle_paired_baseline
-from sketch_smiles.phase5a1_learned_smiles_decoder import _tokenize_smiles, run_learned_smiles_decoder
+from sketch_smiles.phase5a1_learned_smiles_decoder import _fingerprint_tanimoto, _tokenize_smiles, run_learned_smiles_decoder
 from sketch_smiles.phase5b_joint_decoder import run_joint_paired_decoder
 
 
@@ -60,6 +60,14 @@ class SketchSMILESTests(unittest.TestCase):
     def test_smiles_tokenizer_keeps_common_multi_char_tokens(self):
         tokens = _tokenize_smiles("CC(Cl)Br[NH4+]", tokenization="smiles_token")
         self.assertEqual(tokens, ["C", "C", "(", "Cl", ")", "Br", "[NH4+]"])
+
+    def test_fingerprint_tanimoto_scores_binary_overlap(self):
+        try:
+            np = __import__("numpy")
+        except Exception:
+            self.skipTest("NumPy is not installed")
+        self.assertAlmostEqual(_fingerprint_tanimoto([1, 1, 0, 0], [1, 0, 1, 0], np=np), 1.0 / 3.0)
+        self.assertEqual(_fingerprint_tanimoto([1, 1, 0, 0], None, np=np), 0.0)
 
     @unittest.skipUnless(_rdkit_available(), "RDKit is not installed")
     def test_build_pair_manifest_writes_csv_and_images(self):
@@ -216,6 +224,7 @@ class SketchSMILESTests(unittest.TestCase):
                 tokenization="smiles_token",
                 decoding="beam",
                 beam_size=2,
+                rerank_mode="condition_fingerprint",
                 model_type="transformer",
                 transformer_layers=1,
                 attention_heads=2,
@@ -225,8 +234,9 @@ class SketchSMILESTests(unittest.TestCase):
                 sample_count=2,
                 device="cpu",
             )
-            self.assertEqual(metrics["phase"], "phase5a3_condition_attentive_transformer_decoder")
+            self.assertEqual(metrics["phase"], "phase5a4_condition_reranked_transformer_decoder")
             self.assertEqual(metrics["model_type"], "transformer")
+            self.assertEqual(metrics["rerank_mode"], "condition_fingerprint")
             self.assertGreater(metrics["train_examples"], 0.0)
             self.assertGreater(metrics["eval_examples"], 0.0)
             self.assertTrue(Path(run_dir, "metrics.json").exists())

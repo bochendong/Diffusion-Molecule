@@ -52,6 +52,7 @@ def run_learned_smiles_decoder(
     decoding: str = "sample",
     beam_size: int = 8,
     length_penalty: float = 0.0,
+    rerank_mode: str = "beam",
     model_type: str = "gru",
     transformer_layers: int = 4,
     attention_heads: int = 8,
@@ -92,6 +93,7 @@ def run_learned_smiles_decoder(
 
     tokenization = _normalize_tokenization(tokenization)
     decoding = _normalize_decoding(decoding)
+    rerank_mode = _normalize_rerank_mode(rerank_mode)
     model_type = _normalize_model_type(model_type)
     stoi, itos = _build_vocab(train_rows, tokenization=tokenization)
     vocab_path = output_dir / "vocab.json"
@@ -174,6 +176,9 @@ def run_learned_smiles_decoder(
         decoding=decoding,
         beam_size=beam_size,
         length_penalty=length_penalty,
+        rerank_mode=rerank_mode,
+        fingerprint_fn=fingerprint_fn,
+        np=np,
         image_size=image_size,
     )
 
@@ -220,6 +225,7 @@ def run_learned_smiles_decoder(
         decoding=decoding,
         beam_size=beam_size,
         length_penalty=length_penalty,
+        rerank_mode=rerank_mode,
         model_type=model_type,
         transformer_layers=transformer_layers,
         attention_heads=attention_heads,
@@ -233,7 +239,7 @@ def run_learned_smiles_decoder(
     (output_dir / "run_config.json").write_text(
         json.dumps(
             {
-                "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type),
+                "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type, rerank_mode=rerank_mode),
                 "research_question": "Can a learned decoder emit machine-readable SMILES directly from an oracle molecular condition while retaining paired sketch consistency through rendering?",
                 "pair_dir": str(pair_dir),
                 "pairs_csv": str(pairs_path),
@@ -255,6 +261,7 @@ def run_learned_smiles_decoder(
                 "decoding": decoding,
                 "beam_size": beam_size,
                 "length_penalty": length_penalty,
+                "rerank_mode": rerank_mode,
                 "model_type": model_type,
                 "transformer_layers": transformer_layers,
                 "attention_heads": attention_heads,
@@ -350,10 +357,7 @@ class ConditionalSmilesTransformer:
                     length = self.max_length
                 positions = torch.arange(length, device=input_ids.device).unsqueeze(0).expand(batch, length)
                 embeddings = self.input_projection(self.embedding(input_ids)) + self.position(positions)
-                causal_mask = torch.triu(
-                    torch.full((length, length), float("-inf"), device=input_ids.device),
-                    diagonal=1,
-                )
+                causal_mask = torch.triu(torch.ones((length, length), dtype=torch.bool, device=input_ids.device), diagonal=1)
                 padding_mask = input_ids.eq(self.pad_idx)
                 decoded = self.decoder(
                     tgt=embeddings,
@@ -467,6 +471,9 @@ def _evaluate_model(
     decoding: str,
     beam_size: int,
     length_penalty: float,
+    rerank_mode: str,
+    fingerprint_fn: Any,
+    np: Any,
     image_size: int,
 ) -> list[dict[str, Any]]:
     model.eval()
@@ -498,7 +505,14 @@ def _evaluate_model(
                     temperature=temperature,
                     sample_top_k=sample_top_k,
                 )
-            candidate_smiles = _canonical_candidate_list(raw_samples, rdkit)
+            beam_candidate_smiles = _canonical_candidate_list(raw_samples, rdkit)
+            candidate_smiles, condition_scores = _rerank_candidate_smiles(
+                beam_candidate_smiles,
+                condition_feature=example["feature"],
+                fingerprint_fn=fingerprint_fn,
+                np=np,
+                rerank_mode=rerank_mode,
+            )
             target_smiles = example["smiles"]
             top1_smiles = candidate_smiles[0] if candidate_smiles else ""
             top1_valid = bool(top1_smiles)
@@ -517,14 +531,19 @@ def _evaluate_model(
                     "pair_id": example["pair_id"],
                     "target_smiles": target_smiles,
                     "generated_smiles": top1_smiles,
+                    "rerank_mode": rerank_mode,
                     "raw_samples": "|".join(raw_samples),
+                    "beam_canonical_candidates": "|".join(beam_candidate_smiles),
                     "canonical_candidates": "|".join(candidate_smiles),
+                    "candidate_condition_tanimotos": "|".join(f"{condition_scores.get(smiles, 0.0):.6f}" for smiles in candidate_smiles),
                     "candidate_count": float(len(candidate_smiles)),
                     "top1_valid": top1_valid,
                     "top1_exact_match": bool(top1_smiles == target_smiles),
                     "topk_exact_match": bool(topk_exact),
                     "top1_target_tanimoto": float(top1_tanimoto),
                     "mean_best_tanimoto": float(best_tanimoto),
+                    "top1_condition_tanimoto": float(condition_scores.get(top1_smiles, 0.0)) if top1_smiles else 0.0,
+                    "mean_best_condition_tanimoto": float(max(condition_scores.values(), default=0.0)),
                     "top1_scaffold_match": bool(scaffold_match),
                     "target_image_path": str(target_image_path) if target_image_path else "",
                     "generated_image_path": str(generated_image_path),
@@ -682,6 +701,34 @@ def _canonical_candidate_list(raw_samples: list[str], rdkit: dict[str, Any]) -> 
     return candidates
 
 
+def _rerank_candidate_smiles(
+    candidate_smiles: list[str],
+    condition_feature: Any,
+    fingerprint_fn: Any,
+    np: Any,
+    rerank_mode: str,
+) -> tuple[list[str], dict[str, float]]:
+    if not candidate_smiles:
+        return [], {}
+    if rerank_mode == "beam":
+        return candidate_smiles, {smiles: 0.0 for smiles in candidate_smiles}
+    scores: dict[str, float] = {}
+    for smiles in candidate_smiles:
+        scores[smiles] = _fingerprint_tanimoto(condition_feature, fingerprint_fn(smiles), np=np)
+    ranked = sorted(enumerate(candidate_smiles), key=lambda item: (scores[item[1]], -item[0]), reverse=True)
+    return [smiles for _idx, smiles in ranked], scores
+
+
+def _fingerprint_tanimoto(left: Any, right: Any, np: Any) -> float:
+    if right is None:
+        return 0.0
+    left_bits = np.asarray(left) > 0.5
+    right_bits = np.asarray(right) > 0.5
+    intersection = float(np.logical_and(left_bits, right_bits).sum())
+    union = float(np.logical_or(left_bits, right_bits).sum())
+    return float(intersection / union) if union else 0.0
+
+
 def _summarize_learned_decoder(
     prediction_rows: list[dict[str, Any]],
     train_rows: list[dict[str, str]],
@@ -712,6 +759,7 @@ def _summarize_learned_decoder(
     decoding: str,
     beam_size: int,
     length_penalty: float,
+    rerank_mode: str,
     model_type: str,
     transformer_layers: int,
     attention_heads: int,
@@ -724,7 +772,7 @@ def _summarize_learned_decoder(
     compared = [row for row in prediction_rows if row["image_compared"]]
     image_mse_values = [float(row["image_mse"]) for row in compared if row["image_mse"] != ""]
     return {
-        "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type),
+        "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type, rerank_mode=rerank_mode),
         "pair_dir": str(pair_dir),
         "output_dir": str(output_dir),
         "train_fraction": float(train_fraction),
@@ -743,6 +791,7 @@ def _summarize_learned_decoder(
         "decoding": decoding,
         "beam_size": float(beam_size),
         "length_penalty": float(length_penalty),
+        "rerank_mode": rerank_mode,
         "model_type": model_type,
         "transformer_layers": float(transformer_layers),
         "attention_heads": float(attention_heads),
@@ -767,6 +816,8 @@ def _summarize_learned_decoder(
         "top1_scaffold_match_fraction": _fraction(_count(prediction_rows, "top1_scaffold_match"), total),
         "top1_target_tanimoto": _mean_float(prediction_rows, "top1_target_tanimoto"),
         "mean_best_tanimoto": _mean_float(prediction_rows, "mean_best_tanimoto"),
+        "top1_condition_tanimoto": _mean_float(prediction_rows, "top1_condition_tanimoto"),
+        "mean_best_condition_tanimoto": _mean_float(prediction_rows, "mean_best_condition_tanimoto"),
         "mean_candidate_count": _mean_float(prediction_rows, "candidate_count"),
         "generated_images": float(_count(prediction_rows, "generated_image_exists")),
         "generated_image_fraction": _fraction(_count(prediction_rows, "generated_image_exists"), total),
@@ -878,6 +929,22 @@ def _normalize_decoding(decoding: str) -> str:
     return value
 
 
+def _normalize_rerank_mode(rerank_mode: str) -> str:
+    value = rerank_mode.strip().lower().replace("-", "_")
+    aliases = {
+        "none": "beam",
+        "sequence": "beam",
+        "condition": "condition_fingerprint",
+        "fingerprint": "condition_fingerprint",
+        "tanimoto": "condition_fingerprint",
+        "condition_tanimoto": "condition_fingerprint",
+    }
+    value = aliases.get(value, value)
+    if value not in {"beam", "condition_fingerprint"}:
+        raise ValueError(f"Unsupported rerank_mode {rerank_mode!r}; expected beam or condition_fingerprint.")
+    return value
+
+
 def _normalize_model_type(model_type: str) -> str:
     value = model_type.strip().lower().replace("-", "_")
     aliases = {"rnn": "gru", "cross_attention": "transformer", "xattn": "transformer"}
@@ -887,7 +954,9 @@ def _normalize_model_type(model_type: str) -> str:
     return value
 
 
-def _phase_name(tokenization: str, decoding: str, model_type: str) -> str:
+def _phase_name(tokenization: str, decoding: str, model_type: str, rerank_mode: str = "beam") -> str:
+    if model_type == "transformer" and rerank_mode != "beam":
+        return "phase5a4_condition_reranked_transformer_decoder"
     if model_type == "transformer":
         return "phase5a3_condition_attentive_transformer_decoder"
     if tokenization == "smiles_token" and decoding == "beam":
@@ -1026,6 +1095,7 @@ def main() -> None:
     parser.add_argument("--decoding", default="sample", choices=["sample", "beam"])
     parser.add_argument("--beam-size", type=int, default=8)
     parser.add_argument("--length-penalty", type=float, default=0.0)
+    parser.add_argument("--rerank-mode", default="beam", choices=["beam", "none", "condition", "fingerprint", "condition_fingerprint", "condition_tanimoto"])
     parser.add_argument("--model-type", default="gru", choices=["gru", "rnn", "transformer", "cross_attention", "xattn"])
     parser.add_argument("--transformer-layers", type=int, default=4)
     parser.add_argument("--attention-heads", type=int, default=8)
@@ -1058,6 +1128,7 @@ def main() -> None:
         decoding=args.decoding,
         beam_size=args.beam_size,
         length_penalty=args.length_penalty,
+        rerank_mode=args.rerank_mode,
         model_type=args.model_type,
         transformer_layers=args.transformer_layers,
         attention_heads=args.attention_heads,

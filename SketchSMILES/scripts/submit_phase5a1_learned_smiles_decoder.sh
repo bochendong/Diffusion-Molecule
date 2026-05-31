@@ -24,7 +24,9 @@ export SKETCHSMILES_BATCH_SIZE="${SKETCHSMILES_BATCH_SIZE:-128}"
 export SKETCHSMILES_DEVICE="${SKETCHSMILES_DEVICE:-auto}"
 RUN_SCRIPT="${SKETCHSMILES_RUN_SCRIPT:-scripts/run_phase5a1_learned_smiles_decoder.sh}"
 SUBMIT_LABEL="Phase 5A-1 learned SMILES decoder"
-if [[ "${SKETCHSMILES_MODEL_TYPE:-gru}" == "transformer" ]]; then
+if [[ "${SKETCHSMILES_MODEL_TYPE:-gru}" == "transformer" && "${SKETCHSMILES_RERANK_MODE:-beam}" != "beam" ]]; then
+  SUBMIT_LABEL="Phase 5A-4 reranked Transformer decoder"
+elif [[ "${SKETCHSMILES_MODEL_TYPE:-gru}" == "transformer" ]]; then
   SUBMIT_LABEL="Phase 5A-3 condition-attentive Transformer decoder"
 elif [[ "${SKETCHSMILES_TOKENIZATION:-char}" == "smiles_token" && "${SKETCHSMILES_DECODING:-sample}" == "beam" ]]; then
   SUBMIT_LABEL="Phase 5A-2 tokenized beam decoder"
