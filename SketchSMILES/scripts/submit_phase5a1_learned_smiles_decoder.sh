@@ -22,6 +22,7 @@ export SKETCHSMILES_RUN_NAME="${SKETCHSMILES_RUN_NAME:-phase5a1_learned_smiles_d
 export SKETCHSMILES_EPOCHS="${SKETCHSMILES_EPOCHS:-20}"
 export SKETCHSMILES_BATCH_SIZE="${SKETCHSMILES_BATCH_SIZE:-128}"
 export SKETCHSMILES_DEVICE="${SKETCHSMILES_DEVICE:-auto}"
+RUN_SCRIPT="${SKETCHSMILES_RUN_SCRIPT:-scripts/run_phase5a1_learned_smiles_decoder.sh}"
 
 if [[ -n "${SKETCHSMILES_SLURM_GPUS:-}" ]]; then
   GPU_CANDIDATES=("$SKETCHSMILES_SLURM_GPUS")
@@ -43,6 +44,7 @@ echo "  pair_dir=$SKETCHSMILES_PAIR_DIR"
 echo "  python=$SKETCHSMILES_PYTHON_BIN"
 echo "  epochs=$SKETCHSMILES_EPOCHS"
 echo "  batch_size=$SKETCHSMILES_BATCH_SIZE"
+echo "  run_script=$RUN_SCRIPT"
 echo "  gpu_profile=$GPU_PROFILE"
 echo "  slurm_gpu_candidates=${GPU_CANDIDATES[*]}"
 echo "  slurm_time=$TIME"
@@ -61,7 +63,7 @@ for GPU_REQUEST in "${GPU_CANDIDATES[@]}"; do
     --gpus="$GPU_REQUEST" \
     --output="$LOG_DIR/%x-%j.log" \
     --export=ALL \
-    --wrap="bash scripts/run_phase5a1_learned_smiles_decoder.sh"; then
+    --wrap="bash '$RUN_SCRIPT'"; then
     SUBMITTED=1
     break
   fi

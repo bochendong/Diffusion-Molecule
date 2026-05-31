@@ -7,7 +7,7 @@ from pathlib import Path
 from sketch_smiles.audit_pairs import audit_pair_manifest
 from sketch_smiles.build_pairs import PairRecord, build_pair_manifest, summarize_pairs
 from sketch_smiles.phase5a0_oracle_baseline import run_oracle_paired_baseline
-from sketch_smiles.phase5a1_learned_smiles_decoder import run_learned_smiles_decoder
+from sketch_smiles.phase5a1_learned_smiles_decoder import _tokenize_smiles, run_learned_smiles_decoder
 
 
 def _rdkit_available() -> bool:
@@ -55,6 +55,10 @@ class SketchSMILESTests(unittest.TestCase):
         self.assertEqual(summary["molecules"], 2.0)
         self.assertEqual(summary["valid_smiles"], 1.0)
         self.assertEqual(summary["valid_fraction"], 0.5)
+
+    def test_smiles_tokenizer_keeps_common_multi_char_tokens(self):
+        tokens = _tokenize_smiles("CC(Cl)Br[NH4+]", tokenization="smiles_token")
+        self.assertEqual(tokens, ["C", "C", "(", "Cl", ")", "Br", "[NH4+]"])
 
     @unittest.skipUnless(_rdkit_available(), "RDKit is not installed")
     def test_build_pair_manifest_writes_csv_and_images(self):
@@ -166,6 +170,9 @@ class SketchSMILESTests(unittest.TestCase):
                 batch_size=2,
                 samples_per_condition=2,
                 sample_top_k=4,
+                tokenization="smiles_token",
+                decoding="beam",
+                beam_size=2,
                 image_size=128,
                 sample_count=2,
                 device="cpu",

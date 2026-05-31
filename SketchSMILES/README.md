@@ -187,3 +187,23 @@ The submit helper defaults to `SKETCHSMILES_GPU_PROFILE=h100_10gb_mig` and
 tries `nvidia_h100_80gb_hbm3_1g.10gb:1`, then `h100_1g.10gb:1`. For a larger
 slice, set `SKETCHSMILES_GPU_PROFILE=h100_20gb_mig` or
 `SKETCHSMILES_GPU_PROFILE=h100_40gb_mig`.
+
+## Phase 5A-2 Tokenized Beam Decoder
+
+Run the stronger oracle-conditioned decoder with SMILES tokenization and beam
+search:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_RUN_NAME=phase5a2_tokenized_beam_decoder_seed7 \
+SKETCHSMILES_GPU_PROFILE=h100_10gb_mig \
+SKETCHSMILES_EPOCHS=20 \
+SKETCHSMILES_BATCH_SIZE=128 \
+SKETCHSMILES_BEAM_SIZE=8 \
+bash scripts/submit_phase5a2_tokenized_beam_decoder.sh
+```
+
+For a short sanity run, add `SKETCHSMILES_LIMIT=2000`,
+`SKETCHSMILES_EPOCHS=2`, and set a separate `SKETCHSMILES_RUN_NAME`.

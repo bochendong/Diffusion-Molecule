@@ -48,6 +48,10 @@ def run_learned_smiles_decoder(
     samples_per_condition: int = 8,
     temperature: float = 0.9,
     sample_top_k: int = 16,
+    tokenization: str = "char",
+    decoding: str = "sample",
+    beam_size: int = 8,
+    length_penalty: float = 0.0,
     image_size: int = 256,
     sample_count: int = 64,
     contact_sheet_cols: int = 8,
@@ -81,13 +85,15 @@ def run_learned_smiles_decoder(
     _write_rows(output_dir / "train_pairs.csv", train_rows)
     _write_rows(output_dir / "eval_pairs.csv", eval_rows)
 
-    stoi, itos = _build_vocab(train_rows)
+    tokenization = _normalize_tokenization(tokenization)
+    decoding = _normalize_decoding(decoding)
+    stoi, itos = _build_vocab(train_rows, tokenization=tokenization)
     vocab_path = output_dir / "vocab.json"
     vocab_path.write_text(json.dumps({"stoi": stoi, "itos": itos}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     fingerprint_fn = _make_fingerprint_fn(rdkit, np=np, fingerprint_bits=fingerprint_bits)
-    train_examples = _prepare_examples(train_rows, stoi, fingerprint_fn, max_length=max_length, np=np)
-    eval_examples = _prepare_examples(eval_rows, stoi, fingerprint_fn, max_length=max_length, np=np, allow_unknown=True)
+    train_examples = _prepare_examples(train_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization)
+    eval_examples = _prepare_examples(eval_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization, allow_unknown=True)
     if not train_examples:
         raise RuntimeError("No train examples available for Phase 5A-1.")
     if not eval_examples:
@@ -147,6 +153,9 @@ def run_learned_smiles_decoder(
         samples_per_condition=samples_per_condition,
         temperature=temperature,
         sample_top_k=sample_top_k,
+        decoding=decoding,
+        beam_size=beam_size,
+        length_penalty=length_penalty,
         image_size=image_size,
     )
 
@@ -189,6 +198,10 @@ def run_learned_smiles_decoder(
         samples_per_condition=samples_per_condition,
         temperature=temperature,
         sample_top_k=sample_top_k,
+        tokenization=tokenization,
+        decoding=decoding,
+        beam_size=beam_size,
+        length_penalty=length_penalty,
         image_size=image_size,
         device=str(resolved_device),
     )
@@ -197,7 +210,7 @@ def run_learned_smiles_decoder(
     (output_dir / "run_config.json").write_text(
         json.dumps(
             {
-                "phase": "phase5a1_oracle_conditioned_learned_smiles_decoder",
+                "phase": _phase_name(tokenization=tokenization, decoding=decoding),
                 "research_question": "Can a learned decoder emit machine-readable SMILES directly from an oracle molecular condition while retaining paired sketch consistency through rendering?",
                 "pair_dir": str(pair_dir),
                 "pairs_csv": str(pairs_path),
@@ -215,6 +228,10 @@ def run_learned_smiles_decoder(
                 "samples_per_condition": samples_per_condition,
                 "temperature": temperature,
                 "sample_top_k": sample_top_k,
+                "tokenization": tokenization,
+                "decoding": decoding,
+                "beam_size": beam_size,
+                "length_penalty": length_penalty,
                 "image_size": image_size,
                 "device": str(resolved_device),
             },
@@ -306,24 +323,40 @@ def _evaluate_model(
     samples_per_condition: int,
     temperature: float,
     sample_top_k: int,
+    decoding: str,
+    beam_size: int,
+    length_penalty: float,
     image_size: int,
 ) -> list[dict[str, Any]]:
     model.eval()
     rows: list[dict[str, Any]] = []
     with torch.no_grad():
         for example in eval_examples:
-            raw_samples = _sample_smiles(
-                model=model,
-                feature=example["feature"],
-                stoi=stoi,
-                itos=itos,
-                torch=torch,
-                device=device,
-                max_length=max_length,
-                samples_per_condition=samples_per_condition,
-                temperature=temperature,
-                sample_top_k=sample_top_k,
-            )
+            if decoding == "beam":
+                raw_samples = _beam_search_smiles(
+                    model=model,
+                    feature=example["feature"],
+                    stoi=stoi,
+                    itos=itos,
+                    torch=torch,
+                    device=device,
+                    max_length=max_length,
+                    beam_size=beam_size,
+                    length_penalty=length_penalty,
+                )
+            else:
+                raw_samples = _sample_smiles(
+                    model=model,
+                    feature=example["feature"],
+                    stoi=stoi,
+                    itos=itos,
+                    torch=torch,
+                    device=device,
+                    max_length=max_length,
+                    samples_per_condition=samples_per_condition,
+                    temperature=temperature,
+                    sample_top_k=sample_top_k,
+                )
             candidate_smiles = _canonical_candidate_list(raw_samples, rdkit)
             target_smiles = example["smiles"]
             top1_smiles = candidate_smiles[0] if candidate_smiles else ""
@@ -395,6 +428,79 @@ def _sample_smiles(
     return samples
 
 
+def _beam_search_smiles(
+    model: Any,
+    feature: Any,
+    stoi: dict[str, int],
+    itos: list[str],
+    torch: Any,
+    device: Any,
+    max_length: int,
+    beam_size: int,
+    length_penalty: float,
+) -> list[str]:
+    feature_tensor = torch.as_tensor(feature, dtype=torch.float32, device=device).unsqueeze(0)
+    initial_h = model.cond(feature_tensor).unsqueeze(0)
+    beams: list[tuple[list[int], float, Any, bool]] = [([stoi[BOS]], 0.0, initial_h, False)]
+    completed: list[tuple[list[int], float]] = []
+    beam_size = max(1, int(beam_size))
+    blocked = {stoi[PAD], stoi[BOS]}
+    for _step in range(int(max_length)):
+        expanded: list[tuple[list[int], float, Any, bool]] = []
+        for ids, score, hidden, done in beams:
+            if done:
+                completed.append((ids, score))
+                expanded.append((ids, score, hidden, done))
+                continue
+            token = torch.tensor([[ids[-1]]], dtype=torch.long, device=device)
+            embedding = model.embedding(token)
+            output, next_hidden = model.gru(embedding, hidden)
+            log_probs = torch.log_softmax(model.out(output[:, -1, :])[0], dim=-1)
+            top_values, top_indices = torch.topk(log_probs, min(beam_size + len(blocked), log_probs.shape[-1]))
+            added = 0
+            for value, index in zip(top_values.tolist(), top_indices.tolist()):
+                if index in blocked:
+                    continue
+                next_ids = ids + [int(index)]
+                next_score = score + float(value)
+                next_done = itos[int(index)] == EOS
+                expanded.append((next_ids, next_score, next_hidden.clone(), next_done))
+                if next_done:
+                    completed.append((next_ids, next_score))
+                added += 1
+                if added >= beam_size:
+                    break
+        beams = sorted(
+            expanded,
+            key=lambda item: _beam_rank(item[1], len(item[0]), length_penalty),
+            reverse=True,
+        )[:beam_size]
+        if beams and all(item[3] for item in beams):
+            break
+    completed.extend((ids, score) for ids, score, _hidden, _done in beams)
+    ordered = sorted(
+        completed,
+        key=lambda item: _beam_rank(item[1], len(item[0]), length_penalty),
+        reverse=True,
+    )
+    samples: list[str] = []
+    seen: set[str] = set()
+    for ids, _score in ordered:
+        text = "".join(itos[idx] for idx in ids if itos[idx] not in (PAD, BOS, EOS))
+        if text and text not in seen:
+            seen.add(text)
+            samples.append(text)
+        if len(samples) >= beam_size:
+            break
+    return samples
+
+
+def _beam_rank(score: float, length: int, length_penalty: float) -> float:
+    if length_penalty <= 0:
+        return score
+    return score / float(max(1, length) ** float(length_penalty))
+
+
 def _sample_token(logits: Any, torch: Any, top_k: int) -> Any:
     if top_k and int(top_k) > 0 and int(top_k) < logits.shape[-1]:
         values, indices = torch.topk(logits, int(top_k))
@@ -442,6 +548,10 @@ def _summarize_learned_decoder(
     samples_per_condition: int,
     temperature: float,
     sample_top_k: int,
+    tokenization: str,
+    decoding: str,
+    beam_size: int,
+    length_penalty: float,
     image_size: int,
     device: str,
 ) -> dict[str, Any]:
@@ -449,7 +559,7 @@ def _summarize_learned_decoder(
     compared = [row for row in prediction_rows if row["image_compared"]]
     image_mse_values = [float(row["image_mse"]) for row in compared if row["image_mse"] != ""]
     return {
-        "phase": "phase5a1_oracle_conditioned_learned_smiles_decoder",
+        "phase": _phase_name(tokenization=tokenization, decoding=decoding),
         "pair_dir": str(pair_dir),
         "output_dir": str(output_dir),
         "train_fraction": float(train_fraction),
@@ -464,6 +574,10 @@ def _summarize_learned_decoder(
         "samples_per_condition": float(samples_per_condition),
         "temperature": float(temperature),
         "sample_top_k": float(sample_top_k),
+        "tokenization": tokenization,
+        "decoding": decoding,
+        "beam_size": float(beam_size),
+        "length_penalty": float(length_penalty),
         "image_size": float(image_size),
         "device": device,
         "pairs": float(len(train_rows) + len(eval_rows)),
@@ -508,6 +622,7 @@ def _prepare_examples(
     fingerprint_fn: Any,
     max_length: int,
     np: Any,
+    tokenization: str,
     allow_unknown: bool = False,
 ) -> list[dict[str, Any]]:
     examples: list[dict[str, Any]] = []
@@ -515,14 +630,15 @@ def _prepare_examples(
         smiles = row.get("canonical_smiles") or row.get("input_smiles", "")
         if not smiles:
             continue
-        if len(smiles) + 1 > max_length:
+        tokens = _tokenize_smiles(smiles, tokenization=tokenization)
+        if len(tokens) + 1 > max_length:
             continue
-        if not allow_unknown and any(ch not in stoi for ch in smiles):
+        if not allow_unknown and any(token not in stoi for token in tokens):
             continue
         feature = fingerprint_fn(smiles)
         if feature is None:
             continue
-        input_ids, target_ids = _encode_smiles(smiles, stoi=stoi, max_length=max_length)
+        input_ids, target_ids = _encode_tokens(tokens, stoi=stoi, max_length=max_length)
         examples.append(
             {
                 "pair_id": row.get("pair_id", ""),
@@ -536,9 +652,9 @@ def _prepare_examples(
     return examples
 
 
-def _encode_smiles(smiles: str, stoi: dict[str, int], max_length: int) -> tuple[list[int], list[int]]:
-    input_tokens = [BOS] + list(smiles)
-    target_tokens = list(smiles) + [EOS]
+def _encode_tokens(tokens: list[str], stoi: dict[str, int], max_length: int) -> tuple[list[int], list[int]]:
+    input_tokens = [BOS] + tokens
+    target_tokens = tokens + [EOS]
     input_ids = [stoi.get(token, stoi[PAD]) for token in input_tokens][:max_length]
     target_ids = [stoi.get(token, stoi[PAD]) for token in target_tokens][:max_length]
     while len(input_ids) < max_length:
@@ -548,11 +664,54 @@ def _encode_smiles(smiles: str, stoi: dict[str, int], max_length: int) -> tuple[
     return input_ids, target_ids
 
 
-def _build_vocab(rows: list[dict[str, str]]) -> tuple[dict[str, int], list[str]]:
-    chars = sorted({ch for row in rows for ch in (row.get("canonical_smiles") or row.get("input_smiles", ""))})
-    itos = [PAD, BOS, EOS] + chars
+def _build_vocab(rows: list[dict[str, str]], tokenization: str) -> tuple[dict[str, int], list[str]]:
+    tokens = sorted({token for row in rows for token in _tokenize_smiles(row.get("canonical_smiles") or row.get("input_smiles", ""), tokenization=tokenization)})
+    itos = [PAD, BOS, EOS] + tokens
     stoi = {token: idx for idx, token in enumerate(itos)}
     return stoi, itos
+
+
+def _tokenize_smiles(smiles: str, tokenization: str) -> list[str]:
+    if tokenization == "char":
+        return list(smiles)
+    tokens: list[str] = []
+    idx = 0
+    while idx < len(smiles):
+        if smiles[idx] == "[":
+            end = smiles.find("]", idx + 1)
+            if end != -1:
+                tokens.append(smiles[idx : end + 1])
+                idx = end + 1
+                continue
+        if idx + 1 < len(smiles) and smiles[idx : idx + 2] in {"Cl", "Br"}:
+            tokens.append(smiles[idx : idx + 2])
+            idx += 2
+            continue
+        tokens.append(smiles[idx])
+        idx += 1
+    return tokens
+
+
+def _normalize_tokenization(tokenization: str) -> str:
+    value = tokenization.strip().lower().replace("-", "_")
+    aliases = {"smiles": "smiles_token", "token": "smiles_token", "tokens": "smiles_token"}
+    value = aliases.get(value, value)
+    if value not in {"char", "smiles_token"}:
+        raise ValueError(f"Unsupported tokenization {tokenization!r}; expected char or smiles_token.")
+    return value
+
+
+def _normalize_decoding(decoding: str) -> str:
+    value = decoding.strip().lower()
+    if value not in {"sample", "beam"}:
+        raise ValueError(f"Unsupported decoding {decoding!r}; expected sample or beam.")
+    return value
+
+
+def _phase_name(tokenization: str, decoding: str) -> str:
+    if tokenization == "smiles_token" and decoding == "beam":
+        return "phase5a2_tokenized_beam_smiles_decoder"
+    return "phase5a1_oracle_conditioned_learned_smiles_decoder"
 
 
 def _make_fingerprint_fn(rdkit: dict[str, Any], np: Any, fingerprint_bits: int) -> Any:
@@ -682,6 +841,10 @@ def main() -> None:
     parser.add_argument("--samples-per-condition", type=int, default=8)
     parser.add_argument("--temperature", type=float, default=0.9)
     parser.add_argument("--sample-top-k", type=int, default=16)
+    parser.add_argument("--tokenization", default="char", choices=["char", "smiles", "smiles_token"])
+    parser.add_argument("--decoding", default="sample", choices=["sample", "beam"])
+    parser.add_argument("--beam-size", type=int, default=8)
+    parser.add_argument("--length-penalty", type=float, default=0.0)
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--sample-count", type=int, default=64)
     parser.add_argument("--contact-sheet-cols", type=int, default=8)
@@ -705,6 +868,10 @@ def main() -> None:
         samples_per_condition=args.samples_per_condition,
         temperature=args.temperature,
         sample_top_k=args.sample_top_k,
+        tokenization=args.tokenization,
+        decoding=args.decoding,
+        beam_size=args.beam_size,
+        length_penalty=args.length_penalty,
         image_size=args.image_size,
         sample_count=args.sample_count,
         contact_sheet_cols=args.contact_sheet_cols,
