@@ -51,6 +51,14 @@ echo "  batch_size=$BATCH_SIZE"
 echo "  samples_per_condition=$SAMPLES_PER_CONDITION"
 echo "  device=$DEVICE"
 
+"$PYTHON_BIN" - <<'PY'
+import torch
+
+print(f"  torch={torch.__version__}")
+print(f"  torch_cuda_available={torch.cuda.is_available()}")
+print(f"  torch_cuda_device={torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'cpu'}")
+PY
+
 if [[ ! -f "$PAIR_DIR/pairs.csv" ]]; then
   echo "ERROR: pairs.csv not found under $PAIR_DIR" >&2
   echo "Run scripts/run_phase0_pairs.sh first, or set SKETCHSMILES_PAIR_DIR." >&2

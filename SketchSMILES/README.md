@@ -143,6 +143,20 @@ Morgan fingerprint, emits SMILES directly, renders the top generated SMILES back
 to a sketch, and evaluates both molecular accuracy and paired-output
 consistency:
 
+Submit the full run to a GPU node:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_RUN_NAME=phase5a1_learned_smiles_decoder_seed7 \
+SKETCHSMILES_EPOCHS=20 \
+SKETCHSMILES_BATCH_SIZE=128 \
+bash scripts/submit_phase5a1_learned_smiles_decoder.sh
+```
+
+Inside an already allocated GPU node, run:
+
 ```bash
 SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
 SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
@@ -154,8 +168,8 @@ SKETCHSMILES_DEVICE=auto \
 bash scripts/run_phase5a1_learned_smiles_decoder.sh
 ```
 
-For a short CPU sanity run, add `SKETCHSMILES_LIMIT=2000` and
-`SKETCHSMILES_EPOCHS=2`.
+For a short GPU sanity run, add `SKETCHSMILES_LIMIT=2000`,
+`SKETCHSMILES_EPOCHS=2`, and set a separate `SKETCHSMILES_RUN_NAME`.
 
 The run writes:
 
