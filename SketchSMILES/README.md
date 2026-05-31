@@ -207,3 +207,27 @@ bash scripts/submit_phase5a2_tokenized_beam_decoder.sh
 
 For a short sanity run, add `SKETCHSMILES_LIMIT=2000`,
 `SKETCHSMILES_EPOCHS=2`, and set a separate `SKETCHSMILES_RUN_NAME`.
+
+## Phase 5A-3 Condition-Attentive Transformer Decoder
+
+Run the same oracle-conditioned paired-output task with a Transformer decoder.
+The molecular fingerprint is projected into condition tokens, and each SMILES
+token attends to those condition tokens during autoregressive beam decoding:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_RUN_NAME=phase5a3_transformer_decoder_seed7 \
+SKETCHSMILES_GPU_PROFILE=h100_10gb_mig \
+SKETCHSMILES_EPOCHS=20 \
+SKETCHSMILES_BATCH_SIZE=128 \
+SKETCHSMILES_BEAM_SIZE=8 \
+SKETCHSMILES_TRANSFORMER_LAYERS=4 \
+SKETCHSMILES_ATTENTION_HEADS=8 \
+SKETCHSMILES_CONDITION_TOKENS=8 \
+bash scripts/submit_phase5a3_transformer_decoder.sh
+```
+
+For a short sanity run, add `SKETCHSMILES_LIMIT=2000`,
+`SKETCHSMILES_EPOCHS=2`, and set a separate `SKETCHSMILES_RUN_NAME`.

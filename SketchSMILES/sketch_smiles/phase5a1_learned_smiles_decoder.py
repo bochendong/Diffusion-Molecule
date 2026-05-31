@@ -52,6 +52,11 @@ def run_learned_smiles_decoder(
     decoding: str = "sample",
     beam_size: int = 8,
     length_penalty: float = 0.0,
+    model_type: str = "gru",
+    transformer_layers: int = 4,
+    attention_heads: int = 8,
+    condition_tokens: int = 8,
+    dropout: float = 0.1,
     image_size: int = 256,
     sample_count: int = 64,
     contact_sheet_cols: int = 8,
@@ -87,6 +92,7 @@ def run_learned_smiles_decoder(
 
     tokenization = _normalize_tokenization(tokenization)
     decoding = _normalize_decoding(decoding)
+    model_type = _normalize_model_type(model_type)
     stoi, itos = _build_vocab(train_rows, tokenization=tokenization)
     vocab_path = output_dir / "vocab.json"
     vocab_path.write_text(json.dumps({"stoi": stoi, "itos": itos}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -100,12 +106,18 @@ def run_learned_smiles_decoder(
         raise RuntimeError("No eval examples available for Phase 5A-1.")
 
     resolved_device = _resolve_device(device, torch)
-    model = ConditionalSmilesGRU(
+    model = _build_model(
+        model_type=model_type,
         vocab_size=len(itos),
         feature_dim=fingerprint_bits,
         embedding_dim=embedding_dim,
         hidden_dim=hidden_dim,
         pad_idx=stoi[PAD],
+        max_length=max_length,
+        transformer_layers=transformer_layers,
+        attention_heads=attention_heads,
+        condition_tokens=condition_tokens,
+        dropout=dropout,
     ).to(resolved_device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     history = _train_model(
@@ -131,6 +143,12 @@ def run_learned_smiles_decoder(
                 "embedding_dim": embedding_dim,
                 "hidden_dim": hidden_dim,
                 "pad_idx": stoi[PAD],
+                "max_length": max_length,
+                "model_type": model_type,
+                "transformer_layers": transformer_layers,
+                "attention_heads": attention_heads,
+                "condition_tokens": condition_tokens,
+                "dropout": dropout,
             },
         },
         model_path,
@@ -202,6 +220,11 @@ def run_learned_smiles_decoder(
         decoding=decoding,
         beam_size=beam_size,
         length_penalty=length_penalty,
+        model_type=model_type,
+        transformer_layers=transformer_layers,
+        attention_heads=attention_heads,
+        condition_tokens=condition_tokens,
+        dropout=dropout,
         image_size=image_size,
         device=str(resolved_device),
     )
@@ -210,7 +233,7 @@ def run_learned_smiles_decoder(
     (output_dir / "run_config.json").write_text(
         json.dumps(
             {
-                "phase": _phase_name(tokenization=tokenization, decoding=decoding),
+                "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type),
                 "research_question": "Can a learned decoder emit machine-readable SMILES directly from an oracle molecular condition while retaining paired sketch consistency through rendering?",
                 "pair_dir": str(pair_dir),
                 "pairs_csv": str(pairs_path),
@@ -232,6 +255,11 @@ def run_learned_smiles_decoder(
                 "decoding": decoding,
                 "beam_size": beam_size,
                 "length_penalty": length_penalty,
+                "model_type": model_type,
+                "transformer_layers": transformer_layers,
+                "attention_heads": attention_heads,
+                "condition_tokens": condition_tokens,
+                "dropout": dropout,
                 "image_size": image_size,
                 "device": str(resolved_device),
             },
@@ -265,6 +293,119 @@ class ConditionalSmilesGRU:
                 return self.out(output)
 
         return _Model(*args, **kwargs)
+
+
+class ConditionalSmilesTransformer:
+    def __new__(cls, *args: Any, **kwargs: Any) -> Any:
+        torch = _load_torch()
+        nn = torch.nn
+
+        class _Model(nn.Module):
+            def __init__(
+                self,
+                vocab_size: int,
+                feature_dim: int,
+                embedding_dim: int,
+                hidden_dim: int,
+                pad_idx: int,
+                max_length: int,
+                transformer_layers: int,
+                attention_heads: int,
+                condition_tokens: int,
+                dropout: float,
+            ) -> None:
+                super().__init__()
+                if hidden_dim % attention_heads != 0:
+                    raise ValueError(f"hidden_dim={hidden_dim} must be divisible by attention_heads={attention_heads}.")
+                self.pad_idx = pad_idx
+                self.max_length = max_length
+                self.hidden_dim = hidden_dim
+                self.condition_tokens = condition_tokens
+                self.condition_projection = nn.Sequential(
+                    nn.Linear(feature_dim, hidden_dim * condition_tokens),
+                    nn.Tanh(),
+                )
+                self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=pad_idx)
+                self.input_projection = nn.Linear(embedding_dim, hidden_dim)
+                self.position = nn.Embedding(max_length, hidden_dim)
+                decoder_layer = nn.TransformerDecoderLayer(
+                    d_model=hidden_dim,
+                    nhead=attention_heads,
+                    dim_feedforward=hidden_dim * 4,
+                    dropout=dropout,
+                    batch_first=True,
+                    norm_first=True,
+                )
+                self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=transformer_layers)
+                self.out = nn.Linear(hidden_dim, vocab_size)
+
+            def _memory(self, features: Any) -> Any:
+                batch = features.shape[0]
+                return self.condition_projection(features).view(batch, self.condition_tokens, self.hidden_dim)
+
+            def forward(self, features: Any, input_ids: Any) -> Any:
+                batch, length = input_ids.shape
+                if length > self.max_length:
+                    input_ids = input_ids[:, -self.max_length :]
+                    length = self.max_length
+                positions = torch.arange(length, device=input_ids.device).unsqueeze(0).expand(batch, length)
+                embeddings = self.input_projection(self.embedding(input_ids)) + self.position(positions)
+                causal_mask = torch.triu(
+                    torch.full((length, length), float("-inf"), device=input_ids.device),
+                    diagonal=1,
+                )
+                padding_mask = input_ids.eq(self.pad_idx)
+                decoded = self.decoder(
+                    tgt=embeddings,
+                    memory=self._memory(features),
+                    tgt_mask=causal_mask,
+                    tgt_key_padding_mask=padding_mask,
+                )
+                return self.out(decoded)
+
+            def decode_prefix_logits(self, feature_tensor: Any, ids: list[int]) -> Any:
+                prefix = ids[-self.max_length :]
+                input_ids = torch.tensor([prefix], dtype=torch.long, device=feature_tensor.device)
+                return self.forward(feature_tensor, input_ids)[:, -1, :]
+
+        return _Model(*args, **kwargs)
+
+
+def _build_model(
+    model_type: str,
+    vocab_size: int,
+    feature_dim: int,
+    embedding_dim: int,
+    hidden_dim: int,
+    pad_idx: int,
+    max_length: int,
+    transformer_layers: int,
+    attention_heads: int,
+    condition_tokens: int,
+    dropout: float,
+) -> Any:
+    if model_type == "gru":
+        return ConditionalSmilesGRU(
+            vocab_size=vocab_size,
+            feature_dim=feature_dim,
+            embedding_dim=embedding_dim,
+            hidden_dim=hidden_dim,
+            pad_idx=pad_idx,
+        )
+    if model_type == "transformer":
+        return ConditionalSmilesTransformer(
+            vocab_size=vocab_size,
+            feature_dim=feature_dim,
+            embedding_dim=embedding_dim,
+            hidden_dim=hidden_dim,
+            pad_idx=pad_idx,
+            max_length=max_length,
+            transformer_layers=transformer_layers,
+            attention_heads=attention_heads,
+            condition_tokens=condition_tokens,
+            dropout=dropout,
+        )
+    raise ValueError(f"Unsupported model_type {model_type!r}.")
 
 
 def _train_model(
@@ -412,18 +553,16 @@ def _sample_smiles(
     feature_tensor = torch.as_tensor(feature, dtype=torch.float32, device=device).unsqueeze(0)
     for _ in range(int(samples_per_condition)):
         generated: list[str] = []
-        token = torch.tensor([[stoi[BOS]]], dtype=torch.long, device=device)
-        h = model.cond(feature_tensor).unsqueeze(0)
+        ids = [stoi[BOS]]
+        state = _initial_decode_state(model, feature_tensor)
         for _step in range(int(max_length)):
-            embedding = model.embedding(token[:, -1:])
-            output, h = model.gru(embedding, h)
-            logits = model.out(output[:, -1, :]) / max(float(temperature), 1e-6)
-            next_id = int(_sample_token(logits[0], torch=torch, top_k=sample_top_k).item())
+            logits, state = _decode_next_logits(model, feature_tensor, ids, state, torch=torch, device=device)
+            next_id = int(_sample_token(logits / max(float(temperature), 1e-6), torch=torch, top_k=sample_top_k).item())
             if itos[next_id] == EOS:
                 break
             if itos[next_id] not in (PAD, BOS):
                 generated.append(itos[next_id])
-            token = torch.cat([token, torch.tensor([[next_id]], dtype=torch.long, device=device)], dim=1)
+            ids.append(next_id)
         samples.append("".join(generated))
     return samples
 
@@ -440,8 +579,8 @@ def _beam_search_smiles(
     length_penalty: float,
 ) -> list[str]:
     feature_tensor = torch.as_tensor(feature, dtype=torch.float32, device=device).unsqueeze(0)
-    initial_h = model.cond(feature_tensor).unsqueeze(0)
-    beams: list[tuple[list[int], float, Any, bool]] = [([stoi[BOS]], 0.0, initial_h, False)]
+    initial_state = _initial_decode_state(model, feature_tensor)
+    beams: list[tuple[list[int], float, Any, bool]] = [([stoi[BOS]], 0.0, initial_state, False)]
     completed: list[tuple[list[int], float]] = []
     beam_size = max(1, int(beam_size))
     blocked = {stoi[PAD], stoi[BOS]}
@@ -452,10 +591,8 @@ def _beam_search_smiles(
                 completed.append((ids, score))
                 expanded.append((ids, score, hidden, done))
                 continue
-            token = torch.tensor([[ids[-1]]], dtype=torch.long, device=device)
-            embedding = model.embedding(token)
-            output, next_hidden = model.gru(embedding, hidden)
-            log_probs = torch.log_softmax(model.out(output[:, -1, :])[0], dim=-1)
+            logits, next_hidden = _decode_next_logits(model, feature_tensor, ids, hidden, torch=torch, device=device)
+            log_probs = torch.log_softmax(logits, dim=-1)
             top_values, top_indices = torch.topk(log_probs, min(beam_size + len(blocked), log_probs.shape[-1]))
             added = 0
             for value, index in zip(top_values.tolist(), top_indices.tolist()):
@@ -464,7 +601,7 @@ def _beam_search_smiles(
                 next_ids = ids + [int(index)]
                 next_score = score + float(value)
                 next_done = itos[int(index)] == EOS
-                expanded.append((next_ids, next_score, next_hidden.clone(), next_done))
+                expanded.append((next_ids, next_score, _clone_decode_state(next_hidden), next_done))
                 if next_done:
                     completed.append((next_ids, next_score))
                 added += 1
@@ -493,6 +630,29 @@ def _beam_search_smiles(
         if len(samples) >= beam_size:
             break
     return samples
+
+
+def _initial_decode_state(model: Any, feature_tensor: Any) -> Any:
+    if hasattr(model, "decode_prefix_logits"):
+        return None
+    return model.cond(feature_tensor).unsqueeze(0)
+
+
+def _decode_next_logits(model: Any, feature_tensor: Any, ids: list[int], state: Any, torch: Any, device: Any) -> tuple[Any, Any]:
+    if hasattr(model, "decode_prefix_logits"):
+        return model.decode_prefix_logits(feature_tensor, ids)[0], None
+    token = torch.tensor([[ids[-1]]], dtype=torch.long, device=device)
+    embedding = model.embedding(token)
+    output, next_state = model.gru(embedding, state)
+    return model.out(output[:, -1, :])[0], next_state
+
+
+def _clone_decode_state(state: Any) -> Any:
+    if state is None:
+        return None
+    if hasattr(state, "clone"):
+        return state.clone()
+    return state
 
 
 def _beam_rank(score: float, length: int, length_penalty: float) -> float:
@@ -552,6 +712,11 @@ def _summarize_learned_decoder(
     decoding: str,
     beam_size: int,
     length_penalty: float,
+    model_type: str,
+    transformer_layers: int,
+    attention_heads: int,
+    condition_tokens: int,
+    dropout: float,
     image_size: int,
     device: str,
 ) -> dict[str, Any]:
@@ -559,7 +724,7 @@ def _summarize_learned_decoder(
     compared = [row for row in prediction_rows if row["image_compared"]]
     image_mse_values = [float(row["image_mse"]) for row in compared if row["image_mse"] != ""]
     return {
-        "phase": _phase_name(tokenization=tokenization, decoding=decoding),
+        "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type),
         "pair_dir": str(pair_dir),
         "output_dir": str(output_dir),
         "train_fraction": float(train_fraction),
@@ -578,6 +743,11 @@ def _summarize_learned_decoder(
         "decoding": decoding,
         "beam_size": float(beam_size),
         "length_penalty": float(length_penalty),
+        "model_type": model_type,
+        "transformer_layers": float(transformer_layers),
+        "attention_heads": float(attention_heads),
+        "condition_tokens": float(condition_tokens),
+        "dropout": float(dropout),
         "image_size": float(image_size),
         "device": device,
         "pairs": float(len(train_rows) + len(eval_rows)),
@@ -708,7 +878,18 @@ def _normalize_decoding(decoding: str) -> str:
     return value
 
 
-def _phase_name(tokenization: str, decoding: str) -> str:
+def _normalize_model_type(model_type: str) -> str:
+    value = model_type.strip().lower().replace("-", "_")
+    aliases = {"rnn": "gru", "cross_attention": "transformer", "xattn": "transformer"}
+    value = aliases.get(value, value)
+    if value not in {"gru", "transformer"}:
+        raise ValueError(f"Unsupported model_type {model_type!r}; expected gru or transformer.")
+    return value
+
+
+def _phase_name(tokenization: str, decoding: str, model_type: str) -> str:
+    if model_type == "transformer":
+        return "phase5a3_condition_attentive_transformer_decoder"
     if tokenization == "smiles_token" and decoding == "beam":
         return "phase5a2_tokenized_beam_smiles_decoder"
     return "phase5a1_oracle_conditioned_learned_smiles_decoder"
@@ -845,6 +1026,11 @@ def main() -> None:
     parser.add_argument("--decoding", default="sample", choices=["sample", "beam"])
     parser.add_argument("--beam-size", type=int, default=8)
     parser.add_argument("--length-penalty", type=float, default=0.0)
+    parser.add_argument("--model-type", default="gru", choices=["gru", "rnn", "transformer", "cross_attention", "xattn"])
+    parser.add_argument("--transformer-layers", type=int, default=4)
+    parser.add_argument("--attention-heads", type=int, default=8)
+    parser.add_argument("--condition-tokens", type=int, default=8)
+    parser.add_argument("--dropout", type=float, default=0.1)
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--sample-count", type=int, default=64)
     parser.add_argument("--contact-sheet-cols", type=int, default=8)
@@ -872,6 +1058,11 @@ def main() -> None:
         decoding=args.decoding,
         beam_size=args.beam_size,
         length_penalty=args.length_penalty,
+        model_type=args.model_type,
+        transformer_layers=args.transformer_layers,
+        attention_heads=args.attention_heads,
+        condition_tokens=args.condition_tokens,
+        dropout=args.dropout,
         image_size=args.image_size,
         sample_count=args.sample_count,
         contact_sheet_cols=args.contact_sheet_cols,

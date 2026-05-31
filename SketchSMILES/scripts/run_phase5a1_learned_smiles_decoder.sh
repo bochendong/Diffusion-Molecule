@@ -27,18 +27,29 @@ TOKENIZATION="${SKETCHSMILES_TOKENIZATION:-char}"
 DECODING="${SKETCHSMILES_DECODING:-sample}"
 BEAM_SIZE="${SKETCHSMILES_BEAM_SIZE:-8}"
 LENGTH_PENALTY="${SKETCHSMILES_LENGTH_PENALTY:-0.0}"
+MODEL_TYPE="${SKETCHSMILES_MODEL_TYPE:-gru}"
+TRANSFORMER_LAYERS="${SKETCHSMILES_TRANSFORMER_LAYERS:-4}"
+ATTENTION_HEADS="${SKETCHSMILES_ATTENTION_HEADS:-8}"
+CONDITION_TOKENS="${SKETCHSMILES_CONDITION_TOKENS:-8}"
+DROPOUT="${SKETCHSMILES_DROPOUT:-0.1}"
 IMAGE_SIZE="${SKETCHSMILES_IMAGE_SIZE:-256}"
 SAMPLE_COUNT="${SKETCHSMILES_SAMPLE_COUNT:-64}"
 CONTACT_SHEET_COLS="${SKETCHSMILES_CONTACT_SHEET_COLS:-8}"
 CONTACT_THUMB_SIZE="${SKETCHSMILES_CONTACT_THUMB_SIZE:-144}"
 DEVICE="${SKETCHSMILES_DEVICE:-auto}"
+PHASE_LABEL="Phase 5A-1 learned SMILES decoder"
+if [[ "$MODEL_TYPE" == "transformer" ]]; then
+  PHASE_LABEL="Phase 5A-3 condition-attentive Transformer decoder"
+elif [[ "$TOKENIZATION" == "smiles_token" && "$DECODING" == "beam" ]]; then
+  PHASE_LABEL="Phase 5A-2 tokenized beam decoder"
+fi
 
 if [[ -n "${SKETCHSMILES_MODULES:-}" ]] && command -v module >/dev/null 2>&1; then
   # shellcheck disable=SC2086
   module load $SKETCHSMILES_MODULES
 fi
 
-echo "SketchSMILES Phase 5A-1 learned SMILES decoder"
+echo "SketchSMILES $PHASE_LABEL"
 echo "  python=$PYTHON_BIN"
 echo "  modules=${SKETCHSMILES_MODULES:-<none>}"
 echo "  pair_dir=$PAIR_DIR"
@@ -57,6 +68,11 @@ echo "  tokenization=$TOKENIZATION"
 echo "  decoding=$DECODING"
 echo "  beam_size=$BEAM_SIZE"
 echo "  length_penalty=$LENGTH_PENALTY"
+echo "  model_type=$MODEL_TYPE"
+echo "  transformer_layers=$TRANSFORMER_LAYERS"
+echo "  attention_heads=$ATTENTION_HEADS"
+echo "  condition_tokens=$CONDITION_TOKENS"
+echo "  dropout=$DROPOUT"
 echo "  device=$DEVICE"
 
 "$PYTHON_BIN" - <<'PY'
@@ -114,6 +130,11 @@ ARGS=(
   --decoding "$DECODING"
   --beam-size "$BEAM_SIZE"
   --length-penalty "$LENGTH_PENALTY"
+  --model-type "$MODEL_TYPE"
+  --transformer-layers "$TRANSFORMER_LAYERS"
+  --attention-heads "$ATTENTION_HEADS"
+  --condition-tokens "$CONDITION_TOKENS"
+  --dropout "$DROPOUT"
   --image-size "$IMAGE_SIZE"
   --sample-count "$SAMPLE_COUNT"
   --contact-sheet-cols "$CONTACT_SHEET_COLS"
@@ -128,7 +149,7 @@ echo "[2/2] Training learned SMILES decoder and rendering top predictions"
 "$PYTHON_BIN" "${ARGS[@]}"
 
 echo
-echo "Phase 5A-1 learned SMILES decoder finished: $OUTPUT_DIR"
+echo "$PHASE_LABEL finished: $OUTPUT_DIR"
 echo "  metrics=$OUTPUT_DIR/metrics.json"
 echo "  predictions=$OUTPUT_DIR/predictions.csv"
 echo "  model=$OUTPUT_DIR/model.pt"

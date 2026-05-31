@@ -23,6 +23,12 @@ export SKETCHSMILES_EPOCHS="${SKETCHSMILES_EPOCHS:-20}"
 export SKETCHSMILES_BATCH_SIZE="${SKETCHSMILES_BATCH_SIZE:-128}"
 export SKETCHSMILES_DEVICE="${SKETCHSMILES_DEVICE:-auto}"
 RUN_SCRIPT="${SKETCHSMILES_RUN_SCRIPT:-scripts/run_phase5a1_learned_smiles_decoder.sh}"
+SUBMIT_LABEL="Phase 5A-1 learned SMILES decoder"
+if [[ "${SKETCHSMILES_MODEL_TYPE:-gru}" == "transformer" ]]; then
+  SUBMIT_LABEL="Phase 5A-3 condition-attentive Transformer decoder"
+elif [[ "${SKETCHSMILES_TOKENIZATION:-char}" == "smiles_token" && "${SKETCHSMILES_DECODING:-sample}" == "beam" ]]; then
+  SUBMIT_LABEL="Phase 5A-2 tokenized beam decoder"
+fi
 
 if [[ -n "${SKETCHSMILES_SLURM_GPUS:-}" ]]; then
   GPU_CANDIDATES=("$SKETCHSMILES_SLURM_GPUS")
@@ -38,7 +44,7 @@ else
   GPU_CANDIDATES=("$GPU_PROFILE")
 fi
 
-echo "Submitting SketchSMILES Phase 5A-1:"
+echo "Submitting SketchSMILES $SUBMIT_LABEL:"
 echo "  run_name=$SKETCHSMILES_RUN_NAME"
 echo "  pair_dir=$SKETCHSMILES_PAIR_DIR"
 echo "  python=$SKETCHSMILES_PYTHON_BIN"

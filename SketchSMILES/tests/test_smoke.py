@@ -186,6 +186,52 @@ class SketchSMILESTests(unittest.TestCase):
             self.assertTrue(Path(run_dir, "predictions.csv").exists())
             self.assertTrue(Path(run_dir, "train_history.json").exists())
 
+    @unittest.skipUnless(_rdkit_available() and _torch_available(), "RDKit and PyTorch are not installed")
+    def test_transformer_smiles_decoder_writes_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_csv = Path(tmp, "molecules.csv")
+            with input_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["CCO", "CCN", "CCC", "COC", "CCCl", "CCBr"]:
+                    writer.writerow({"smiles": smiles})
+
+            pair_dir = Path(tmp, "pairs")
+            build_pair_manifest(input_csv=input_csv, output_dir=pair_dir, image_size=128)
+            run_dir = Path(tmp, "run")
+            metrics = run_learned_smiles_decoder(
+                pair_dir=pair_dir,
+                output_dir=run_dir,
+                train_fraction=0.67,
+                seed=6,
+                fingerprint_bits=128,
+                max_length=24,
+                hidden_dim=32,
+                embedding_dim=16,
+                epochs=1,
+                batch_size=2,
+                samples_per_condition=2,
+                sample_top_k=4,
+                tokenization="smiles_token",
+                decoding="beam",
+                beam_size=2,
+                model_type="transformer",
+                transformer_layers=1,
+                attention_heads=2,
+                condition_tokens=2,
+                dropout=0.0,
+                image_size=128,
+                sample_count=2,
+                device="cpu",
+            )
+            self.assertEqual(metrics["phase"], "phase5a3_condition_attentive_transformer_decoder")
+            self.assertEqual(metrics["model_type"], "transformer")
+            self.assertGreater(metrics["train_examples"], 0.0)
+            self.assertGreater(metrics["eval_examples"], 0.0)
+            self.assertTrue(Path(run_dir, "metrics.json").exists())
+            self.assertTrue(Path(run_dir, "model.pt").exists())
+            self.assertTrue(Path(run_dir, "predictions.csv").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
