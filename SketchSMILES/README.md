@@ -51,10 +51,14 @@ separate recognizer.
    This proves the paired-output interface before adding instruction planning.
 
 3. **Phase 5B: Conditional paired generator**
-   Map `condition/source/instruction` into the shared representation and decode
-   synchronized image + SMILES outputs.
+   Decode synchronized image + SMILES outputs from a shared molecular
+   representation.
 
-4. **Phase 5C: Consistency-guided filtering**
+4. **Phase 5C: Image-conditioned SMILES decoder**
+   Replace the oracle molecular fingerprint with the molecular sketch image and
+   test whether direct image-to-SMILES decoding can bypass OCR.
+
+5. **Phase 5D: Consistency-guided filtering**
    Add a verifier that rejects outputs where the generated image and SMILES do
    not agree.
 
@@ -268,6 +272,13 @@ SKETCHSMILES_SLURM_TIME=06:00:00 \
 bash scripts/submit_phase5a4_eval_only.sh
 ```
 
+Summarize the Phase 5A chain into one comparison table:
+
+```bash
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash scripts/run_phase5_summary.sh
+```
+
 ## Phase 5B Joint SMILES/Sketch Decoder
 
 Run a shared-latent two-head model. The model consumes the same oracle molecular
@@ -292,3 +303,25 @@ The sample contact sheet shows three columns per example:
 target sketch, learned sketch, and RDKit-rendered generated SMILES. For a short
 sanity run, add `SKETCHSMILES_LIMIT=2000`, `SKETCHSMILES_EPOCHS=2`, and set a
 separate `SKETCHSMILES_RUN_NAME`.
+
+## Phase 5C Image-Conditioned SMILES Decoder
+
+Run a direct sketch-image-to-SMILES decoder. The model encodes the rendered
+molecular sketch with a CNN, exposes image tokens to a Transformer SMILES
+decoder, then renders the generated SMILES for pair-consistency evaluation:
+
+```bash
+SKETCHSMILES_MODULES="gcc rdkit/2025.09.4" \
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+SKETCHSMILES_RUN_NAME=phase5c_image_smiles_decoder_seed7 \
+SKETCHSMILES_GPU_PROFILE=h100_10gb_mig \
+SKETCHSMILES_EPOCHS=20 \
+SKETCHSMILES_BATCH_SIZE=128 \
+SKETCHSMILES_IMAGE_SIZE=128 \
+SKETCHSMILES_BEAM_SIZE=8 \
+bash scripts/submit_phase5c_image_smiles_decoder.sh
+```
+
+For a quick sanity run, add `SKETCHSMILES_LIMIT=2000`,
+`SKETCHSMILES_EPOCHS=2`, and set a separate `SKETCHSMILES_RUN_NAME`.

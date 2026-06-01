@@ -14,6 +14,8 @@ from sketch_smiles.phase5a1_learned_smiles_decoder import (
     run_learned_smiles_decoder,
 )
 from sketch_smiles.phase5b_joint_decoder import run_joint_paired_decoder
+from sketch_smiles.phase5_summary import summarize_runs
+from sketch_smiles.phase5c_image_smiles_decoder import run_image_conditioned_smiles_decoder
 
 
 def _rdkit_available() -> bool:
@@ -119,6 +121,21 @@ class SketchSMILESTests(unittest.TestCase):
             self.assertTrue(Path(pair_dir, "audit_summary.json").exists())
             self.assertTrue(Path(pair_dir, "audit_rows.csv").exists())
             self.assertTrue(Path(pair_dir, "sample_pairs.csv").exists())
+
+    def test_phase5_summary_writes_comparison_table(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp, "run_a")
+            run_dir.mkdir()
+            Path(run_dir, "metrics.json").write_text(
+                '{"phase":"phase5a","top1_exact_match_fraction":0.5,"topk_exact_match_fraction":0.7}\n',
+                encoding="utf-8",
+            )
+            output_dir = Path(tmp, "summary")
+            rows = summarize_runs([run_dir], output_dir=output_dir)
+            self.assertEqual(rows[0]["run_name"], "run_a")
+            self.assertEqual(rows[0]["top1_exact_match_fraction"], 0.5)
+            self.assertTrue(Path(output_dir, "phase5_summary.csv").exists())
+            self.assertTrue(Path(output_dir, "phase5_summary.json").exists())
 
     @unittest.skipUnless(_rdkit_available(), "RDKit is not installed")
     def test_oracle_paired_baseline_writes_artifacts(self):
@@ -298,6 +315,51 @@ class SketchSMILESTests(unittest.TestCase):
                 device="cpu",
             )
             self.assertEqual(metrics["phase"], "phase5b_shared_latent_smiles_sketch_decoder")
+            self.assertEqual(metrics["pairs"], 6.0)
+            self.assertGreater(metrics["train_examples"], 0.0)
+            self.assertGreater(metrics["eval_examples"], 0.0)
+            self.assertTrue(Path(run_dir, "metrics.json").exists())
+            self.assertTrue(Path(run_dir, "model.pt").exists())
+            self.assertTrue(Path(run_dir, "vocab.json").exists())
+            self.assertTrue(Path(run_dir, "predictions.csv").exists())
+            self.assertTrue(Path(run_dir, "sample_contact_sheet.png").exists())
+
+    @unittest.skipUnless(_rdkit_available() and _torch_available(), "RDKit and PyTorch are not installed")
+    def test_image_conditioned_smiles_decoder_writes_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_csv = Path(tmp, "molecules.csv")
+            with input_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["CCO", "CCN", "CCC", "COC", "CCCl", "CCBr"]:
+                    writer.writerow({"smiles": smiles})
+
+            pair_dir = Path(tmp, "pairs")
+            build_pair_manifest(input_csv=input_csv, output_dir=pair_dir, image_size=64)
+            run_dir = Path(tmp, "run")
+            metrics = run_image_conditioned_smiles_decoder(
+                pair_dir=pair_dir,
+                output_dir=run_dir,
+                train_fraction=0.67,
+                seed=8,
+                max_length=24,
+                hidden_dim=32,
+                embedding_dim=16,
+                encoder_channels=8,
+                image_token_grid=2,
+                transformer_layers=1,
+                attention_heads=2,
+                dropout=0.0,
+                epochs=1,
+                batch_size=2,
+                samples_per_condition=2,
+                sample_top_k=4,
+                beam_size=2,
+                image_size=64,
+                sample_count=2,
+                device="cpu",
+            )
+            self.assertEqual(metrics["phase"], "phase5c_image_conditioned_smiles_decoder")
             self.assertEqual(metrics["pairs"], 6.0)
             self.assertGreater(metrics["train_examples"], 0.0)
             self.assertGreater(metrics["eval_examples"], 0.0)
