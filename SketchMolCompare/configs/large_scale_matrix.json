@@ -1,0 +1,48 @@
+{
+  "description": "Large-scale SketchMol comparison matrix. The scripts are wrappers around SketchSMILES and PhysTabMol so training logic stays in the owning folders.",
+  "runs": [
+    {
+      "name": "sketchmol_compare_phase5a4_seed7",
+      "family": "sketchsmiles_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5a4_transformer.sh",
+      "purpose": "Best current OCR-free latent/fingerprint conditioned Transformer decoder with condition-fingerprint reranking.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "top1_valid_fraction",
+        "paired_output_success_fraction"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_phase5c_seed7",
+      "family": "sketchsmiles_image_conditioned",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5c_image_decoder.sh",
+      "purpose": "Image-conditioned SMILES decoder, closest to replacing SketchMol image-to-OCR with direct image-to-SMILES.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "top1_valid_fraction",
+        "paired_output_success_fraction"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_structure_seed7",
+      "family": "sketchmol_aligned",
+      "script": "SketchMolCompare/scripts/submit_sketchmol_structure_benchmark.sh",
+      "purpose": "PhysTabMol SketchMol-aligned structure/property benchmark for direct table comparison.",
+      "primary_metrics": [
+        "success_rate_in_valid_mols",
+        "success_rate_strict_in_valid_mols",
+        "success_rate_sketchmol_tolerance_in_valid_mols",
+        "validity",
+        "uniqueness",
+        "novelty",
+        "druglike_rate"
+      ]
+    }
+  ]
+}
