@@ -30,6 +30,21 @@
       ]
     },
     {
+      "name": "sketchmol_compare_phase5d_seed7",
+      "family": "sketchsmiles_image_conditioned",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5d_image_fingerprint.sh",
+      "purpose": "Image-conditioned SMILES decoder with a fingerprint auxiliary head and predicted-fingerprint beam reranking.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "top1_valid_fraction",
+        "mean_predicted_target_fingerprint_tanimoto",
+        "top1_condition_tanimoto"
+      ]
+    },
+    {
       "name": "sketchmol_compare_structure_seed7",
       "family": "sketchmol_aligned",
       "script": "SketchMolCompare/scripts/submit_sketchmol_structure_benchmark.sh",

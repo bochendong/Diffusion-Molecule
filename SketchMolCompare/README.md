@@ -52,6 +52,16 @@ SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
 bash SketchMolCompare/scripts/submit_sketchsmiles_5c_image_decoder.sh
 ```
 
+Submit the image-conditioned model with fingerprint auxiliary reranking:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+bash SketchMolCompare/scripts/submit_sketchsmiles_5d_image_fingerprint.sh
+```
+
 Submit the PhysTabMol SketchMol-aligned structure benchmark:
 
 ```bash

@@ -26,8 +26,10 @@ from .phase5a1_learned_smiles_decoder import (
     _build_vocab,
     _canonical_candidate_list,
     _encode_tokens,
+    _fingerprint_tanimoto,
     _load_numpy,
     _load_torch,
+    _make_fingerprint_fn,
     _normalize_decoding,
     _normalize_tokenization,
     _sample_smiles,
@@ -51,6 +53,9 @@ def run_image_conditioned_smiles_decoder(
     embedding_dim: int = 96,
     encoder_channels: int = 64,
     image_token_grid: int = 4,
+    fingerprint_bits: int = 0,
+    fingerprint_loss_weight: float = 0.0,
+    rerank_mode: str = "beam",
     transformer_layers: int = 4,
     attention_heads: int = 8,
     dropout: float = 0.1,
@@ -88,6 +93,12 @@ def run_image_conditioned_smiles_decoder(
     torch = _load_torch()
     np = _load_numpy()
     _set_seeds(seed, torch=torch, np=np)
+    fingerprint_bits = int(fingerprint_bits)
+    fingerprint_loss_weight = float(fingerprint_loss_weight)
+    rerank_mode = _normalize_image_rerank_mode(rerank_mode)
+    fingerprint_fn = _make_fingerprint_fn(rdkit, np=np, fingerprint_bits=fingerprint_bits) if fingerprint_bits > 0 else None
+    if rerank_mode == "predicted_fingerprint" and fingerprint_fn is None:
+        raise ValueError("predicted_fingerprint reranking requires fingerprint_bits > 0.")
 
     rows = _read_rows(pairs_path)
     if limit is not None:
@@ -112,6 +123,7 @@ def run_image_conditioned_smiles_decoder(
         pillow=pillow,
         image_size=image_size,
         tokenization=tokenization,
+        fingerprint_fn=fingerprint_fn,
     )
     eval_examples = _prepare_image_examples(
         rows=eval_rows,
@@ -122,6 +134,7 @@ def run_image_conditioned_smiles_decoder(
         pillow=pillow,
         image_size=image_size,
         tokenization=tokenization,
+        fingerprint_fn=fingerprint_fn,
         allow_unknown=True,
     )
     if not train_examples:
@@ -136,6 +149,7 @@ def run_image_conditioned_smiles_decoder(
         hidden_dim=hidden_dim,
         encoder_channels=encoder_channels,
         image_token_grid=image_token_grid,
+        fingerprint_bits=fingerprint_bits,
         pad_idx=stoi[PAD],
         max_length=max_length,
         transformer_layers=transformer_layers,
@@ -153,6 +167,7 @@ def run_image_conditioned_smiles_decoder(
         batch_size=batch_size,
         epochs=epochs,
         pad_idx=stoi[PAD],
+        fingerprint_loss_weight=fingerprint_loss_weight,
         seed=seed,
     )
 
@@ -166,6 +181,7 @@ def run_image_conditioned_smiles_decoder(
                 "hidden_dim": hidden_dim,
                 "encoder_channels": encoder_channels,
                 "image_token_grid": image_token_grid,
+                "fingerprint_bits": fingerprint_bits,
                 "pad_idx": stoi[PAD],
                 "max_length": max_length,
                 "transformer_layers": transformer_layers,
@@ -200,6 +216,9 @@ def run_image_conditioned_smiles_decoder(
         decoding=decoding,
         beam_size=beam_size,
         length_penalty=length_penalty,
+        rerank_mode=rerank_mode,
+        fingerprint_fn=fingerprint_fn,
+        np=np,
         image_size=image_size,
     )
 
@@ -237,6 +256,8 @@ def run_image_conditioned_smiles_decoder(
         embedding_dim=embedding_dim,
         encoder_channels=encoder_channels,
         image_token_grid=image_token_grid,
+        fingerprint_bits=fingerprint_bits,
+        fingerprint_loss_weight=fingerprint_loss_weight,
         transformer_layers=transformer_layers,
         attention_heads=attention_heads,
         dropout=dropout,
@@ -250,6 +271,7 @@ def run_image_conditioned_smiles_decoder(
         decoding=decoding,
         beam_size=beam_size,
         length_penalty=length_penalty,
+        rerank_mode=rerank_mode,
         image_size=image_size,
         device=str(resolved_device),
     )
@@ -257,7 +279,7 @@ def run_image_conditioned_smiles_decoder(
     (output_dir / "run_config.json").write_text(
         json.dumps(
             {
-                "phase": "phase5c_image_conditioned_smiles_decoder",
+                "phase": _phase_name(fingerprint_bits=fingerprint_bits, rerank_mode=rerank_mode),
                 "research_question": "Can a molecular sketch image condition a direct SMILES decoder well enough to bypass image-to-OCR post-processing?",
                 "pair_dir": str(pair_dir),
                 "pairs_csv": str(pairs_path),
@@ -270,6 +292,8 @@ def run_image_conditioned_smiles_decoder(
                 "embedding_dim": embedding_dim,
                 "encoder_channels": encoder_channels,
                 "image_token_grid": image_token_grid,
+                "fingerprint_bits": fingerprint_bits,
+                "fingerprint_loss_weight": fingerprint_loss_weight,
                 "transformer_layers": transformer_layers,
                 "attention_heads": attention_heads,
                 "dropout": dropout,
@@ -283,6 +307,7 @@ def run_image_conditioned_smiles_decoder(
                 "decoding": decoding,
                 "beam_size": beam_size,
                 "length_penalty": length_penalty,
+                "rerank_mode": rerank_mode,
                 "image_size": image_size,
                 "device": str(resolved_device),
             },
@@ -308,6 +333,7 @@ class ImageConditionedSmilesTransformer:
                 hidden_dim: int,
                 encoder_channels: int,
                 image_token_grid: int,
+                fingerprint_bits: int,
                 pad_idx: int,
                 max_length: int,
                 transformer_layers: int,
@@ -319,6 +345,7 @@ class ImageConditionedSmilesTransformer:
                     raise ValueError(f"hidden_dim={hidden_dim} must be divisible by attention_heads={attention_heads}.")
                 self.pad_idx = pad_idx
                 self.max_length = max_length
+                self.fingerprint_bits = int(fingerprint_bits)
                 c1 = int(encoder_channels)
                 c2 = max(c1 * 2, hidden_dim // 2)
                 self.image_encoder = nn.Sequential(
@@ -344,11 +371,27 @@ class ImageConditionedSmilesTransformer:
                 )
                 self.decoder = nn.TransformerDecoder(decoder_layer, num_layers=transformer_layers)
                 self.out = nn.Linear(hidden_dim, vocab_size)
+                self.fingerprint_head = (
+                    nn.Sequential(
+                        nn.Linear(hidden_dim, hidden_dim),
+                        nn.GELU(),
+                        nn.LayerNorm(hidden_dim),
+                        nn.Linear(hidden_dim, self.fingerprint_bits),
+                    )
+                    if self.fingerprint_bits > 0
+                    else None
+                )
 
             def _memory(self, images: Any) -> Any:
                 encoded = self.image_encoder(images)
                 tokens = encoded.flatten(2).transpose(1, 2)
                 return self.image_norm(tokens)
+
+            def predict_fingerprint_logits(self, images: Any) -> Any:
+                if self.fingerprint_head is None:
+                    raise RuntimeError("This model was created without a fingerprint head.")
+                pooled = self._memory(images).mean(dim=1)
+                return self.fingerprint_head(pooled)
 
             def forward(self, images: Any, input_ids: Any) -> Any:
                 batch, length = input_ids.shape
@@ -385,9 +428,11 @@ def _train_image_smiles_model(
     batch_size: int,
     epochs: int,
     pad_idx: int,
+    fingerprint_loss_weight: float,
     seed: int,
 ) -> list[dict[str, float]]:
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=pad_idx)
+    fingerprint_loss_fn = torch.nn.BCEWithLogitsLoss()
     history: list[dict[str, float]] = []
     rng = random.Random(seed)
     for epoch in range(1, int(epochs) + 1):
@@ -395,7 +440,10 @@ def _train_image_smiles_model(
         rng.shuffle(order)
         model.train()
         total_loss = 0.0
+        total_token_loss = 0.0
+        total_fingerprint_loss = 0.0
         total_tokens = 0
+        total_batches = 0
         for start in range(0, len(order), int(batch_size)):
             batch = [examples[idx] for idx in order[start : start + int(batch_size)]]
             images = torch.as_tensor(np.stack([row["image"] for row in batch]), dtype=torch.float32, device=device)
@@ -403,16 +451,38 @@ def _train_image_smiles_model(
             target_ids = torch.tensor([row["target_ids"] for row in batch], dtype=torch.long, device=device)
             optimizer.zero_grad(set_to_none=True)
             logits = model(images, input_ids)
-            loss = loss_fn(logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1))
+            token_loss = loss_fn(logits.reshape(-1, logits.shape[-1]), target_ids.reshape(-1))
+            loss = token_loss
+            fingerprint_loss_value = 0.0
+            if fingerprint_loss_weight > 0 and batch and "fingerprint" in batch[0]:
+                target_fingerprints = torch.as_tensor(np.stack([row["fingerprint"] for row in batch]), dtype=torch.float32, device=device)
+                fingerprint_logits = model.predict_fingerprint_logits(images)
+                fingerprint_loss = fingerprint_loss_fn(fingerprint_logits, target_fingerprints)
+                fingerprint_loss_value = float(fingerprint_loss.item())
+                loss = token_loss + float(fingerprint_loss_weight) * fingerprint_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             token_count = int((target_ids != pad_idx).sum().item())
             total_loss += float(loss.item()) * max(1, token_count)
+            total_token_loss += float(token_loss.item()) * max(1, token_count)
+            total_fingerprint_loss += fingerprint_loss_value
             total_tokens += token_count
+            total_batches += 1
         mean_loss = total_loss / max(1, total_tokens)
-        history.append({"epoch": float(epoch), "train_token_loss": float(mean_loss), "train_token_ppl": float(math.exp(min(20.0, mean_loss)))})
-        print(f"  epoch={epoch} train_token_loss={mean_loss:.4f} train_token_ppl={math.exp(min(20.0, mean_loss)):.3f}", flush=True)
+        mean_token_loss = total_token_loss / max(1, total_tokens)
+        mean_fingerprint_loss = total_fingerprint_loss / max(1, total_batches)
+        history.append(
+            {
+                "epoch": float(epoch),
+                "train_loss": float(mean_loss),
+                "train_token_loss": float(mean_token_loss),
+                "train_token_ppl": float(math.exp(min(20.0, mean_token_loss))),
+                "train_fingerprint_loss": float(mean_fingerprint_loss),
+            }
+        )
+        fp_suffix = f" train_fingerprint_loss={mean_fingerprint_loss:.4f}" if fingerprint_loss_weight > 0 else ""
+        print(f"  epoch={epoch} train_token_loss={mean_token_loss:.4f} train_token_ppl={math.exp(min(20.0, mean_token_loss)):.3f}{fp_suffix}", flush=True)
     return history
 
 
@@ -434,6 +504,9 @@ def _evaluate_image_smiles_model(
     decoding: str,
     beam_size: int,
     length_penalty: float,
+    rerank_mode: str,
+    fingerprint_fn: Any,
+    np: Any,
     image_size: int,
 ) -> list[dict[str, Any]]:
     model.eval()
@@ -465,7 +538,15 @@ def _evaluate_image_smiles_model(
                     temperature=temperature,
                     sample_top_k=sample_top_k,
                 )
-            candidate_smiles = _canonical_candidate_list(raw_samples, rdkit)
+            beam_candidate_smiles = _canonical_candidate_list(raw_samples, rdkit)
+            predicted_fingerprint = _predict_condition_fingerprint(model, example["image"], torch=torch, np=np, device=device) if rerank_mode == "predicted_fingerprint" else None
+            candidate_smiles, condition_scores = _rerank_image_candidate_smiles(
+                beam_candidate_smiles,
+                predicted_fingerprint=predicted_fingerprint,
+                fingerprint_fn=fingerprint_fn,
+                np=np,
+                rerank_mode=rerank_mode,
+            )
             target_smiles = example["smiles"]
             top1_smiles = candidate_smiles[0] if candidate_smiles else ""
             target_mol = rdkit["Chem"].MolFromSmiles(target_smiles)
@@ -483,14 +564,20 @@ def _evaluate_image_smiles_model(
                     "pair_id": example["pair_id"],
                     "target_smiles": target_smiles,
                     "generated_smiles": top1_smiles,
+                    "rerank_mode": rerank_mode,
                     "raw_samples": "|".join(raw_samples),
+                    "beam_canonical_candidates": "|".join(beam_candidate_smiles),
                     "canonical_candidates": "|".join(candidate_smiles),
+                    "candidate_condition_tanimotos": "|".join(f"{condition_scores.get(smiles, 0.0):.6f}" for smiles in candidate_smiles),
                     "candidate_count": float(len(candidate_smiles)),
                     "top1_valid": bool(top1_smiles),
                     "top1_exact_match": bool(top1_smiles == target_smiles),
                     "topk_exact_match": bool(target_smiles in candidate_smiles),
                     "top1_target_tanimoto": float(top1_tanimoto),
                     "mean_best_tanimoto": float(best_tanimoto),
+                    "top1_condition_tanimoto": float(condition_scores.get(top1_smiles, 0.0)) if top1_smiles else 0.0,
+                    "mean_best_condition_tanimoto": float(max(condition_scores.values(), default=0.0)),
+                    "predicted_target_fingerprint_tanimoto": float(_fingerprint_tanimoto(predicted_fingerprint, example.get("fingerprint"), np=np)) if predicted_fingerprint is not None and "fingerprint" in example else 0.0,
                     "top1_scaffold_match": bool(scaffold_match),
                     "source_image_path": example["image_path"],
                     "target_image_path": str(target_image_path),
@@ -513,6 +600,7 @@ def _prepare_image_examples(
     pillow: dict[str, Any],
     image_size: int,
     tokenization: str,
+    fingerprint_fn: Any = None,
     allow_unknown: bool = False,
 ) -> list[dict[str, Any]]:
     examples: list[dict[str, Any]] = []
@@ -529,18 +617,46 @@ def _prepare_image_examples(
         image = _load_ink_tensor(image_path, pillow=pillow, image_size=image_size, np=np)
         if image is None:
             continue
+        fingerprint = fingerprint_fn(smiles) if fingerprint_fn is not None else None
+        if fingerprint_fn is not None and fingerprint is None:
+            continue
         input_ids, target_ids = _encode_tokens(tokens, stoi=stoi, max_length=max_length)
-        examples.append(
-            {
-                "pair_id": row.get("pair_id", ""),
-                "smiles": smiles,
-                "image_path": str(image_path) if image_path else "",
-                "image": image,
-                "input_ids": input_ids,
-                "target_ids": target_ids,
-            }
-        )
+        example = {
+            "pair_id": row.get("pair_id", ""),
+            "smiles": smiles,
+            "image_path": str(image_path) if image_path else "",
+            "image": image,
+            "input_ids": input_ids,
+            "target_ids": target_ids,
+        }
+        if fingerprint is not None:
+            example["fingerprint"] = np.asarray(fingerprint, dtype=np.float32)
+        examples.append(example)
     return examples
+
+
+def _predict_condition_fingerprint(model: Any, image: Any, torch: Any, np: Any, device: Any) -> Any:
+    image_tensor = torch.as_tensor(np.asarray(image), dtype=torch.float32, device=device).unsqueeze(0)
+    logits = model.predict_fingerprint_logits(image_tensor)
+    return torch.sigmoid(logits)[0].detach().cpu().numpy().astype(np.float32)
+
+
+def _rerank_image_candidate_smiles(
+    candidate_smiles: list[str],
+    predicted_fingerprint: Any,
+    fingerprint_fn: Any,
+    np: Any,
+    rerank_mode: str,
+) -> tuple[list[str], dict[str, float]]:
+    if not candidate_smiles:
+        return [], {}
+    if rerank_mode == "beam":
+        return candidate_smiles, {smiles: 0.0 for smiles in candidate_smiles}
+    scores: dict[str, float] = {}
+    for smiles in candidate_smiles:
+        scores[smiles] = _fingerprint_tanimoto(predicted_fingerprint, fingerprint_fn(smiles) if fingerprint_fn is not None else None, np=np)
+    ranked = sorted(enumerate(candidate_smiles), key=lambda item: (scores[item[1]], -item[0]), reverse=True)
+    return [smiles for _idx, smiles in ranked], scores
 
 
 def _summarize_image_smiles_decoder(
@@ -564,6 +680,8 @@ def _summarize_image_smiles_decoder(
     embedding_dim: int,
     encoder_channels: int,
     image_token_grid: int,
+    fingerprint_bits: int,
+    fingerprint_loss_weight: float,
     transformer_layers: int,
     attention_heads: int,
     dropout: float,
@@ -577,6 +695,7 @@ def _summarize_image_smiles_decoder(
     decoding: str,
     beam_size: int,
     length_penalty: float,
+    rerank_mode: str,
     image_size: int,
     device: str,
 ) -> dict[str, Any]:
@@ -584,7 +703,7 @@ def _summarize_image_smiles_decoder(
     compared = [row for row in prediction_rows if row["image_compared"]]
     image_mse_values = [float(row["image_mse"]) for row in compared if row["image_mse"] != ""]
     return {
-        "phase": "phase5c_image_conditioned_smiles_decoder",
+        "phase": _phase_name(fingerprint_bits=fingerprint_bits, rerank_mode=rerank_mode),
         "pair_dir": str(pair_dir),
         "output_dir": str(output_dir),
         "train_fraction": float(train_fraction),
@@ -594,6 +713,8 @@ def _summarize_image_smiles_decoder(
         "embedding_dim": float(embedding_dim),
         "encoder_channels": float(encoder_channels),
         "image_token_grid": float(image_token_grid),
+        "fingerprint_bits": float(fingerprint_bits),
+        "fingerprint_loss_weight": float(fingerprint_loss_weight),
         "transformer_layers": float(transformer_layers),
         "attention_heads": float(attention_heads),
         "dropout": float(dropout),
@@ -607,6 +728,7 @@ def _summarize_image_smiles_decoder(
         "decoding": decoding,
         "beam_size": float(beam_size),
         "length_penalty": float(length_penalty),
+        "rerank_mode": rerank_mode,
         "image_size": float(image_size),
         "device": device,
         "pairs": float(len(train_rows) + len(eval_rows)),
@@ -626,6 +748,9 @@ def _summarize_image_smiles_decoder(
         "top1_scaffold_match_fraction": _fraction(_count(prediction_rows, "top1_scaffold_match"), total),
         "top1_target_tanimoto": _mean_float(prediction_rows, "top1_target_tanimoto"),
         "mean_best_tanimoto": _mean_float(prediction_rows, "mean_best_tanimoto"),
+        "top1_condition_tanimoto": _mean_float(prediction_rows, "top1_condition_tanimoto"),
+        "mean_best_condition_tanimoto": _mean_float(prediction_rows, "mean_best_condition_tanimoto"),
+        "mean_predicted_target_fingerprint_tanimoto": _mean_float(prediction_rows, "predicted_target_fingerprint_tanimoto"),
         "mean_candidate_count": _mean_float(prediction_rows, "candidate_count"),
         "generated_images": float(_count(prediction_rows, "generated_image_exists")),
         "generated_image_fraction": _fraction(_count(prediction_rows, "generated_image_exists"), total),
@@ -665,6 +790,32 @@ def _resolve_device(device: str, torch: Any) -> Any:
     return torch.device(device)
 
 
+def _normalize_image_rerank_mode(rerank_mode: str) -> str:
+    value = rerank_mode.strip().lower().replace("-", "_")
+    aliases = {
+        "none": "beam",
+        "sequence": "beam",
+        "fingerprint": "predicted_fingerprint",
+        "condition": "predicted_fingerprint",
+        "condition_fingerprint": "predicted_fingerprint",
+        "predicted": "predicted_fingerprint",
+        "predicted_fp": "predicted_fingerprint",
+        "predicted_condition": "predicted_fingerprint",
+    }
+    value = aliases.get(value, value)
+    if value not in {"beam", "predicted_fingerprint"}:
+        raise ValueError(f"Unsupported rerank_mode {rerank_mode!r}; expected beam or predicted_fingerprint.")
+    return value
+
+
+def _phase_name(fingerprint_bits: int, rerank_mode: str) -> str:
+    if int(fingerprint_bits) > 0 and rerank_mode == "predicted_fingerprint":
+        return "phase5d_image_fingerprint_reranked_smiles_decoder"
+    if int(fingerprint_bits) > 0:
+        return "phase5d_image_fingerprint_aux_smiles_decoder"
+    return "phase5c_image_conditioned_smiles_decoder"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run Phase 5C image-conditioned SMILES decoder.")
     parser.add_argument("--pair-dir", required=True)
@@ -677,6 +828,9 @@ def main() -> None:
     parser.add_argument("--embedding-dim", type=int, default=96)
     parser.add_argument("--encoder-channels", type=int, default=64)
     parser.add_argument("--image-token-grid", type=int, default=4)
+    parser.add_argument("--fingerprint-bits", type=int, default=0)
+    parser.add_argument("--fingerprint-loss-weight", type=float, default=0.0)
+    parser.add_argument("--rerank-mode", default="beam", choices=["beam", "none", "fingerprint", "condition", "condition_fingerprint", "predicted", "predicted_fp", "predicted_fingerprint"])
     parser.add_argument("--transformer-layers", type=int, default=4)
     parser.add_argument("--attention-heads", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
@@ -708,6 +862,9 @@ def main() -> None:
         embedding_dim=args.embedding_dim,
         encoder_channels=args.encoder_channels,
         image_token_grid=args.image_token_grid,
+        fingerprint_bits=args.fingerprint_bits,
+        fingerprint_loss_weight=args.fingerprint_loss_weight,
+        rerank_mode=args.rerank_mode,
         transformer_layers=args.transformer_layers,
         attention_heads=args.attention_heads,
         dropout=args.dropout,

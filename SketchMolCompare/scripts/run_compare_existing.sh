@@ -16,6 +16,10 @@ DEFAULT_SKETCHSMILES_RUNS=(
   SketchSMILES/outputs/runs/phase5a2_tokenized_beam_decoder_seed7
   SketchSMILES/outputs/runs/phase5a4_reranked_transformer_decoder_seed7
   SketchSMILES/outputs/runs/phase5c_image_smiles_decoder_seed7
+  SketchSMILES/outputs/runs/phase5d_image_fingerprint_decoder_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5a4_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5c_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5d_seed7
 )
 DEFAULT_SKETCHMOL_SUMMARIES=(
   PhysTabMol/runs/20260512_235957_sketchmol_comparable_structure_v1/tables/sketchmol_benchmark/sketchmol_benchmark_summary.csv

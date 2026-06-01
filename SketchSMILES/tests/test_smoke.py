@@ -369,6 +369,52 @@ class SketchSMILESTests(unittest.TestCase):
             self.assertTrue(Path(run_dir, "predictions.csv").exists())
             self.assertTrue(Path(run_dir, "sample_contact_sheet.png").exists())
 
+    @unittest.skipUnless(_rdkit_available() and _torch_available(), "RDKit and PyTorch are not installed")
+    def test_image_fingerprint_reranked_decoder_writes_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_csv = Path(tmp, "molecules.csv")
+            with input_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["CCO", "CCN", "CCC", "COC", "CCCl", "CCBr"]:
+                    writer.writerow({"smiles": smiles})
+
+            pair_dir = Path(tmp, "pairs")
+            build_pair_manifest(input_csv=input_csv, output_dir=pair_dir, image_size=64)
+            run_dir = Path(tmp, "run")
+            metrics = run_image_conditioned_smiles_decoder(
+                pair_dir=pair_dir,
+                output_dir=run_dir,
+                train_fraction=0.67,
+                seed=9,
+                max_length=24,
+                hidden_dim=32,
+                embedding_dim=16,
+                encoder_channels=8,
+                image_token_grid=2,
+                fingerprint_bits=128,
+                fingerprint_loss_weight=0.1,
+                rerank_mode="predicted_fingerprint",
+                transformer_layers=1,
+                attention_heads=2,
+                dropout=0.0,
+                epochs=1,
+                batch_size=2,
+                samples_per_condition=2,
+                sample_top_k=4,
+                beam_size=2,
+                image_size=64,
+                sample_count=2,
+                device="cpu",
+            )
+            self.assertEqual(metrics["phase"], "phase5d_image_fingerprint_reranked_smiles_decoder")
+            self.assertEqual(metrics["fingerprint_bits"], 128.0)
+            self.assertEqual(metrics["rerank_mode"], "predicted_fingerprint")
+            self.assertIn("mean_predicted_target_fingerprint_tanimoto", metrics)
+            self.assertTrue(Path(run_dir, "metrics.json").exists())
+            self.assertTrue(Path(run_dir, "model.pt").exists())
+            self.assertTrue(Path(run_dir, "predictions.csv").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
