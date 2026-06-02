@@ -1,5 +1,5 @@
 {
-  "description": "Large-scale SketchMol comparison matrix. The scripts are wrappers around SketchSMILES and PhysTabMol so training logic stays in the owning folders.",
+  "description": "Large-scale SketchMol comparison matrix. The scripts are wrappers around SketchSMILES plus the real SketchMol+MolScribe benchmark so training and sampling logic stays in the owning folders.",
   "runs": [
     {
       "name": "sketchmol_compare_phase5a4_seed7",
@@ -166,18 +166,15 @@
       ]
     },
     {
-      "name": "sketchmol_compare_structure_seed7",
-      "family": "sketchmol_aligned",
-      "script": "SketchMolCompare/scripts/submit_sketchmol_structure_benchmark.sh",
-      "purpose": "PhysTabMol SketchMol-aligned structure/property benchmark for direct table comparison.",
+      "name": "real_sketchmol_plus_ocr_seed7",
+      "family": "real_sketchmol_plus_ocr",
+      "script": "SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh",
+      "purpose": "Original SketchMol diffusion image generation followed by MolScribe/OCR, used as the true SketchMol baseline.",
       "primary_metrics": [
+        "ocr_smiles_present_rate",
         "success_rate_in_valid_mols",
-        "success_rate_strict_in_valid_mols",
-        "success_rate_sketchmol_tolerance_in_valid_mols",
         "validity",
-        "uniqueness",
-        "novelty",
-        "druglike_rate"
+        "molscribe_score_mean"
       ]
     }
   ]

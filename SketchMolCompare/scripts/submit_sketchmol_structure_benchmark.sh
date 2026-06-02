@@ -1,31 +1,22 @@
 #!/usr/bin/env bash
-# Submit the PhysTabMol SketchMol-aligned benchmark from the comparison folder.
+# Deprecated: this used to submit a PhysTabMol proxy benchmark. The real
+# SketchMol baseline lives under Research/Molecule Generation/SketchMol and is
+# submitted via SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh.
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-PHYSTABMOL_DIR="$REPO_ROOT/PhysTabMol"
+cat <<'EOF' >&2
+ERROR: This script is deprecated because it submits the older PhysTabMol proxy.
 
-if [[ ! -d "$PHYSTABMOL_DIR" ]]; then
-  echo "ERROR: PhysTabMol folder not found at $PHYSTABMOL_DIR" >&2
-  exit 2
-fi
+For the real SketchMol benchmark, use:
 
-cd "$PHYSTABMOL_DIR"
+  SKETCHMOL_CKPT=/path/to/sketchmol/model.ckpt \
+  SKETCHMOL_MOLSCRIBE_MODEL=/path/to/swin_base_char_aux_200k.pth \
+  bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
 
-SEED="${SKETCHMOL_COMPARE_SEED:-7}"
-export PHYSTABMOL_RUN_NAME="${PHYSTABMOL_RUN_NAME:-sketchmol_compare_structure_seed${SEED}}"
-export PHYSTABMOL_WALLTIME="${PHYSTABMOL_WALLTIME:-20:00:00}"
-export PHYSTABMOL_BENCHMARK_SINGLE_CONDITIONS="${PHYSTABMOL_BENCHMARK_SINGLE_CONDITIONS:-125}"
-export PHYSTABMOL_BENCHMARK_SAMPLES="${PHYSTABMOL_BENCHMARK_SAMPLES:-8}"
-export PHYSTABMOL_BENCHMARK_MULTI_CONDITIONS="${PHYSTABMOL_BENCHMARK_MULTI_CONDITIONS:-1000}"
-export PHYSTABMOL_STRUCTURE_PROMPT_CONDITIONS="${PHYSTABMOL_STRUCTURE_PROMPT_CONDITIONS:-1000}"
-export PHYSTABMOL_STRUCTURE_PROMPT_SAMPLES="${PHYSTABMOL_STRUCTURE_PROMPT_SAMPLES:-8}"
+If you already have a SketchMol image_path.csv after MolScribe OCR, use:
 
-echo "SketchMolCompare -> PhysTabMol SketchMol-aligned benchmark"
-echo "  cwd=$PWD"
-echo "  run_name=$PHYSTABMOL_RUN_NAME"
-echo "  walltime=$PHYSTABMOL_WALLTIME"
-
-bash scripts/run_sketchmol_structure_benchmark.sh "$@"
+  SKETCHMOL_BENCHMARK_SOURCE_CSV=/path/to/image_path.csv \
+  bash SketchMolBenchmark/scripts/materialize_current.sh
+EOF
+exit 2

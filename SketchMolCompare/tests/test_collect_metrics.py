@@ -28,7 +28,7 @@ class CollectMetricsTests(unittest.TestCase):
                 encoding="utf-8",
             )
 
-            summary = root / "PhysTabMol" / "runs" / "abc" / "tables" / "sketchmol_benchmark" / "sketchmol_benchmark_summary.csv"
+            summary = root / "legacy_sketchmol_summary" / "benchmark_summary.csv"
             summary.parent.mkdir(parents=True)
             with summary.open("w", encoding="utf-8", newline="") as handle:
                 writer = csv.DictWriter(
@@ -76,6 +76,52 @@ class CollectMetricsTests(unittest.TestCase):
             self.assertTrue((output_dir / "comparison_rows.csv").exists())
             self.assertTrue((output_dir / "comparison_rows.json").exists())
             self.assertTrue((output_dir / "comparison_report.md").exists())
+
+    def test_sketchmol_benchmark_manifest_names_materialized_run(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            summary = root / "SketchMolBenchmark" / "outputs" / "current" / "benchmark_summary.csv"
+            summary.parent.mkdir(parents=True)
+            (summary.parent / "source_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "benchmark_kind": "real_sketchmol_plus_ocr",
+                        "benchmark_name": "sketchmol_baseline_seed7",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with summary.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=[
+                        "benchmark_task",
+                        "benchmark_label",
+                        "ocr_smiles_present_rate",
+                        "validity",
+                        "molscribe_score_mean",
+                        "n",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "benchmark_task": "single_property",
+                        "benchmark_label": "LogP",
+                        "ocr_smiles_present_rate": "0.9",
+                        "validity": "0.8",
+                        "molscribe_score_mean": "0.95",
+                        "n": "10",
+                    }
+                )
+
+            rows = collect_rows([], [summary])
+            overall = [row for row in rows if row["benchmark_task"] == "overall"][0]
+            self.assertEqual(overall["run_name"], "sketchmol_baseline_seed7")
+            self.assertEqual(overall["family"], "real_sketchmol_plus_ocr")
+            self.assertAlmostEqual(overall["ocr_smiles_present_rate"], 0.9)
+            self.assertAlmostEqual(overall["validity"], 0.8)
+            self.assertAlmostEqual(overall["molscribe_score_mean"], 0.95)
 
 
 if __name__ == "__main__":

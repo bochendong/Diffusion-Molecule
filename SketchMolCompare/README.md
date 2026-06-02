@@ -1,6 +1,6 @@
 # SketchMolCompare
 
-This folder is the comparison-facing workspace for large-scale experiments against SketchMol-style baselines. It is intentionally separate from `SketchImageJEPA`, `SketchSMILES`, and `PhysTabMol` so the publication comparison layer does not get mixed with exploratory model development.
+This folder is the comparison-facing workspace for large-scale experiments against the real SketchMol baseline under `Research/Molecule Generation/SketchMol`. It is intentionally separate from `SketchImageJEPA`, `SketchSMILES`, and the original SketchMol repo so the publication comparison layer does not get mixed with exploratory model development.
 
 ## Goal
 
@@ -18,8 +18,8 @@ That makes the comparison with SketchMol concrete:
 1. `sketchsmiles_ocr_free`
    Summarizes SketchSMILES runs such as Phase 5A-4 and Phase 5C. Key metrics are exact SMILES match, top-k exact match, target Tanimoto, scaffold match, validity, and image-render consistency.
 
-2. `sketchmol_aligned`
-   Summarizes PhysTabMol SketchMol-aligned benchmark CSVs. Key metrics are SketchMol success rates, validity, uniqueness, novelty, drug-likeness, and diversity.
+2. `real_sketchmol_plus_ocr`
+   Summarizes materialized outputs from the original SketchMol diffusion image generator followed by its MolScribe/OCR recognition step. Key metrics are OCR SMILES presence, RDKit validity, property success, and MolScribe score.
 
 ## Quick Commands
 
@@ -82,12 +82,25 @@ SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
 bash SketchMolCompare/scripts/submit_sketchsmiles_5d_image_fingerprint.sh
 ```
 
-Submit the PhysTabMol SketchMol-aligned structure benchmark:
+Submit the real SketchMol + OCR benchmark:
 
 ```bash
 cd /scratch/bdong/projects/Diffusion-Molecule
 
-bash SketchMolCompare/scripts/submit_sketchmol_structure_benchmark.sh
+SKETCHMOL_CKPT=/path/to/sketchmol/model.ckpt \
+SKETCHMOL_MOLSCRIBE_MODEL=/path/to/swin_base_char_aux_200k.pth \
+SKETCHMOL_PRESET_STR="MW:400" \
+bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
+```
+
+Materialize an already-finished real SketchMol + OCR CSV into the standalone benchmark folder:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_BENCHMARK_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHMOL_BENCHMARK_SOURCE_CSV=/path/to/sketchmol/image_path.csv \
+bash SketchMolBenchmark/scripts/materialize_current.sh
 ```
 
 ## Outputs
@@ -99,3 +112,5 @@ bash SketchMolCompare/scripts/submit_sketchmol_structure_benchmark.sh
 - `SketchMolCompare/outputs/comparisons/current/comparison_report.md`
 
 Use those files as the first table-building surface for paper comparisons.
+
+By default, `run_compare_existing.sh` reads `SketchMolBenchmark/outputs/current/benchmark_summary.csv` when it exists. It does not use the older PhysTabMol proxy path as a SketchMol baseline.

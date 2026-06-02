@@ -1,4 +1,4 @@
-"""Collect SketchSMILES and SketchMol-aligned metrics into one report.
+"""Collect SketchSMILES and real SketchMol+OCR metrics into one report.
 
 The module is intentionally stdlib-only so it can run on a login node without
 extra Python packages.
@@ -38,6 +38,9 @@ SKETCHSMILES_FIELDS = [
 ]
 
 SKETCHMOL_WEIGHTED_FIELDS = [
+    "image_path_exists_fraction",
+    "ocr_smiles_present_rate",
+    "molscribe_score_mean",
     "success_rate_in_valid_mols",
     "success_rate_strict_in_valid_mols",
     "success_rate_sketchmol_tolerance_in_valid_mols",
@@ -73,6 +76,9 @@ PREFERRED_COLUMNS = [
     "top1_valid_fraction",
     "paired_output_success_fraction",
     "image_exact_match_fraction",
+    "image_path_exists_fraction",
+    "ocr_smiles_present_rate",
+    "molscribe_score_mean",
     "mean_predicted_target_fingerprint_tanimoto",
     "top1_condition_tanimoto",
     "mean_best_condition_tanimoto",
@@ -131,12 +137,36 @@ def _derive_run_name(path: Path) -> str:
 
 
 def _derive_sketchmol_run_name(path: Path) -> str:
+    manifest_path = path.parent / "source_manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = _read_json(manifest_path)
+            benchmark_name = manifest.get("benchmark_name")
+            if benchmark_name:
+                return str(benchmark_name)
+        except (OSError, json.JSONDecodeError):
+            pass
     parts = path.parts
     if "runs" in parts:
         index = parts.index("runs")
         if index + 1 < len(parts):
             return parts[index + 1]
     return path.parent.name
+
+
+def _derive_sketchmol_family(path: Path) -> str:
+    manifest_path = path.parent / "source_manifest.json"
+    if manifest_path.exists():
+        try:
+            manifest = _read_json(manifest_path)
+            benchmark_kind = str(manifest.get("benchmark_kind", "")).strip()
+            if benchmark_kind == "real_sketchmol_plus_ocr":
+                return "real_sketchmol_plus_ocr"
+            if benchmark_kind:
+                return benchmark_kind
+        except (OSError, json.JSONDecodeError):
+            pass
+    return "sketchmol_aligned"
 
 
 def _weighted_mean(rows: Sequence[Mapping[str, str]], field: str) -> float:
@@ -201,7 +231,7 @@ def _aggregate_sketchmol_rows(
     benchmark_label: str = "",
 ) -> Dict[str, object]:
     out: Dict[str, object] = {
-        "family": "sketchmol_aligned",
+        "family": _derive_sketchmol_family(path),
         "run_name": _derive_sketchmol_run_name(path),
         "phase": "sketchmol_benchmark",
         "benchmark_task": benchmark_task,
@@ -305,13 +335,13 @@ def render_report(rows: Sequence[Mapping[str, object]]) -> str:
         "",
         "This report is generated from finished run artifacts. It does not rerun training or evaluation.",
         "",
-        "| family | run | task | label | n/eval | top1 exact | topk exact | top1 tanimoto | mean best tanimoto | sketchmol success | sketchmol tolerance | validity |",
-        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| family | run | task | label | n/eval | top1 exact | topk exact | top1 tanimoto | mean best tanimoto | sketchmol success | OCR present | validity | MolScribe score |",
+        "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in rows:
         n_or_eval = row.get("eval_pairs", row.get("n", ""))
         lines.append(
-            "| {family} | {run} | {task} | {label} | {n_eval} | {top1_exact} | {topk_exact} | {top1_tani} | {best_tani} | {success} | {tolerance} | {validity} |".format(
+            "| {family} | {run} | {task} | {label} | {n_eval} | {top1_exact} | {topk_exact} | {top1_tani} | {best_tani} | {success} | {ocr} | {validity} | {molscribe} |".format(
                 family=_fmt(row.get("family", "")),
                 run=_fmt(row.get("run_name", "")),
                 task=_fmt(row.get("benchmark_task", "")),
@@ -322,8 +352,9 @@ def render_report(rows: Sequence[Mapping[str, object]]) -> str:
                 top1_tani=_fmt(row.get("top1_target_tanimoto", "")),
                 best_tani=_fmt(row.get("mean_best_tanimoto", "")),
                 success=_fmt(row.get("success_rate_in_valid_mols", "")),
-                tolerance=_fmt(row.get("success_rate_sketchmol_tolerance_in_valid_mols", "")),
+                ocr=_fmt(row.get("ocr_smiles_present_rate", "")),
                 validity=_fmt(row.get("top1_valid_fraction", row.get("validity", ""))),
+                molscribe=_fmt(row.get("molscribe_score_mean", "")),
             )
         )
     lines.append("")

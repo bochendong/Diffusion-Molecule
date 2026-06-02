@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Collect existing SketchSMILES and SketchMol-aligned artifacts into one table.
+# Collect existing SketchSMILES and real SketchMol+OCR artifacts into one table.
 
 set -euo pipefail
 
@@ -31,9 +31,10 @@ DEFAULT_SKETCHSMILES_RUNS=(
   SketchSMILES/outputs/runs/sketchmol_compare_phase5d_seed7
   SketchSMILES/outputs/runs/sketchmol_compare_phase5d_strong_seed7
 )
-DEFAULT_SKETCHMOL_SUMMARIES=(
-  PhysTabMol/runs/20260512_235957_sketchmol_comparable_structure_v1/tables/sketchmol_benchmark/sketchmol_benchmark_summary.csv
-)
+DEFAULT_SKETCHMOL_SUMMARIES=()
+if [[ -f SketchMolBenchmark/outputs/current/benchmark_summary.csv ]]; then
+  DEFAULT_SKETCHMOL_SUMMARIES+=(SketchMolBenchmark/outputs/current/benchmark_summary.csv)
+fi
 
 if [[ -n "${SKETCHMOL_COMPARE_SKETCHSMILES_RUNS:-}" ]]; then
   # shellcheck disable=SC2206
