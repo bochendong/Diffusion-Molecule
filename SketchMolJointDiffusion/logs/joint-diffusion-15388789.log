@@ -1,0 +1,124 @@
+SketchMolJointDiffusion Route B
+  python=/scratch/bdong/venvs/phystabmol/bin/python
+  modules=gcc rdkit/2025.09.4
+  pair_dir=SketchSMILES/outputs/pairs/phys_50k
+  run_root=SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7
+  epochs=20
+  batch_size=128
+  diffusion_steps=16
+  image_loss_weight=1.0
+  device=auto
+[1/2] Running tests
+.
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK
+..
+----------------------------------------------------------------------
+Ran 2 tests in 0.000s
+
+OK
+
+[2/2] Training joint image+SMILES diffusion and evaluating consistency
+/scratch/bdong/projects/Diffusion-Molecule/SketchMolTokenDiffusion/sketchmol_token_diffusion/masked_token_diffusion.py:366: UserWarning: enable_nested_tensor is True, but self.use_nested_tensor is False because encoder_layer.norm_first was True
+  self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=transformer_layers)
+  epoch=1 train_token_loss=1.9309 train_token_ppl=6.896 train_image_loss=0.07097
+  epoch=2 train_token_loss=1.2631 train_token_ppl=3.536 train_image_loss=0.06815
+  epoch=3 train_token_loss=1.1024 train_token_ppl=3.011 train_image_loss=0.06766
+  epoch=4 train_token_loss=1.0009 train_token_ppl=2.721 train_image_loss=0.06724
+  epoch=5 train_token_loss=0.9296 train_token_ppl=2.533 train_image_loss=0.06688
+  epoch=6 train_token_loss=0.8680 train_token_ppl=2.382 train_image_loss=0.06648
+  epoch=7 train_token_loss=0.8141 train_token_ppl=2.257 train_image_loss=0.06619
+  epoch=8 train_token_loss=0.7717 train_token_ppl=2.163 train_image_loss=0.06584
+  epoch=9 train_token_loss=0.7283 train_token_ppl=2.072 train_image_loss=0.06553
+  epoch=10 train_token_loss=0.6916 train_token_ppl=1.997 train_image_loss=0.06528
+  epoch=11 train_token_loss=0.6590 train_token_ppl=1.933 train_image_loss=0.06502
+  epoch=12 train_token_loss=0.6260 train_token_ppl=1.870 train_image_loss=0.06477
+  epoch=13 train_token_loss=0.5938 train_token_ppl=1.811 train_image_loss=0.06455
+  epoch=14 train_token_loss=0.5722 train_token_ppl=1.772 train_image_loss=0.06436
+  epoch=15 train_token_loss=0.5477 train_token_ppl=1.729 train_image_loss=0.06417
+  epoch=16 train_token_loss=0.5187 train_token_ppl=1.680 train_image_loss=0.06398
+  epoch=17 train_token_loss=0.5007 train_token_ppl=1.650 train_image_loss=0.06382
+  epoch=18 train_token_loss=0.4794 train_token_ppl=1.615 train_image_loss=0.06364
+  epoch=19 train_token_loss=0.4574 train_token_ppl=1.580 train_image_loss=0.06349
+  epoch=20 train_token_loss=0.4397 train_token_ppl=1.552 train_image_loss=0.06331
+{
+  "attention_heads": 8.0,
+  "batch_size": 128.0,
+  "condition_tokens": 8.0,
+  "device": "cuda",
+  "diffusion_steps": 16.0,
+  "dropout": 0.1,
+  "embedding_dim": 96.0,
+  "epochs": 20.0,
+  "eval_examples": 10000.0,
+  "eval_pairs": 10000.0,
+  "final_train_image_loss": 0.06331008784591961,
+  "final_train_loss": 0.5030047992873382,
+  "final_train_token_loss": 0.4396904087592853,
+  "final_train_token_ppl": 1.5522265883603716,
+  "fingerprint_bits": 2048.0,
+  "generated_image_fraction": 1.0,
+  "generated_images": 10000.0,
+  "hidden_dim": 384.0,
+  "image_compared": 10000.0,
+  "image_compared_fraction": 1.0,
+  "image_exact_match_fraction": 0.0,
+  "image_exact_matches": 0.0,
+  "image_foreground_weight": 8.0,
+  "image_loss_weight": 1.0,
+  "image_mse_max": 3507.3449096679688,
+  "image_mse_mean": 1925.4590794677733,
+  "image_size": 128.0,
+  "learning_rate": 0.001,
+  "max_length": 128.0,
+  "max_mask_prob": 0.95,
+  "mean_best_condition_tanimoto": 0.0003781911684587132,
+  "mean_best_tanimoto": 0.0003781911684587132,
+  "mean_candidate_count": 0.0016,
+  "min_mask_prob": 0.15,
+  "model": "SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7/model.pt",
+  "output_dir": "SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7",
+  "pair_dir": "SketchSMILES/outputs/pairs/phys_50k",
+  "paired_output_success": 16.0,
+  "paired_output_success_fraction": 0.0016,
+  "pairs": 50000.0,
+  "phase": "sketchmol_joint_diffusion_image_smiles",
+  "predictions": "SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7/predictions.csv",
+  "rendered_smiles_image_fraction": 0.0016,
+  "rendered_smiles_images": 16.0,
+  "rerank_mode": "condition_fingerprint",
+  "sample_contact_sheet": "SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7/sample_contact_sheet.png",
+  "sample_predictions": "SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7/sample_predictions.csv",
+  "sample_top_k": 16.0,
+  "samples_per_condition": 8.0,
+  "seed": 7.0,
+  "smiles_render_image_compared": 16.0,
+  "smiles_render_image_compared_fraction": 0.0016,
+  "smiles_render_image_exact_match_fraction": 0.0,
+  "smiles_render_image_exact_matches": 0.0,
+  "smiles_render_image_mse_max": 4650.712972005208,
+  "smiles_render_image_mse_mean": 3000.6526196797695,
+  "temperature": 0.9,
+  "tokenization": "smiles_token",
+  "top1_condition_tanimoto": 0.0003781911684587132,
+  "top1_exact_match_fraction": 0.0,
+  "top1_exact_matches": 0.0,
+  "top1_scaffold_match_fraction": 0.0,
+  "top1_scaffold_matches": 0.0,
+  "top1_target_tanimoto": 0.0003781911684587132,
+  "top1_valid": 16.0,
+  "top1_valid_fraction": 0.0016,
+  "topk_exact_match_fraction": 0.0,
+  "topk_exact_matches": 0.0,
+  "train_examples": 40000.0,
+  "train_fraction": 0.8,
+  "train_pairs": 40000.0,
+  "transformer_layers": 4.0,
+  "vocab": "SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7/vocab.json"
+}
+
+SketchMolJointDiffusion finished: SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7
+  metrics=SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7/metrics.json
+  predictions=SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7/predictions.csv
