@@ -109,7 +109,26 @@ check_python_imports \
   ldm.data.pubchemdata ldm.models.diffusion.ddpm
 check_python_imports \
   "$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" \
-  torch numpy pandas PIL cv2 albumentations
+  torch numpy pandas PIL cv2 albumentations onmt timm
+
+if ! PYTHONPATH="$SKETCHMOL_REPO/evaluate:$SKETCHMOL_REPO${PYTHONPATH:+:$PYTHONPATH}" \
+  "$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" - <<'PY'
+import sys
+
+try:
+    from timm.models.helpers import build_model_with_cfg, overlay_external_default_cfg  # noqa: F401
+    from timm.models.vision_transformer import checkpoint_filter_fn, _init_vit_weights  # noqa: F401
+    from molscribe import MolScribe  # noqa: F401
+except Exception as exc:
+    print("ERROR: MolScribe/timm compatibility check failed:", file=sys.stderr)
+    print(f"  {exc}", file=sys.stderr)
+    print("Hint: install a MolScribe-compatible timm, for example:", file=sys.stderr)
+    print(f"  {sys.executable} -m pip install --force-reinstall --no-deps timm==0.4.12", file=sys.stderr)
+    sys.exit(2)
+PY
+then
+  exit 2
+fi
 
 if ! command -v sbatch >/dev/null 2>&1; then
   echo "ERROR: sbatch not found. Run this on a Slurm login node." >&2
