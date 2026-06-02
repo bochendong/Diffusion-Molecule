@@ -33,6 +33,8 @@ SKETCHSMILES_FIELDS = [
     "mean_best_condition_tanimoto",
     "generated_image_fraction",
     "mean_candidate_count",
+    "randomized_smiles_per_molecule",
+    "randomized_smiles_max_attempts",
 ]
 
 SKETCHMOL_WEIGHTED_FIELDS = [
@@ -74,6 +76,8 @@ PREFERRED_COLUMNS = [
     "mean_predicted_target_fingerprint_tanimoto",
     "top1_condition_tanimoto",
     "mean_best_condition_tanimoto",
+    "randomized_smiles_per_molecule",
+    "randomized_smiles_max_attempts",
     "success_rate_in_valid_mols",
     "success_rate_strict_in_valid_mols",
     "success_rate_sketchmol_tolerance_in_valid_mols",
@@ -183,6 +187,7 @@ def collect_sketchsmiles_run(run_dir: Path) -> Dict[str, object]:
         "model_type",
         "image_size",
         "samples_per_condition",
+        "randomized_smiles_per_molecule",
     ]:
         if field in metrics:
             row[field] = metrics[field]

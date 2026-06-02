@@ -284,6 +284,54 @@ class SketchSMILESTests(unittest.TestCase):
             self.assertTrue(Path(run_dir, "sample_contact_sheet.png").exists())
 
     @unittest.skipUnless(_rdkit_available() and _torch_available(), "RDKit and PyTorch are not installed")
+    def test_randomized_smiles_transformer_decoder_writes_artifacts(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_csv = Path(tmp, "molecules.csv")
+            with input_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["c1ccccc1O", "c1ccccc1N", "CC(=O)Oc1ccccc1C(=O)O", "CCOc1ccccc1"]:
+                    writer.writerow({"smiles": smiles})
+
+            pair_dir = Path(tmp, "pairs")
+            build_pair_manifest(input_csv=input_csv, output_dir=pair_dir, image_size=96)
+            run_dir = Path(tmp, "run")
+            metrics = run_learned_smiles_decoder(
+                pair_dir=pair_dir,
+                output_dir=run_dir,
+                train_fraction=0.75,
+                seed=11,
+                fingerprint_bits=128,
+                max_length=48,
+                hidden_dim=32,
+                embedding_dim=16,
+                epochs=1,
+                batch_size=2,
+                samples_per_condition=2,
+                tokenization="smiles_token",
+                decoding="beam",
+                beam_size=2,
+                rerank_mode="condition_fingerprint",
+                model_type="transformer",
+                transformer_layers=1,
+                attention_heads=2,
+                condition_tokens=2,
+                dropout=0.0,
+                randomized_smiles_per_molecule=2,
+                randomized_smiles_max_attempts=8,
+                image_size=96,
+                sample_count=2,
+                device="cpu",
+            )
+            self.assertEqual(metrics["phase"], "phase5a6_randomized_smiles_transformer_decoder")
+            self.assertEqual(metrics["randomized_smiles_per_molecule"], 2.0)
+            self.assertEqual(metrics["randomized_smiles_max_attempts"], 8.0)
+            self.assertGreater(metrics["train_examples"], metrics["train_pairs"])
+            self.assertTrue(Path(run_dir, "metrics.json").exists())
+            self.assertTrue(Path(run_dir, "run_config.json").exists())
+            self.assertTrue(Path(run_dir, "predictions.csv").exists())
+
+    @unittest.skipUnless(_rdkit_available() and _torch_available(), "RDKit and PyTorch are not installed")
     def test_joint_paired_decoder_writes_artifacts(self):
         with tempfile.TemporaryDirectory() as tmp:
             input_csv = Path(tmp, "molecules.csv")

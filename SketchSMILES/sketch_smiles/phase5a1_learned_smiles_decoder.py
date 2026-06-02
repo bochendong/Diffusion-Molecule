@@ -58,6 +58,8 @@ def run_learned_smiles_decoder(
     attention_heads: int = 8,
     condition_tokens: int = 8,
     dropout: float = 0.1,
+    randomized_smiles_per_molecule: int = 0,
+    randomized_smiles_max_attempts: int = 32,
     image_size: int = 256,
     sample_count: int = 64,
     contact_sheet_cols: int = 8,
@@ -95,12 +97,21 @@ def run_learned_smiles_decoder(
     decoding = _normalize_decoding(decoding)
     rerank_mode = _normalize_rerank_mode(rerank_mode)
     model_type = _normalize_model_type(model_type)
-    stoi, itos = _build_vocab(train_rows, tokenization=tokenization)
+    randomized_smiles_per_molecule = max(0, int(randomized_smiles_per_molecule))
+    randomized_smiles_max_attempts = max(randomized_smiles_per_molecule, int(randomized_smiles_max_attempts))
+    train_token_rows = _augment_training_smiles_rows(
+        train_rows,
+        rdkit=rdkit,
+        randomized_smiles_per_molecule=randomized_smiles_per_molecule,
+        randomized_smiles_max_attempts=randomized_smiles_max_attempts,
+        seed=seed,
+    )
+    stoi, itos = _build_vocab(train_token_rows, tokenization=tokenization)
     vocab_path = output_dir / "vocab.json"
     vocab_path.write_text(json.dumps({"stoi": stoi, "itos": itos}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     fingerprint_fn = _make_fingerprint_fn(rdkit, np=np, fingerprint_bits=fingerprint_bits)
-    train_examples = _prepare_examples(train_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization)
+    train_examples = _prepare_examples(train_token_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization)
     eval_examples = _prepare_examples(eval_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization, allow_unknown=True)
     if not train_examples:
         raise RuntimeError("No train examples available for Phase 5A-1.")
@@ -232,6 +243,8 @@ def run_learned_smiles_decoder(
         attention_heads=attention_heads,
         condition_tokens=condition_tokens,
         dropout=dropout,
+        randomized_smiles_per_molecule=randomized_smiles_per_molecule,
+        randomized_smiles_max_attempts=randomized_smiles_max_attempts,
         image_size=image_size,
         device=str(resolved_device),
     )
@@ -240,7 +253,13 @@ def run_learned_smiles_decoder(
     (output_dir / "run_config.json").write_text(
         json.dumps(
             {
-                "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type, rerank_mode=rerank_mode),
+                "phase": _phase_name(
+                    tokenization=tokenization,
+                    decoding=decoding,
+                    model_type=model_type,
+                    rerank_mode=rerank_mode,
+                    randomized_smiles_per_molecule=randomized_smiles_per_molecule,
+                ),
                 "research_question": "Can a learned decoder emit machine-readable SMILES directly from an oracle molecular condition while retaining paired sketch consistency through rendering?",
                 "pair_dir": str(pair_dir),
                 "pairs_csv": str(pairs_path),
@@ -268,6 +287,8 @@ def run_learned_smiles_decoder(
                 "attention_heads": attention_heads,
                 "condition_tokens": condition_tokens,
                 "dropout": dropout,
+                "randomized_smiles_per_molecule": randomized_smiles_per_molecule,
+                "randomized_smiles_max_attempts": randomized_smiles_max_attempts,
                 "image_size": image_size,
                 "device": str(resolved_device),
             },
@@ -306,6 +327,8 @@ def evaluate_saved_smiles_decoder(
     attention_heads: int = 8,
     condition_tokens: int = 8,
     dropout: float = 0.1,
+    randomized_smiles_per_molecule: int = 0,
+    randomized_smiles_max_attempts: int = 32,
     image_size: int = 256,
     sample_count: int = 64,
     contact_sheet_cols: int = 8,
@@ -352,6 +375,8 @@ def evaluate_saved_smiles_decoder(
     tokenization = _normalize_tokenization(tokenization)
     decoding = _normalize_decoding(decoding)
     rerank_mode = _normalize_rerank_mode(rerank_mode)
+    randomized_smiles_per_molecule = max(0, int(randomized_smiles_per_molecule))
+    randomized_smiles_max_attempts = max(randomized_smiles_per_molecule, int(randomized_smiles_max_attempts))
     vocab = json.loads(vocab_path.read_text(encoding="utf-8"))
     stoi = {str(token): int(index) for token, index in vocab["stoi"].items()}
     itos = [str(token) for token in vocab["itos"]]
@@ -370,7 +395,14 @@ def evaluate_saved_smiles_decoder(
         _write_rows(split_paths[1], eval_rows)
 
     fingerprint_fn = _make_fingerprint_fn(rdkit, np=np, fingerprint_bits=fingerprint_bits)
-    train_examples = _prepare_examples(train_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization)
+    train_token_rows = _augment_training_smiles_rows(
+        train_rows,
+        rdkit=rdkit,
+        randomized_smiles_per_molecule=randomized_smiles_per_molecule,
+        randomized_smiles_max_attempts=randomized_smiles_max_attempts,
+        seed=seed,
+    )
+    train_examples = _prepare_examples(train_token_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization, allow_unknown=True)
     eval_examples = _prepare_examples(eval_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization, allow_unknown=True)
     if not eval_examples:
         raise RuntimeError("No eval examples available for Phase 5A eval-only run.")
@@ -467,6 +499,8 @@ def evaluate_saved_smiles_decoder(
         attention_heads=attention_heads,
         condition_tokens=condition_tokens,
         dropout=dropout,
+        randomized_smiles_per_molecule=randomized_smiles_per_molecule,
+        randomized_smiles_max_attempts=randomized_smiles_max_attempts,
         image_size=image_size,
         device=str(resolved_device),
     )
@@ -475,7 +509,13 @@ def evaluate_saved_smiles_decoder(
     (output_dir / "run_config.json").write_text(
         json.dumps(
             {
-                "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type, rerank_mode=rerank_mode),
+                "phase": _phase_name(
+                    tokenization=tokenization,
+                    decoding=decoding,
+                    model_type=model_type,
+                    rerank_mode=rerank_mode,
+                    randomized_smiles_per_molecule=randomized_smiles_per_molecule,
+                ),
                 "research_question": "Can a trained paired SMILES decoder be resumed at evaluation time without retraining when reranking/rendering exceeds the scheduler limit?",
                 "eval_only": True,
                 "pair_dir": str(pair_dir),
@@ -506,6 +546,8 @@ def evaluate_saved_smiles_decoder(
                 "attention_heads": attention_heads,
                 "condition_tokens": condition_tokens,
                 "dropout": dropout,
+                "randomized_smiles_per_molecule": randomized_smiles_per_molecule,
+                "randomized_smiles_max_attempts": randomized_smiles_max_attempts,
                 "image_size": image_size,
                 "device": str(resolved_device),
             },
@@ -1004,6 +1046,8 @@ def _summarize_learned_decoder(
     attention_heads: int,
     condition_tokens: int,
     dropout: float,
+    randomized_smiles_per_molecule: int,
+    randomized_smiles_max_attempts: int,
     image_size: int,
     device: str,
 ) -> dict[str, Any]:
@@ -1011,7 +1055,13 @@ def _summarize_learned_decoder(
     compared = [row for row in prediction_rows if row["image_compared"]]
     image_mse_values = [float(row["image_mse"]) for row in compared if row["image_mse"] != ""]
     return {
-        "phase": _phase_name(tokenization=tokenization, decoding=decoding, model_type=model_type, rerank_mode=rerank_mode),
+        "phase": _phase_name(
+            tokenization=tokenization,
+            decoding=decoding,
+            model_type=model_type,
+            rerank_mode=rerank_mode,
+            randomized_smiles_per_molecule=randomized_smiles_per_molecule,
+        ),
         "pair_dir": str(pair_dir),
         "output_dir": str(output_dir),
         "train_fraction": float(train_fraction),
@@ -1036,6 +1086,8 @@ def _summarize_learned_decoder(
         "attention_heads": float(attention_heads),
         "condition_tokens": float(condition_tokens),
         "dropout": float(dropout),
+        "randomized_smiles_per_molecule": float(randomized_smiles_per_molecule),
+        "randomized_smiles_max_attempts": float(randomized_smiles_max_attempts),
         "image_size": float(image_size),
         "device": device,
         "pairs": float(len(train_rows) + len(eval_rows)),
@@ -1088,6 +1140,7 @@ def _prepare_examples(
     examples: list[dict[str, Any]] = []
     for row in rows:
         smiles = row.get("canonical_smiles") or row.get("input_smiles", "")
+        condition_smiles = row.get("condition_smiles") or smiles
         if not smiles:
             continue
         tokens = _tokenize_smiles(smiles, tokenization=tokenization)
@@ -1095,7 +1148,7 @@ def _prepare_examples(
             continue
         if not allow_unknown and any(token not in stoi for token in tokens):
             continue
-        feature = fingerprint_fn(smiles)
+        feature = fingerprint_fn(condition_smiles)
         if feature is None:
             continue
         input_ids, target_ids = _encode_tokens(tokens, stoi=stoi, max_length=max_length)
@@ -1103,6 +1156,7 @@ def _prepare_examples(
             {
                 "pair_id": row.get("pair_id", ""),
                 "smiles": smiles,
+                "condition_smiles": condition_smiles,
                 "image_path": row.get("image_path", ""),
                 "feature": np.asarray(feature, dtype=np.float32),
                 "input_ids": input_ids,
@@ -1110,6 +1164,74 @@ def _prepare_examples(
             }
         )
     return examples
+
+
+def _augment_training_smiles_rows(
+    rows: list[dict[str, str]],
+    rdkit: dict[str, Any],
+    randomized_smiles_per_molecule: int,
+    randomized_smiles_max_attempts: int,
+    seed: int,
+) -> list[dict[str, str]]:
+    if randomized_smiles_per_molecule <= 0:
+        return rows
+    augmented: list[dict[str, str]] = []
+    for row_index, row in enumerate(rows):
+        smiles = row.get("canonical_smiles") or row.get("input_smiles", "")
+        augmented.append(row)
+        if not smiles:
+            continue
+        for index, randomized in enumerate(
+            _randomized_smiles_variants(
+                smiles=smiles,
+                rdkit=rdkit,
+                count=randomized_smiles_per_molecule,
+                max_attempts=randomized_smiles_max_attempts,
+                seed=seed + row_index,
+            ),
+            start=1,
+        ):
+            variant_row = dict(row)
+            variant_row["canonical_smiles"] = randomized
+            variant_row["condition_smiles"] = smiles
+            variant_row["augmentation"] = "randomized_smiles"
+            variant_row["augmentation_index"] = str(index)
+            augmented.append(variant_row)
+    return augmented
+
+
+def _randomized_smiles_variants(smiles: str, rdkit: dict[str, Any], count: int, max_attempts: int, seed: int) -> list[str]:
+    canonical, _error = _canonicalize(smiles, rdkit)
+    if not canonical:
+        return []
+    mol = rdkit["Chem"].MolFromSmiles(canonical)
+    if mol is None:
+        return []
+    variants: list[str] = []
+    seen = {canonical}
+    atom_count = int(mol.GetNumAtoms())
+    rng = random.Random(int(seed))
+    attempts = 0
+    while len(variants) < int(count) and attempts < int(max_attempts):
+        attempts += 1
+        try:
+            if atom_count > 1:
+                atom_order = list(range(atom_count))
+                rng.shuffle(atom_order)
+                candidate_mol = rdkit["Chem"].RenumberAtoms(mol, atom_order)
+            else:
+                candidate_mol = mol
+            candidate = rdkit["Chem"].MolToSmiles(candidate_mol, canonical=False)
+        except Exception:
+            continue
+        if not candidate or candidate in seen:
+            continue
+        candidate_canonical, _candidate_error = _canonicalize(candidate, rdkit)
+        if candidate_canonical != canonical:
+            continue
+        seen.add(candidate)
+        variants.append(candidate)
+    return variants
 
 
 def _encode_tokens(tokens: list[str], stoi: dict[str, int], max_length: int) -> tuple[list[int], list[int]]:
@@ -1193,7 +1315,15 @@ def _normalize_model_type(model_type: str) -> str:
     return value
 
 
-def _phase_name(tokenization: str, decoding: str, model_type: str, rerank_mode: str = "beam") -> str:
+def _phase_name(
+    tokenization: str,
+    decoding: str,
+    model_type: str,
+    rerank_mode: str = "beam",
+    randomized_smiles_per_molecule: int = 0,
+) -> str:
+    if model_type == "transformer" and rerank_mode != "beam" and int(randomized_smiles_per_molecule) > 0:
+        return "phase5a6_randomized_smiles_transformer_decoder"
     if model_type == "transformer" and rerank_mode != "beam":
         return "phase5a4_condition_reranked_transformer_decoder"
     if model_type == "transformer":
@@ -1347,6 +1477,8 @@ def main() -> None:
     parser.add_argument("--attention-heads", type=int, default=8)
     parser.add_argument("--condition-tokens", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument("--randomized-smiles-per-molecule", type=int, default=0)
+    parser.add_argument("--randomized-smiles-max-attempts", type=int, default=32)
     parser.add_argument("--image-size", type=int, default=256)
     parser.add_argument("--sample-count", type=int, default=64)
     parser.add_argument("--contact-sheet-cols", type=int, default=8)
@@ -1382,6 +1514,8 @@ def main() -> None:
         attention_heads=args.attention_heads,
         condition_tokens=args.condition_tokens,
         dropout=args.dropout,
+        randomized_smiles_per_molecule=args.randomized_smiles_per_molecule,
+        randomized_smiles_max_attempts=args.randomized_smiles_max_attempts,
         image_size=args.image_size,
         sample_count=args.sample_count,
         contact_sheet_cols=args.contact_sheet_cols,

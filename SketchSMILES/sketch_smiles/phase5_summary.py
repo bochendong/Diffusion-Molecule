@@ -19,6 +19,8 @@ SUMMARY_FIELDS = [
     "decoding",
     "beam_size",
     "rerank_mode",
+    "randomized_smiles_per_molecule",
+    "randomized_smiles_max_attempts",
     "top1_exact_match_fraction",
     "topk_exact_match_fraction",
     "top1_target_tanimoto",

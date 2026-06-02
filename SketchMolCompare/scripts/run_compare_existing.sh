@@ -15,9 +15,11 @@ DEFAULT_SKETCHSMILES_RUNS=(
   SketchSMILES/outputs/runs/phase5a1_learned_smiles_decoder_seed7
   SketchSMILES/outputs/runs/phase5a2_tokenized_beam_decoder_seed7
   SketchSMILES/outputs/runs/phase5a4_reranked_transformer_decoder_seed7
+  SketchSMILES/outputs/runs/phase5a6_randomized_smiles_decoder_seed7
   SketchSMILES/outputs/runs/phase5c_image_smiles_decoder_seed7
   SketchSMILES/outputs/runs/phase5d_image_fingerprint_decoder_seed7
   SketchSMILES/outputs/runs/sketchmol_compare_phase5a4_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5a6_seed7
   SketchSMILES/outputs/runs/sketchmol_compare_phase5c_seed7
   SketchSMILES/outputs/runs/sketchmol_compare_phase5d_seed7
 )

@@ -12,6 +12,7 @@ DEFAULT_RUN_DIRS=(
   outputs/runs/phase5a1_learned_smiles_decoder_seed7
   outputs/runs/phase5a2_tokenized_beam_decoder_seed7
   outputs/runs/phase5a4_reranked_transformer_decoder_seed7
+  outputs/runs/phase5a6_randomized_smiles_decoder_seed7
 )
 
 if [[ -n "${SKETCHSMILES_RUN_DIRS:-}" ]]; then

@@ -16,6 +16,21 @@
       ]
     },
     {
+      "name": "sketchmol_compare_phase5a6_seed7",
+      "family": "sketchsmiles_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5a6_randomized.sh",
+      "purpose": "Randomized-SMILES augmented version of Phase 5A-4 that tests whether multi-view SMILES training improves candidate coverage without train-pool retrieval.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "top1_valid_fraction",
+        "paired_output_success_fraction",
+        "randomized_smiles_per_molecule"
+      ]
+    },
+    {
       "name": "sketchmol_compare_phase5c_seed7",
       "family": "sketchsmiles_image_conditioned",
       "script": "SketchMolCompare/scripts/submit_sketchsmiles_5c_image_decoder.sh",

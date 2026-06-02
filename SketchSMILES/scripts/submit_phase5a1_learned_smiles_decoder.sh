@@ -24,7 +24,9 @@ export SKETCHSMILES_BATCH_SIZE="${SKETCHSMILES_BATCH_SIZE:-128}"
 export SKETCHSMILES_DEVICE="${SKETCHSMILES_DEVICE:-auto}"
 RUN_SCRIPT="${SKETCHSMILES_RUN_SCRIPT:-scripts/run_phase5a1_learned_smiles_decoder.sh}"
 SUBMIT_LABEL="Phase 5A-1 learned SMILES decoder"
-if [[ "${SKETCHSMILES_MODEL_TYPE:-gru}" == "transformer" && "${SKETCHSMILES_RERANK_MODE:-beam}" != "beam" ]]; then
+if [[ "${SKETCHSMILES_MODEL_TYPE:-gru}" == "transformer" && "${SKETCHSMILES_RERANK_MODE:-beam}" != "beam" && "${SKETCHSMILES_RANDOMIZED_SMILES_PER_MOLECULE:-0}" != "0" ]]; then
+  SUBMIT_LABEL="Phase 5A-6 randomized SMILES Transformer decoder"
+elif [[ "${SKETCHSMILES_MODEL_TYPE:-gru}" == "transformer" && "${SKETCHSMILES_RERANK_MODE:-beam}" != "beam" ]]; then
   SUBMIT_LABEL="Phase 5A-4 reranked Transformer decoder"
 elif [[ "${SKETCHSMILES_MODEL_TYPE:-gru}" == "transformer" ]]; then
   SUBMIT_LABEL="Phase 5A-3 condition-attentive Transformer decoder"
@@ -52,6 +54,7 @@ echo "  pair_dir=$SKETCHSMILES_PAIR_DIR"
 echo "  python=$SKETCHSMILES_PYTHON_BIN"
 echo "  epochs=$SKETCHSMILES_EPOCHS"
 echo "  batch_size=$SKETCHSMILES_BATCH_SIZE"
+echo "  randomized_smiles_per_molecule=${SKETCHSMILES_RANDOMIZED_SMILES_PER_MOLECULE:-0}"
 echo "  eval_only=${SKETCHSMILES_EVAL_ONLY:-0}"
 echo "  run_script=$RUN_SCRIPT"
 echo "  gpu_profile=$GPU_PROFILE"

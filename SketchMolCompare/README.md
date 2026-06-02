@@ -42,6 +42,16 @@ SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
 bash SketchMolCompare/scripts/submit_sketchsmiles_5a4_transformer.sh
 ```
 
+Submit the randomized-SMILES augmented oracle-fingerprint model:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHSMILES_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHSMILES_PAIR_DIR=outputs/pairs/phys_50k \
+bash SketchMolCompare/scripts/submit_sketchsmiles_5a6_randomized.sh
+```
+
 Submit the image-conditioned OCR-free model:
 
 ```bash
