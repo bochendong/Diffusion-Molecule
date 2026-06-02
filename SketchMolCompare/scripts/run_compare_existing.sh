@@ -19,9 +19,17 @@ DEFAULT_SKETCHSMILES_RUNS=(
   SketchSMILES/outputs/runs/phase5c_image_smiles_decoder_seed7
   SketchSMILES/outputs/runs/phase5d_image_fingerprint_decoder_seed7
   SketchSMILES/outputs/runs/sketchmol_compare_phase5a4_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5a4_beam32_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5a4_sample64_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5a4_large_seed7
   SketchSMILES/outputs/runs/sketchmol_compare_phase5a6_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5a6_aug1_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5a6_aug2_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5a6_aug4_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5a6_aug8_seed7
   SketchSMILES/outputs/runs/sketchmol_compare_phase5c_seed7
   SketchSMILES/outputs/runs/sketchmol_compare_phase5d_seed7
+  SketchSMILES/outputs/runs/sketchmol_compare_phase5d_strong_seed7
 )
 DEFAULT_SKETCHMOL_SUMMARIES=(
   PhysTabMol/runs/20260512_235957_sketchmol_comparable_structure_v1/tables/sketchmol_benchmark/sketchmol_benchmark_summary.csv

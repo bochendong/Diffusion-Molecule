@@ -31,6 +31,97 @@
       ]
     },
     {
+      "name": "sketchmol_compare_phase5a6_aug1_seed7",
+      "family": "sketchsmiles_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5a6_aug_sweep.sh",
+      "purpose": "Light randomized-SMILES augmentation to test whether small multi-view target diversity improves candidate coverage without broadening the training set too aggressively.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "randomized_smiles_per_molecule"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_phase5a6_aug2_seed7",
+      "family": "sketchsmiles_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5a6_aug_sweep.sh",
+      "purpose": "Medium-light randomized-SMILES augmentation candidate-coverage test.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "randomized_smiles_per_molecule"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_phase5a6_aug4_seed7",
+      "family": "sketchsmiles_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5a6_aug_sweep.sh",
+      "purpose": "Default randomized-SMILES augmentation candidate-coverage test.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "randomized_smiles_per_molecule"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_phase5a6_aug8_seed7",
+      "family": "sketchsmiles_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5a6_aug_sweep.sh",
+      "purpose": "Heavy randomized-SMILES augmentation test to check whether too much target-view diversity hurts exact canonical reconstruction.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "randomized_smiles_per_molecule"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_phase5a4_beam32_seed7",
+      "family": "sketchsmiles_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5a4_beam32.sh",
+      "purpose": "Wider beam-search candidate coverage test for the Phase 5A-4 oracle-fingerprint Transformer.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "mean_candidate_count",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_phase5a4_sample64_seed7",
+      "family": "sketchsmiles_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5a4_sample64.sh",
+      "purpose": "Stochastic candidate generation with condition-fingerprint reranking to test whether deterministic beam search is missing valid target SMILES modes.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "mean_candidate_count",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_phase5a4_large_seed7",
+      "family": "sketchsmiles_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5a4_large_transformer.sh",
+      "purpose": "Larger oracle-fingerprint Transformer to test whether 5A-4 is capacity-limited.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "final_train_token_loss"
+      ]
+    },
+    {
       "name": "sketchmol_compare_phase5c_seed7",
       "family": "sketchsmiles_image_conditioned",
       "script": "SketchMolCompare/scripts/submit_sketchsmiles_5c_image_decoder.sh",
@@ -49,6 +140,21 @@
       "family": "sketchsmiles_image_conditioned",
       "script": "SketchMolCompare/scripts/submit_sketchsmiles_5d_image_fingerprint.sh",
       "purpose": "Image-conditioned SMILES decoder with a fingerprint auxiliary head and predicted-fingerprint beam reranking.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "top1_scaffold_match_fraction",
+        "top1_valid_fraction",
+        "mean_predicted_target_fingerprint_tanimoto",
+        "top1_condition_tanimoto"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_phase5d_strong_seed7",
+      "family": "sketchsmiles_image_conditioned",
+      "script": "SketchMolCompare/scripts/submit_sketchsmiles_5d_strong_fingerprint.sh",
+      "purpose": "Stronger image-conditioned fingerprint-reranked decoder to test whether the fair image-input path is limited by image encoder/fingerprint supervision capacity.",
       "primary_metrics": [
         "top1_exact_match_fraction",
         "topk_exact_match_fraction",
