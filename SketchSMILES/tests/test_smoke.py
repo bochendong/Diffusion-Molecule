@@ -16,6 +16,7 @@ from sketch_smiles.phase5a1_learned_smiles_decoder import (
 from sketch_smiles.phase5b_joint_decoder import run_joint_paired_decoder
 from sketch_smiles.phase5_summary import summarize_runs
 from sketch_smiles.phase5c_image_smiles_decoder import run_image_conditioned_smiles_decoder
+from sketch_smiles.phase5a5_retrieval_diagnostic import run_retrieval_diagnostic
 
 
 def _rdkit_available() -> bool:
@@ -414,6 +415,54 @@ class SketchSMILESTests(unittest.TestCase):
             self.assertTrue(Path(run_dir, "metrics.json").exists())
             self.assertTrue(Path(run_dir, "model.pt").exists())
             self.assertTrue(Path(run_dir, "predictions.csv").exists())
+
+    @unittest.skipUnless(_rdkit_available(), "RDKit is not installed")
+    def test_retrieval_diagnostic_writes_source_summary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            input_csv = Path(tmp, "molecules.csv")
+            with input_csv.open("w", newline="", encoding="utf-8") as handle:
+                writer = csv.DictWriter(handle, fieldnames=["smiles"])
+                writer.writeheader()
+                for smiles in ["CCO", "CCN", "CCC", "COC", "CCCl", "CCBr"]:
+                    writer.writerow({"smiles": smiles})
+
+            pair_dir = Path(tmp, "pairs")
+            build_pair_manifest(input_csv=input_csv, output_dir=pair_dir, image_size=64)
+            run_dir = Path(tmp, "source_run")
+            metrics = run_learned_smiles_decoder(
+                pair_dir=pair_dir,
+                output_dir=run_dir,
+                train_fraction=0.67,
+                seed=10,
+                fingerprint_bits=128,
+                max_length=24,
+                hidden_dim=32,
+                embedding_dim=16,
+                epochs=1,
+                batch_size=2,
+                tokenization="smiles_token",
+                decoding="beam",
+                beam_size=2,
+                rerank_mode="condition_fingerprint",
+                model_type="transformer",
+                transformer_layers=1,
+                attention_heads=2,
+                condition_tokens=2,
+                dropout=0.0,
+                sample_count=2,
+                device="cpu",
+            )
+            self.assertGreater(metrics["eval_examples"], 0.0)
+            diagnostic_dir = Path(tmp, "diagnostic")
+            diagnostic_metrics = run_retrieval_diagnostic(
+                run_dir=run_dir,
+                output_dir=diagnostic_dir,
+                fingerprint_bits=128,
+                retrieval_top_k=2,
+            )
+            self.assertEqual(diagnostic_metrics["phase"], "phase5a5_oracle_retrieval_diagnostic")
+            self.assertTrue(Path(diagnostic_dir, "source_summary.csv").exists())
+            self.assertTrue(Path(diagnostic_dir, "retrieval_diagnostic_rows.csv").exists())
 
 
 if __name__ == "__main__":
