@@ -60,6 +60,57 @@ require_existing_file \
   "MolScribe checkpoint" \
   "/absolute/path/to/swin_base_char_aux_200k.pth"
 
+CKPT_DIR="$(cd "$(dirname "$SKETCHMOL_CKPT")" && pwd)"
+if ! find "$CKPT_DIR" -maxdepth 1 -type f \( -name "*.yaml" -o -name "*.yml" \) | grep -q .; then
+  echo "ERROR: no SketchMol config YAML found next to SKETCHMOL_CKPT in $CKPT_DIR" >&2
+  echo "       Unzip or copy the pretrained model YAML into the checkpoint directory." >&2
+  exit 2
+fi
+
+check_python_imports() {
+  local python_bin="$1"
+  shift
+
+  if ! command -v "$python_bin" >/dev/null 2>&1 && [[ ! -x "$python_bin" ]]; then
+    echo "ERROR: Python executable not found: $python_bin" >&2
+    exit 2
+  fi
+
+  if ! "$python_bin" - "$@" <<'PY'
+import importlib
+import sys
+
+missing = []
+for module_name in sys.argv[1:]:
+    try:
+        importlib.import_module(module_name)
+    except Exception as exc:
+        missing.append((module_name, exc))
+
+if missing:
+    print("ERROR: Python environment is missing required modules:", file=sys.stderr)
+    for module_name, exc in missing:
+        print(f"  {module_name}: {exc}", file=sys.stderr)
+    sys.exit(2)
+PY
+  then
+    echo "       Install the missing modules into this interpreter before rerunning:" >&2
+    echo "       $python_bin -m pip install <missing-module>" >&2
+    exit 2
+  fi
+}
+
+check_python_imports \
+  "$SKETCHMOL_PYTHON_BIN" \
+  yaml torch numpy pandas tqdm omegaconf PIL einops
+PYTHONPATH="$SKETCHMOL_REPO${PYTHONPATH:+:$PYTHONPATH}" \
+check_python_imports \
+  "$SKETCHMOL_PYTHON_BIN" \
+  ldm.data.pubchemdata ldm.models.diffusion.ddpm
+check_python_imports \
+  "$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" \
+  torch numpy pandas PIL cv2 albumentations
+
 if ! command -v sbatch >/dev/null 2>&1; then
   echo "ERROR: sbatch not found. Run this on a Slurm login node." >&2
   exit 2

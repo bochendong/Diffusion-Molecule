@@ -27,6 +27,40 @@ SKETCHMOL_PROPERTY_NUM="${SKETCHMOL_PROPERTY_NUM:-1}"
 SKETCHMOL_TRI="${SKETCHMOL_TRI:-true}"
 SKETCHMOL_BENCHMARK_OUTPUT_DIR="${SKETCHMOL_BENCHMARK_OUTPUT_DIR:-SketchMolBenchmark/outputs/current}"
 
+check_python_imports() {
+  local label="$1"
+  local python_bin="$2"
+  shift 2
+
+  if ! command -v "$python_bin" >/dev/null 2>&1 && [[ ! -x "$python_bin" ]]; then
+    echo "ERROR: $label Python executable not found: $python_bin" >&2
+    exit 2
+  fi
+
+  if ! "$python_bin" - "$@" <<'PY'
+import importlib
+import sys
+
+missing = []
+for module_name in sys.argv[1:]:
+    try:
+        importlib.import_module(module_name)
+    except Exception as exc:
+        missing.append((module_name, exc))
+
+if missing:
+    print("ERROR: Python environment is missing required modules:", file=sys.stderr)
+    for module_name, exc in missing:
+        print(f"  {module_name}: {exc}", file=sys.stderr)
+    sys.exit(2)
+PY
+  then
+    echo "       Install the missing modules into this interpreter before rerunning:" >&2
+    echo "       $python_bin -m pip install <missing-module>" >&2
+    exit 2
+  fi
+}
+
 if [[ ! -d "$SKETCHMOL_REPO" ]]; then
   echo "ERROR: real SketchMol repo not found: $SKETCHMOL_REPO" >&2
   exit 2
@@ -39,6 +73,17 @@ if [[ -z "$SKETCHMOL_MOLSCRIBE_MODEL" || ! -f "$SKETCHMOL_MOLSCRIBE_MODEL" ]]; t
   echo "ERROR: SKETCHMOL_MOLSCRIBE_MODEL must point to a MolScribe checkpoint." >&2
   exit 2
 fi
+
+export PYTHONPATH="$SKETCHMOL_REPO${PYTHONPATH:+:$PYTHONPATH}"
+
+check_python_imports \
+  "SketchMol" \
+  "$SKETCHMOL_PYTHON_BIN" \
+  yaml torch numpy pandas tqdm omegaconf PIL einops ldm.data.pubchemdata ldm.models.diffusion.ddpm
+check_python_imports \
+  "MolScribe" \
+  "$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" \
+  torch numpy pandas PIL cv2 albumentations
 
 RUN_DIR="$SKETCHMOL_OUTPUT_ROOT/$SKETCHMOL_RUN_NAME"
 mkdir -p "$RUN_DIR"
@@ -116,4 +161,3 @@ echo "Real SketchMol + OCR benchmark finished: $SKETCHMOL_BENCHMARK_OUTPUT_DIR"
 echo "  image_csv=$IMAGE_CSV"
 echo "  log=$RUN_LOG"
 echo "  metrics=$SKETCHMOL_BENCHMARK_OUTPUT_DIR/metrics.json"
-

@@ -52,6 +52,24 @@ SKETCHMOL_TOKEN_PAIR_DIR=SketchSMILES/outputs/pairs/phys_50k \
 bash SketchMolTokenDiffusion/scripts/submit_masked_token_diffusion.sh
 ```
 
+Run the validity-focused SELFIES variant:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_TOKEN_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash SketchMolCompare/scripts/submit_token_diffusion_selfies.sh
+```
+
+For an EOS/length diagnostic upper bound, keep SMILES tokens but force the
+oracle eval length:
+
+```bash
+SKETCHMOL_TOKEN_RUN_NAME=token_diffusion_oracle_length_seed7 \
+SKETCHMOL_TOKEN_DECODE_LENGTH_MODE=oracle \
+bash SketchMolTokenDiffusion/scripts/submit_masked_token_diffusion.sh
+```
+
 Smoke test:
 
 ```bash

@@ -31,7 +31,9 @@ DEFAULT_SKETCHSMILES_RUNS=(
   SketchSMILES/outputs/runs/sketchmol_compare_phase5d_seed7
   SketchSMILES/outputs/runs/sketchmol_compare_phase5d_strong_seed7
   SketchMolTokenDiffusion/outputs/runs/sketchmol_compare_token_diffusion_seed7
+  SketchMolTokenDiffusion/outputs/runs/sketchmol_compare_token_diffusion_selfies_seed7
   SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_diffusion_seed7
+  SketchMolJointDiffusion/outputs/runs/sketchmol_compare_joint_latent_clip_seed7
 )
 DEFAULT_SKETCHMOL_SUMMARIES=()
 if [[ -f SketchMolBenchmark/outputs/current/benchmark_summary.csv ]]; then

@@ -34,6 +34,11 @@ ATTENTION_HEADS="${SKETCHMOL_TOKEN_ATTENTION_HEADS:-8}"
 CONDITION_TOKENS="${SKETCHMOL_TOKEN_CONDITION_TOKENS:-8}"
 DROPOUT="${SKETCHMOL_TOKEN_DROPOUT:-0.1}"
 TOKENIZATION="${SKETCHMOL_TOKEN_TOKENIZATION:-smiles_token}"
+LATENT_DIM="${SKETCHMOL_TOKEN_LATENT_DIM:-128}"
+CLIP_LOSS_WEIGHT="${SKETCHMOL_TOKEN_CLIP_LOSS_WEIGHT:-0.0}"
+CLIP_TEMPERATURE="${SKETCHMOL_TOKEN_CLIP_TEMPERATURE:-0.07}"
+DECODE_LENGTH_MODE="${SKETCHMOL_TOKEN_DECODE_LENGTH_MODE:-free}"
+MIN_DECODE_TOKENS="${SKETCHMOL_TOKEN_MIN_DECODE_TOKENS:-1}"
 IMAGE_SIZE="${SKETCHMOL_TOKEN_IMAGE_SIZE:-128}"
 SAMPLE_COUNT="${SKETCHMOL_TOKEN_SAMPLE_COUNT:-64}"
 DEVICE="${SKETCHMOL_TOKEN_DEVICE:-auto}"
@@ -54,11 +59,21 @@ echo "  epochs=$EPOCHS"
 echo "  batch_size=$BATCH_SIZE"
 echo "  diffusion_steps=$DIFFUSION_STEPS"
 echo "  samples_per_condition=$SAMPLES_PER_CONDITION"
+echo "  tokenization=$TOKENIZATION"
+echo "  decode_length_mode=$DECODE_LENGTH_MODE"
 echo "  device=$DEVICE"
 
 if [[ ! -f "$PAIR_DIR/pairs.csv" ]]; then
   echo "ERROR: pairs.csv not found under $PAIR_DIR" >&2
   exit 2
+fi
+
+if [[ "$TOKENIZATION" == "selfies" ]]; then
+  if ! "$PYTHON_BIN" -c "import selfies" >/dev/null 2>&1; then
+    echo "ERROR: SELFIES tokenization requires the selfies package." >&2
+    echo "Install it with: $PYTHON_BIN -m pip install selfies" >&2
+    exit 2
+  fi
 fi
 
 if [[ "${SKETCHMOL_TOKEN_RUN_TESTS:-1}" == "1" ]]; then
@@ -95,6 +110,11 @@ ARGS=(
   --condition-tokens "$CONDITION_TOKENS"
   --dropout "$DROPOUT"
   --tokenization "$TOKENIZATION"
+  --latent-dim "$LATENT_DIM"
+  --clip-loss-weight "$CLIP_LOSS_WEIGHT"
+  --clip-temperature "$CLIP_TEMPERATURE"
+  --decode-length-mode "$DECODE_LENGTH_MODE"
+  --min-decode-tokens "$MIN_DECODE_TOKENS"
   --image-size "$IMAGE_SIZE"
   --sample-count "$SAMPLE_COUNT"
   --device "$DEVICE"

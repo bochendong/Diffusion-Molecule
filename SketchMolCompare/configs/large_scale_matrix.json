@@ -181,6 +181,20 @@
       ]
     },
     {
+      "name": "sketchmol_compare_token_diffusion_selfies_seed7",
+      "family": "token_diffusion_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_token_diffusion_selfies.sh",
+      "purpose": "Route A validity-focused variant that denoises SELFIES tokens and decodes back to SMILES to test whether the low valid rate is primarily a SMILES grammar problem.",
+      "primary_metrics": [
+        "top1_valid_fraction",
+        "mean_candidate_count",
+        "top1_target_tanimoto",
+        "top1_exact_match_fraction",
+        "tokenization",
+        "decode_length_mode"
+      ]
+    },
+    {
       "name": "sketchmol_compare_joint_diffusion_seed7",
       "family": "joint_diffusion_ocr_free",
       "script": "SketchMolCompare/scripts/submit_joint_diffusion.sh",
@@ -193,6 +207,21 @@
         "top1_valid_fraction",
         "smiles_render_image_mse_mean",
         "image_loss_weight"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_joint_latent_clip_seed7",
+      "family": "joint_diffusion_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_joint_diffusion_latent_clip.sh",
+      "purpose": "Route B shared-latent variant with CLIP-style image/token contrastive alignment to test whether explicit cross-modal latent binding improves image/SMILES consistency.",
+      "primary_metrics": [
+        "top1_valid_fraction",
+        "mean_candidate_count",
+        "top1_target_tanimoto",
+        "smiles_render_image_mse_mean",
+        "clip_loss_weight",
+        "final_train_clip_loss",
+        "decode_length_mode"
       ]
     },
     {

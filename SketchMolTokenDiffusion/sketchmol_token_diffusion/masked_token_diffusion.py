@@ -37,7 +37,7 @@ from sketch_smiles.phase5a1_learned_smiles_decoder import (
     _load_torch,
     _make_fingerprint_fn,
     _normalize_rerank_mode,
-    _normalize_tokenization,
+    _normalize_tokenization as _normalize_smiles_tokenization,
     _prepare_examples,
     _read_rows,
     _resolve_device,
@@ -50,6 +50,149 @@ from sketch_smiles.phase5b_joint_decoder import _load_ink_tensor, _prefix_metric
 
 
 MASK = "<mask>"
+SELFIES_TOKENIZATION = "selfies"
+DECODE_LENGTH_MODES = {"free", "train_median", "oracle"}
+
+
+def _normalize_generation_tokenization(tokenization: str) -> str:
+    value = tokenization.strip().lower().replace("-", "_")
+    if value in {"selfies", "selfie"}:
+        return SELFIES_TOKENIZATION
+    return _normalize_smiles_tokenization(value)
+
+
+def _load_selfies() -> Any:
+    try:
+        import selfies
+
+        return selfies
+    except Exception as exc:
+        raise RuntimeError("SELFIES tokenization requires the `selfies` Python package.") from exc
+
+
+def _tokens_for_generation(smiles: str, tokenization: str) -> list[str]:
+    if tokenization != SELFIES_TOKENIZATION:
+        from sketch_smiles.phase5a1_learned_smiles_decoder import _tokenize_smiles
+
+        return _tokenize_smiles(smiles, tokenization=tokenization)
+    selfies = _load_selfies()
+    try:
+        encoded = selfies.encoder(smiles)
+        return list(selfies.split_selfies(encoded))
+    except Exception:
+        return []
+
+
+def _decode_generation_tokens(tokens: list[str], tokenization: str) -> str:
+    if tokenization != SELFIES_TOKENIZATION:
+        return "".join(tokens)
+    selfies = _load_selfies()
+    try:
+        return selfies.decoder("".join(tokens))
+    except Exception:
+        return ""
+
+
+def _build_generation_vocab(rows: list[dict[str, str]], tokenization: str) -> tuple[dict[str, int], list[str]]:
+    if tokenization != SELFIES_TOKENIZATION:
+        return _build_vocab(rows, tokenization=tokenization)
+    tokens = sorted(
+        {
+            token
+            for row in rows
+            for token in _tokens_for_generation(row.get("canonical_smiles") or row.get("input_smiles", ""), tokenization=tokenization)
+        }
+    )
+    itos = [PAD, BOS, EOS] + tokens
+    return {token: idx for idx, token in enumerate(itos)}, itos
+
+
+def _encode_generation_tokens(tokens: list[str], stoi: dict[str, int], max_length: int) -> tuple[list[int], list[int]]:
+    input_tokens = [BOS] + tokens
+    target_tokens = tokens + [EOS]
+    input_ids = [stoi.get(token, stoi[PAD]) for token in input_tokens][:max_length]
+    target_ids = [stoi.get(token, stoi[PAD]) for token in target_tokens][:max_length]
+    while len(input_ids) < max_length:
+        input_ids.append(stoi[PAD])
+    while len(target_ids) < max_length:
+        target_ids.append(stoi[PAD])
+    return input_ids, target_ids
+
+
+def _prepare_generation_examples(
+    rows: list[dict[str, str]],
+    stoi: dict[str, int],
+    fingerprint_fn: Any,
+    max_length: int,
+    np: Any,
+    tokenization: str,
+    pad_idx: int,
+    allow_unknown: bool = False,
+) -> list[dict[str, Any]]:
+    if tokenization != SELFIES_TOKENIZATION:
+        examples = _prepare_examples(
+            rows,
+            stoi,
+            fingerprint_fn,
+            max_length=max_length,
+            np=np,
+            tokenization=tokenization,
+            allow_unknown=allow_unknown,
+        )
+        return _attach_target_lengths(examples, pad_idx=pad_idx)
+
+    examples: list[dict[str, Any]] = []
+    for row in rows:
+        smiles = row.get("canonical_smiles") or row.get("input_smiles", "")
+        condition_smiles = row.get("condition_smiles") or smiles
+        if not smiles:
+            continue
+        tokens = _tokens_for_generation(smiles, tokenization=tokenization)
+        if not tokens or len(tokens) + 1 > max_length:
+            continue
+        if not allow_unknown and any(token not in stoi for token in tokens):
+            continue
+        if allow_unknown and any(token not in stoi for token in tokens):
+            continue
+        feature = fingerprint_fn(condition_smiles)
+        if feature is None:
+            continue
+        input_ids, target_ids = _encode_generation_tokens(tokens, stoi=stoi, max_length=max_length)
+        examples.append(
+            {
+                "pair_id": row.get("pair_id", ""),
+                "smiles": smiles,
+                "condition_smiles": condition_smiles,
+                "image_path": row.get("image_path", ""),
+                "feature": np.asarray(feature, dtype=np.float32),
+                "input_ids": input_ids,
+                "target_ids": target_ids,
+                "target_length": sum(1 for value in target_ids if value != pad_idx),
+            }
+        )
+    return examples
+
+
+def _attach_target_lengths(examples: list[dict[str, Any]], pad_idx: int) -> list[dict[str, Any]]:
+    for example in examples:
+        example["target_length"] = sum(1 for value in example.get("target_ids", []) if value != pad_idx)
+    return examples
+
+
+def _median_target_length(examples: list[dict[str, Any]]) -> int:
+    lengths = sorted(int(example.get("target_length", 0)) for example in examples if int(example.get("target_length", 0)) > 0)
+    if not lengths:
+        return 0
+    return int(lengths[len(lengths) // 2])
+
+
+def _normalize_decode_length_mode(mode: str) -> str:
+    value = mode.strip().lower().replace("-", "_")
+    aliases = {"none": "free", "median": "train_median", "target": "oracle", "oracle_target": "oracle"}
+    value = aliases.get(value, value)
+    if value not in DECODE_LENGTH_MODES:
+        raise ValueError(f"Unsupported decode_length_mode {mode!r}; expected one of {sorted(DECODE_LENGTH_MODES)}.")
+    return value
 
 
 def run_masked_token_diffusion(
@@ -77,8 +220,13 @@ def run_masked_token_diffusion(
     condition_tokens: int = 8,
     dropout: float = 0.1,
     tokenization: str = "smiles_token",
+    latent_dim: int = 128,
     image_loss_weight: float = 0.0,
     image_foreground_weight: float = 8.0,
+    clip_loss_weight: float = 0.0,
+    clip_temperature: float = 0.07,
+    decode_length_mode: str = "free",
+    min_decode_tokens: int = 1,
     image_size: int = 128,
     sample_count: int = 64,
     contact_sheet_cols: int = 8,
@@ -113,16 +261,38 @@ def run_masked_token_diffusion(
     _write_rows(output_dir / "train_pairs.csv", train_rows)
     _write_rows(output_dir / "eval_pairs.csv", eval_rows)
 
-    tokenization = _normalize_tokenization(tokenization)
+    tokenization = _normalize_generation_tokenization(tokenization)
     rerank_mode = _normalize_rerank_mode(rerank_mode)
-    stoi, itos = _ensure_mask_token(*_build_vocab(train_rows, tokenization=tokenization))
+    decode_length_mode = _normalize_decode_length_mode(decode_length_mode)
+    clip_loss_weight = float(clip_loss_weight)
+    image_loss_weight = float(image_loss_weight)
+    if clip_loss_weight > 0 and image_loss_weight <= 0:
+        raise ValueError("clip_loss_weight requires image_loss_weight > 0 so the image branch is trained.")
+    stoi, itos = _ensure_mask_token(*_build_generation_vocab(train_rows, tokenization=tokenization))
     vocab_path = output_dir / "vocab.json"
     vocab_path.write_text(json.dumps({"stoi": stoi, "itos": itos}, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     fingerprint_fn = _make_fingerprint_fn(rdkit, np=np, fingerprint_bits=fingerprint_bits)
-    train_examples = _prepare_examples(train_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization)
-    eval_examples = _prepare_examples(eval_rows, stoi, fingerprint_fn, max_length=max_length, np=np, tokenization=tokenization, allow_unknown=True)
-    if image_loss_weight > 0:
+    train_examples = _prepare_generation_examples(
+        train_rows,
+        stoi,
+        fingerprint_fn,
+        max_length=max_length,
+        np=np,
+        tokenization=tokenization,
+        pad_idx=stoi[PAD],
+    )
+    eval_examples = _prepare_generation_examples(
+        eval_rows,
+        stoi,
+        fingerprint_fn,
+        max_length=max_length,
+        np=np,
+        tokenization=tokenization,
+        pad_idx=stoi[PAD],
+        allow_unknown=True,
+    )
+    if image_loss_weight > 0 or clip_loss_weight > 0:
         train_examples = _attach_images(train_examples, pair_dir=pair_dir, pillow=pillow, np=np, image_size=image_size)
         eval_examples = _attach_images(eval_examples, pair_dir=pair_dir, pillow=pillow, np=np, image_size=image_size)
     if not train_examples:
@@ -144,6 +314,7 @@ def run_masked_token_diffusion(
         attention_heads=attention_heads,
         condition_tokens=condition_tokens,
         dropout=dropout,
+        latent_dim=latent_dim,
         image_size=image_size if image_loss_weight > 0 else 0,
     ).to(resolved_device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
@@ -163,6 +334,8 @@ def run_masked_token_diffusion(
         max_mask_prob=max_mask_prob,
         image_loss_weight=image_loss_weight,
         image_foreground_weight=image_foreground_weight,
+        clip_loss_weight=clip_loss_weight,
+        clip_temperature=clip_temperature,
         seed=seed,
     )
 
@@ -183,6 +356,7 @@ def run_masked_token_diffusion(
                 "attention_heads": attention_heads,
                 "condition_tokens": condition_tokens,
                 "dropout": dropout,
+                "latent_dim": latent_dim,
                 "image_size": image_size if image_loss_weight > 0 else 0,
             },
         },
@@ -211,6 +385,10 @@ def run_masked_token_diffusion(
         fingerprint_fn=fingerprint_fn,
         image_size=image_size,
         has_image_head=image_loss_weight > 0,
+        tokenization=tokenization,
+        decode_length_mode=decode_length_mode,
+        train_decode_length=_median_target_length(train_examples),
+        min_decode_tokens=min_decode_tokens,
     )
 
     predictions_path = output_dir / "predictions.csv"
@@ -262,8 +440,14 @@ def run_masked_token_diffusion(
         condition_tokens=condition_tokens,
         dropout=dropout,
         tokenization=tokenization,
+        latent_dim=latent_dim,
         image_loss_weight=image_loss_weight,
         image_foreground_weight=image_foreground_weight,
+        clip_loss_weight=clip_loss_weight,
+        clip_temperature=clip_temperature,
+        decode_length_mode=decode_length_mode,
+        train_decode_length=_median_target_length(train_examples),
+        min_decode_tokens=min_decode_tokens,
         image_size=image_size,
         device=str(resolved_device),
     )
@@ -301,8 +485,14 @@ def run_masked_token_diffusion(
                 "condition_tokens": condition_tokens,
                 "dropout": dropout,
                 "tokenization": tokenization,
+                "latent_dim": latent_dim,
                 "image_loss_weight": image_loss_weight,
                 "image_foreground_weight": image_foreground_weight,
+                "clip_loss_weight": clip_loss_weight,
+                "clip_temperature": clip_temperature,
+                "decode_length_mode": decode_length_mode,
+                "train_decode_length": _median_target_length(train_examples),
+                "min_decode_tokens": min_decode_tokens,
                 "image_size": image_size,
                 "device": str(resolved_device),
             },
@@ -335,6 +525,7 @@ class MaskedTokenDiffusionTransformer:
                 attention_heads: int,
                 condition_tokens: int,
                 dropout: float,
+                latent_dim: int,
                 image_size: int,
             ) -> None:
                 super().__init__()
@@ -346,11 +537,15 @@ class MaskedTokenDiffusionTransformer:
                 self.diffusion_steps = int(diffusion_steps)
                 self.hidden_dim = int(hidden_dim)
                 self.condition_tokens = int(condition_tokens)
+                self.latent_dim = int(latent_dim)
                 self.image_size = int(image_size)
-                self.condition_projection = nn.Sequential(
-                    nn.Linear(feature_dim, hidden_dim * condition_tokens),
+                self.condition_encoder = nn.Sequential(
+                    nn.Linear(feature_dim, self.latent_dim),
+                    nn.LayerNorm(self.latent_dim),
                     nn.Tanh(),
                 )
+                self.latent_to_condition = nn.Linear(self.latent_dim, hidden_dim * condition_tokens)
+                self.condition_alignment = nn.Linear(self.latent_dim, self.latent_dim)
                 self.embedding = nn.Embedding(vocab_size, embedding_dim, padding_idx=pad_idx)
                 self.input_projection = nn.Linear(embedding_dim, hidden_dim)
                 self.position = nn.Embedding(max_length + condition_tokens, hidden_dim)
@@ -365,9 +560,10 @@ class MaskedTokenDiffusionTransformer:
                 )
                 self.encoder = nn.TransformerEncoder(encoder_layer, num_layers=transformer_layers)
                 self.out = nn.Linear(hidden_dim, vocab_size)
+                self.text_alignment = nn.Linear(hidden_dim, self.latent_dim)
                 self.image_head = (
                     nn.Sequential(
-                        nn.Linear(hidden_dim, hidden_dim * 2),
+                        nn.Linear(self.latent_dim, hidden_dim * 2),
                         nn.GELU(),
                         nn.Linear(hidden_dim * 2, image_size * image_size),
                         nn.Sigmoid(),
@@ -375,13 +571,32 @@ class MaskedTokenDiffusionTransformer:
                     if image_size > 0
                     else None
                 )
+                self.image_encoder = (
+                    nn.Sequential(
+                        nn.Conv2d(1, 32, kernel_size=5, stride=2, padding=2),
+                        nn.GELU(),
+                        nn.Conv2d(32, 64, kernel_size=3, stride=2, padding=1),
+                        nn.GELU(),
+                        nn.Conv2d(64, 128, kernel_size=3, stride=2, padding=1),
+                        nn.GELU(),
+                        nn.AdaptiveAvgPool2d((1, 1)),
+                        nn.Flatten(),
+                        nn.Linear(128, self.latent_dim),
+                    )
+                    if image_size > 0
+                    else None
+                )
 
-            def forward(self, features: Any, noisy_ids: Any, timesteps: Any) -> tuple[Any, Any | None]:
+            def encode_latent(self, features: Any) -> Any:
+                return self.condition_encoder(features)
+
+            def encode_context(self, features: Any, noisy_ids: Any, timesteps: Any) -> tuple[Any, Any]:
                 batch, length = noisy_ids.shape
                 if length > self.max_length:
                     noisy_ids = noisy_ids[:, : self.max_length]
                     length = self.max_length
-                cond = self.condition_projection(features).view(batch, self.condition_tokens, self.hidden_dim)
+                latent = self.encode_latent(features)
+                cond = self.latent_to_condition(latent).view(batch, self.condition_tokens, self.hidden_dim)
                 token_hidden = self.input_projection(self.embedding(noisy_ids))
                 positions = torch.arange(self.condition_tokens + length, device=noisy_ids.device).unsqueeze(0).expand(batch, -1)
                 token_positions = self.position(positions)[:, self.condition_tokens :, :]
@@ -392,13 +607,26 @@ class MaskedTokenDiffusionTransformer:
                 token_padding = noisy_ids.eq(self.pad_idx)
                 cond_padding = torch.zeros((batch, self.condition_tokens), dtype=torch.bool, device=noisy_ids.device)
                 encoded = self.encoder(full_hidden, src_key_padding_mask=torch.cat([cond_padding, token_padding], dim=1))
+                return latent, encoded
+
+            def forward(self, features: Any, noisy_ids: Any, timesteps: Any) -> tuple[Any, Any | None]:
+                latent, encoded = self.encode_context(features, noisy_ids, timesteps)
                 token_encoded = encoded[:, self.condition_tokens :, :]
                 logits = self.out(token_encoded)
                 image = None
                 if self.image_head is not None:
-                    pooled = encoded.mean(dim=1)
-                    image = self.image_head(pooled).view(batch, 1, self.image_size, self.image_size)
+                    batch = features.shape[0]
+                    image = self.image_head(latent).view(batch, 1, self.image_size, self.image_size)
                 return logits, image
+
+            def alignment_latents(self, features: Any, noisy_ids: Any, timesteps: Any, images: Any) -> tuple[Any, Any, Any]:
+                if self.image_encoder is None:
+                    raise RuntimeError("alignment_latents requires image_size > 0.")
+                latent, encoded = self.encode_context(features, noisy_ids, timesteps)
+                text_latent = self.text_alignment(encoded.mean(dim=1))
+                image_latent = self.image_encoder(images)
+                condition_latent = self.condition_alignment(latent)
+                return text_latent, image_latent, condition_latent
 
             def generate_image(self, features: Any) -> Any | None:
                 if self.image_head is None:
@@ -428,6 +656,8 @@ def _train_diffusion_model(
     max_mask_prob: float,
     image_loss_weight: float,
     image_foreground_weight: float,
+    clip_loss_weight: float,
+    clip_temperature: float,
     seed: int,
 ) -> list[dict[str, float]]:
     loss_fn = torch.nn.CrossEntropyLoss(ignore_index=pad_idx, reduction="none")
@@ -440,6 +670,7 @@ def _train_diffusion_model(
         total_loss = 0.0
         total_token_loss = 0.0
         total_image_loss = 0.0
+        total_clip_loss = 0.0
         total_tokens = 0
         total_batches = 0
         for start in range(0, len(order), int(batch_size)):
@@ -463,12 +694,24 @@ def _train_diffusion_model(
             token_loss = (raw_loss * loss_mask.float()).sum() / loss_mask.float().sum().clamp_min(1.0)
             loss = token_loss
             image_loss_value = 0.0
+            clip_loss_value = 0.0
+            target_images = None
             if image_loss_weight > 0 and image is not None and batch and "image" in batch[0]:
                 target_images = torch.as_tensor(np.stack([row["image"] for row in batch]), dtype=torch.float32, device=device)
                 weights = 1.0 + float(image_foreground_weight) * target_images
                 image_loss = (((image - target_images) ** 2) * weights).mean()
                 image_loss_value = float(image_loss.item())
                 loss = loss + float(image_loss_weight) * image_loss
+            if clip_loss_weight > 0 and batch and "image" in batch[0]:
+                if target_images is None:
+                    target_images = torch.as_tensor(np.stack([row["image"] for row in batch]), dtype=torch.float32, device=device)
+                text_latent, image_latent, condition_latent = model.alignment_latents(features, noisy_ids, timesteps, target_images)
+                clip_loss = 0.5 * (
+                    _contrastive_alignment_loss(text_latent, image_latent, torch=torch, temperature=clip_temperature)
+                    + _contrastive_alignment_loss(condition_latent, image_latent, torch=torch, temperature=clip_temperature)
+                )
+                clip_loss_value = float(clip_loss.item())
+                loss = loss + float(clip_loss_weight) * clip_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -476,11 +719,13 @@ def _train_diffusion_model(
             total_loss += float(loss.item()) * max(1, token_count)
             total_token_loss += float(token_loss.item()) * max(1, token_count)
             total_image_loss += image_loss_value
+            total_clip_loss += clip_loss_value
             total_tokens += token_count
             total_batches += 1
         mean_loss = total_loss / max(1, total_tokens)
         mean_token_loss = total_token_loss / max(1, total_tokens)
         mean_image_loss = total_image_loss / max(1, total_batches)
+        mean_clip_loss = total_clip_loss / max(1, total_batches)
         history.append(
             {
                 "epoch": float(epoch),
@@ -488,11 +733,29 @@ def _train_diffusion_model(
                 "train_token_loss": float(mean_token_loss),
                 "train_token_ppl": float(math.exp(min(20.0, mean_token_loss))),
                 "train_image_loss": float(mean_image_loss),
+                "train_clip_loss": float(mean_clip_loss),
             }
         )
         image_suffix = f" train_image_loss={mean_image_loss:.5f}" if image_loss_weight > 0 else ""
-        print(f"  epoch={epoch} train_token_loss={mean_token_loss:.4f} train_token_ppl={math.exp(min(20.0, mean_token_loss)):.3f}{image_suffix}", flush=True)
+        clip_suffix = f" train_clip_loss={mean_clip_loss:.4f}" if clip_loss_weight > 0 else ""
+        print(
+            f"  epoch={epoch} train_token_loss={mean_token_loss:.4f} "
+            f"train_token_ppl={math.exp(min(20.0, mean_token_loss)):.3f}{image_suffix}{clip_suffix}",
+            flush=True,
+        )
     return history
+
+
+def _contrastive_alignment_loss(left: Any, right: Any, torch: Any, temperature: float) -> Any:
+    left = torch.nn.functional.normalize(left, dim=-1)
+    right = torch.nn.functional.normalize(right, dim=-1)
+    logits = left @ right.transpose(0, 1)
+    logits = logits / max(float(temperature), 1e-6)
+    labels = torch.arange(left.shape[0], device=left.device)
+    return 0.5 * (
+        torch.nn.functional.cross_entropy(logits, labels)
+        + torch.nn.functional.cross_entropy(logits.transpose(0, 1), labels)
+    )
 
 
 def _corrupt_tokens(
@@ -539,6 +802,10 @@ def _evaluate_diffusion_model(
     fingerprint_fn: Any,
     image_size: int,
     has_image_head: bool,
+    tokenization: str,
+    decode_length_mode: str,
+    train_decode_length: int,
+    min_decode_tokens: int,
 ) -> list[dict[str, Any]]:
     generated_image_dir = output_dir / ("joint_images" if has_image_head else "generated_images")
     rendered_smiles_image_dir = output_dir / "rendered_smiles_images"
@@ -562,6 +829,15 @@ def _evaluate_diffusion_model(
                     diffusion_steps=diffusion_steps,
                     temperature=temperature,
                     sample_top_k=sample_top_k,
+                    tokenization=tokenization,
+                    pad_idx=stoi[PAD],
+                    eos_idx=stoi[EOS],
+                    decode_length_limit=_decode_length_limit_for_example(
+                        example,
+                        mode=decode_length_mode,
+                        train_decode_length=train_decode_length,
+                    ),
+                    min_decode_tokens=min_decode_tokens,
                 )
                 for _ in range(int(samples_per_condition))
             ]
@@ -614,6 +890,15 @@ def _evaluate_diffusion_model(
                     "canonical_candidates": "|".join(candidate_smiles),
                     "candidate_condition_tanimotos": "|".join(f"{condition_scores.get(smiles, 0.0):.6f}" for smiles in candidate_smiles),
                     "candidate_count": float(len(candidate_smiles)),
+                    "decode_length_mode": decode_length_mode,
+                    "decode_length_limit": float(
+                        _decode_length_limit_for_example(
+                            example,
+                            mode=decode_length_mode,
+                            train_decode_length=train_decode_length,
+                        )
+                        or 0
+                    ),
                     "top1_valid": top1_valid,
                     "top1_exact_match": bool(top1_smiles == target_smiles),
                     "topk_exact_match": bool(target_smiles in candidate_smiles),
@@ -647,10 +932,24 @@ def _sample_diffusion_smiles(
     diffusion_steps: int,
     temperature: float,
     sample_top_k: int,
+    tokenization: str,
+    pad_idx: int,
+    eos_idx: int,
+    decode_length_limit: int | None,
+    min_decode_tokens: int,
 ) -> str:
     feature_tensor = torch.as_tensor(feature, dtype=torch.float32, device=device).unsqueeze(0)
     ids = torch.full((1, int(max_length)), stoi[MASK], dtype=torch.long, device=device)
     fixed = torch.zeros_like(ids, dtype=torch.bool)
+    eos_position = None
+    if decode_length_limit is not None and int(decode_length_limit) > 0:
+        limit = max(1, min(int(max_length), int(decode_length_limit)))
+        eos_position = max(0, limit - 1)
+        ids[0, eos_position] = int(eos_idx)
+        fixed[0, eos_position] = True
+        if eos_position + 1 < int(max_length):
+            ids[0, eos_position + 1 :] = int(pad_idx)
+            fixed[0, eos_position + 1 :] = True
     blocked = {stoi[PAD], stoi[BOS], stoi[MASK]}
     for step in range(int(diffusion_steps), 0, -1):
         timestep = torch.tensor([step], dtype=torch.long, device=device)
@@ -658,6 +957,7 @@ def _sample_diffusion_smiles(
         logits = logits[0] / max(float(temperature), 1e-6)
         for blocked_id in blocked:
             logits[:, blocked_id] = -1e9
+        _apply_eos_constraints(logits, eos_idx=eos_idx, eos_position=eos_position, min_decode_tokens=min_decode_tokens)
         sampled, confidence = _sample_positions(logits, torch=torch, top_k=sample_top_k)
         mask_positions = torch.nonzero(~fixed[0], as_tuple=False).flatten()
         if mask_positions.numel() == 0:
@@ -672,11 +972,26 @@ def _sample_diffusion_smiles(
         logits = logits[0] / max(float(temperature), 1e-6)
         for blocked_id in blocked:
             logits[:, blocked_id] = -1e9
+        _apply_eos_constraints(logits, eos_idx=eos_idx, eos_position=eos_position, min_decode_tokens=min_decode_tokens)
         sampled, _confidence = _sample_positions(logits, torch=torch, top_k=sample_top_k)
         remaining = torch.nonzero(~fixed[0], as_tuple=False).flatten()
         if remaining.numel() > 0:
             ids[0, remaining] = sampled[remaining]
-    return _decode_ids(ids[0].tolist(), itos)
+    if eos_position is not None:
+        ids[0, eos_position] = int(eos_idx)
+    return _decode_ids_to_smiles(ids[0].tolist(), itos, tokenization=tokenization)
+
+
+def _apply_eos_constraints(logits: Any, eos_idx: int, eos_position: int | None, min_decode_tokens: int) -> None:
+    if eos_position is not None:
+        if eos_position > 0:
+            logits[:eos_position, int(eos_idx)] = -1e9
+        if eos_position + 1 < logits.shape[0]:
+            logits[eos_position + 1 :, int(eos_idx)] = -1e9
+        return
+    min_tokens = max(0, int(min_decode_tokens))
+    if min_tokens > 0:
+        logits[:min(min_tokens, logits.shape[0]), int(eos_idx)] = -1e9
 
 
 def _sample_positions(logits: Any, torch: Any, top_k: int) -> tuple[Any, Any]:
@@ -703,6 +1018,26 @@ def _decode_ids(ids: Iterable[int], itos: list[str]) -> str:
             continue
         tokens.append(token)
     return "".join(tokens)
+
+
+def _decode_ids_to_smiles(ids: Iterable[int], itos: list[str], tokenization: str) -> str:
+    tokens: list[str] = []
+    for idx in ids:
+        token = itos[int(idx)]
+        if token == EOS:
+            break
+        if token in {PAD, BOS, MASK}:
+            continue
+        tokens.append(token)
+    return _decode_generation_tokens(tokens, tokenization=tokenization)
+
+
+def _decode_length_limit_for_example(example: dict[str, Any], mode: str, train_decode_length: int) -> int | None:
+    if mode == "oracle":
+        return int(example.get("target_length", 0)) or None
+    if mode == "train_median":
+        return int(train_decode_length) or None
+    return None
 
 
 def _rerank_candidate_smiles(
@@ -786,8 +1121,14 @@ def _summarize_diffusion(
     condition_tokens: int,
     dropout: float,
     tokenization: str,
+    latent_dim: int,
     image_loss_weight: float,
     image_foreground_weight: float,
+    clip_loss_weight: float,
+    clip_temperature: float,
+    decode_length_mode: str,
+    train_decode_length: int,
+    min_decode_tokens: int,
     image_size: int,
     device: str,
 ) -> dict[str, Any]:
@@ -821,8 +1162,14 @@ def _summarize_diffusion(
         "condition_tokens": float(condition_tokens),
         "dropout": float(dropout),
         "tokenization": tokenization,
+        "latent_dim": float(latent_dim),
         "image_loss_weight": float(image_loss_weight),
         "image_foreground_weight": float(image_foreground_weight),
+        "clip_loss_weight": float(clip_loss_weight),
+        "clip_temperature": float(clip_temperature),
+        "decode_length_mode": decode_length_mode,
+        "train_decode_length": float(train_decode_length),
+        "min_decode_tokens": float(min_decode_tokens),
         "image_size": float(image_size),
         "device": device,
         "pairs": float(len(train_rows) + len(eval_rows)),
@@ -834,6 +1181,7 @@ def _summarize_diffusion(
         "final_train_token_loss": float(history[-1]["train_token_loss"]) if history else 0.0,
         "final_train_token_ppl": float(history[-1]["train_token_ppl"]) if history else 0.0,
         "final_train_image_loss": float(history[-1]["train_image_loss"]) if history else 0.0,
+        "final_train_clip_loss": float(history[-1].get("train_clip_loss", 0.0)) if history else 0.0,
         "top1_valid": float(_count(prediction_rows, "top1_valid")),
         "top1_valid_fraction": _fraction(_count(prediction_rows, "top1_valid"), total),
         "top1_exact_matches": float(_count(prediction_rows, "top1_exact_match")),
@@ -907,9 +1255,14 @@ def build_arg_parser(description: str = "Run masked token diffusion for direct S
     parser.add_argument("--attention-heads", type=int, default=8)
     parser.add_argument("--condition-tokens", type=int, default=8)
     parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--tokenization", default="smiles_token", choices=["char", "smiles", "smiles_token"])
+    parser.add_argument("--tokenization", default="smiles_token", choices=["char", "smiles", "smiles_token", "selfies"])
+    parser.add_argument("--latent-dim", type=int, default=128)
     parser.add_argument("--image-loss-weight", type=float, default=0.0)
     parser.add_argument("--image-foreground-weight", type=float, default=8.0)
+    parser.add_argument("--clip-loss-weight", type=float, default=0.0)
+    parser.add_argument("--clip-temperature", type=float, default=0.07)
+    parser.add_argument("--decode-length-mode", default="free", choices=sorted(DECODE_LENGTH_MODES))
+    parser.add_argument("--min-decode-tokens", type=int, default=1)
     parser.add_argument("--image-size", type=int, default=128)
     parser.add_argument("--sample-count", type=int, default=64)
     parser.add_argument("--contact-sheet-cols", type=int, default=8)
@@ -947,8 +1300,13 @@ def main() -> None:
         condition_tokens=args.condition_tokens,
         dropout=args.dropout,
         tokenization=args.tokenization,
+        latent_dim=args.latent_dim,
         image_loss_weight=args.image_loss_weight,
         image_foreground_weight=args.image_foreground_weight,
+        clip_loss_weight=args.clip_loss_weight,
+        clip_temperature=args.clip_temperature,
+        decode_length_mode=args.decode_length_mode,
+        min_decode_tokens=args.min_decode_tokens,
         image_size=args.image_size,
         sample_count=args.sample_count,
         contact_sheet_cols=args.contact_sheet_cols,
