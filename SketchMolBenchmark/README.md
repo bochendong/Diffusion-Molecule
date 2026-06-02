@@ -56,11 +56,15 @@ Run SketchMol generation + MolScribe OCR as one Slurm job:
 ```bash
 cd /scratch/bdong/projects/Diffusion-Molecule
 
-SKETCHMOL_CKPT=/path/to/sketchmol/model.ckpt \
-SKETCHMOL_MOLSCRIBE_MODEL=/path/to/swin_base_char_aux_200k.pth \
+SKETCHMOL_CKPT=/absolute/path/to/sketchmol/model.ckpt \
+SKETCHMOL_MOLSCRIBE_MODEL=/absolute/path/to/swin_base_char_aux_200k.pth \
 SKETCHMOL_PRESET_STR="MW:400" \
 bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
 ```
+
+Replace both `/absolute/path/to/...` examples with real checkpoint files on the
+cluster filesystem. The submit script validates those files before it calls
+`sbatch`.
 
 Run the lightweight tests:
 

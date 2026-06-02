@@ -7,11 +7,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
-if ! command -v sbatch >/dev/null 2>&1; then
-  echo "ERROR: sbatch not found. Run this on a Slurm login node." >&2
-  exit 2
-fi
-
 ACCOUNT="${SKETCHMOL_SLURM_ACCOUNT:-def-hup-ab}"
 TIME="${SKETCHMOL_SLURM_TIME:-08:00:00}"
 MEM="${SKETCHMOL_SLURM_MEM:-32G}"
@@ -21,12 +16,52 @@ JOB_NAME="${SKETCHMOL_SLURM_JOB_NAME:-sketchmol-ocr}"
 LOG_DIR="${SKETCHMOL_LOG_DIR:-SketchMolBenchmark/logs}"
 mkdir -p "$LOG_DIR"
 
-if [[ -z "${SKETCHMOL_CKPT:-}" ]]; then
-  echo "ERROR: set SKETCHMOL_CKPT=/path/to/sketchmol/model.ckpt" >&2
+export SKETCHMOL_REPO="${SKETCHMOL_REPO:-Research/Molecule Generation/SketchMol/SketchMol-v1-main}"
+export SKETCHMOL_PYTHON_BIN="${SKETCHMOL_PYTHON_BIN:-python}"
+export SKETCHMOL_MOLSCRIBE_PYTHON_BIN="${SKETCHMOL_MOLSCRIBE_PYTHON_BIN:-$SKETCHMOL_PYTHON_BIN}"
+export SKETCHMOL_RUN_NAME="${SKETCHMOL_RUN_NAME:-real_sketchmol_ocr_$(date +%Y%m%d_%H%M%S)}"
+
+require_existing_file() {
+  local env_name="$1"
+  local description="$2"
+  local example="$3"
+  local value="${!env_name:-}"
+
+  if [[ -z "$value" ]]; then
+    echo "ERROR: set $env_name=$example" >&2
+    exit 2
+  fi
+  if [[ "$value" == "/path/to/"* ]]; then
+    echo "ERROR: $env_name is still the example placeholder: $value" >&2
+    echo "       Replace it with the real $description path." >&2
+    exit 2
+  fi
+  if [[ ! -f "$value" ]]; then
+    echo "ERROR: $env_name must point to a real $description file: $value" >&2
+    exit 2
+  fi
+  if [[ ! -r "$value" ]]; then
+    echo "ERROR: $env_name exists but is not readable: $value" >&2
+    exit 2
+  fi
+}
+
+if [[ ! -d "$SKETCHMOL_REPO" ]]; then
+  echo "ERROR: real SketchMol repo not found: $SKETCHMOL_REPO" >&2
   exit 2
 fi
-if [[ -z "${SKETCHMOL_MOLSCRIBE_MODEL:-}" ]]; then
-  echo "ERROR: set SKETCHMOL_MOLSCRIBE_MODEL=/path/to/molscribe.pth" >&2
+
+require_existing_file \
+  "SKETCHMOL_CKPT" \
+  "SketchMol diffusion checkpoint" \
+  "/absolute/path/to/sketchmol/model.ckpt"
+require_existing_file \
+  "SKETCHMOL_MOLSCRIBE_MODEL" \
+  "MolScribe checkpoint" \
+  "/absolute/path/to/swin_base_char_aux_200k.pth"
+
+if ! command -v sbatch >/dev/null 2>&1; then
+  echo "ERROR: sbatch not found. Run this on a Slurm login node." >&2
   exit 2
 fi
 
@@ -43,11 +78,6 @@ elif [[ "$GPU_PROFILE" == "h100_full" ]]; then
 else
   GPU_CANDIDATES=("$GPU_PROFILE")
 fi
-
-export SKETCHMOL_REPO="${SKETCHMOL_REPO:-Research/Molecule Generation/SketchMol/SketchMol-v1-main}"
-export SKETCHMOL_PYTHON_BIN="${SKETCHMOL_PYTHON_BIN:-python}"
-export SKETCHMOL_MOLSCRIBE_PYTHON_BIN="${SKETCHMOL_MOLSCRIBE_PYTHON_BIN:-$SKETCHMOL_PYTHON_BIN}"
-export SKETCHMOL_RUN_NAME="${SKETCHMOL_RUN_NAME:-real_sketchmol_ocr_$(date +%Y%m%d_%H%M%S)}"
 
 echo "Submitting real SketchMol + OCR benchmark:"
 echo "  run_name=$SKETCHMOL_RUN_NAME"
@@ -82,4 +112,3 @@ if [[ "$SUBMITTED" != "1" ]]; then
   echo "ERROR: failed to submit with GPU candidates: ${GPU_CANDIDATES[*]}" >&2
   exit 1
 fi
-

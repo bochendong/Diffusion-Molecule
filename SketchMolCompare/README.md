@@ -21,6 +21,14 @@ That makes the comparison with SketchMol concrete:
 2. `real_sketchmol_plus_ocr`
    Summarizes materialized outputs from the original SketchMol diffusion image generator followed by its MolScribe/OCR recognition step. Key metrics are OCR SMILES presence, RDKit validity, property success, and MolScribe score.
 
+3. `token_diffusion_ocr_free`
+   Route A. Summarizes masked token diffusion runs that denoise molecular
+   structure tokens directly into SMILES, then validate/render with RDKit.
+
+4. `joint_diffusion_ocr_free`
+   Route B. Summarizes shared diffusion runs with both a SMILES token head and
+   learned sketch image head, using RDKit render consistency instead of OCR.
+
 ## Quick Commands
 
 Collect already-finished runs into one report:
@@ -87,11 +95,35 @@ Submit the real SketchMol + OCR benchmark:
 ```bash
 cd /scratch/bdong/projects/Diffusion-Molecule
 
-SKETCHMOL_CKPT=/path/to/sketchmol/model.ckpt \
-SKETCHMOL_MOLSCRIBE_MODEL=/path/to/swin_base_char_aux_200k.pth \
+SKETCHMOL_CKPT=/absolute/path/to/sketchmol/model.ckpt \
+SKETCHMOL_MOLSCRIBE_MODEL=/absolute/path/to/swin_base_char_aux_200k.pth \
 SKETCHMOL_PRESET_STR="MW:400" \
 bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
 ```
+
+Submit Route A, direct token diffusion:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_TOKEN_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHMOL_TOKEN_PAIR_DIR=SketchSMILES/outputs/pairs/phys_50k \
+bash SketchMolCompare/scripts/submit_token_diffusion.sh
+```
+
+Submit Route B, joint image + SMILES diffusion:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_JOINT_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHMOL_JOINT_PAIR_DIR=SketchSMILES/outputs/pairs/phys_50k \
+bash SketchMolCompare/scripts/submit_joint_diffusion.sh
+```
+
+Replace both `/absolute/path/to/...` examples with real checkpoint files on the
+cluster filesystem. The submit script validates those files before it calls
+`sbatch`.
 
 Materialize an already-finished real SketchMol + OCR CSV into the standalone benchmark folder:
 

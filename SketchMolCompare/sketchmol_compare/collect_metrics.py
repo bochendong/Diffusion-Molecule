@@ -33,6 +33,13 @@ SKETCHSMILES_FIELDS = [
     "mean_best_condition_tanimoto",
     "generated_image_fraction",
     "mean_candidate_count",
+    "diffusion_steps",
+    "final_train_loss",
+    "final_train_image_loss",
+    "image_loss_weight",
+    "smiles_render_image_compared_fraction",
+    "smiles_render_image_exact_match_fraction",
+    "smiles_render_image_mse_mean",
     "randomized_smiles_per_molecule",
     "randomized_smiles_max_attempts",
 ]
@@ -82,6 +89,13 @@ PREFERRED_COLUMNS = [
     "mean_predicted_target_fingerprint_tanimoto",
     "top1_condition_tanimoto",
     "mean_best_condition_tanimoto",
+    "diffusion_steps",
+    "final_train_loss",
+    "final_train_image_loss",
+    "image_loss_weight",
+    "smiles_render_image_compared_fraction",
+    "smiles_render_image_exact_match_fraction",
+    "smiles_render_image_mse_mean",
     "randomized_smiles_per_molecule",
     "randomized_smiles_max_attempts",
     "success_rate_in_valid_mols",
@@ -198,11 +212,12 @@ def collect_sketchsmiles_run(run_dir: Path) -> Dict[str, object]:
     if not metrics_path.exists():
         raise FileNotFoundError(f"missing SketchSMILES metrics: {metrics_path}")
     metrics = _read_json(metrics_path)
+    phase = str(metrics.get("phase", ""))
     row: Dict[str, object] = {
-        "family": "sketchsmiles_ocr_free",
+        "family": _derive_metrics_family(phase),
         "run_name": run_dir.name,
-        "phase": metrics.get("phase", ""),
-        "benchmark_task": "image_or_latent_to_smiles",
+        "phase": phase,
+        "benchmark_task": _derive_metrics_task(phase),
         "benchmark_label": metrics.get("model_type", "") or metrics.get("tokenization", ""),
         "source_path": str(metrics_path),
     }
@@ -222,6 +237,22 @@ def collect_sketchsmiles_run(run_dir: Path) -> Dict[str, object]:
         if field in metrics:
             row[field] = metrics[field]
     return row
+
+
+def _derive_metrics_family(phase: str) -> str:
+    if phase.startswith("sketchmol_token_diffusion"):
+        return "token_diffusion_ocr_free"
+    if phase.startswith("sketchmol_joint_diffusion"):
+        return "joint_diffusion_ocr_free"
+    return "sketchsmiles_ocr_free"
+
+
+def _derive_metrics_task(phase: str) -> str:
+    if phase.startswith("sketchmol_token_diffusion"):
+        return "condition_to_smiles_token_diffusion"
+    if phase.startswith("sketchmol_joint_diffusion"):
+        return "condition_to_image_and_smiles_diffusion"
+    return "image_or_latent_to_smiles"
 
 
 def _aggregate_sketchmol_rows(

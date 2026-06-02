@@ -166,6 +166,36 @@
       ]
     },
     {
+      "name": "sketchmol_compare_token_diffusion_seed7",
+      "family": "token_diffusion_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_token_diffusion.sh",
+      "purpose": "Route A: masked token diffusion that directly denoises molecular structure tokens into canonical SMILES without generating an image for OCR.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "mean_best_tanimoto",
+        "top1_valid_fraction",
+        "diffusion_steps",
+        "final_train_token_loss"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_joint_diffusion_seed7",
+      "family": "joint_diffusion_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_joint_diffusion.sh",
+      "purpose": "Route B: shared diffusion backbone with SMILES token head plus learned sketch image head, evaluated by RDKit-render consistency instead of OCR.",
+      "primary_metrics": [
+        "top1_exact_match_fraction",
+        "topk_exact_match_fraction",
+        "top1_target_tanimoto",
+        "mean_best_tanimoto",
+        "top1_valid_fraction",
+        "smiles_render_image_mse_mean",
+        "image_loss_weight"
+      ]
+    },
+    {
       "name": "real_sketchmol_plus_ocr_seed7",
       "family": "real_sketchmol_plus_ocr",
       "script": "SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh",
