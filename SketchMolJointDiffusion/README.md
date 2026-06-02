@@ -57,6 +57,15 @@ SKETCHMOL_JOINT_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash SketchMolCompare/scripts/submit_joint_diffusion_latent_clip.sh
 ```
 
+Submit the SELFIES latent-aligned CLIP-style variant:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_JOINT_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+bash SketchMolCompare/scripts/submit_joint_diffusion_selfies_latent_clip.sh
+```
+
 Smoke test:
 
 ```bash

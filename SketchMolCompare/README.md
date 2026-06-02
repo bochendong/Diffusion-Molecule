@@ -121,6 +121,16 @@ SKETCHMOL_JOINT_PAIR_DIR=SketchSMILES/outputs/pairs/phys_50k \
 bash SketchMolCompare/scripts/submit_joint_diffusion.sh
 ```
 
+Submit Route B with SELFIES tokens plus shared latent/CLIP alignment:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_JOINT_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHMOL_JOINT_PAIR_DIR=SketchSMILES/outputs/pairs/phys_50k \
+bash SketchMolCompare/scripts/submit_joint_diffusion_selfies_latent_clip.sh
+```
+
 Replace both `/absolute/path/to/...` examples with real checkpoint files on the
 cluster filesystem. The submit script validates those files before it calls
 `sbatch`.

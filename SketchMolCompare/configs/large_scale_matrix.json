@@ -225,6 +225,22 @@
       ]
     },
     {
+      "name": "sketchmol_compare_joint_selfies_latent_clip_seed7",
+      "family": "joint_diffusion_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_joint_diffusion_selfies_latent_clip.sh",
+      "purpose": "Route B validity-focused shared-latent variant that combines SELFIES tokenization with CLIP-style image/token alignment to test whether joint alignment can preserve the SELFIES validity gain.",
+      "primary_metrics": [
+        "top1_valid_fraction",
+        "mean_candidate_count",
+        "top1_target_tanimoto",
+        "smiles_render_image_mse_mean",
+        "tokenization",
+        "clip_loss_weight",
+        "final_train_clip_loss",
+        "decode_length_mode"
+      ]
+    },
+    {
       "name": "real_sketchmol_plus_ocr_seed7",
       "family": "real_sketchmol_plus_ocr",
       "script": "SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh",
