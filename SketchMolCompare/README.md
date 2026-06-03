@@ -131,6 +131,20 @@ SKETCHMOL_JOINT_PAIR_DIR=SketchSMILES/outputs/pairs/phys_50k \
 bash SketchMolCompare/scripts/submit_joint_diffusion_selfies_latent_clip.sh
 ```
 
+Submit Route B SELFIES ablations for image-only and lighter auxiliary losses:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_JOINT_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHMOL_JOINT_PAIR_DIR=SketchSMILES/outputs/pairs/phys_50k \
+bash SketchMolCompare/scripts/submit_joint_diffusion_selfies_image_only.sh
+
+SKETCHMOL_JOINT_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHMOL_JOINT_PAIR_DIR=SketchSMILES/outputs/pairs/phys_50k \
+bash SketchMolCompare/scripts/submit_joint_diffusion_selfies_light_aux.sh
+```
+
 Replace both `/absolute/path/to/...` examples with real checkpoint files on the
 cluster filesystem. The submit script validates those files before it calls
 `sbatch`.
