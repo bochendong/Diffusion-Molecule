@@ -14,6 +14,21 @@ SKETCHMOL_REPO="${SKETCHMOL_REPO:-Research/Molecule Generation/SketchMol/SketchM
 PYTHON_BIN="${SKETCHMOL_MOLSCRIBE_PYTHON_BIN:-${SKETCHMOL_PYTHON_BIN:-python}}"
 BATCH_SIZE="${SKETCHMOL_MOLSCRIBE_BATCH_SIZE:-100}"
 OUTPUT_DIR="${SKETCHMOL_BENCHMARK_OUTPUT_DIR:-SketchMolBenchmark/outputs/current}"
+SKETCHMOL_MODULES="${SKETCHMOL_MODULES:-gcc opencv/4.13.0 rdkit/2024.09.6}"
+
+if ! command -v module >/dev/null 2>&1; then
+  if [[ -f /cvmfs/soft.computecanada.ca/config/profile/bash.sh ]]; then
+    # Slurm --wrap shells may not initialize Lmod automatically.
+    # shellcheck source=/dev/null
+    source /cvmfs/soft.computecanada.ca/config/profile/bash.sh
+  fi
+fi
+
+if command -v module >/dev/null 2>&1; then
+  # MolScribe uses cluster-provided OpenCV/RDKit Python modules.
+  # shellcheck disable=SC2086
+  module load $SKETCHMOL_MODULES
+fi
 
 if [[ -z "$SOURCE_CSV" ]]; then
   cat <<EOF >&2

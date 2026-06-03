@@ -63,6 +63,8 @@ class TransformerDecoderLayerBase(nn.Module):
                 d_model,
                 dropout=attention_dropout,
                 max_relative_positions=max_relative_positions,
+                attn_type="self",
+                self_attn_type=self_attn_type,
             )
         elif self_attn_type == "average":
             self.self_attn = AverageAttention(
@@ -145,18 +147,26 @@ class TransformerDecoderLayerBase(nn.Module):
                 inputs_norm,
                 inputs_norm,
                 inputs_norm,
-                mask=dec_mask,
-                layer_cache=layer_cache,
-                attn_type="self",
+                mask=self._expand_attn_mask(dec_mask),
+                step=step or 0,
+                self_attn_type="scaled-dot",
             )
         elif isinstance(self.self_attn, AverageAttention):
             return self.self_attn(
-                inputs_norm, mask=dec_mask, layer_cache=layer_cache, step=step
+                inputs_norm, mask=dec_mask, step=step
             )
         else:
             raise ValueError(
                 f"self attention {type(self.self_attn)} not supported"
             )
+
+    @staticmethod
+    def _expand_attn_mask(mask):
+        if mask is None:
+            return None
+        if mask.dim() == 3:
+            return mask.unsqueeze(1)
+        return mask
 
 
 class TransformerDecoderLayer(TransformerDecoderLayerBase):
@@ -211,7 +221,7 @@ class TransformerDecoderLayer(TransformerDecoderLayerBase):
             pos_ffn_activation_fn=pos_ffn_activation_fn,
         )
         self.context_attn = MultiHeadedAttention(
-            heads, d_model, dropout=attention_dropout
+            heads, d_model, dropout=attention_dropout, attn_type="context"
         )
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
@@ -270,9 +280,8 @@ class TransformerDecoderLayer(TransformerDecoderLayerBase):
             memory_bank,
             memory_bank,
             query_norm,
-            mask=src_pad_mask,
-            layer_cache=layer_cache,
-            attn_type="context",
+            mask=self._expand_attn_mask(src_pad_mask),
+            step=step or 0,
         )
         output = self.feed_forward(self.drop(mid) + query)
 

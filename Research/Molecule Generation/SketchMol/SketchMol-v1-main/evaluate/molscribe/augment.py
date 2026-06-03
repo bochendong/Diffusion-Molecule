@@ -1,10 +1,21 @@
 import albumentations as A
-from albumentations.augmentations.geometric.functional import safe_rotate_enlarged_img_size, _maybe_process_in_chunks, \
-                                                              keypoint_rotate
+from albumentations.augmentations.geometric.functional import _maybe_process_in_chunks, keypoint_rotate
 import cv2
 import math
 import random
 import numpy as np
+
+try:
+    from albumentations.augmentations.geometric.functional import safe_rotate_enlarged_img_size
+except ImportError:
+    # Compat for albumentations versions where this helper was removed.
+    def safe_rotate_enlarged_img_size(angle: float, rows: int, cols: int):
+        rad = math.radians(abs(angle))
+        sin_a = abs(math.sin(rad))
+        cos_a = abs(math.cos(rad))
+        new_rows = int(math.ceil(rows * cos_a + cols * sin_a))
+        new_cols = int(math.ceil(cols * cos_a + rows * sin_a))
+        return new_rows, new_cols
 
 
 def safe_rotate(
@@ -271,7 +282,13 @@ def normalized_grid_distortion(
     return A.augmentations.functional.grid_distortion(img, num_steps, xsteps, ysteps, *args, **kwargs)
 
 
-class NormalizedGridDistortion(A.augmentations.transforms.GridDistortion):
+try:
+    _GridDistortionBase = A.augmentations.transforms.GridDistortion
+except AttributeError:
+    _GridDistortionBase = A.augmentations.geometric.transforms.GridDistortion
+
+
+class NormalizedGridDistortion(_GridDistortionBase):
     def apply(self, img, stepsx=(), stepsy=(), interpolation=cv2.INTER_LINEAR, **params):
         return normalized_grid_distortion(img, self.num_steps, stepsx, stepsy, interpolation, self.border_mode,
                                           self.value)
