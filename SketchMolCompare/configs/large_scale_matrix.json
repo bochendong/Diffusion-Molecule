@@ -241,6 +241,38 @@
       ]
     },
     {
+      "name": "sketchmol_compare_joint_selfies_image_only_seed7",
+      "family": "joint_diffusion_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_joint_diffusion_selfies_image_only.sh",
+      "purpose": "Route B SELFIES ablation with the learned image head enabled but CLIP-style alignment disabled, isolating whether the contrastive term hurts token quality.",
+      "primary_metrics": [
+        "top1_valid_fraction",
+        "mean_candidate_count",
+        "top1_target_tanimoto",
+        "smiles_render_image_mse_mean",
+        "image_loss_weight",
+        "clip_loss_weight",
+        "final_train_token_loss",
+        "decode_length_mode"
+      ]
+    },
+    {
+      "name": "sketchmol_compare_joint_selfies_light_aux_seed7",
+      "family": "joint_diffusion_ocr_free",
+      "script": "SketchMolCompare/scripts/submit_joint_diffusion_selfies_light_aux.sh",
+      "purpose": "Route B SELFIES ablation with lighter image and CLIP auxiliary losses, testing whether weak cross-modal pressure keeps alignment without sacrificing direct molecule quality.",
+      "primary_metrics": [
+        "top1_valid_fraction",
+        "mean_candidate_count",
+        "top1_target_tanimoto",
+        "smiles_render_image_mse_mean",
+        "image_loss_weight",
+        "clip_loss_weight",
+        "final_train_clip_loss",
+        "decode_length_mode"
+      ]
+    },
+    {
       "name": "real_sketchmol_plus_ocr_seed7",
       "family": "real_sketchmol_plus_ocr",
       "script": "SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh",
