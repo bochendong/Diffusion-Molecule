@@ -1,0 +1,76 @@
+Understanding-Condition benchmark export
+  python=/scratch/bdong/venvs/phystabmol/bin/python
+  baseline_variants=SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv
+  variant=full
+  predictions=SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12/benchmark_predictions.csv
+  benchmark_output=SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12
+  condition_features=SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12
+{
+  "baseline_variants_csv": "SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv",
+  "candidate_pool": "train_target_smiles",
+  "condition_features_dir": "SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12",
+  "eval_rows": 71,
+  "eval_split": "eval",
+  "exact_target_match_rate": 0.0,
+  "fingerprint_bits": 512,
+  "mean_target_fp_similarity": 0.07138112008991376,
+  "mean_target_tanimoto": 0.11064508219012201,
+  "mean_train_pool_score": 0.10984322670060144,
+  "output_csv": "SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12/benchmark_predictions.csv",
+  "random_dim": 128,
+  "ridge_alpha": 1.0,
+  "scaffold_match_rate": 0.0,
+  "text_dim": 128,
+  "train_rows": 329,
+  "variant": "full"
+}
+SketchMolBenchmark direct prediction materialize
+  python=/scratch/bdong/venvs/phystabmol/bin/python
+  source_csv=SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12/benchmark_predictions.csv
+  output_dir=SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12
+  benchmark_name=understanding_condition_full_ridge
+  smiles_column=generated_smiles
+  image_column=image_path
+{
+  "benchmark_kind": "direct_structure_prediction",
+  "benchmark_name": "understanding_condition_full_ridge",
+  "generated_at": "2026-06-04T05:46:08.007025+00:00",
+  "image_column": "image_path",
+  "output_dir": "SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12",
+  "present_label": "predicted SMILES present",
+  "present_rate_field": "predicted_smiles_present_rate",
+  "report_description": "This artifact evaluates a direct structure decoder on SketchMol-compatible condition rows, using the same validity, property-success, and MAE logic as the real SketchMol+OCR materialization.",
+  "report_title": "Direct Structure Prediction Benchmark",
+  "rows": 71,
+  "sketchmol_repo": "",
+  "smiles_column": "generated_smiles",
+  "source_csv": "SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12/benchmark_predictions.csv",
+  "summary": {
+    "LogP_mae": 2.911003333333337,
+    "MW_mae": 149.4866666666668,
+    "QED_mae": 0.28567074573712636,
+    "TPSA_mae": 23.386,
+    "benchmark_label": "understanding_condition_full_ridge",
+    "benchmark_task": "direct_structure_prediction",
+    "image_path_exists_fraction": 1.0,
+    "molscribe_score_mean": "",
+    "n": 71,
+    "predicted_smiles_present_rate": 1.0,
+    "rdkit_available": true,
+    "source_path": "SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12/benchmark_predictions.csv",
+    "success_rate_in_valid_mols": 0.28169014084507044,
+    "success_rate_sketchmol_tolerance_in_valid_mols": 0.28169014084507044,
+    "success_rate_strict_in_valid_mols": 0.28169014084507044,
+    "validity": 1.0
+  }
+}
+
+Direct prediction benchmark materialized: SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12
+  summary=SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12/benchmark_summary.csv
+  decoded=SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12/benchmark_decoded.csv
+  metrics=SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12/metrics.json
+  report=SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12/benchmark_report.md
+
+Understanding-Condition benchmark ready:
+  predictions=SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12/benchmark_predictions.csv
+  summary=SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12/benchmark_summary.csv

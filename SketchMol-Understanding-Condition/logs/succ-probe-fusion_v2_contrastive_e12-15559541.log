@@ -1,0 +1,2004 @@
+Running delta-bucket classifier
+  baseline_csv=SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv
+  output_dir=SketchMol-Understanding-Condition/outputs/delta_bucket_classifier_multimodal_fusion_v2_contrastive_e12
+  condition_features_dir=SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12
+  feature_array=pooled
+{
+  "baseline_variants_csv": "SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv",
+  "condition_features_dir": "SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12",
+  "config": {
+    "epochs": 500,
+    "l2": 0.001,
+    "learning_rate": 0.1,
+    "seed": 7
+  },
+  "feature_array": "pooled",
+  "metrics": [
+    {
+      "accuracy": 0.29577464788732394,
+      "bucket_thresholds": {
+        "LogP_decrease": [
+          0.3728000223636627,
+          0.8289333581924438
+        ],
+        "MolWt_decrease": [
+          28.696666717529297,
+          52.910667419433594
+        ],
+        "QED_increase": [
+          0.07930033653974533,
+          0.15850967168807983
+        ],
+        "TPSA_decrease": [
+          9.773332595825195,
+          29.073333740234375
+        ],
+        "TPSA_increase": [
+          13.636666297912598,
+          29.34000015258789
+        ]
+      },
+      "classes": [
+        "LogP_decrease_large",
+        "LogP_decrease_medium",
+        "LogP_decrease_small",
+        "MolWt_decrease_large",
+        "MolWt_decrease_medium",
+        "MolWt_decrease_small",
+        "QED_increase_large",
+        "QED_increase_medium",
+        "QED_increase_small",
+        "TPSA_decrease_large",
+        "TPSA_decrease_medium",
+        "TPSA_decrease_small",
+        "TPSA_increase_large",
+        "TPSA_increase_medium",
+        "TPSA_increase_small"
+      ],
+      "confusion": [
+        [
+          0,
+          2,
+          1,
+          0,
+          1,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          1,
+          1,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          5,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          3,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          6,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          1,
+          1,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          3,
+          2,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          5
+        ]
+      ],
+      "eval_examples": 71,
+      "feature_dim": 768,
+      "final_train_loss": 0.9191405773162842,
+      "macro_f1": 0.23261366084895496,
+      "per_class": {
+        "LogP_decrease_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 7
+        },
+        "LogP_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "LogP_decrease_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 3
+        },
+        "MolWt_decrease_large": {
+          "f1": 0.2857142857142857,
+          "precision": 1.0,
+          "recall": 0.16666666666666666,
+          "support": 6
+        },
+        "MolWt_decrease_medium": {
+          "f1": 0.6666666666666666,
+          "precision": 0.5,
+          "recall": 1.0,
+          "support": 2
+        },
+        "MolWt_decrease_small": {
+          "f1": 0.39999999999999997,
+          "precision": 0.2727272727272727,
+          "recall": 0.75,
+          "support": 4
+        },
+        "QED_increase_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 8
+        },
+        "QED_increase_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 4
+        },
+        "QED_increase_small": {
+          "f1": 0.35294117647058826,
+          "precision": 0.25,
+          "recall": 0.6,
+          "support": 5
+        },
+        "TPSA_decrease_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "TPSA_decrease_medium": {
+          "f1": 0.42857142857142855,
+          "precision": 0.6,
+          "recall": 0.3333333333333333,
+          "support": 9
+        },
+        "TPSA_decrease_small": {
+          "f1": 0.30769230769230765,
+          "precision": 0.2222222222222222,
+          "recall": 0.5,
+          "support": 4
+        },
+        "TPSA_increase_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "TPSA_increase_medium": {
+          "f1": 0.3333333333333333,
+          "precision": 0.4,
+          "recall": 0.2857142857142857,
+          "support": 7
+        },
+        "TPSA_increase_small": {
+          "f1": 0.7142857142857143,
+          "precision": 0.625,
+          "recall": 0.8333333333333334,
+          "support": 6
+        }
+      },
+      "train_examples": 329,
+      "variant": "full"
+    },
+    {
+      "accuracy": 0.323943661971831,
+      "bucket_thresholds": {
+        "LogP_decrease": [
+          0.3728000223636627,
+          0.8289333581924438
+        ],
+        "MolWt_decrease": [
+          28.696666717529297,
+          52.910667419433594
+        ],
+        "QED_increase": [
+          0.07930033653974533,
+          0.15850967168807983
+        ],
+        "TPSA_decrease": [
+          9.773332595825195,
+          29.073333740234375
+        ],
+        "TPSA_increase": [
+          13.636666297912598,
+          29.34000015258789
+        ]
+      },
+      "classes": [
+        "LogP_decrease_large",
+        "LogP_decrease_medium",
+        "LogP_decrease_small",
+        "MolWt_decrease_large",
+        "MolWt_decrease_medium",
+        "MolWt_decrease_small",
+        "QED_increase_large",
+        "QED_increase_medium",
+        "QED_increase_small",
+        "TPSA_decrease_large",
+        "TPSA_decrease_medium",
+        "TPSA_decrease_small",
+        "TPSA_increase_large",
+        "TPSA_increase_medium",
+        "TPSA_increase_small"
+      ],
+      "confusion": [
+        [
+          7,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          6,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          8,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          9,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          7
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          6
+        ]
+      ],
+      "eval_examples": 71,
+      "feature_dim": 768,
+      "final_train_loss": 1.117539644241333,
+      "macro_f1": 0.16163447835274464,
+      "per_class": {
+        "LogP_decrease_large": {
+          "f1": 0.7368421052631579,
+          "precision": 0.5833333333333334,
+          "recall": 1.0,
+          "support": 7
+        },
+        "LogP_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "LogP_decrease_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 3
+        },
+        "MolWt_decrease_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 6
+        },
+        "MolWt_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "MolWt_decrease_small": {
+          "f1": 0.5,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "support": 4
+        },
+        "QED_increase_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 8
+        },
+        "QED_increase_medium": {
+          "f1": 0.38095238095238093,
+          "precision": 0.23529411764705882,
+          "recall": 1.0,
+          "support": 4
+        },
+        "QED_increase_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 5
+        },
+        "TPSA_decrease_large": {
+          "f1": 0.23529411764705882,
+          "precision": 0.13333333333333333,
+          "recall": 1.0,
+          "support": 2
+        },
+        "TPSA_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 9
+        },
+        "TPSA_decrease_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 4
+        },
+        "TPSA_increase_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "TPSA_increase_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 7
+        },
+        "TPSA_increase_small": {
+          "f1": 0.5714285714285715,
+          "precision": 0.4,
+          "recall": 1.0,
+          "support": 6
+        }
+      },
+      "train_examples": 329,
+      "variant": "text_only"
+    },
+    {
+      "accuracy": 0.056338028169014086,
+      "bucket_thresholds": {
+        "LogP_decrease": [
+          0.3728000223636627,
+          0.8289333581924438
+        ],
+        "MolWt_decrease": [
+          28.696666717529297,
+          52.910667419433594
+        ],
+        "QED_increase": [
+          0.07930033653974533,
+          0.15850967168807983
+        ],
+        "TPSA_decrease": [
+          9.773332595825195,
+          29.073333740234375
+        ],
+        "TPSA_increase": [
+          13.636666297912598,
+          29.34000015258789
+        ]
+      },
+      "classes": [
+        "LogP_decrease_large",
+        "LogP_decrease_medium",
+        "LogP_decrease_small",
+        "MolWt_decrease_large",
+        "MolWt_decrease_medium",
+        "MolWt_decrease_small",
+        "QED_increase_large",
+        "QED_increase_medium",
+        "QED_increase_small",
+        "TPSA_decrease_large",
+        "TPSA_decrease_medium",
+        "TPSA_decrease_small",
+        "TPSA_increase_large",
+        "TPSA_increase_medium",
+        "TPSA_increase_small"
+      ],
+      "confusion": [
+        [
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          0,
+          1,
+          2,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          0,
+          1,
+          3,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          2,
+          3,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          3,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2
+        ]
+      ],
+      "eval_examples": 71,
+      "feature_dim": 768,
+      "final_train_loss": 1.7821085453033447,
+      "macro_f1": 0.027301587301587302,
+      "per_class": {
+        "LogP_decrease_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 7
+        },
+        "LogP_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "LogP_decrease_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 3
+        },
+        "MolWt_decrease_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 6
+        },
+        "MolWt_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "MolWt_decrease_small": {
+          "f1": 0.14285714285714285,
+          "precision": 0.08333333333333333,
+          "recall": 0.5,
+          "support": 4
+        },
+        "QED_increase_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 8
+        },
+        "QED_increase_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 4
+        },
+        "QED_increase_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 5
+        },
+        "TPSA_decrease_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "TPSA_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 9
+        },
+        "TPSA_decrease_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 4
+        },
+        "TPSA_increase_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "TPSA_increase_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 7
+        },
+        "TPSA_increase_small": {
+          "f1": 0.26666666666666666,
+          "precision": 0.2222222222222222,
+          "recall": 0.3333333333333333,
+          "support": 6
+        }
+      },
+      "train_examples": 329,
+      "variant": "image_only"
+    },
+    {
+      "accuracy": 0.07042253521126761,
+      "bucket_thresholds": {
+        "LogP_decrease": [
+          0.3728000223636627,
+          0.8289333581924438
+        ],
+        "MolWt_decrease": [
+          28.696666717529297,
+          52.910667419433594
+        ],
+        "QED_increase": [
+          0.07930033653974533,
+          0.15850967168807983
+        ],
+        "TPSA_decrease": [
+          9.773332595825195,
+          29.073333740234375
+        ],
+        "TPSA_increase": [
+          13.636666297912598,
+          29.34000015258789
+        ]
+      },
+      "classes": [
+        "LogP_decrease_large",
+        "LogP_decrease_medium",
+        "LogP_decrease_small",
+        "MolWt_decrease_large",
+        "MolWt_decrease_medium",
+        "MolWt_decrease_small",
+        "QED_increase_large",
+        "QED_increase_medium",
+        "QED_increase_small",
+        "TPSA_decrease_large",
+        "TPSA_decrease_medium",
+        "TPSA_decrease_small",
+        "TPSA_increase_large",
+        "TPSA_increase_medium",
+        "TPSA_increase_small"
+      ],
+      "confusion": [
+        [
+          0,
+          1,
+          1,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          0,
+          0,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          2
+        ],
+        [
+          0,
+          1,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          1,
+          1,
+          1,
+          0,
+          1,
+          2,
+          1,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          1,
+          2,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0
+        ],
+        [
+          2,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0
+        ]
+      ],
+      "eval_examples": 71,
+      "feature_dim": 768,
+      "final_train_loss": 0.3272501230239868,
+      "macro_f1": 0.05860805860805861,
+      "per_class": {
+        "LogP_decrease_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 7
+        },
+        "LogP_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "LogP_decrease_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 3
+        },
+        "MolWt_decrease_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 6
+        },
+        "MolWt_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "MolWt_decrease_small": {
+          "f1": 0.15384615384615383,
+          "precision": 0.1111111111111111,
+          "recall": 0.25,
+          "support": 4
+        },
+        "QED_increase_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 8
+        },
+        "QED_increase_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 4
+        },
+        "QED_increase_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 5
+        },
+        "TPSA_decrease_large": {
+          "f1": 0.28571428571428575,
+          "precision": 0.2,
+          "recall": 0.5,
+          "support": 2
+        },
+        "TPSA_decrease_medium": {
+          "f1": 0.2857142857142857,
+          "precision": 0.4,
+          "recall": 0.2222222222222222,
+          "support": 9
+        },
+        "TPSA_decrease_small": {
+          "f1": 0.15384615384615383,
+          "precision": 0.1111111111111111,
+          "recall": 0.25,
+          "support": 4
+        },
+        "TPSA_increase_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "TPSA_increase_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 7
+        },
+        "TPSA_increase_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 6
+        }
+      },
+      "train_examples": 329,
+      "variant": "random_query"
+    },
+    {
+      "accuracy": 0.30985915492957744,
+      "bucket_thresholds": {
+        "LogP_decrease": [
+          0.3728000223636627,
+          0.8289333581924438
+        ],
+        "MolWt_decrease": [
+          28.696666717529297,
+          52.910667419433594
+        ],
+        "QED_increase": [
+          0.07930033653974533,
+          0.15850967168807983
+        ],
+        "TPSA_decrease": [
+          9.773332595825195,
+          29.073333740234375
+        ],
+        "TPSA_increase": [
+          13.636666297912598,
+          29.34000015258789
+        ]
+      },
+      "classes": [
+        "LogP_decrease_large",
+        "LogP_decrease_medium",
+        "LogP_decrease_small",
+        "MolWt_decrease_large",
+        "MolWt_decrease_medium",
+        "MolWt_decrease_small",
+        "QED_increase_large",
+        "QED_increase_medium",
+        "QED_increase_small",
+        "TPSA_decrease_large",
+        "TPSA_decrease_medium",
+        "TPSA_decrease_small",
+        "TPSA_increase_large",
+        "TPSA_increase_medium",
+        "TPSA_increase_small"
+      ],
+      "confusion": [
+        [
+          1,
+          1,
+          5,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          5,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          1,
+          0,
+          1,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          2,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          4,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          2,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2,
+          3,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          0,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          3,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          1,
+          2,
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          2
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          1,
+          0,
+          6
+        ],
+        [
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          0,
+          4,
+          0,
+          2
+        ]
+      ],
+      "eval_examples": 71,
+      "feature_dim": 768,
+      "final_train_loss": 1.0707671642303467,
+      "macro_f1": 0.26866096866096867,
+      "per_class": {
+        "LogP_decrease_large": {
+          "f1": 0.22222222222222224,
+          "precision": 0.5,
+          "recall": 0.14285714285714285,
+          "support": 7
+        },
+        "LogP_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "LogP_decrease_small": {
+          "f1": 0.5,
+          "precision": 0.3333333333333333,
+          "recall": 1.0,
+          "support": 3
+        },
+        "MolWt_decrease_large": {
+          "f1": 0.8333333333333334,
+          "precision": 0.8333333333333334,
+          "recall": 0.8333333333333334,
+          "support": 6
+        },
+        "MolWt_decrease_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "MolWt_decrease_small": {
+          "f1": 0.5714285714285715,
+          "precision": 0.6666666666666666,
+          "recall": 0.5,
+          "support": 4
+        },
+        "QED_increase_large": {
+          "f1": 0.3076923076923077,
+          "precision": 0.4,
+          "recall": 0.25,
+          "support": 8
+        },
+        "QED_increase_medium": {
+          "f1": 0.16666666666666666,
+          "precision": 0.125,
+          "recall": 0.25,
+          "support": 4
+        },
+        "QED_increase_small": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 5
+        },
+        "TPSA_decrease_large": {
+          "f1": 0.25,
+          "precision": 0.16666666666666666,
+          "recall": 0.5,
+          "support": 2
+        },
+        "TPSA_decrease_medium": {
+          "f1": 0.42857142857142855,
+          "precision": 0.6,
+          "recall": 0.3333333333333333,
+          "support": 9
+        },
+        "TPSA_decrease_small": {
+          "f1": 0.5,
+          "precision": 0.5,
+          "recall": 0.5,
+          "support": 4
+        },
+        "TPSA_increase_large": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 2
+        },
+        "TPSA_increase_medium": {
+          "f1": 0.0,
+          "precision": 0.0,
+          "recall": 0.0,
+          "support": 7
+        },
+        "TPSA_increase_small": {
+          "f1": 0.25,
+          "precision": 0.2,
+          "recall": 0.3333333333333333,
+          "support": 6
+        }
+      },
+      "train_examples": 329,
+      "variant": "caption_bottleneck"
+    }
+  ]
+}
+Delta-bucket classifier finished.
