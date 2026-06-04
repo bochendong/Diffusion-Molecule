@@ -15,6 +15,79 @@
 
 SketchMol 现有条件流已经是 cross-attention：`MixedEmbedderV2` 把离散/连续性质变成条件 token，配置里的 `context_dim` 是 256。因此最自然的改法不是推翻 SketchMol，而是把 MLLM condition tokens 接到同一个 cross-attention 接口里。
 
+## 0.1 当前主线：不用小模型，改用大 VLM
+
+当前主实验不再以小 CNN / hashed text proxy 作为方法主体。那些结果只保留为
+pipeline sanity check 和 ablation 负控。
+
+新的主线是：
+
+```text
+source molecule image + multi-property instruction
+  -> frozen HuggingFace VLM hidden states
+  -> molecular condition features / query tokens
+  -> scaffold-aware multi-property retrieval benchmark
+  -> SketchMol-style 2p-7p strict success table
+```
+
+一键提交大模型 workflow：
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull origin main
+
+SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SUCC_HF_MODEL_NAME_OR_PATH=Qwen/Qwen2.5-VL-7B-Instruct \
+bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_workflow.sh
+```
+
+如果集群不能直接联网下载 HuggingFace 模型，把
+`SUCC_HF_MODEL_NAME_OR_PATH` 换成本地模型目录，例如：
+
+```bash
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct
+```
+
+默认输出：
+
+```text
+SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm/
+  pooled.npy
+  query_tokens.npy
+  index.csv
+  summary.json
+
+SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm/
+  benchmark_report.md
+  benchmark_summary.csv
+  benchmark_decoded.csv
+  metrics.json
+```
+
+`benchmark_report.md` 会直接包含：
+
+```text
+source_identity
+vlm_scaffold_feature_retrieval
+target_oracle
+SketchMol structured reference
+```
+
+这里的 `vlm_scaffold_feature_retrieval` 才是大模型主结果：它用 frozen VLM
+对 `source image + instruction` 的表示，在 train condition features 里检索同
+scaffold target molecule，然后用 SketchMol 风格的 2-7 性质 strict success
+评估。
+
+快速 dry run 可以限制导出行数：
+
+```bash
+SUCC_LIMIT=2000 \
+SMMED_LIMIT_EVAL_ROWS=200 \
+SMMED_MAX_EVAL_PER_PROPERTY_COUNT=200 \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_workflow.sh
+```
+
 ## 代码入口
 
 这个目录现在是独立于 `Research` 的原型工程，不直接改动别人代码。

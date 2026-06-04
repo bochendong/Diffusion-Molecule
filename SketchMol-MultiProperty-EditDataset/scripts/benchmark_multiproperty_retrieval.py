@@ -38,8 +38,12 @@ METHODS = (
     "source_identity",
     "global_property_retrieval",
     "scaffold_property_retrieval",
+    "vlm_feature_retrieval",
+    "vlm_scaffold_feature_retrieval",
     "target_oracle",
 )
+
+FEATURE_METHODS = {"vlm_feature_retrieval", "vlm_scaffold_feature_retrieval"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -49,8 +53,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eval-split", default="eval")
     parser.add_argument("--methods", default=",".join(METHODS))
     parser.add_argument("--max-global-candidates", type=int, default=20000)
+    parser.add_argument("--max-feature-candidates", type=int, default=20000)
     parser.add_argument("--limit-eval-rows", type=int, default=None)
     parser.add_argument("--max-eval-per-property-count", type=int, default=None)
+    parser.add_argument("--condition-features-dir", type=Path, default=None)
+    parser.add_argument("--condition-feature-array", choices=["pooled", "query_tokens"], default="pooled")
+    parser.add_argument("--condition-feature-variant", default="full")
     parser.add_argument("--compute-tanimoto", action="store_true")
     parser.add_argument("--allow-eval-target-candidates", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
@@ -64,6 +72,8 @@ def main() -> None:
     unknown = [method for method in methods if method not in METHODS]
     if unknown:
         raise ValueError(f"Unsupported methods: {unknown}")
+    if any(method in FEATURE_METHODS for method in methods) and args.condition_features_dir is None:
+        raise ValueError("--condition-features-dir is required for VLM feature retrieval methods")
 
     rows = _read_rows(args.condition_rows_csv)
     train_rows = [row for row in rows if row.get("split") != args.eval_split]
@@ -83,6 +93,15 @@ def main() -> None:
     by_scaffold: dict[str, list[dict[str, object]]] = defaultdict(list)
     for candidate in candidates:
         by_scaffold[str(candidate["scaffold"])].append(candidate)
+    feature_context = None
+    if args.condition_features_dir is not None:
+        feature_context = _build_feature_context(
+            train_rows,
+            condition_features_dir=args.condition_features_dir,
+            array_name=args.condition_feature_array,
+            variant=args.condition_feature_variant,
+            excluded_smiles=excluded_targets,
+        )
 
     decoded_rows = []
     for method in methods:
@@ -93,7 +112,9 @@ def main() -> None:
                     method=method,
                     candidates=candidates,
                     by_scaffold=by_scaffold,
+                    feature_context=feature_context,
                     max_global_candidates=args.max_global_candidates,
+                    max_feature_candidates=args.max_feature_candidates,
                     compute_tanimoto=args.compute_tanimoto,
                     seed=args.seed,
                 )
@@ -113,6 +134,10 @@ def main() -> None:
         "eval_target_candidates_excluded": not args.allow_eval_target_candidates,
         "max_eval_per_property_count": args.max_eval_per_property_count,
         "max_global_candidates": args.max_global_candidates,
+        "max_feature_candidates": args.max_feature_candidates,
+        "condition_features_dir": str(args.condition_features_dir) if args.condition_features_dir else None,
+        "condition_feature_array": args.condition_feature_array if args.condition_features_dir else None,
+        "condition_feature_variant": args.condition_feature_variant if args.condition_features_dir else None,
         "summary_csv": str(args.output_dir / "benchmark_summary.csv"),
         "decoded_csv": str(args.output_dir / "benchmark_decoded.csv"),
         "report": str(args.output_dir / "benchmark_report.md"),
@@ -196,7 +221,9 @@ def _decode_row(
     method: str,
     candidates: list[dict[str, object]],
     by_scaffold: Mapping[str, list[dict[str, object]]],
+    feature_context: dict[str, object] | None,
     max_global_candidates: int,
+    max_feature_candidates: int,
     compute_tanimoto: bool,
     seed: int,
 ) -> dict[str, object]:
@@ -230,6 +257,20 @@ def _decode_row(
         generated_scaffold = str(candidate.get("scaffold", ""))
         generated_props = dict(candidate.get("props", {}))
         fallback = ""
+    elif method in FEATURE_METHODS:
+        if feature_context is None:
+            raise ValueError(f"{method} requires condition feature context")
+        scaffold_only = method == "vlm_scaffold_feature_retrieval"
+        candidate, fallback = _best_feature_candidate(
+            row,
+            feature_context=feature_context,
+            scaffold_only=scaffold_only,
+            max_candidates=max_feature_candidates,
+            seed=seed,
+        )
+        generated_smiles = str(candidate.get("smiles", ""))
+        generated_scaffold = str(candidate.get("scaffold", ""))
+        generated_props = dict(candidate.get("props", {}))
     else:
         raise ValueError(f"Unsupported method: {method}")
 
@@ -317,6 +358,112 @@ def _best_candidate(
     return best or pool[0]
 
 
+def _build_feature_context(
+    train_rows: list[dict[str, str]],
+    *,
+    condition_features_dir: Path,
+    array_name: str,
+    variant: str,
+    excluded_smiles: set[str],
+) -> dict[str, object]:
+    features_by_condition_id = _load_condition_features(condition_features_dir, array_name=array_name, variant=variant)
+    candidates = []
+    seen: set[tuple[str, str]] = set()
+    for row in train_rows:
+        condition_id = row.get("condition_id", "")
+        feature = features_by_condition_id.get(condition_id)
+        if feature is None:
+            continue
+        smiles = _safe_canonical_smiles(row.get("target_smiles", "")) or row.get("target_smiles", "")
+        if not smiles or smiles in excluded_smiles:
+            continue
+        key = (condition_id, smiles)
+        if key in seen:
+            continue
+        seen.add(key)
+        scaffold = row.get("scaffold") or _safe_scaffold_smiles(smiles) or ""
+        candidates.append(
+            {
+                "condition_id": condition_id,
+                "smiles": smiles,
+                "scaffold": scaffold,
+                "props": _target_props(row),
+                "feature": feature,
+            }
+        )
+    by_scaffold: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for candidate in candidates:
+        by_scaffold[str(candidate["scaffold"])].append(candidate)
+    return {
+        "features_by_condition_id": features_by_condition_id,
+        "candidates": candidates,
+        "by_scaffold": by_scaffold,
+    }
+
+
+def _load_condition_features(feature_dir: Path, *, array_name: str, variant: str) -> dict[str, np.ndarray]:
+    import numpy as np
+
+    array_path = feature_dir / ("query_tokens.npy" if array_name == "query_tokens" else "pooled.npy")
+    raw_features = np.load(array_path)
+    features = raw_features.reshape(raw_features.shape[0], -1)
+    with (feature_dir / "index.csv").open(newline="", encoding="utf-8") as handle:
+        index_rows = list(csv.DictReader(handle))
+    if features.shape[0] != len(index_rows):
+        raise ValueError(
+            f"Feature row mismatch: {array_path} has {features.shape[0]} rows, "
+            f"index.csv has {len(index_rows)} rows"
+        )
+    out: dict[str, np.ndarray] = {}
+    for index_row, feature in zip(index_rows, features.astype(np.float32)):
+        if index_row.get("variant") != variant:
+            continue
+        condition_id = index_row.get("condition_id", "")
+        if not condition_id:
+            continue
+        norm = float(np.linalg.norm(feature))
+        out[condition_id] = feature / norm if norm > 0 else feature
+    return out
+
+
+def _best_feature_candidate(
+    row: dict[str, str],
+    *,
+    feature_context: dict[str, object],
+    scaffold_only: bool,
+    max_candidates: int,
+    seed: int,
+) -> tuple[dict[str, object], str]:
+    import numpy as np
+
+    features_by_condition_id = feature_context["features_by_condition_id"]
+    if not isinstance(features_by_condition_id, Mapping):
+        raise TypeError("Invalid feature context: features_by_condition_id")
+    query = features_by_condition_id.get(row.get("condition_id", ""))
+    if query is None:
+        return {"smiles": "", "scaffold": "", "props": {}}, "missing_query_feature"
+
+    if scaffold_only:
+        by_scaffold = feature_context["by_scaffold"]
+        if not isinstance(by_scaffold, Mapping):
+            raise TypeError("Invalid feature context: by_scaffold")
+        pool = list(by_scaffold.get(row.get("scaffold", ""), []))
+        fallback = ""
+        if not pool:
+            pool = list(feature_context["candidates"])
+            fallback = "global"
+    else:
+        pool = list(feature_context["candidates"])
+        fallback = ""
+    if not pool:
+        return {"smiles": "", "scaffold": "", "props": {}}, fallback or "empty_pool"
+    pool = _stable_sample(pool, max_candidates, key=row.get("condition_id", ""), seed=seed)
+    matrix = np.stack([np.asarray(candidate["feature"], dtype=np.float32) for candidate in pool])
+    scores = matrix @ np.asarray(query, dtype=np.float32)
+    best_idx = int(np.argmax(scores))
+    return pool[best_idx], fallback
+
+
 def _stable_sample(items: list[dict[str, object]], limit: int, *, key: str, seed: int) -> list[dict[str, object]]:
     if limit <= 0 or len(items) <= limit:
         return items
@@ -385,10 +532,22 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
         f"- eval split: `{args.eval_split}`",
         f"- max eval rows per property count: `{args.max_eval_per_property_count}`",
         f"- eval target candidates excluded from retrieval pool: `{not args.allow_eval_target_candidates}`",
-        "",
-        "| method | 2p | 3p | 4p | 5p | 6p | 7p | scaffold all |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
+    if args.condition_features_dir is not None:
+        lines.extend(
+            [
+                f"- condition features: `{args.condition_features_dir}`",
+                f"- condition feature array: `{args.condition_feature_array}`",
+                f"- condition feature variant: `{args.condition_feature_variant}`",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "| method | 2p | 3p | 4p | 5p | 6p | 7p | scaffold all |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
     methods = [method for method in METHODS if any(row.get("method") == method for row in summary_rows)]
     rows_by_key = {(row["method"], row["property_count"]): row for row in summary_rows}
     for method in methods:
@@ -406,6 +565,8 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "Notes:",
             "- `target_oracle` is an upper bound because it returns the known target molecule.",
             "- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a train candidate with the same scaffold and closest active-property values.",
+            "- `vlm_scaffold_feature_retrieval` retrieves same-scaffold train targets by nearest frozen VLM condition feature.",
+            "- `vlm_feature_retrieval` retrieves train targets by nearest frozen VLM condition feature without scaffold filtering.",
             "- `global_property_retrieval` ignores scaffold and can satisfy properties while failing edit preservation.",
             "- A learned Understanding-Condition model should eventually beat `text_only`/global-style property matching while staying close to the scaffold-aware or oracle rows.",
             "",

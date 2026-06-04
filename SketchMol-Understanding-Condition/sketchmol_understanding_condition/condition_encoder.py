@@ -9,6 +9,7 @@ want for a future MLLM encoder:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 import numpy as np
@@ -378,6 +379,174 @@ class MultimodalFusionV2ConditionEncoder(MultimodalV0ConditionEncoder):
         return self._cache[key]
 
 
+class HfVlmConditionEncoder:
+    """Frozen HuggingFace VLM hidden states for big-model conditioning."""
+
+    name = "hf_vlm"
+
+    def __init__(
+        self,
+        *,
+        hf_model_name_or_path: str,
+        hf_device_map: str = "auto",
+        hf_dtype: str = "auto",
+        hf_batch_size: int = 1,
+        hf_max_length: int = 2048,
+        hf_trust_remote_code: bool = True,
+        hf_attn_implementation: str | None = None,
+        hf_prompt_style: str = "auto",
+        pooled_dim: int = 4096,
+        num_queries: int = 32,
+        query_dim: int = 256,
+        **_: object,
+    ) -> None:
+        self.hf_model_name_or_path = hf_model_name_or_path
+        self.hf_device_map = hf_device_map
+        self.hf_dtype = hf_dtype
+        self.hf_batch_size = max(1, int(hf_batch_size))
+        self.hf_max_length = int(hf_max_length)
+        self.hf_trust_remote_code = bool(hf_trust_remote_code)
+        self.hf_attn_implementation = hf_attn_implementation
+        self.hf_prompt_style = hf_prompt_style
+        self.pooled_dim = pooled_dim
+        self.num_queries = num_queries
+        self.query_dim = query_dim
+        self._processor, self._model = self._load_hf_model()
+        self._projection = _fixed_projection(self.pooled_dim, self.num_queries * self.query_dim, seed=53)
+
+    def encode_row(self, row: dict[str, str]) -> ConditionEncoding:
+        return self.encode_rows([row])[0]
+
+    def encode_rows(self, rows: list[dict[str, str]]) -> list[ConditionEncoding]:
+        features: list[np.ndarray | None] = [None] * len(rows)
+        pending_image: list[tuple[int, dict[str, str]]] = []
+        pending_text: list[tuple[int, dict[str, str]]] = []
+
+        for idx, row in enumerate(rows):
+            variant = row.get("variant", "full")
+            if variant == "random_query":
+                features[idx] = _deterministic_random_vector(row.get("variant_id", ""), self.pooled_dim)
+                continue
+            if _variant_uses_image(row):
+                pending_image.append((idx, row))
+            else:
+                pending_text.append((idx, row))
+
+        self._encode_pending(pending_image, features, use_images=True)
+        self._encode_pending(pending_text, features, use_images=False)
+
+        out = []
+        for row, feature in zip(rows, features):
+            if feature is None:
+                raise RuntimeError("Internal error: missing VLM feature")
+            pooled = _resize_vector(np.asarray(feature, dtype=np.float32), self.pooled_dim)
+            norm = float(np.linalg.norm(pooled))
+            if norm > 0:
+                pooled = pooled / norm
+            query_flat = np.tanh(pooled @ self._projection)
+            query_tokens = query_flat.reshape(self.num_queries, self.query_dim).astype(np.float32)
+            out.append(
+                ConditionEncoding(
+                    pooled=pooled.astype(np.float32),
+                    query_tokens=query_tokens,
+                    variant=row.get("variant", "full"),
+                    condition_mode=row.get("condition_mode", row.get("variant", "full")),
+                )
+            )
+        return out
+
+    def _load_hf_model(self):
+        import torch
+        import transformers
+        from transformers import AutoProcessor
+
+        processor = AutoProcessor.from_pretrained(
+            self.hf_model_name_or_path,
+            trust_remote_code=self.hf_trust_remote_code,
+        )
+        model_kwargs: dict[str, object] = {"trust_remote_code": self.hf_trust_remote_code}
+        dtype = _torch_dtype(torch, self.hf_dtype)
+        if dtype is not None:
+            model_kwargs["torch_dtype"] = dtype
+        if self.hf_device_map and self.hf_device_map != "none":
+            model_kwargs["device_map"] = self.hf_device_map
+        if self.hf_attn_implementation:
+            model_kwargs["attn_implementation"] = self.hf_attn_implementation
+
+        errors = []
+        for class_name in (
+            "AutoModelForImageTextToText",
+            "AutoModelForVision2Seq",
+            "AutoModelForCausalLM",
+            "AutoModel",
+        ):
+            model_cls = getattr(transformers, class_name, None)
+            if model_cls is None:
+                continue
+            try:
+                model = model_cls.from_pretrained(self.hf_model_name_or_path, **model_kwargs)
+                model.eval()
+                if not self.hf_device_map or self.hf_device_map == "none":
+                    device = "cuda" if torch.cuda.is_available() else "cpu"
+                    model.to(device)
+                return processor, model
+            except Exception as exc:  # pragma: no cover - depends on installed transformers/model
+                errors.append(f"{class_name}: {exc}")
+        detail = "\n".join(errors[-4:])
+        raise RuntimeError(f"Could not load HuggingFace VLM {self.hf_model_name_or_path!r}.\n{detail}")
+
+    def _encode_pending(
+        self,
+        pending: list[tuple[int, dict[str, str]]],
+        features: list[np.ndarray | None],
+        *,
+        use_images: bool,
+    ) -> None:
+        if not pending:
+            return
+        import torch
+        from PIL import Image
+
+        input_device = _first_parameter_device(self._model)
+        with torch.inference_mode():
+            for start in range(0, len(pending), self.hf_batch_size):
+                chunk = pending[start : start + self.hf_batch_size]
+                prompts = [_vlm_prompt_for_row(row) for _, row in chunk]
+                images = None
+                if use_images:
+                    images = [_load_rgb_image(row.get("source_image", ""), Image) for _, row in chunk]
+                inputs = _processor_call(
+                    self._processor,
+                    prompts=prompts,
+                    images=images,
+                    max_length=self.hf_max_length,
+                    prompt_style=self.hf_prompt_style,
+                    model_name=self.hf_model_name_or_path,
+                )
+                inputs = {
+                    key: value.to(input_device) if torch.is_tensor(value) else value
+                    for key, value in inputs.items()
+                }
+                try:
+                    outputs = self._model(
+                        **inputs,
+                        output_hidden_states=True,
+                        return_dict=True,
+                        use_cache=False,
+                    )
+                except TypeError:
+                    outputs = self._model(
+                        **inputs,
+                        output_hidden_states=True,
+                        return_dict=True,
+                    )
+                hidden = _last_hidden_state(outputs)
+                attention_mask = inputs.get("attention_mask")
+                pooled = _masked_mean_torch(hidden, attention_mask).float().cpu().numpy().astype(np.float32)
+                for (idx, _), vec in zip(chunk, pooled):
+                    features[idx] = vec
+
+
 def build_condition_encoder(name: str = "proxy", **kwargs) -> ConditionEncoder:
     """Factory for condition encoders."""
 
@@ -393,6 +562,8 @@ def build_condition_encoder(name: str = "proxy", **kwargs) -> ConditionEncoder:
         return MultimodalPairAwareV2ConditionEncoder(**kwargs)
     if name == "multimodal_fusion_v2":
         return MultimodalFusionV2ConditionEncoder(**kwargs)
+    if name == "hf_vlm":
+        return HfVlmConditionEncoder(**kwargs)
     raise ValueError(f"Unsupported condition encoder: {name}")
 
 
@@ -419,3 +590,129 @@ def _deterministic_random_vector(key: str, dim: int) -> np.ndarray:
     seed = int.from_bytes(hashlib.blake2b(key.encode("utf-8"), digest_size=8).digest(), "little")
     rng = np.random.default_rng(seed)
     return rng.normal(0.0, 1.0, size=dim).astype(np.float32)
+
+
+def _variant_uses_image(row: dict[str, str]) -> bool:
+    variant = row.get("variant", "full")
+    if variant in {"full", "image_only"}:
+        return bool(row.get("source_image"))
+    return False
+
+
+def _vlm_prompt_for_row(row: dict[str, str]) -> str:
+    variant = row.get("variant", "full")
+    if variant == "image_only":
+        return "Represent the molecular structure in this image for scaffold-preserving molecular editing."
+    prompt = row.get("prompt") or row.get("instruction") or ""
+    if variant == "caption_bottleneck":
+        return prompt
+    if variant == "text_only":
+        return prompt
+    return prompt or "Represent this molecule image and edit instruction for molecular generation."
+
+
+def _torch_dtype(torch_module, name: str):
+    if not name or name == "auto":
+        return None
+    normalized = name.lower()
+    if normalized in {"bf16", "bfloat16"}:
+        return torch_module.bfloat16
+    if normalized in {"fp16", "float16", "half"}:
+        return torch_module.float16
+    if normalized in {"fp32", "float32"}:
+        return torch_module.float32
+    raise ValueError(f"Unsupported hf_dtype={name!r}")
+
+
+def _first_parameter_device(model):
+    try:
+        return next(model.parameters()).device
+    except StopIteration:
+        import torch
+
+        return torch.device("cpu")
+
+
+def _load_rgb_image(path: str, image_module):
+    image_path = Path(path)
+    if not image_path.exists():
+        raise FileNotFoundError(f"Missing source image for hf_vlm export: {path}")
+    with image_module.open(image_path) as image:
+        return image.convert("RGB").copy()
+
+
+def _processor_call(
+    processor,
+    *,
+    prompts: list[str],
+    images,
+    max_length: int,
+    prompt_style: str,
+    model_name: str,
+):
+    prompts = _format_vlm_prompts(
+        processor,
+        prompts=prompts,
+        images=images,
+        prompt_style=prompt_style,
+        model_name=model_name,
+    )
+    kwargs = {
+        "text": prompts,
+        "return_tensors": "pt",
+        "padding": True,
+        "truncation": True,
+        "max_length": max_length,
+    }
+    if images is not None:
+        kwargs["images"] = images
+    try:
+        return processor(**kwargs)
+    except TypeError:
+        kwargs.pop("truncation", None)
+        kwargs.pop("max_length", None)
+        return processor(**kwargs)
+
+
+def _format_vlm_prompts(processor, *, prompts: list[str], images, prompt_style: str, model_name: str) -> list[str]:
+    style = prompt_style
+    if style == "auto":
+        lower_name = model_name.lower()
+        if "qwen" in lower_name and hasattr(processor, "apply_chat_template"):
+            style = "qwen_chat"
+        elif "llava" in lower_name:
+            style = "llava"
+        else:
+            style = "plain"
+
+    if style == "qwen_chat" and hasattr(processor, "apply_chat_template"):
+        formatted = []
+        for idx, prompt in enumerate(prompts):
+            content = []
+            if images is not None:
+                content.append({"type": "image", "image": images[idx]})
+            content.append({"type": "text", "text": prompt})
+            messages = [{"role": "user", "content": content}]
+            formatted.append(processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=False))
+        return formatted
+    if style == "llava" and images is not None:
+        return [f"<image>\n{prompt}" for prompt in prompts]
+    return prompts
+
+
+def _last_hidden_state(outputs):
+    hidden_states = getattr(outputs, "hidden_states", None)
+    if hidden_states:
+        return hidden_states[-1]
+    last_hidden = getattr(outputs, "last_hidden_state", None)
+    if last_hidden is not None:
+        return last_hidden
+    raise RuntimeError("The VLM output did not include hidden_states or last_hidden_state")
+
+
+def _masked_mean_torch(hidden_states, attention_mask):
+    if attention_mask is None:
+        return hidden_states.mean(dim=1)
+    mask = attention_mask.to(dtype=hidden_states.dtype, device=hidden_states.device).unsqueeze(-1)
+    denom = mask.sum(dim=1).clamp_min(1.0)
+    return (hidden_states * mask).sum(dim=1) / denom
