@@ -35,12 +35,30 @@ VLM_ACCOUNT="${SUCC_SLURM_ACCOUNT:-def-hup-ab_gpu}"
 VLM_TIME="${SUCC_SLURM_TIME:-24:00:00}"
 VLM_MEM="${SUCC_SLURM_MEM:-80G}"
 VLM_CPUS="${SUCC_SLURM_CPUS:-8}"
-VLM_GPUS="${SUCC_SLURM_GPUS:-1}"
+VLM_GPU_PROFILE="${SUCC_GPU_PROFILE:-h100_40gb_mig}"
 VLM_JOB_NAME="${SUCC_SLURM_JOB_NAME:-succ-hf-vlm}"
 VLM_LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 VLM_PARTITION="${SUCC_SLURM_PARTITION:-}"
 
 mkdir -p "$BUILD_LOG_DIR" "$VLM_LOG_DIR"
+
+if [[ -n "${SUCC_SLURM_GPUS:-}" ]]; then
+  GPU_CANDIDATES=("$SUCC_SLURM_GPUS")
+elif [[ "$VLM_GPU_PROFILE" == "h100_10gb_mig" ]]; then
+  GPU_CANDIDATES=("nvidia_h100_80gb_hbm3_1g.10gb:1")
+elif [[ "$VLM_GPU_PROFILE" == "h100_20gb_mig" ]]; then
+  GPU_CANDIDATES=("nvidia_h100_80gb_hbm3_2g.20gb:1")
+elif [[ "$VLM_GPU_PROFILE" == "h100_40gb_mig" ]]; then
+  GPU_CANDIDATES=("nvidia_h100_80gb_hbm3_3g.40gb:1" "h100:1" "a100:1" "nvidia_h100_80gb_hbm3_2g.20gb:1")
+elif [[ "$VLM_GPU_PROFILE" == "h100_full" ]]; then
+  GPU_CANDIDATES=("h100:1")
+elif [[ "$VLM_GPU_PROFILE" == "a100" ]]; then
+  GPU_CANDIDATES=("a100:1")
+elif [[ "$VLM_GPU_PROFILE" == "t4" ]]; then
+  GPU_CANDIDATES=("t4:1")
+else
+  GPU_CANDIDATES=("$VLM_GPU_PROFILE")
+fi
 
 echo "Submitting inode-safe HF VLM multi-property pipeline"
 echo "  dataset_output_dir=$DATASET_OUTPUT_DIR"
@@ -48,6 +66,8 @@ echo "  features_dir=$FEATURES_DIR"
 echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
 echo "  render_images=$SMMED_RENDER_IMAGES"
 echo "  model=${SUCC_HF_MODEL_NAME_OR_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}"
+echo "  gpu_profile=$VLM_GPU_PROFILE"
+echo "  slurm_gpu_candidates=${GPU_CANDIDATES[*]}"
 
 build_job_id=""
 if [[ "$SUBMIT_DATASET_BUILD" == "1" ]]; then
@@ -86,7 +106,6 @@ VLM_SBATCH_ARGS=(
   --time="$VLM_TIME"
   --mem="$VLM_MEM"
   --cpus-per-task="$VLM_CPUS"
-  --gres="gpu:$VLM_GPUS"
   --output="$VLM_LOG_DIR/%x-%j.log"
   --export=ALL
 )
@@ -106,17 +125,28 @@ echo "  account=$VLM_ACCOUNT"
 echo "  time=$VLM_TIME"
 echo "  mem=$VLM_MEM"
 echo "  cpus=$VLM_CPUS"
-echo "  gpus=$VLM_GPUS"
+echo "  gpu_candidates=${GPU_CANDIDATES[*]}"
 echo "  log_dir=$VLM_LOG_DIR"
 if [[ -n "$build_job_id" ]]; then
   echo "  dependency=afterok:$build_job_id"
 fi
-vlm_output="$(
-  sbatch "${VLM_SBATCH_ARGS[@]}" \
-    --wrap="bash '$PROJECT_DIR/scripts/run_hf_vlm_multiproperty_workflow.sh'"
-)"
-echo "$vlm_output"
-vlm_job_id="$(echo "$vlm_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+vlm_job_id=""
+for GPU_REQUEST in "${GPU_CANDIDATES[@]}"; do
+  echo "Trying sbatch with --gpus=$GPU_REQUEST"
+  if vlm_output="$(
+    sbatch "${VLM_SBATCH_ARGS[@]}" \
+      --gpus="$GPU_REQUEST" \
+      --wrap="bash '$PROJECT_DIR/scripts/run_hf_vlm_multiproperty_workflow.sh'"
+  )"; then
+    echo "$vlm_output"
+    vlm_job_id="$(echo "$vlm_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+    break
+  fi
+done
+if [[ -z "$vlm_job_id" ]]; then
+  echo "ERROR: failed to submit VLM job with GPU candidates: ${GPU_CANDIDATES[*]}" >&2
+  exit 1
+fi
 
 echo
 echo "Pipeline submitted."

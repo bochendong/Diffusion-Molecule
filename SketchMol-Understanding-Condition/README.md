@@ -41,6 +41,24 @@ SUCC_HF_MODEL_NAME_OR_PATH=Qwen/Qwen2.5-VL-7B-Instruct \
 bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
 ```
 
+Nibi 要求 GPU job 显式指定 GPU type。pipeline 默认先尝试
+`nvidia_h100_80gb_hbm3_3g.40gb:1`，然后 fallback 到 `h100:1`、`a100:1`、
+`nvidia_h100_80gb_hbm3_2g.20gb:1`。也可以手动覆盖：
+
+```bash
+SUCC_GPU_PROFILE=h100_full \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
+```
+
+或者直接指定 Slurm GPU request：
+
+```bash
+SUCC_SLURM_GPUS=h100:1 \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
+```
+
 如果集群不能直接联网下载 HuggingFace 模型，把
 `SUCC_HF_MODEL_NAME_OR_PATH` 换成本地模型目录，例如：
 
