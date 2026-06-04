@@ -38,7 +38,7 @@ git pull origin main
 
 SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 SUCC_HF_MODEL_NAME_OR_PATH=Qwen/Qwen2.5-VL-7B-Instruct \
-bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_workflow.sh
+bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
 ```
 
 如果集群不能直接联网下载 HuggingFace 模型，把
@@ -89,7 +89,7 @@ SUCC_LIMIT=2000 \
 SMMED_LIMIT_EVAL_ROWS=200 \
 SMMED_MAX_EVAL_PER_PROPERTY_COUNT=200 \
 SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
-bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_workflow.sh
+bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
 ```
 
 ## 代码入口
