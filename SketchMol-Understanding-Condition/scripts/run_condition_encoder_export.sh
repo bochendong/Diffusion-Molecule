@@ -13,6 +13,7 @@ module load StdEnv/2023
 module load python/3.11
 module load rdkit/2025.09.4
 
+PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python}}"
 export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 BASELINE_CSV="${SUCC_BASELINE_CSV:-SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv}"
@@ -22,6 +23,7 @@ LIMIT="${SUCC_LIMIT:-}"
 IMAGE_ENCODER_CHECKPOINT="${SUCC_IMAGE_ENCODER_CHECKPOINT:-}"
 
 echo "Exporting condition encoder features"
+echo "  python=$PYTHON_BIN"
 echo "  baseline_csv=$BASELINE_CSV"
 echo "  encoder=$ENCODER"
 echo "  output_dir=$OUTPUT_DIR"
@@ -41,7 +43,7 @@ if [[ -n "$IMAGE_ENCODER_CHECKPOINT" ]]; then
   CHECKPOINT_ARGS=(--image-encoder-checkpoint "$IMAGE_ENCODER_CHECKPOINT")
 fi
 
-python "$PROJECT_DIR/scripts/export_condition_features.py" \
+"$PYTHON_BIN" "$PROJECT_DIR/scripts/export_condition_features.py" \
   --encoder "$ENCODER" \
   --baseline-variants-csv "$BASELINE_CSV" \
   --output-dir "$OUTPUT_DIR" \
