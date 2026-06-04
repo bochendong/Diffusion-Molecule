@@ -12,6 +12,8 @@ def remove_sulfur_stereochemistry(smiles):
     return simplified_smiles
 
 def postprocess_smiles(input_smiles, scores):
+    input_smiles = list(input_smiles)
+    scores = list(scores)
     result = []
     broken_num, low_score = 0, 0
     all_smiles = len(input_smiles)
@@ -46,7 +48,12 @@ if __name__ == "__main__":
     device = torch.device('cuda')
     model = MolScribe(args.model_path, device)
     all_path = pd.read_csv(args.image_path)
-    smiles, molblock, token_scores, edges_scores = model.predict_images_from_csv(all_path["image_path"], args.batch_size)
+    prediction_result = model.predict_images_from_csv(all_path["image_path"], args.batch_size)
+    if len(prediction_result) == 4:
+        smiles, molblock, token_scores, edges_scores = prediction_result
+    else:
+        smiles, molblock, token_scores = prediction_result
+        edges_scores = None
     # all_path.insert(all_path.shape[1], 'Predicted_SMILES', smiles)
     smiles, broken_rate, low_score_rate = postprocess_smiles(smiles, token_scores)
     # print(f"broken rate provided by the molscribe is: {broken_rate}")
@@ -57,7 +64,8 @@ if __name__ == "__main__":
     all_path["SMILES"] = smiles
     all_path['molscribe_score'] = token_scores
     # all_path.insert(all_path.shape[1], 'token_scores', token_scores)
-    # all_path.insert(all_path.shape[1], 'edges_scores', edges_scores)
+    if edges_scores is not None:
+        all_path['edges_scores'] = edges_scores
     all_path.to_csv(args.image_path, index=False)
     print(f"save to {args.image_path}")
     print("done")

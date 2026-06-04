@@ -3,6 +3,8 @@ Implementation of "Attention is All You Need" and of
 subsequent transformer based architectures
 """
 
+import inspect
+
 import torch
 import torch.nn as nn
 
@@ -11,6 +13,33 @@ from onmt.modules import MultiHeadedAttention, AverageAttention
 from onmt.modules.position_ffn import PositionwiseFeedForward
 from onmt.modules.position_ffn import ActivationFunction
 from onmt.utils.misc import sequence_mask
+
+
+def make_multi_headed_attention(*args, **kwargs):
+    supported = inspect.signature(MultiHeadedAttention.__init__).parameters
+    filtered_kwargs = {key: value for key, value in kwargs.items() if key in supported}
+    return MultiHeadedAttention(*args, **filtered_kwargs)
+
+
+def call_multi_headed_attention(module, *args, **kwargs):
+    supported = inspect.signature(module.forward).parameters
+    filtered_kwargs = {key: value for key, value in kwargs.items() if key in supported}
+    return module(*args, **filtered_kwargs)
+
+
+def format_attention_mask(module, mask):
+    if mask is None:
+        return None
+    supported = inspect.signature(module.forward).parameters
+    if "step" not in supported:
+        if mask.dim() == 4 and mask.size(1) == 1 and mask.size(2) == 1:
+            return mask.squeeze(1).squeeze(1)
+        if mask.dim() == 3 and mask.size(1) == 1:
+            return mask.squeeze(1)
+        return mask
+    if mask.dim() == 3:
+        return mask.unsqueeze(1)
+    return mask
 
 
 class TransformerDecoderLayerBase(nn.Module):
@@ -58,13 +87,14 @@ class TransformerDecoderLayerBase(nn.Module):
         super(TransformerDecoderLayerBase, self).__init__()
 
         if self_attn_type == "scaled-dot":
-            self.self_attn = MultiHeadedAttention(
+            self.self_attn = make_multi_headed_attention(
                 heads,
                 d_model,
                 dropout=attention_dropout,
                 max_relative_positions=max_relative_positions,
                 attn_type="self",
                 self_attn_type=self_attn_type,
+                add_qkvbias=True,
             )
         elif self_attn_type == "average":
             self.self_attn = AverageAttention(
@@ -143,12 +173,14 @@ class TransformerDecoderLayerBase(nn.Module):
 
     def _forward_self_attn(self, inputs_norm, dec_mask, layer_cache, step):
         if isinstance(self.self_attn, MultiHeadedAttention):
-            return self.self_attn(
+            return call_multi_headed_attention(
+                self.self_attn,
                 inputs_norm,
                 inputs_norm,
                 inputs_norm,
-                mask=self._expand_attn_mask(dec_mask),
+                mask=format_attention_mask(self.self_attn, dec_mask),
                 step=step or 0,
+                attn_type="self",
                 self_attn_type="scaled-dot",
             )
         elif isinstance(self.self_attn, AverageAttention):
@@ -220,8 +252,12 @@ class TransformerDecoderLayer(TransformerDecoderLayerBase):
             alignment_heads,
             pos_ffn_activation_fn=pos_ffn_activation_fn,
         )
-        self.context_attn = MultiHeadedAttention(
-            heads, d_model, dropout=attention_dropout, attn_type="context"
+        self.context_attn = make_multi_headed_attention(
+            heads,
+            d_model,
+            dropout=attention_dropout,
+            attn_type="context",
+            add_qkvbias=True,
         )
         self.layer_norm_2 = nn.LayerNorm(d_model, eps=1e-6)
 
@@ -276,12 +312,14 @@ class TransformerDecoderLayer(TransformerDecoderLayerBase):
         query = self.drop(query) + inputs
 
         query_norm = self.layer_norm_2(query)
-        mid, attns = self.context_attn(
+        mid, attns = call_multi_headed_attention(
+            self.context_attn,
             memory_bank,
             memory_bank,
             query_norm,
-            mask=self._expand_attn_mask(src_pad_mask),
+            mask=format_attention_mask(self.context_attn, src_pad_mask),
             step=step or 0,
+            attn_type="context",
         )
         output = self.feed_forward(self.drop(mid) + query)
 

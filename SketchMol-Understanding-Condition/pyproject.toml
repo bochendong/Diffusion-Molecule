@@ -1,0 +1,22 @@
+[project]
+name = "sketchmol-understanding-condition"
+version = "0.1.0"
+description = "Understanding-conditioned molecular editing utilities for SketchMol"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+chem = [
+  "rdkit",
+]
+model = [
+  "torch",
+]
+test = [
+  "pytest",
+  "torch",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

@@ -1,4 +1,7 @@
 **/.DS_Store
+.venvs/
+**/__pycache__/
+*.pyc
 PhysTabMol/runs/**/tables/**/structure_prompt_decoded.csv
 PhysTabMol/runs/**/tables/decoded_instruction_candidates.csv
 

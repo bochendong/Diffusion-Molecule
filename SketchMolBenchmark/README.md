@@ -66,6 +66,27 @@ Replace both `/absolute/path/to/...` examples with real checkpoint files on the
 cluster filesystem. The submit script validates those files before it calls
 `sbatch`.
 
+Run the original-paper reproduction preset (`MW:400`, `--scale 1.2`,
+`--scale_pro 6.3`, `--conditional_count 40`) with a separate MolScribe
+interpreter:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+SKETCHMOL_MOLSCRIBE_WORKDIR="Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate" \
+SKETCHMOL_CKPT=/scratch/bdong/checkpoints/sketchmol/model_weights.ckpt \
+SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
+bash SketchMolBenchmark/scripts/submit_paper_repro.sh
+```
+
+The `/home/bdong/.venvs/molscribe_overlay` interpreter is a lightweight OCR
+environment that reuses the existing `phystabmol` heavy torch stack and adds
+module-backed OpenCV/RDKit paths. A true upstream-style MolScribe environment
+with `python=3.7` remains preferable if a conda/mamba installation becomes
+available.
+
 Run the lightweight tests:
 
 ```bash
