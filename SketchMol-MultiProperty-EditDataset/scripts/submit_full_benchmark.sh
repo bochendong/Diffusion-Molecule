@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# Submit the full dataset build plus SketchMol-style benchmark to Slurm.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
+cd "$REPO_DIR"
+
+if ! command -v sbatch >/dev/null 2>&1; then
+  echo "ERROR: sbatch not found. Run this on a Slurm login node." >&2
+  exit 2
+fi
+
+ACCOUNT="${SMMED_SLURM_ACCOUNT:-def-hup-ab_gpu}"
+TIME="${SMMED_SLURM_TIME:-16:00:00}"
+MEM="${SMMED_SLURM_MEM:-48G}"
+CPUS="${SMMED_SLURM_CPUS:-4}"
+JOB_NAME="${SMMED_SLURM_JOB_NAME:-smmed-full}"
+LOG_DIR="${SMMED_LOG_DIR:-$PROJECT_DIR/logs}"
+
+mkdir -p "$LOG_DIR"
+
+echo "Submitting SketchMol multi-property full benchmark"
+echo "  account=$ACCOUNT"
+echo "  time=$TIME"
+echo "  mem=$MEM"
+echo "  cpus=$CPUS"
+echo "  log_dir=$LOG_DIR"
+
+sbatch \
+  --account="$ACCOUNT" \
+  --job-name="$JOB_NAME" \
+  --time="$TIME" \
+  --mem="$MEM" \
+  --cpus-per-task="$CPUS" \
+  --output="$LOG_DIR/%x-%j.log" \
+  --export=ALL \
+  --wrap="bash '$PROJECT_DIR/scripts/run_full_benchmark.sh'"

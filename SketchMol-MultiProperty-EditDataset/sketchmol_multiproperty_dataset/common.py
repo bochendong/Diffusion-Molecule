@@ -38,6 +38,25 @@ DELTA_THRESHOLDS = {
     "RB": 1.0,
 }
 
+SKETCHMOL_STRICT_TOLERANCE = {
+    "MW": 35.0,
+    "LogP": 1.0,
+    "QED": 0.10,
+    "TPSA": 20.0,
+    "HBD": 1.0,
+    "HBA": 1.0,
+    "RB": 1.0,
+}
+
+SKETCHMOL_REFERENCE_MULTI_PROPERTY = {
+    2: 0.804,
+    3: 0.768,
+    4: 0.736,
+    5: 0.716,
+    6: 0.678,
+    7: 0.685,
+}
+
 SKETCHMOL_SETTING_COLUMNS = {
     "MW": ("MolWt_setting", "MolWt_None"),
     "LogP": ("logp_setting", "logp_None"),

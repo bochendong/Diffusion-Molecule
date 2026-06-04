@@ -1,0 +1,454 @@
+#!/usr/bin/env python
+"""Benchmark multi-property edit conditions with scaffold-aware retrieval."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import math
+import random
+import sys
+from collections import defaultdict
+from pathlib import Path
+from typing import Iterable, Mapping
+
+
+REPO_DIR = Path(__file__).resolve().parents[2]
+DATASET_DIR = REPO_DIR / "SketchMol-MultiProperty-EditDataset"
+UNDERSTANDING_DIR = REPO_DIR / "SketchMol-Understanding-Condition"
+for path in (DATASET_DIR, UNDERSTANDING_DIR):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
+
+from sketchmol_multiproperty_dataset.common import (
+    PROPERTY_COLUMNS,
+    SKETCHMOL_REFERENCE_MULTI_PROPERTY,
+    SKETCHMOL_STRICT_TOLERANCE,
+)
+from sketchmol_understanding_condition.chem import (
+    canonical_smiles as _canonical_smiles,
+    morgan_tanimoto as _morgan_tanimoto,
+    scaffold_smiles as _scaffold_smiles,
+)
+
+
+METHODS = (
+    "source_identity",
+    "global_property_retrieval",
+    "scaffold_property_retrieval",
+    "target_oracle",
+)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--condition-rows-csv", required=True, type=Path)
+    parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--eval-split", default="eval")
+    parser.add_argument("--methods", default=",".join(METHODS))
+    parser.add_argument("--max-global-candidates", type=int, default=20000)
+    parser.add_argument("--limit-eval-rows", type=int, default=None)
+    parser.add_argument("--max-eval-per-property-count", type=int, default=None)
+    parser.add_argument("--compute-tanimoto", action="store_true")
+    parser.add_argument("--allow-eval-target-candidates", action="store_true")
+    parser.add_argument("--seed", type=int, default=7)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    methods = [item.strip() for item in args.methods.split(",") if item.strip()]
+    unknown = [method for method in methods if method not in METHODS]
+    if unknown:
+        raise ValueError(f"Unsupported methods: {unknown}")
+
+    rows = _read_rows(args.condition_rows_csv)
+    train_rows = [row for row in rows if row.get("split") != args.eval_split]
+    eval_rows = [row for row in rows if row.get("split") == args.eval_split]
+    if args.max_eval_per_property_count is not None:
+        eval_rows = _sample_eval_rows_by_property_count(eval_rows, args.max_eval_per_property_count, seed=args.seed)
+    if args.limit_eval_rows is not None:
+        eval_rows = eval_rows[: args.limit_eval_rows]
+    excluded_targets = set()
+    if not args.allow_eval_target_candidates:
+        excluded_targets = {
+            _safe_canonical_smiles(row.get("target_smiles", "")) or row.get("target_smiles", "")
+            for row in eval_rows
+            if row.get("target_smiles")
+        }
+    candidates = _candidate_pool(train_rows, excluded_smiles=excluded_targets)
+    by_scaffold: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for candidate in candidates:
+        by_scaffold[str(candidate["scaffold"])].append(candidate)
+
+    decoded_rows = []
+    for method in methods:
+        for row in eval_rows:
+            decoded_rows.append(
+                _decode_row(
+                    row,
+                    method=method,
+                    candidates=candidates,
+                    by_scaffold=by_scaffold,
+                    max_global_candidates=args.max_global_candidates,
+                    compute_tanimoto=args.compute_tanimoto,
+                    seed=args.seed,
+                )
+            )
+
+    summary_rows = _summarize(decoded_rows)
+    _write_rows(args.output_dir / "benchmark_decoded.csv", decoded_rows)
+    _write_rows(args.output_dir / "benchmark_summary.csv", summary_rows)
+    _write_report(args.output_dir / "benchmark_report.md", summary_rows, args)
+    payload = {
+        "condition_rows_csv": str(args.condition_rows_csv),
+        "output_dir": str(args.output_dir),
+        "methods": methods,
+        "train_rows": len(train_rows),
+        "eval_rows": len(eval_rows),
+        "candidate_molecules": len(candidates),
+        "eval_target_candidates_excluded": not args.allow_eval_target_candidates,
+        "max_eval_per_property_count": args.max_eval_per_property_count,
+        "max_global_candidates": args.max_global_candidates,
+        "summary_csv": str(args.output_dir / "benchmark_summary.csv"),
+        "decoded_csv": str(args.output_dir / "benchmark_decoded.csv"),
+        "report": str(args.output_dir / "benchmark_report.md"),
+    }
+    (args.output_dir / "metrics.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _read_rows(path: Path) -> list[dict[str, str]]:
+    with path.open(newline="", encoding="utf-8") as handle:
+        return list(csv.DictReader(handle))
+
+
+def _safe_canonical_smiles(smiles: str) -> str | None:
+    try:
+        return _canonical_smiles(smiles)
+    except RuntimeError:
+        text = str(smiles or "").strip()
+        return text or None
+
+
+def _safe_scaffold_smiles(smiles: str) -> str | None:
+    try:
+        return _scaffold_smiles(smiles)
+    except RuntimeError:
+        return None
+
+
+def _safe_morgan_tanimoto(smiles_a: str, smiles_b: str) -> float | None:
+    try:
+        return _morgan_tanimoto(smiles_a, smiles_b)
+    except RuntimeError:
+        return None
+
+
+def _candidate_pool(
+    rows: Iterable[dict[str, str]],
+    *,
+    excluded_smiles: set[str] | None = None,
+) -> list[dict[str, object]]:
+    seen: set[str] = set()
+    candidates = []
+    excluded_smiles = excluded_smiles or set()
+    for row in rows:
+        smiles = _safe_canonical_smiles(row.get("target_smiles", "")) or row.get("target_smiles", "")
+        if not smiles or smiles in seen or smiles in excluded_smiles:
+            continue
+        seen.add(smiles)
+        scaffold = row.get("scaffold") or _safe_scaffold_smiles(smiles) or ""
+        candidates.append(
+            {
+                "smiles": smiles,
+                "scaffold": scaffold,
+                "props": _target_props(row),
+            }
+        )
+    return candidates
+
+
+def _sample_eval_rows_by_property_count(rows: list[dict[str, str]], limit: int, *, seed: int) -> list[dict[str, str]]:
+    if limit <= 0:
+        return rows
+    by_count: dict[int, list[dict[str, str]]] = defaultdict(list)
+    for row in rows:
+        by_count[int(float(row.get("property_count", 0) or 0))].append(row)
+    sampled = []
+    for property_count in sorted(by_count):
+        group = by_count[property_count]
+        if len(group) <= limit:
+            sampled.extend(group)
+            continue
+        rng = random.Random(seed + property_count * 1009)
+        indices = sorted(rng.sample(range(len(group)), limit))
+        sampled.extend(group[idx] for idx in indices)
+    return sampled
+
+
+def _decode_row(
+    row: dict[str, str],
+    *,
+    method: str,
+    candidates: list[dict[str, object]],
+    by_scaffold: Mapping[str, list[dict[str, object]]],
+    max_global_candidates: int,
+    compute_tanimoto: bool,
+    seed: int,
+) -> dict[str, object]:
+    selected_props = _selected_props(row)
+    source_props = _source_props(row)
+    target_props = _target_props(row)
+    if method == "source_identity":
+        generated_smiles = _safe_canonical_smiles(row.get("source_smiles", "")) or row.get("source_smiles", "")
+        generated_scaffold = row.get("scaffold", "")
+        generated_props = source_props
+        fallback = ""
+    elif method == "target_oracle":
+        generated_smiles = _safe_canonical_smiles(row.get("target_smiles", "")) or row.get("target_smiles", "")
+        generated_scaffold = row.get("scaffold", "")
+        generated_props = target_props
+        fallback = ""
+    elif method == "scaffold_property_retrieval":
+        pool = by_scaffold.get(row.get("scaffold", ""), [])
+        fallback = ""
+        if not pool:
+            pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
+            fallback = "global"
+        candidate = _best_candidate(pool, selected_props=selected_props, target_props=target_props)
+        generated_smiles = str(candidate.get("smiles", ""))
+        generated_scaffold = str(candidate.get("scaffold", ""))
+        generated_props = dict(candidate.get("props", {}))
+    elif method == "global_property_retrieval":
+        pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
+        candidate = _best_candidate(pool, selected_props=selected_props, target_props=target_props)
+        generated_smiles = str(candidate.get("smiles", ""))
+        generated_scaffold = str(candidate.get("scaffold", ""))
+        generated_props = dict(candidate.get("props", {}))
+        fallback = ""
+    else:
+        raise ValueError(f"Unsupported method: {method}")
+
+    property_successes = []
+    errors = {}
+    for prop in selected_props:
+        target = target_props[prop]
+        actual = float(generated_props.get(prop, math.nan))
+        error = abs(actual - target) if not math.isnan(actual) else math.nan
+        errors[prop] = error
+        property_successes.append((not math.isnan(error)) and error <= SKETCHMOL_STRICT_TOLERANCE[prop])
+    strict_success = bool(property_successes) and all(property_successes)
+    scaffold_match = bool(generated_scaffold and row.get("scaffold") and generated_scaffold == row.get("scaffold"))
+
+    out: dict[str, object] = {
+        "method": method,
+        "condition_id": row.get("condition_id", ""),
+        "pair_id": row.get("pair_id", ""),
+        "split": row.get("split", ""),
+        "property_count": int(float(row.get("property_count", 0) or 0)),
+        "condition_properties": ",".join(selected_props),
+        "source_smiles": row.get("source_smiles", ""),
+        "target_smiles": row.get("target_smiles", ""),
+        "generated_smiles": generated_smiles,
+        "source_scaffold": row.get("scaffold", ""),
+        "generated_scaffold": generated_scaffold,
+        "scaffold_match": scaffold_match,
+        "strict_success": strict_success,
+        "fallback": fallback,
+    }
+    if compute_tanimoto:
+        out["source_tanimoto"] = _safe_morgan_tanimoto(row.get("source_smiles", ""), generated_smiles) or ""
+        out["target_tanimoto"] = _safe_morgan_tanimoto(row.get("target_smiles", ""), generated_smiles) or ""
+    for prop in PROPERTY_COLUMNS:
+        if prop in selected_props:
+            out[f"{prop}_target"] = target_props[prop]
+            out[f"{prop}_actual"] = generated_props.get(prop, "")
+            out[f"{prop}_abs_error"] = errors[prop]
+            out[f"{prop}_success"] = prop in selected_props and errors[prop] <= SKETCHMOL_STRICT_TOLERANCE[prop]
+        else:
+            out[f"{prop}_target"] = ""
+            out[f"{prop}_actual"] = ""
+            out[f"{prop}_abs_error"] = ""
+            out[f"{prop}_success"] = ""
+    return out
+
+
+def _selected_props(row: Mapping[str, str]) -> list[str]:
+    props = [prop for prop in (row.get("condition_properties") or "").split(",") if prop]
+    return [prop for prop in props if prop in PROPERTY_COLUMNS]
+
+
+def _source_props(row: Mapping[str, str]) -> dict[str, float]:
+    return {prop: _to_float(row.get(f"source_{prop}")) for prop in PROPERTY_COLUMNS}
+
+
+def _target_props(row: Mapping[str, str]) -> dict[str, float]:
+    return {prop: _to_float(row.get(f"target_{prop}")) for prop in PROPERTY_COLUMNS}
+
+
+def _best_candidate(
+    pool: list[dict[str, object]],
+    *,
+    selected_props: list[str],
+    target_props: Mapping[str, float],
+) -> dict[str, object]:
+    if not pool:
+        return {"smiles": "", "scaffold": "", "props": {}}
+    best = None
+    best_score = float("inf")
+    for candidate in pool:
+        props = candidate.get("props", {})
+        score = 0.0
+        for prop in selected_props:
+            target = target_props[prop]
+            actual = float(props.get(prop, math.nan)) if isinstance(props, Mapping) else math.nan
+            if math.isnan(actual):
+                score += 1e6
+            else:
+                score += abs(actual - target) / SKETCHMOL_STRICT_TOLERANCE[prop]
+        score /= max(1, len(selected_props))
+        if score < best_score:
+            best_score = score
+            best = candidate
+    return best or pool[0]
+
+
+def _stable_sample(items: list[dict[str, object]], limit: int, *, key: str, seed: int) -> list[dict[str, object]]:
+    if limit <= 0 or len(items) <= limit:
+        return items
+    digest = hashlib.blake2b(f"{seed}:{key}".encode("utf-8"), digest_size=8).digest()
+    rng = random.Random(int.from_bytes(digest, "little"))
+    indices = rng.sample(range(len(items)), limit)
+    return [items[idx] for idx in indices]
+
+
+def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    out = []
+    methods = sorted({str(row["method"]) for row in rows})
+    for method in methods:
+        method_rows = [row for row in rows if row["method"] == method]
+        for property_count in range(2, 8):
+            selected = [row for row in method_rows if int(row.get("property_count", 0) or 0) == property_count]
+            if not selected:
+                continue
+            strict = _fraction(bool(row.get("strict_success")) for row in selected)
+            scaffold = _fraction(bool(row.get("scaffold_match")) for row in selected)
+            reference = SKETCHMOL_REFERENCE_MULTI_PROPERTY.get(property_count, math.nan)
+            summary = {
+                "family": "understanding_multiproperty_direct",
+                "method": method,
+                "benchmark_task": "multi_property_direct",
+                "benchmark_label": f"{property_count}_properties",
+                "property_count": property_count,
+                "n": len(selected),
+                "success_rate_strict_in_valid_mols": strict,
+                "scaffold_match_rate": scaffold,
+                "sketchmol_reference_strict": reference,
+                "strict_margin_vs_sketchmol": strict - reference if not math.isnan(reference) else "",
+            }
+            for prop in PROPERTY_COLUMNS:
+                errors = [_to_float(row.get(f"{prop}_abs_error")) for row in selected if row.get(f"{prop}_abs_error") != ""]
+                if errors:
+                    summary[f"{prop}_mae"] = sum(errors) / len(errors)
+            out.append(summary)
+        if method_rows:
+            strict = _fraction(bool(row.get("strict_success")) for row in method_rows)
+            scaffold = _fraction(bool(row.get("scaffold_match")) for row in method_rows)
+            out.append(
+                {
+                    "family": "understanding_multiproperty_direct",
+                    "method": method,
+                    "benchmark_task": "multi_property_direct",
+                    "benchmark_label": "all",
+                    "property_count": "all",
+                    "n": len(method_rows),
+                    "success_rate_strict_in_valid_mols": strict,
+                    "scaffold_match_rate": scaffold,
+                    "sketchmol_reference_strict": "",
+                    "strict_margin_vs_sketchmol": "",
+                }
+            )
+    return out
+
+
+def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argparse.Namespace) -> None:
+    lines = [
+        "# Multi-Property Direct Benchmark",
+        "",
+        "This report compares source-image/property-condition retrieval baselines against the SketchMol multi-property strict-success reference.",
+        "",
+        f"- condition rows: `{args.condition_rows_csv}`",
+        f"- eval split: `{args.eval_split}`",
+        f"- max eval rows per property count: `{args.max_eval_per_property_count}`",
+        f"- eval target candidates excluded from retrieval pool: `{not args.allow_eval_target_candidates}`",
+        "",
+        "| method | 2p | 3p | 4p | 5p | 6p | 7p | scaffold all |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    methods = [method for method in METHODS if any(row.get("method") == method for row in summary_rows)]
+    rows_by_key = {(row["method"], row["property_count"]): row for row in summary_rows}
+    for method in methods:
+        values = []
+        for count in range(2, 8):
+            row = rows_by_key.get((method, count))
+            values.append(_fmt(row.get("success_rate_strict_in_valid_mols")) if row else "")
+        all_row = rows_by_key.get((method, "all"))
+        values.append(_fmt(all_row.get("scaffold_match_rate")) if all_row else "")
+        lines.append(f"| {method} | {' | '.join(values)} |")
+    lines.extend(
+        [
+            f"| SketchMol structured reference | {_fmt(0.804)} | {_fmt(0.768)} | {_fmt(0.736)} | {_fmt(0.716)} | {_fmt(0.678)} | {_fmt(0.685)} |  |",
+            "",
+            "Notes:",
+            "- `target_oracle` is an upper bound because it returns the known target molecule.",
+            "- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a train candidate with the same scaffold and closest active-property values.",
+            "- `global_property_retrieval` ignores scaffold and can satisfy properties while failing edit preservation.",
+            "- A learned Understanding-Condition model should eventually beat `text_only`/global-style property matching while staying close to the scaffold-aware or oracle rows.",
+            "",
+        ]
+    )
+    path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
+    fieldnames = []
+    seen = set()
+    for row in rows:
+        for key in row:
+            if key not in seen:
+                seen.add(key)
+                fieldnames.append(key)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _to_float(value: object) -> float:
+    try:
+        return float(str(value if value is not None else "").strip())
+    except ValueError:
+        return math.nan
+
+
+def _fraction(values: Iterable[bool]) -> float:
+    items = list(values)
+    return sum(1 for item in items if item) / len(items) if items else 0.0
+
+
+def _fmt(value: object) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if math.isnan(number):
+        return ""
+    return f"{number:.3f}"
+
+
+if __name__ == "__main__":
+    main()
