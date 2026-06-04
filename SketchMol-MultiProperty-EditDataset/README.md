@@ -116,9 +116,12 @@ eval target 从 retrieval candidate pool 排除，避免直接拿到答案。
 cd /scratch/bdong/projects/Diffusion-Molecule
 git pull origin main
 
-SMMED_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash SketchMol-MultiProperty-EditDataset/scripts/submit_build_dataset.sh
 ```
+
+The run script loads `StdEnv/2023`, `python/3.11`, and `rdkit/2025.09.4`
+before building the dataset. Override `SMMED_PYTHON_BIN` only if that Python
+can import RDKit.
 
 ## 常用参数
 

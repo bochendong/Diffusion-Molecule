@@ -38,6 +38,7 @@ def evaluate_saved_image_to_structure(
     sample_count: int = 64,
     contact_sheet_cols: int = 8,
     contact_thumb_size: int = 144,
+    eval_offset: int = 0,
     eval_limit: int | None = None,
     seed: int = 7,
     device: str = "auto",
@@ -103,6 +104,8 @@ def evaluate_saved_image_to_structure(
 
     train_rows = _read_rows(train_pairs_path)
     eval_rows = _read_rows(eval_pairs_path)
+    if eval_offset > 0:
+        eval_rows = eval_rows[int(eval_offset) :]
     if eval_limit is not None:
         eval_rows = eval_rows[: int(eval_limit)]
     _write_rows(output_path / "train_pairs.csv", train_rows)
@@ -255,6 +258,7 @@ def evaluate_saved_image_to_structure(
                 "temperature": temperature,
                 "sample_top_k": sample_top_k,
                 "image_size": image_size,
+                "eval_offset": eval_offset,
                 "eval_limit": eval_limit,
                 "seed": seed,
                 "device": str(resolved_device),
@@ -284,6 +288,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--sample-count", type=int, default=64)
     parser.add_argument("--contact-sheet-cols", type=int, default=8)
     parser.add_argument("--contact-thumb-size", type=int, default=144)
+    parser.add_argument("--eval-offset", type=int, default=0)
     parser.add_argument("--eval-limit", type=int, default=None)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="auto")
@@ -307,6 +312,7 @@ def main() -> None:
         sample_count=args.sample_count,
         contact_sheet_cols=args.contact_sheet_cols,
         contact_thumb_size=args.contact_thumb_size,
+        eval_offset=args.eval_offset,
         eval_limit=args.eval_limit,
         seed=args.seed,
         device=args.device,

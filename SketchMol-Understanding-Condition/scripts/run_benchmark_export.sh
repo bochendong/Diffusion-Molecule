@@ -8,6 +8,11 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$PROJECT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+module purge >/dev/null 2>&1 || true
+module load StdEnv/2023
+module load python/3.11
+module load rdkit/2025.09.4
+
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 BASELINE_VARIANTS_CSV="${SUCC_BASELINE_VARIANTS_CSV:-SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv}"
 VARIANT="${SUCC_VARIANT:-full}"

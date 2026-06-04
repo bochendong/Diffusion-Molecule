@@ -8,15 +8,32 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
+if ! command -v module >/dev/null 2>&1 && [[ -f /etc/profile.d/modules.sh ]]; then
+  # Slurm batch shells do not always initialize Environment Modules.
+  # shellcheck source=/dev/null
+  source /etc/profile.d/modules.sh
+fi
+
 if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
   module load StdEnv/2023
   module load python/3.11
   module load rdkit/2025.09.4
+else
+  echo "WARNING: Environment Modules are unavailable; relying on PYTHONPATH/venv for RDKit." >&2
 fi
 
 PYTHON_BIN="${SMMED_PYTHON_BIN:-${PYTHON_BIN:-python}}"
 export PYTHONPATH="$PROJECT_DIR:$REPO_DIR/SketchMol-Understanding-Condition${PYTHONPATH:+:$PYTHONPATH}"
+
+if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+from rdkit import Chem
+PY
+then
+  echo "ERROR: RDKit is not importable with PYTHON_BIN=$PYTHON_BIN" >&2
+  echo "       Use the module Python by leaving SMMED_PYTHON_BIN unset, or point it at a Python with RDKit." >&2
+  exit 2
+fi
 
 INPUT_CSV="${SMMED_INPUT_CSV:-PhysTabMol/runs/20260601_070814_sketchmol_compare_structure_seed7/tables/train_table.csv}"
 OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1}"
