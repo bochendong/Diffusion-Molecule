@@ -42,6 +42,12 @@ DEFAULT_SKETCHMOL_SUMMARIES=()
 if [[ -f SketchMolBenchmark/outputs/current/benchmark_summary.csv ]]; then
   DEFAULT_SKETCHMOL_SUMMARIES+=(SketchMolBenchmark/outputs/current/benchmark_summary.csv)
 fi
+if [[ -f SketchMolBenchmark/outputs/direct_structure_current/benchmark_summary.csv ]]; then
+  DEFAULT_SKETCHMOL_SUMMARIES+=(SketchMolBenchmark/outputs/direct_structure_current/benchmark_summary.csv)
+fi
+if [[ -f SketchMolBenchmark/outputs/understanding_condition_full/benchmark_summary.csv ]]; then
+  DEFAULT_SKETCHMOL_SUMMARIES+=(SketchMolBenchmark/outputs/understanding_condition_full/benchmark_summary.csv)
+fi
 
 if [[ -n "${SKETCHMOL_COMPARE_SKETCHSMILES_RUNS:-}" ]]; then
   # shellcheck disable=SC2206

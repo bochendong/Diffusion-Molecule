@@ -20,6 +20,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--embedding-dim", type=int, default=256)
     parser.add_argument("--image-size", type=int, default=96)
     parser.add_argument("--text-dim", type=int, default=256)
+    parser.add_argument("--contrastive-weight", type=float, default=0.0)
+    parser.add_argument("--contrastive-temperature", type=float, default=0.2)
     parser.add_argument("--seed", type=int, default=7)
     return parser.parse_args()
 
@@ -36,6 +38,8 @@ def main() -> None:
         embedding_dim=args.embedding_dim,
         image_size=args.image_size,
         text_dim=args.text_dim,
+        contrastive_weight=args.contrastive_weight,
+        contrastive_temperature=args.contrastive_temperature,
         seed=args.seed,
     )
     summary["targets_npz"] = str(args.targets_npz)

@@ -53,6 +53,7 @@ SKETCHSMILES_FIELDS = [
 SKETCHMOL_WEIGHTED_FIELDS = [
     "image_path_exists_fraction",
     "ocr_smiles_present_rate",
+    "predicted_smiles_present_rate",
     "molscribe_score_mean",
     "success_rate_in_valid_mols",
     "success_rate_strict_in_valid_mols",
@@ -91,6 +92,7 @@ PREFERRED_COLUMNS = [
     "image_exact_match_fraction",
     "image_path_exists_fraction",
     "ocr_smiles_present_rate",
+    "predicted_smiles_present_rate",
     "molscribe_score_mean",
     "mean_predicted_target_fingerprint_tanimoto",
     "top1_condition_tanimoto",
@@ -378,7 +380,7 @@ def render_report(rows: Sequence[Mapping[str, object]]) -> str:
         "",
         "This report is generated from finished run artifacts. It does not rerun training or evaluation.",
         "",
-        "| family | run | task | label | n/eval | top1 exact | topk exact | top1 tanimoto | mean best tanimoto | sketchmol success | OCR present | validity | MolScribe score |",
+        "| family | run | task | label | n/eval | top1 exact | topk exact | top1 tanimoto | mean best tanimoto | sketchmol success | SMILES present | validity | MolScribe score |",
         "| --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in rows:
@@ -395,7 +397,7 @@ def render_report(rows: Sequence[Mapping[str, object]]) -> str:
                 top1_tani=_fmt(row.get("top1_target_tanimoto", "")),
                 best_tani=_fmt(row.get("mean_best_tanimoto", "")),
                 success=_fmt(row.get("success_rate_in_valid_mols", "")),
-                ocr=_fmt(row.get("ocr_smiles_present_rate", "")),
+                ocr=_fmt(row.get("ocr_smiles_present_rate", row.get("predicted_smiles_present_rate", ""))),
                 validity=_fmt(row.get("top1_valid_fraction", row.get("validity", ""))),
                 molscribe=_fmt(row.get("molscribe_score_mean", "")),
             )

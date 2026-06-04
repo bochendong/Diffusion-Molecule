@@ -170,6 +170,44 @@ SketchMol-Understanding-Condition/scripts/run_retrieval_baseline.sh
 SketchMol-Understanding-Condition/scripts/submit_retrieval_baseline.sh
 ```
 
+如果要把 understanding stream 和 `SketchMolBenchmark` 放到同一张表里，不要只报告
+retrieval/probe 指标。先把某个 condition variant 的预测导出成 direct
+structure CSV，再用 benchmark materializer 计算同口径的 validity / property
+success / MAE：
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SUCC_BASELINE_VARIANTS_CSV=SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv \
+SUCC_VARIANT=full \
+SketchMol-Understanding-Condition/scripts/run_benchmark_export.sh
+```
+
+如果要评估某个已经导出的 condition encoder feature，而不是默认的非神经
+condition feature，把 `SUCC_CONDITION_FEATURES_DIR` 指向
+`export_condition_features.py` 产物目录：
+
+```bash
+SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SUCC_BASELINE_VARIANTS_CSV=SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv \
+SUCC_VARIANT=full \
+SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12 \
+SUCC_BENCHMARK_EXPORT_DIR=SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12 \
+SUCC_BENCHMARK_OUTPUT_DIR=SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12 \
+SketchMol-Understanding-Condition/scripts/run_benchmark_export.sh
+```
+
+这会写出：
+
+```text
+SketchMol-Understanding-Condition/outputs/benchmark_export_full/benchmark_predictions.csv
+SketchMolBenchmark/outputs/understanding_condition_full/benchmark_summary.csv
+```
+
+默认候选库只用 train target pool，避免 eval target 泄漏。`full` 应作为主结果；
+`text_only`、`image_only`、`caption_bottleneck` 作为 ablation 单独导出并比较。
+
 当前输出：
 
 ```text
@@ -669,6 +707,62 @@ caption_bottleneck  0.324     0.268
 
 结论：fusion 训练本身比 image-only pair-aware 更能学到 objective 信息（训练 eval accuracy 最高 0.127 vs 0.070），但把中间 fusion embedding 直接导出给 downstream linear probe 效果反而变差，`full` 不如简单 text/caption condition。这说明当前问题不是“是否加入 prompt”，而是 condition representation 的训练目标不对：分类头能用 embedding，但 embedding 本身不一定线性保留 edit 信息。下一步应改成直接训练可导出的 condition feature，例如 metric learning / supervised contrastive，使同一 delta-bucket 的 `pooled/query_tokens` 靠近、不同 bucket 分离；或者把 downstream probe head 和 condition encoder 联合训练，而不是先训 head 再丢掉 head。
 
+### 下一轮主实验：Contrastive Fusion
+
+这里建议优先继续 `multimodal_fusion_v2`，但把训练目标改成可导出的表示目标：
+分类头和 property-delta regression 继续保留，同时加 supervised contrastive loss，让同一
+objective-direction bucket 的 fusion embeddings 靠近、不同 bucket 分离。
+
+训练 contrastive fusion encoder：
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SUCC_BASELINE_CSV=SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv \
+SUCC_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/fusion_image_text_encoder_mixed_v2_contrastive_e12 \
+SUCC_EPOCHS=12 \
+SUCC_BATCH_SIZE=64 \
+SUCC_CONTRASTIVE_WEIGHT=0.2 \
+SUCC_CONTRASTIVE_TEMPERATURE=0.2 \
+SketchMol-Understanding-Condition/scripts/run_contrastive_fusion_encoder.sh
+```
+
+导出 condition feature；这里的 `SUCC_IMAGE_ENCODER_CHECKPOINT` 是历史参数名，
+对 `multimodal_fusion_v2` 实际传入 fusion checkpoint：
+
+```bash
+SUCC_ENCODER=multimodal_fusion_v2 \
+SUCC_IMAGE_ENCODER_CHECKPOINT=SketchMol-Understanding-Condition/outputs/fusion_image_text_encoder_mixed_v2_contrastive_e12/fusion_image_text_encoder.pt \
+SUCC_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12 \
+SketchMol-Understanding-Condition/scripts/run_condition_encoder_export.sh
+```
+
+先跑 probe，确认表示本身是否变好：
+
+```bash
+SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12 \
+SUCC_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/delta_bucket_classifier_multimodal_fusion_v2_contrastive_e12 \
+SketchMol-Understanding-Condition/scripts/run_delta_bucket_classifier.sh
+```
+
+再把同一批 exported features 接到 `SketchMolBenchmark` direct-prediction
+materializer，避免只在 internal probe 上自洽：
+
+```bash
+SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SUCC_VARIANT=full \
+SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12 \
+SUCC_BENCHMARK_EXPORT_DIR=SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12 \
+SUCC_BENCHMARK_OUTPUT_DIR=SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12 \
+SketchMol-Understanding-Condition/scripts/run_benchmark_export.sh
+```
+
+继续推进的门槛：`full` 的 delta-bucket macro-F1 至少要回到并超过
+`multimodal_v0` 的 0.294，同时 benchmark summary 里的 target similarity /
+property success 不能弱于默认 ridge bridge。若只提升 objective accuracy，但
+benchmark 不动，说明 embedding 仍然更像分类器中间层，不适合继续接 diffusion。
+
 ## 1. 从 UniVideo 迁移什么
 
 UniVideo 值得迁移的不是视频模型本身，而是三个设计原则。
@@ -1032,4 +1126,3 @@ SketchMol 已有 EP4/AKT1/ROCK1 这类 protein condition 使用方式。可以�
 4. 实现 `HybridConditionEncoder`，拼接原 SketchMol property tokens 和 MLLM query tokens。
 5. 先跑 adapter-only 小实验，只比较 full / text-only / image-only / random-query。
 6. 建立评估脚本：validity、scaffold preservation、functional group hit、property delta。
-

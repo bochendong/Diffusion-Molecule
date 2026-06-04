@@ -51,6 +51,21 @@ SKETCHMOL_BENCHMARK_SOURCE_CSV=/path/to/sketchmol/image_path.csv \
 bash SketchMolBenchmark/scripts/materialize_current.sh
 ```
 
+Materialize a direct image-to-structure decoder on the same benchmark row
+format. The input CSV should keep the SketchMol condition columns
+(`MW_setting`, `QED_setting`, etc.) and add a model prediction column such as
+`generated_smiles`:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_BENCHMARK_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SKETCHMOL_DIRECT_PREDICTIONS_CSV=/path/to/direct_predictions.csv \
+SKETCHMOL_DIRECT_SMILES_COLUMN=generated_smiles \
+SKETCHMOL_BENCHMARK_OUTPUT_DIR=SketchMolBenchmark/outputs/direct_structure_current \
+bash SketchMolBenchmark/scripts/materialize_direct_predictions.sh
+```
+
 Run SketchMol generation + MolScribe OCR as one Slurm job:
 
 ```bash
@@ -105,3 +120,10 @@ bash SketchMolBenchmark/scripts/run_smoke.sh
 - `metrics.json`: compact metadata and headline aggregate metrics.
 - `source_manifest.json`: source paths and copied artifact provenance.
 - `benchmark_report.md`: human-readable benchmark summary.
+
+Direct decoder outputs use the same file names under their own output
+directory, with `source_manifest.json` marking
+`benchmark_kind=direct_structure_prediction`. These summaries can be passed to
+`SketchMolCompare/scripts/run_compare_existing.sh` via
+`SKETCHMOL_COMPARE_SKETCHMOL_SUMMARIES` alongside the real SketchMol+OCR
+summary.

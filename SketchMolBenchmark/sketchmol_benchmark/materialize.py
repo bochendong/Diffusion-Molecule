@@ -51,6 +51,7 @@ SUMMARY_COLUMNS = [
     "n",
     "image_path_exists_fraction",
     "ocr_smiles_present_rate",
+    "predicted_smiles_present_rate",
     "molscribe_score_mean",
     "validity",
     "success_rate_in_valid_mols",
@@ -185,7 +186,17 @@ def active_target(row: Mapping[str, str], prop: str) -> float:
     return value
 
 
-def summarise_rows(rows: Sequence[Mapping[str, str]], output_dir: Path, source_csv: Path) -> Dict[str, object]:
+def summarise_rows(
+    rows: Sequence[Mapping[str, str]],
+    output_dir: Path,
+    source_csv: Path,
+    *,
+    smiles_column: str = "SMILES",
+    image_column: str = "image_path",
+    benchmark_task: str = "sketchmol_plus_ocr",
+    present_rate_field: str = "ocr_smiles_present_rate",
+    present_detail_field: str = "ocr_smiles_present",
+) -> Dict[str, object]:
     rdkit_modules = load_rdkit()
     detailed_rows: List[Dict[str, object]] = []
     valid_count = 0
@@ -196,11 +207,11 @@ def summarise_rows(rows: Sequence[Mapping[str, str]], output_dir: Path, source_c
     mae_values: Dict[str, List[float]] = {prop: [] for prop in PROPERTY_COLUMNS}
 
     for index, row in enumerate(rows):
-        image_path = str(row.get("image_path", "")).strip()
+        image_path = str(row.get(image_column, "")).strip()
         image_exists = bool(image_path) and Path(image_path).exists()
         image_exists_count += int(image_exists)
 
-        smiles = row.get("SMILES", "")
+        smiles = row.get(smiles_column, "")
         present = smiles_present(smiles)
         present_count += int(present)
 
@@ -235,7 +246,7 @@ def summarise_rows(rows: Sequence[Mapping[str, str]], output_dir: Path, source_c
             {
                 "row_index": index,
                 "image_path_exists": image_exists,
-                "ocr_smiles_present": present,
+                present_detail_field: present,
                 "valid": valid,
             }
         )
@@ -251,11 +262,11 @@ def summarise_rows(rows: Sequence[Mapping[str, str]], output_dir: Path, source_c
     )
 
     summary: Dict[str, object] = {
-        "benchmark_task": "sketchmol_plus_ocr",
+        "benchmark_task": benchmark_task,
         "benchmark_label": "overall",
         "n": n,
         "image_path_exists_fraction": image_exists_count / n if n else math.nan,
-        "ocr_smiles_present_rate": present_count / n if n else math.nan,
+        present_rate_field: present_count / n if n else math.nan,
         "molscribe_score_mean": mean(molscribe_scores) if molscribe_scores else math.nan,
         "validity": valid_count / n if n and rdkit_modules is not None else math.nan,
         "success_rate_in_valid_mols": success_rate,
@@ -273,26 +284,32 @@ def summarise_rows(rows: Sequence[Mapping[str, str]], output_dir: Path, source_c
 
 
 def render_report(summary: Mapping[str, object], metrics: Mapping[str, object]) -> str:
+    present_label = metrics.get("present_label", "OCR SMILES present")
+    present_field = metrics.get("present_rate_field", "ocr_smiles_present_rate")
+    description = metrics.get(
+        "report_description",
+        "This artifact represents the real SketchMol pathway: diffusion image generation followed by MolScribe/OCR structure recovery.",
+    )
     return "\n".join(
         [
-            "# Real SketchMol + OCR Benchmark",
+            f"# {metrics.get('report_title', 'Real SketchMol + OCR Benchmark')}",
             "",
             f"Benchmark name: `{metrics.get('benchmark_name', '')}`",
             f"Source SketchMol repo: `{metrics.get('sketchmol_repo', '')}`",
             f"Source CSV: `{metrics.get('source_csv', '')}`",
             "",
-            "| n | image exists | OCR SMILES present | validity | property success | MolScribe score |",
+            f"| n | image exists | {present_label} | validity | property success | MolScribe score |",
             "| ---: | ---: | ---: | ---: | ---: | ---: |",
             "| {n} | {img} | {ocr} | {valid} | {succ} | {score} |".format(
                 n=format_value(summary.get("n", "")),
                 img=format_value(summary.get("image_path_exists_fraction", "")),
-                ocr=format_value(summary.get("ocr_smiles_present_rate", "")),
+                ocr=format_value(summary.get(str(present_field), "")),
                 valid=format_value(summary.get("validity", "")),
                 succ=format_value(summary.get("success_rate_in_valid_mols", "")),
                 score=format_value(summary.get("molscribe_score_mean", "")),
             ),
             "",
-            "This artifact represents the real SketchMol pathway: diffusion image generation followed by MolScribe/OCR structure recovery.",
+            str(description),
             "",
         ]
     )
@@ -316,14 +333,33 @@ def materialize(
     source_csv: Path,
     output_dir: Path,
     benchmark_name: str,
-    sketchmol_repo: Path,
+    sketchmol_repo: Path | None = None,
     run_log: Path | None = None,
+    benchmark_kind: str = "real_sketchmol_plus_ocr",
+    benchmark_task: str = "sketchmol_plus_ocr",
+    smiles_column: str = "SMILES",
+    image_column: str = "image_path",
+    present_rate_field: str = "ocr_smiles_present_rate",
+    present_detail_field: str = "ocr_smiles_present",
+    source_copy_name: str = "source_image_path_ocr.csv",
+    report_title: str = "Real SketchMol + OCR Benchmark",
+    report_description: str = "This artifact represents the real SketchMol pathway: diffusion image generation followed by MolScribe/OCR structure recovery.",
+    present_label: str = "OCR SMILES present",
 ) -> Dict[str, object]:
     if not source_csv.exists():
         raise FileNotFoundError(f"missing SketchMol OCR CSV: {source_csv}")
     output_dir.mkdir(parents=True, exist_ok=True)
     rows = read_csv(source_csv)
-    summary = summarise_rows(rows, output_dir, source_csv)
+    summary = summarise_rows(
+        rows,
+        output_dir,
+        source_csv,
+        smiles_column=smiles_column,
+        image_column=image_column,
+        benchmark_task=benchmark_task,
+        present_rate_field=present_rate_field,
+        present_detail_field=present_detail_field,
+    )
     summary["benchmark_label"] = benchmark_name
 
     summary_csv = output_dir / "benchmark_summary.csv"
@@ -333,7 +369,7 @@ def materialize(
         encoding="utf-8",
     )
 
-    copied_source = output_dir / "source_image_path_ocr.csv"
+    copied_source = output_dir / source_copy_name
     shutil.copy2(source_csv, copied_source)
     copied_log = None
     if run_log and run_log.exists():
@@ -341,12 +377,18 @@ def materialize(
         shutil.copy2(run_log, copied_log)
 
     metrics = {
-        "benchmark_kind": "real_sketchmol_plus_ocr",
+        "benchmark_kind": benchmark_kind,
         "benchmark_name": benchmark_name,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "output_dir": str(output_dir),
-        "sketchmol_repo": str(sketchmol_repo),
+        "sketchmol_repo": str(sketchmol_repo or ""),
         "source_csv": str(source_csv),
+        "smiles_column": smiles_column,
+        "image_column": image_column,
+        "present_rate_field": present_rate_field,
+        "present_label": present_label,
+        "report_title": report_title,
+        "report_description": report_description,
         "rows": len(rows),
         "summary": {k: clean_value(v) for k, v in summary.items()},
     }
@@ -354,9 +396,11 @@ def materialize(
     (output_dir / "benchmark_report.md").write_text(render_report(summary, metrics), encoding="utf-8")
 
     manifest = {
-        "benchmark_kind": "real_sketchmol_plus_ocr",
+        "benchmark_kind": benchmark_kind,
         "benchmark_name": benchmark_name,
-        "sketchmol_repo": str(sketchmol_repo),
+        "sketchmol_repo": str(sketchmol_repo or ""),
+        "smiles_column": smiles_column,
+        "image_column": image_column,
         "sources": {
             "source_csv": str(source_csv),
             "run_log": str(run_log) if run_log else "",
@@ -378,11 +422,24 @@ def materialize(
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-csv", required=True, type=Path, help="SketchMol image_path.csv after MolScribe OCR")
+    parser.add_argument("--source-csv", required=True, type=Path, help="SketchMol image_path.csv after MolScribe OCR, or a direct prediction CSV with compatible condition columns")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--benchmark-name", default="real_sketchmol_plus_ocr")
-    parser.add_argument("--sketchmol-repo", required=True, type=Path)
+    parser.add_argument("--sketchmol-repo", type=Path)
     parser.add_argument("--run-log", type=Path)
+    parser.add_argument("--benchmark-kind", default="real_sketchmol_plus_ocr")
+    parser.add_argument("--benchmark-task", default="sketchmol_plus_ocr")
+    parser.add_argument("--smiles-column", default="SMILES")
+    parser.add_argument("--image-column", default="image_path")
+    parser.add_argument("--present-rate-field", default="ocr_smiles_present_rate")
+    parser.add_argument("--present-detail-field", default="ocr_smiles_present")
+    parser.add_argument("--source-copy-name", default="source_image_path_ocr.csv")
+    parser.add_argument("--report-title", default="Real SketchMol + OCR Benchmark")
+    parser.add_argument(
+        "--report-description",
+        default="This artifact represents the real SketchMol pathway: diffusion image generation followed by MolScribe/OCR structure recovery.",
+    )
+    parser.add_argument("--present-label", default="OCR SMILES present")
     return parser.parse_args(argv)
 
 
@@ -394,6 +451,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         benchmark_name=args.benchmark_name,
         sketchmol_repo=args.sketchmol_repo,
         run_log=args.run_log,
+        benchmark_kind=args.benchmark_kind,
+        benchmark_task=args.benchmark_task,
+        smiles_column=args.smiles_column,
+        image_column=args.image_column,
+        present_rate_field=args.present_rate_field,
+        present_detail_field=args.present_detail_field,
+        source_copy_name=args.source_copy_name,
+        report_title=args.report_title,
+        report_description=args.report_description,
+        present_label=args.present_label,
     )
     print(json.dumps({k: clean_value(v) for k, v in metrics.items()}, indent=2, sort_keys=True))
     return 0

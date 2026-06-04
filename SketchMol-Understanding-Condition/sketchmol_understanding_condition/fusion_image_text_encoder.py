@@ -20,6 +20,8 @@ def train_fusion_image_text_encoder(
     embedding_dim: int = 256,
     image_size: int = 96,
     text_dim: int = 256,
+    contrastive_weight: float = 0.0,
+    contrastive_temperature: float = 0.2,
     seed: int = 7,
 ) -> dict[str, object]:
     """Train a fusion encoder on source image plus instruction prompt."""
@@ -76,19 +78,34 @@ def train_fusion_image_text_encoder(
     for _ in range(epochs):
         model.train()
         total_loss = 0.0
+        total_cls_loss = 0.0
+        total_delta_loss = 0.0
+        total_contrastive_loss = 0.0
         total = 0
         for images, text, y, deltas in train_loader:
             optimizer.zero_grad(set_to_none=True)
-            logits, delta_pred, _ = model(images.float(), text.float())
+            logits, delta_pred, embedding = model(images.float(), text.float())
             cls_loss = F.cross_entropy(logits, y)
             delta_loss = F.mse_loss(delta_pred, deltas.float())
-            loss = cls_loss + 0.25 * delta_loss
+            contrastive_loss = _supervised_contrastive_loss(
+                embedding,
+                y,
+                temperature=contrastive_temperature,
+            )
+            loss = cls_loss + 0.25 * delta_loss + contrastive_weight * contrastive_loss
             loss.backward()
             optimizer.step()
-            total_loss += float(loss.item()) * int(images.shape[0])
-            total += int(images.shape[0])
-        metrics = _evaluate(model, eval_loader)
+            batch_count = int(images.shape[0])
+            total_loss += float(loss.item()) * batch_count
+            total_cls_loss += float(cls_loss.item()) * batch_count
+            total_delta_loss += float(delta_loss.item()) * batch_count
+            total_contrastive_loss += float(contrastive_loss.item()) * batch_count
+            total += batch_count
+        metrics = _evaluate(model, eval_loader, contrastive_temperature=contrastive_temperature)
         metrics["train_loss"] = total_loss / max(1, total)
+        metrics["train_class_ce"] = total_cls_loss / max(1, total)
+        metrics["train_delta_mse"] = total_delta_loss / max(1, total)
+        metrics["train_contrastive_loss"] = total_contrastive_loss / max(1, total)
         history.append(metrics)
 
     output_dir = Path(output_dir)
@@ -105,6 +122,8 @@ def train_fusion_image_text_encoder(
             "label_names": label_names,
             "delta_mean": delta_mean.astype(np.float32),
             "delta_std": delta_std.astype(np.float32),
+            "contrastive_weight": float(contrastive_weight),
+            "contrastive_temperature": float(contrastive_temperature),
             "history": history,
         },
         checkpoint_path,
@@ -114,6 +133,8 @@ def train_fusion_image_text_encoder(
         "train_examples": int(train_mask.sum()),
         "eval_examples": int(eval_mask.sum()),
         "epochs": epochs,
+        "contrastive_weight": float(contrastive_weight),
+        "contrastive_temperature": float(contrastive_temperature),
         "label_names": label_names,
         "history": history,
     }
@@ -205,24 +226,55 @@ class FusionImageTextEncoder:  # pragma: no cover - optional torch wrapper
         return _FusionImageTextEncoder(*args, **kwargs)
 
 
-def _evaluate(model, loader) -> dict[str, float]:
+def _supervised_contrastive_loss(embedding, labels, *, temperature: float = 0.2):
+    """Pull same-label embeddings together and push different labels apart."""
+
+    import torch
+    import torch.nn.functional as F
+
+    if int(embedding.shape[0]) <= 1:
+        return embedding.sum() * 0.0
+
+    labels = labels.view(-1)
+    positive_mask = labels[:, None].eq(labels[None, :])
+    self_mask = torch.eye(int(labels.shape[0]), dtype=torch.bool, device=labels.device)
+    positive_mask = positive_mask & ~self_mask
+    valid = positive_mask.sum(dim=1) > 0
+    if not bool(valid.any()):
+        return embedding.sum() * 0.0
+
+    normalized = F.normalize(embedding, dim=1)
+    logits = normalized @ normalized.T
+    logits = logits / max(float(temperature), 1e-6)
+    masked_logits = logits.masked_fill(self_mask, torch.finfo(logits.dtype).min)
+    log_prob = logits - torch.logsumexp(masked_logits, dim=1, keepdim=True)
+    mean_log_prob = (log_prob * positive_mask.float()).sum(dim=1) / positive_mask.sum(dim=1).clamp_min(1)
+    return -mean_log_prob[valid].mean()
+
+
+def _evaluate(model, loader, *, contrastive_temperature: float = 0.2) -> dict[str, float]:
     import torch
     import torch.nn.functional as F
 
     model.eval()
     losses = []
     delta_losses = []
+    contrastive_losses = []
     correct = 0
     total = 0
     with torch.no_grad():
         for images, text, y, deltas in loader:
-            logits, delta_pred, _ = model(images.float(), text.float())
+            logits, delta_pred, embedding = model(images.float(), text.float())
             losses.append(float(F.cross_entropy(logits, y).item()))
             delta_losses.append(float(F.mse_loss(delta_pred, deltas.float()).item()))
+            contrastive_losses.append(
+                float(_supervised_contrastive_loss(embedding, y, temperature=contrastive_temperature).item())
+            )
             correct += int((logits.argmax(dim=1) == y).sum().item())
             total += int(y.shape[0])
     return {
         "eval_class_ce": float(np.mean(losses)) if losses else 0.0,
         "eval_delta_mse": float(np.mean(delta_losses)) if delta_losses else 0.0,
+        "eval_contrastive_loss": float(np.mean(contrastive_losses)) if contrastive_losses else 0.0,
         "eval_accuracy": correct / total if total else 0.0,
     }

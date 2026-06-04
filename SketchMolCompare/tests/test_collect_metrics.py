@@ -123,6 +123,51 @@ class CollectMetricsTests(unittest.TestCase):
             self.assertAlmostEqual(overall["validity"], 0.8)
             self.assertAlmostEqual(overall["molscribe_score_mean"], 0.95)
 
+    def test_direct_prediction_summary_uses_manifest_family(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            summary = root / "SketchMolBenchmark" / "outputs" / "direct_structure_current" / "benchmark_summary.csv"
+            summary.parent.mkdir(parents=True)
+            (summary.parent / "source_manifest.json").write_text(
+                json.dumps(
+                    {
+                        "benchmark_kind": "direct_structure_prediction",
+                        "benchmark_name": "image_to_structure_seed7",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            with summary.open("w", encoding="utf-8", newline="") as handle:
+                writer = csv.DictWriter(
+                    handle,
+                    fieldnames=[
+                        "benchmark_task",
+                        "benchmark_label",
+                        "predicted_smiles_present_rate",
+                        "success_rate_in_valid_mols",
+                        "validity",
+                        "n",
+                    ],
+                )
+                writer.writeheader()
+                writer.writerow(
+                    {
+                        "benchmark_task": "direct_structure_prediction",
+                        "benchmark_label": "image_to_structure_seed7",
+                        "predicted_smiles_present_rate": "0.7",
+                        "success_rate_in_valid_mols": "0.4",
+                        "validity": "0.6",
+                        "n": "10",
+                    }
+                )
+
+            rows = collect_rows([], [summary])
+            overall = [row for row in rows if row["benchmark_task"] == "overall"][0]
+            self.assertEqual(overall["run_name"], "image_to_structure_seed7")
+            self.assertEqual(overall["family"], "direct_structure_prediction")
+            self.assertAlmostEqual(overall["predicted_smiles_present_rate"], 0.7)
+            self.assertAlmostEqual(overall["success_rate_in_valid_mols"], 0.4)
+
 
 if __name__ == "__main__":
     unittest.main()
