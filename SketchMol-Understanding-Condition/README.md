@@ -78,6 +78,10 @@ SketchMol structured reference
 scaffold target molecule，然后用 SketchMol 风格的 2-7 性质 strict success
 评估。
 
+为了保护集群 inode quota，MultiProperty 数据集默认不预生成 PNG。`hf_vlm`
+导出时如果 `source_image` 为空，会从 `source_smiles` 在内存中临时渲染 PIL
+image，不会写出海量小文件。
+
 快速 dry run 可以限制导出行数：
 
 ```bash

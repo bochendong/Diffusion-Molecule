@@ -32,6 +32,7 @@ HF_BATCH_SIZE="${SUCC_HF_BATCH_SIZE:-1}"
 HF_MAX_LENGTH="${SUCC_HF_MAX_LENGTH:-2048}"
 HF_ATTN_IMPLEMENTATION="${SUCC_HF_ATTN_IMPLEMENTATION:-}"
 HF_PROMPT_STYLE="${SUCC_HF_PROMPT_STYLE:-auto}"
+HF_RENDER_IMAGE_SIZE="${SUCC_HF_RENDER_IMAGE_SIZE:-256}"
 HF_TRUST_REMOTE_CODE="${SUCC_HF_TRUST_REMOTE_CODE:-1}"
 
 echo "Exporting condition encoder features"
@@ -57,6 +58,7 @@ if [[ "$ENCODER" == "hf_vlm" ]]; then
   echo "  hf_dtype=$HF_DTYPE"
   echo "  hf_batch_size=$HF_BATCH_SIZE"
   echo "  hf_prompt_style=$HF_PROMPT_STYLE"
+  echo "  hf_render_image_size=$HF_RENDER_IMAGE_SIZE"
 fi
 
 LIMIT_ARGS=()
@@ -84,6 +86,7 @@ if [[ "$ENCODER" == "hf_vlm" ]]; then
     --hf-batch-size "$HF_BATCH_SIZE"
     --hf-max-length "$HF_MAX_LENGTH"
     --hf-prompt-style "$HF_PROMPT_STYLE"
+    --hf-render-image-size "$HF_RENDER_IMAGE_SIZE"
   )
   if [[ -n "$HF_ATTN_IMPLEMENTATION" ]]; then
     HF_ARGS+=(--hf-attn-implementation "$HF_ATTN_IMPLEMENTATION")

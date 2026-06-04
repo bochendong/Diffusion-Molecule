@@ -395,6 +395,7 @@ class HfVlmConditionEncoder:
         hf_trust_remote_code: bool = True,
         hf_attn_implementation: str | None = None,
         hf_prompt_style: str = "auto",
+        hf_render_image_size: int = 256,
         pooled_dim: int = 4096,
         num_queries: int = 32,
         query_dim: int = 256,
@@ -408,6 +409,7 @@ class HfVlmConditionEncoder:
         self.hf_trust_remote_code = bool(hf_trust_remote_code)
         self.hf_attn_implementation = hf_attn_implementation
         self.hf_prompt_style = hf_prompt_style
+        self.hf_render_image_size = int(hf_render_image_size)
         self.pooled_dim = pooled_dim
         self.num_queries = num_queries
         self.query_dim = query_dim
@@ -514,7 +516,14 @@ class HfVlmConditionEncoder:
                 prompts = [_vlm_prompt_for_row(row) for _, row in chunk]
                 images = None
                 if use_images:
-                    images = [_load_rgb_image(row.get("source_image", ""), Image) for _, row in chunk]
+                    images = [
+                        _load_or_render_rgb_image(
+                            row,
+                            image_module=Image,
+                            render_size=self.hf_render_image_size,
+                        )
+                        for _, row in chunk
+                    ]
                 inputs = _processor_call(
                     self._processor,
                     prompts=prompts,
@@ -595,7 +604,7 @@ def _deterministic_random_vector(key: str, dim: int) -> np.ndarray:
 def _variant_uses_image(row: dict[str, str]) -> bool:
     variant = row.get("variant", "full")
     if variant in {"full", "image_only"}:
-        return bool(row.get("source_image"))
+        return bool(row.get("source_image") or row.get("source_smiles"))
     return False
 
 
@@ -633,12 +642,33 @@ def _first_parameter_device(model):
         return torch.device("cpu")
 
 
-def _load_rgb_image(path: str, image_module):
-    image_path = Path(path)
-    if not image_path.exists():
-        raise FileNotFoundError(f"Missing source image for hf_vlm export: {path}")
-    with image_module.open(image_path) as image:
+def _load_or_render_rgb_image(row: dict[str, str], *, image_module, render_size: int):
+    image_path_text = row.get("source_image", "")
+    if image_path_text:
+        image_path = Path(image_path_text)
+        if image_path.exists():
+            with image_module.open(image_path) as image:
+                return image.convert("RGB").copy()
+    smiles = row.get("source_smiles", "")
+    if not smiles:
+        raise FileNotFoundError(
+            "Missing source image and source_smiles for hf_vlm export: "
+            f"variant_id={row.get('variant_id', '')}"
+        )
+    return _render_smiles_to_pil(smiles, image_module=image_module, render_size=render_size)
+
+
+def _render_smiles_to_pil(smiles: str, *, image_module, render_size: int):
+    from rdkit import Chem
+    from rdkit.Chem import Draw
+
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        raise ValueError(f"Cannot render invalid source_smiles for hf_vlm export: {smiles!r}")
+    image = Draw.MolToImage(mol, size=(render_size, render_size))
+    if isinstance(image, image_module.Image):
         return image.convert("RGB").copy()
+    raise TypeError("RDKit Draw.MolToImage did not return a PIL image")
 
 
 def _processor_call(

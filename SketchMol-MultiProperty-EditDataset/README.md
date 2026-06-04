@@ -32,7 +32,7 @@ edit_pairs.csv
 condition_rows.csv
 baseline_variants.csv
 summary.json
-images/
+images/                       # optional; only created when SMMED_RENDER_IMAGES=1
 benchmark_scaffold_retrieval/
 ```
 
@@ -122,6 +122,16 @@ bash SketchMol-MultiProperty-EditDataset/scripts/submit_build_dataset.sh
 The run script loads `StdEnv/2023`, `python/3.11`, and `rdkit/2025.09.4`
 before building the dataset. Override `SMMED_PYTHON_BIN` only if that Python
 can import RDKit.
+
+默认不会预渲染 molecule PNG：
+
+```text
+SMMED_RENDER_IMAGES=0
+```
+
+这是为了避免大数据集生成海量小 PNG，打爆集群 inode/file-count quota。需要调试少量
+图像时再显式设置 `SMMED_RENDER_IMAGES=1`。大 VLM workflow 可以直接从
+`source_smiles` 在内存中渲染分子图，不依赖预生成 PNG 文件。
 
 ## 常用参数
 

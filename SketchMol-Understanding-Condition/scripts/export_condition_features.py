@@ -31,6 +31,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--hf-max-length", type=int, default=2048)
     parser.add_argument("--hf-attn-implementation", default=None)
     parser.add_argument("--hf-prompt-style", default="auto")
+    parser.add_argument("--hf-render-image-size", type=int, default=256)
     parser.add_argument("--hf-trust-remote-code", dest="hf_trust_remote_code", action="store_true")
     parser.add_argument("--hf-no-trust-remote-code", dest="hf_trust_remote_code", action="store_false")
     parser.set_defaults(hf_trust_remote_code=True)
@@ -68,6 +69,7 @@ def main() -> None:
                 "hf_trust_remote_code": args.hf_trust_remote_code,
                 "hf_attn_implementation": args.hf_attn_implementation,
                 "hf_prompt_style": args.hf_prompt_style,
+                "hf_render_image_size": args.hf_render_image_size,
             }
         )
     encoder = build_condition_encoder(args.encoder, **encoder_kwargs)
@@ -117,6 +119,7 @@ def main() -> None:
         "hf_dtype": args.hf_dtype if args.encoder == "hf_vlm" else None,
         "hf_batch_size": args.hf_batch_size if args.encoder == "hf_vlm" else None,
         "hf_prompt_style": args.hf_prompt_style if args.encoder == "hf_vlm" else None,
+        "hf_render_image_size": args.hf_render_image_size if args.encoder == "hf_vlm" else None,
         "rows": len(rows),
         "pooled_shape": list(pooled_arr.shape),
         "query_tokens_shape": list(query_arr.shape),
