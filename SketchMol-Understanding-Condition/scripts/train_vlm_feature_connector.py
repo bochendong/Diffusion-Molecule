@@ -71,9 +71,11 @@ def main() -> None:
         train_indices = np.sort(rng.choice(train_indices, size=min(args.train_limit, len(train_indices)), replace=False))
 
     prop_count = len(PROPERTY_COLUMNS)
-    active_mask = targets[:, prop_count : 2 * prop_count]
+    active_mask = targets[:, 2 * prop_count : 3 * prop_count]
     target_mean = np.zeros((1, prop_count), dtype=np.float32)
     target_std = np.ones((1, prop_count), dtype=np.float32)
+    delta_mean = np.zeros((1, prop_count), dtype=np.float32)
+    delta_std = np.ones((1, prop_count), dtype=np.float32)
     for prop_idx in range(prop_count):
         active_train = train_indices[active_mask[train_indices, prop_idx] > 0.5]
         if active_train.size == 0:
@@ -82,7 +84,14 @@ def main() -> None:
         target_mean[0, prop_idx] = float(values.mean())
         std = float(values.std())
         target_std[0, prop_idx] = std if std >= 1e-6 else 1.0
+        delta_values = targets[active_train, prop_count + prop_idx]
+        delta_mean[0, prop_idx] = float(delta_values.mean())
+        delta_std_value = float(delta_values.std())
+        delta_std[0, prop_idx] = delta_std_value if delta_std_value >= 1e-6 else 1.0
     targets[:, :prop_count] = ((targets[:, :prop_count] - target_mean) / target_std) * active_mask
+    targets[:, prop_count : 2 * prop_count] = (
+        (targets[:, prop_count : 2 * prop_count] - delta_mean) / delta_std
+    ) * active_mask
     source_mean = source_features[train_indices, :prop_count].mean(axis=0, keepdims=True)
     source_std = source_features[train_indices, :prop_count].std(axis=0, keepdims=True)
     source_std = np.where(source_std < 1e-6, 1.0, source_std)
@@ -102,6 +111,10 @@ def main() -> None:
         hidden_dim=args.hidden_dim,
         export_batch_size=args.export_batch_size,
         source_feature_weight=args.source_feature_weight,
+        target_mean=target_mean,
+        target_std=target_std,
+        delta_mean=delta_mean,
+        delta_std=delta_std,
         seed=args.seed,
     )
     summary.update(
@@ -112,6 +125,8 @@ def main() -> None:
             "properties": list(PROPERTY_COLUMNS),
             "target_mean": target_mean.reshape(-1).astype(float).tolist(),
             "target_std": target_std.reshape(-1).astype(float).tolist(),
+            "delta_mean": delta_mean.reshape(-1).astype(float).tolist(),
+            "delta_std": delta_std.reshape(-1).astype(float).tolist(),
             "source_feature_dim": int(source_features.shape[1]),
             "source_feature_weight": float(args.source_feature_weight),
             "source_fingerprint_bits": int(args.source_fingerprint_bits),
@@ -133,6 +148,7 @@ def _read_rows(path: Path) -> list[dict[str, str]]:
 def _target_vector(row: dict[str, str]) -> np.ndarray:
     selected = {prop for prop in (row.get("condition_properties") or "").split(",") if prop}
     values = []
+    deltas = []
     masks = []
     directions = []
     for prop in PROPERTY_COLUMNS:
@@ -140,12 +156,13 @@ def _target_vector(row: dict[str, str]) -> np.ndarray:
         target = _to_float(row.get(f"target_{prop}"))
         active = prop in selected
         values.append(target if active else 0.0)
+        deltas.append((target - source) if active else 0.0)
         masks.append(1.0 if active else 0.0)
         if active:
             directions.append(1.0 if target - source >= 0 else -1.0)
         else:
             directions.append(0.0)
-    return np.asarray([*values, *masks, *directions], dtype=np.float32)
+    return np.asarray([*values, *deltas, *masks, *directions], dtype=np.float32)
 
 
 def _source_vector(row: dict[str, str], *, fingerprint_bits: int) -> np.ndarray:
@@ -178,6 +195,10 @@ def _train_and_export(
     hidden_dim: int,
     export_batch_size: int,
     source_feature_weight: float,
+    target_mean: np.ndarray,
+    target_std: np.ndarray,
+    delta_mean: np.ndarray,
+    delta_std: np.ndarray,
     seed: int,
 ) -> dict[str, object]:
     import torch
@@ -239,8 +260,15 @@ def _train_and_export(
 
     model.eval()
     out_path = output_dir / "pooled.npy"
+    edit_path = output_dir / "edit_latent_predictions.npy"
     export_dim = output_dim + (int(source_features.shape[1]) if source_feature_weight > 0 else 0)
     connected = np.lib.format.open_memmap(out_path, mode="w+", dtype=np.float32, shape=(int(features.shape[0]), export_dim))
+    edit_predictions = np.lib.format.open_memmap(
+        edit_path,
+        mode="w+",
+        dtype=np.float32,
+        shape=(int(features.shape[0]), output_dim),
+    )
     with torch.no_grad():
         for start in range(0, int(features.shape[0]), int(export_batch_size)):
             end = min(start + int(export_batch_size), int(features.shape[0]))
@@ -252,7 +280,15 @@ def _train_and_export(
                 axis=1,
             )
             x = torch.from_numpy(x_np)
-            pred = model(x.float()).cpu().numpy().astype(np.float32)
+            pred_normalized = model(x.float()).cpu().numpy().astype(np.float32)
+            edit_predictions[start:end] = _denormalize_edit_predictions(
+                pred_normalized,
+                target_mean=target_mean,
+                target_std=target_std,
+                delta_mean=delta_mean,
+                delta_std=delta_std,
+            )
+            pred = pred_normalized
             norm = np.linalg.norm(pred, axis=1, keepdims=True)
             pred = pred / np.maximum(norm, 1e-6)
             if source_feature_weight > 0:
@@ -264,7 +300,30 @@ def _train_and_export(
                 pred = pred / np.maximum(norm, 1e-6)
             connected[start:end] = pred
     connected.flush()
+    edit_predictions.flush()
     shutil.copy2(source_index, output_dir / "index.csv")
+    (output_dir / "edit_latent_schema.json").write_text(
+        json.dumps(
+            {
+                "format": "source_conditioned_edit_latent_v1",
+                "property_columns": list(PROPERTY_COLUMNS),
+                "groups": [
+                    {"name": "target_values", "start": 0, "end": len(PROPERTY_COLUMNS)},
+                    {"name": "delta_values", "start": len(PROPERTY_COLUMNS), "end": 2 * len(PROPERTY_COLUMNS)},
+                    {"name": "active_mask", "start": 2 * len(PROPERTY_COLUMNS), "end": 3 * len(PROPERTY_COLUMNS)},
+                    {"name": "directions", "start": 3 * len(PROPERTY_COLUMNS), "end": 4 * len(PROPERTY_COLUMNS)},
+                ],
+                "notes": (
+                    "target_values and delta_values are stored in raw property units; "
+                    "active_mask and directions are raw connector outputs."
+                ),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     torch.save(
         {
             "model_state": model.state_dict(),
@@ -280,6 +339,7 @@ def _train_and_export(
     return {
         "checkpoint": str(output_dir / "vlm_feature_connector.pt"),
         "pooled_npy": str(out_path),
+        "edit_latent_predictions_npy": str(edit_path),
         "index_csv": str(output_dir / "index.csv"),
         "input_dim": input_dim,
         "hidden_dim": int(hidden_dim),
@@ -289,6 +349,23 @@ def _train_and_export(
         "epochs": int(epochs),
         "history": history,
     }
+
+
+def _denormalize_edit_predictions(
+    pred: np.ndarray,
+    *,
+    target_mean: np.ndarray,
+    target_std: np.ndarray,
+    delta_mean: np.ndarray,
+    delta_std: np.ndarray,
+) -> np.ndarray:
+    prop_count = len(PROPERTY_COLUMNS)
+    out = np.array(pred, dtype=np.float32, copy=True)
+    out[:, :prop_count] = out[:, :prop_count] * target_std + target_mean
+    out[:, prop_count : 2 * prop_count] = (
+        out[:, prop_count : 2 * prop_count] * delta_std + delta_mean
+    )
+    return out
 
 
 def _eval_mse(model, loader) -> float:

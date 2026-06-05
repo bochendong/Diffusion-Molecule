@@ -38,6 +38,9 @@ METHODS = (
     "source_identity",
     "global_property_retrieval",
     "scaffold_property_retrieval",
+    "edit_latent_global_retrieval",
+    "edit_latent_scaffold_retrieval",
+    "edit_latent_scaffold_source_rerank",
     "vlm_feature_retrieval",
     "vlm_scaffold_feature_retrieval",
     "global_property_vlm_rerank",
@@ -53,12 +56,26 @@ FEATURE_METHODS = {
 }
 PURE_FEATURE_METHODS = {"vlm_feature_retrieval", "vlm_scaffold_feature_retrieval"}
 HYBRID_RERANK_METHODS = {"global_property_vlm_rerank", "scaffold_property_vlm_rerank"}
+EDIT_LATENT_METHODS = {
+    "edit_latent_global_retrieval",
+    "edit_latent_scaffold_retrieval",
+    "edit_latent_scaffold_source_rerank",
+}
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--condition-rows-csv", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument(
+        "--candidate-molecule-db-csv",
+        type=Path,
+        default=None,
+        help=(
+            "Optional molecule_database.csv candidate library. When omitted, "
+            "retrieval candidates are built from train target rows only."
+        ),
+    )
     parser.add_argument("--eval-split", default="eval")
     parser.add_argument("--methods", default=",".join(METHODS))
     parser.add_argument("--max-global-candidates", type=int, default=20000)
@@ -81,6 +98,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--condition-features-dir", type=Path, default=None)
     parser.add_argument("--condition-feature-array", choices=["pooled", "query_tokens"], default="pooled")
     parser.add_argument("--condition-feature-variant", default="full")
+    parser.add_argument("--edit-latent-dir", type=Path, default=None)
+    parser.add_argument("--max-edit-latent-candidates", type=int, default=20000)
+    parser.add_argument("--edit-latent-property-weight", type=float, default=1.0)
+    parser.add_argument("--edit-latent-delta-weight", type=float, default=0.35)
+    parser.add_argument("--edit-latent-direction-weight", type=float, default=0.10)
+    parser.add_argument("--edit-latent-source-similarity-weight", type=float, default=0.25)
     parser.add_argument("--compute-tanimoto", action="store_true")
     parser.add_argument("--allow-eval-target-candidates", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
@@ -96,6 +119,8 @@ def main() -> None:
         raise ValueError(f"Unsupported methods: {unknown}")
     if any(method in FEATURE_METHODS for method in methods) and args.condition_features_dir is None:
         raise ValueError("--condition-features-dir is required for VLM feature retrieval methods")
+    if any(method in EDIT_LATENT_METHODS for method in methods) and args.edit_latent_dir is None:
+        raise ValueError("--edit-latent-dir is required for edit-latent retrieval methods")
 
     rows = _read_rows(args.condition_rows_csv)
     train_rows = [row for row in rows if row.get("split") != args.eval_split]
@@ -111,7 +136,12 @@ def main() -> None:
             for row in eval_rows
             if row.get("target_smiles")
         }
-    candidates = _candidate_pool(train_rows, excluded_smiles=excluded_targets)
+    if args.candidate_molecule_db_csv is not None:
+        candidates = _candidate_pool_from_molecule_db(args.candidate_molecule_db_csv, excluded_smiles=excluded_targets)
+        candidate_source = "molecule_database"
+    else:
+        candidates = _candidate_pool(train_rows, excluded_smiles=excluded_targets)
+        candidate_source = "train_target_rows"
     by_scaffold: dict[str, list[dict[str, object]]] = defaultdict(list)
     for candidate in candidates:
         by_scaffold[str(candidate["scaffold"])].append(candidate)
@@ -124,6 +154,13 @@ def main() -> None:
             variant=args.condition_feature_variant,
             excluded_smiles=excluded_targets,
         )
+    edit_latent_context = None
+    if args.edit_latent_dir is not None:
+        edit_latent_context = _build_edit_latent_context(
+            condition_rows=rows,
+            edit_latent_dir=args.edit_latent_dir,
+            variant=args.condition_feature_variant,
+        )
 
     decoded_rows = []
     for method in methods:
@@ -135,10 +172,16 @@ def main() -> None:
                     candidates=candidates,
                     by_scaffold=by_scaffold,
                     feature_context=feature_context,
+                    edit_latent_context=edit_latent_context,
                     max_global_candidates=args.max_global_candidates,
                     max_feature_candidates=args.max_feature_candidates,
+                    max_edit_latent_candidates=args.max_edit_latent_candidates,
                     rerank_candidates=args.rerank_candidates,
                     rerank_property_weight=args.rerank_property_weight,
+                    edit_latent_property_weight=args.edit_latent_property_weight,
+                    edit_latent_delta_weight=args.edit_latent_delta_weight,
+                    edit_latent_direction_weight=args.edit_latent_direction_weight,
+                    edit_latent_source_similarity_weight=args.edit_latent_source_similarity_weight,
                     scaffold_fallback_mode=args.scaffold_fallback_mode,
                     compute_tanimoto=args.compute_tanimoto,
                     seed=args.seed,
@@ -156,12 +199,20 @@ def main() -> None:
         "train_rows": len(train_rows),
         "eval_rows": len(eval_rows),
         "candidate_molecules": len(candidates),
+        "candidate_source": candidate_source,
+        "candidate_molecule_db_csv": str(args.candidate_molecule_db_csv) if args.candidate_molecule_db_csv else None,
         "eval_target_candidates_excluded": not args.allow_eval_target_candidates,
         "max_eval_per_property_count": args.max_eval_per_property_count,
         "max_global_candidates": args.max_global_candidates,
         "max_feature_candidates": args.max_feature_candidates,
+        "max_edit_latent_candidates": args.max_edit_latent_candidates,
         "rerank_candidates": args.rerank_candidates,
         "rerank_property_weight": args.rerank_property_weight,
+        "edit_latent_dir": str(args.edit_latent_dir) if args.edit_latent_dir else None,
+        "edit_latent_property_weight": args.edit_latent_property_weight,
+        "edit_latent_delta_weight": args.edit_latent_delta_weight,
+        "edit_latent_direction_weight": args.edit_latent_direction_weight,
+        "edit_latent_source_similarity_weight": args.edit_latent_source_similarity_weight,
         "scaffold_fallback_mode": args.scaffold_fallback_mode,
         "condition_features_dir": str(args.condition_features_dir) if args.condition_features_dir else None,
         "condition_feature_array": args.condition_feature_array if args.condition_features_dir else None,
@@ -225,6 +276,32 @@ def _candidate_pool(
     return candidates
 
 
+def _candidate_pool_from_molecule_db(
+    path: Path,
+    *,
+    excluded_smiles: set[str] | None = None,
+) -> list[dict[str, object]]:
+    rows = _read_rows(path)
+    seen: set[str] = set()
+    candidates = []
+    excluded_smiles = excluded_smiles or set()
+    for row in rows:
+        smiles = _safe_canonical_smiles(row.get("canonical_smiles", "")) or row.get("canonical_smiles", "")
+        if not smiles or smiles in seen or smiles in excluded_smiles:
+            continue
+        seen.add(smiles)
+        scaffold = row.get("scaffold") or _safe_scaffold_smiles(smiles) or ""
+        props = {prop: _to_float(row.get(prop)) for prop in PROPERTY_COLUMNS}
+        candidates.append(
+            {
+                "smiles": smiles,
+                "scaffold": scaffold,
+                "props": props,
+            }
+        )
+    return candidates
+
+
 def _sample_eval_rows_by_property_count(rows: list[dict[str, str]], limit: int, *, seed: int) -> list[dict[str, str]]:
     if limit <= 0:
         return rows
@@ -250,10 +327,16 @@ def _decode_row(
     candidates: list[dict[str, object]],
     by_scaffold: Mapping[str, list[dict[str, object]]],
     feature_context: dict[str, object] | None,
+    edit_latent_context: dict[str, object] | None,
     max_global_candidates: int,
     max_feature_candidates: int,
+    max_edit_latent_candidates: int,
     rerank_candidates: int,
     rerank_property_weight: float,
+    edit_latent_property_weight: float,
+    edit_latent_delta_weight: float,
+    edit_latent_direction_weight: float,
+    edit_latent_source_similarity_weight: float,
     scaffold_fallback_mode: str,
     compute_tanimoto: bool,
     seed: int,
@@ -293,6 +376,41 @@ def _decode_row(
         generated_scaffold = str(candidate.get("scaffold", ""))
         generated_props = dict(candidate.get("props", {}))
         fallback = ""
+    elif method in EDIT_LATENT_METHODS:
+        if edit_latent_context is None:
+            raise ValueError(f"{method} requires edit latent context")
+        scaffold_only = method in {"edit_latent_scaffold_retrieval", "edit_latent_scaffold_source_rerank"}
+        use_source_similarity = method == "edit_latent_scaffold_source_rerank"
+        if scaffold_only:
+            pool = by_scaffold.get(row.get("scaffold", ""), [])
+            fallback = ""
+            if not pool:
+                pool, fallback = _scaffold_fallback_pool(
+                    row,
+                    candidates=candidates,
+                    mode=scaffold_fallback_mode,
+                    max_global_candidates=max_global_candidates,
+                    seed=seed,
+                )
+        else:
+            pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
+            fallback = ""
+        pool = _stable_sample(pool, max_edit_latent_candidates, key=row.get("condition_id", ""), seed=seed)
+        candidate, edit_fallback = _best_edit_latent_candidate(
+            row,
+            pool,
+            edit_latent_context=edit_latent_context,
+            selected_props=selected_props,
+            source_props=source_props,
+            property_weight=edit_latent_property_weight,
+            delta_weight=edit_latent_delta_weight,
+            direction_weight=edit_latent_direction_weight,
+            source_similarity_weight=edit_latent_source_similarity_weight if use_source_similarity else 0.0,
+        )
+        fallback = ",".join(item for item in (fallback, edit_fallback) if item)
+        generated_smiles = str(candidate.get("smiles", ""))
+        generated_scaffold = str(candidate.get("scaffold", ""))
+        generated_props = dict(candidate.get("props", {}))
     elif method in PURE_FEATURE_METHODS:
         if feature_context is None:
             raise ValueError(f"{method} requires condition feature context")
@@ -567,6 +685,128 @@ def _load_condition_features(feature_dir: Path, *, array_name: str, variant: str
     return out
 
 
+def _build_edit_latent_context(
+    *,
+    condition_rows: list[dict[str, str]],
+    edit_latent_dir: Path,
+    variant: str,
+) -> dict[str, object]:
+    import numpy as np
+
+    array_path = edit_latent_dir / "edit_latent_predictions.npy"
+    index_path = edit_latent_dir / "index.csv"
+    if not array_path.exists():
+        raise FileNotFoundError(f"Missing edit latent predictions: {array_path}")
+    if not index_path.exists():
+        raise FileNotFoundError(f"Missing edit latent index: {index_path}")
+    predictions = np.load(array_path)
+    with index_path.open(newline="", encoding="utf-8") as handle:
+        index_rows = list(csv.DictReader(handle))
+    if predictions.shape[0] != len(index_rows):
+        raise ValueError(
+            f"Edit latent row mismatch: {array_path} has {predictions.shape[0]} rows, "
+            f"index.csv has {len(index_rows)} rows"
+        )
+    known_condition_ids = {row.get("condition_id", "") for row in condition_rows}
+    predictions_by_condition_id: dict[str, np.ndarray] = {}
+    for index_row, prediction in zip(index_rows, predictions.astype(np.float32)):
+        if index_row.get("variant") != variant:
+            continue
+        condition_id = index_row.get("condition_id", "")
+        if not condition_id or condition_id not in known_condition_ids:
+            continue
+        predictions_by_condition_id.setdefault(condition_id, prediction)
+    return {
+        "predictions_by_condition_id": predictions_by_condition_id,
+        "array_path": str(array_path),
+        "index_path": str(index_path),
+    }
+
+
+def _best_edit_latent_candidate(
+    row: dict[str, str],
+    pool: list[dict[str, object]],
+    *,
+    edit_latent_context: dict[str, object],
+    selected_props: list[str],
+    source_props: Mapping[str, float],
+    property_weight: float,
+    delta_weight: float,
+    direction_weight: float,
+    source_similarity_weight: float,
+) -> tuple[dict[str, object], str]:
+    import numpy as np
+
+    if not pool:
+        return _empty_candidate(), "empty_edit_latent_pool"
+    predictions_by_condition_id = edit_latent_context["predictions_by_condition_id"]
+    if not isinstance(predictions_by_condition_id, Mapping):
+        raise TypeError("Invalid edit latent context: predictions_by_condition_id")
+    latent = predictions_by_condition_id.get(row.get("condition_id", ""))
+    if latent is None:
+        return _source_candidate(row), "missing_edit_latent"
+    target_values, delta_values, _active_mask, directions = _unpack_edit_latent(np.asarray(latent, dtype=np.float32))
+
+    scored = []
+    for candidate in pool:
+        props = candidate.get("props", {})
+        if not isinstance(props, Mapping):
+            continue
+        property_score = 0.0
+        delta_score = 0.0
+        direction_score = 0.0
+        valid = True
+        for prop in selected_props:
+            prop_idx = PROPERTY_COLUMNS.index(prop)
+            actual = _to_float(props.get(prop))
+            if math.isnan(actual):
+                valid = False
+                break
+            source_value = float(source_props[prop])
+            actual_delta = actual - source_value
+            tolerance = SKETCHMOL_STRICT_TOLERANCE[prop]
+            property_score += abs(actual - float(target_values[prop_idx])) / tolerance
+            delta_score += abs(actual_delta - float(delta_values[prop_idx])) / tolerance
+            predicted_direction = float(directions[prop_idx])
+            if abs(predicted_direction) > 1e-4 and abs(actual_delta) > 1e-4:
+                direction_score += 0.0 if predicted_direction * actual_delta >= 0 else 1.0
+        if not valid:
+            continue
+        denom = max(1, len(selected_props))
+        score = (
+            float(property_weight) * (property_score / denom)
+            + float(delta_weight) * (delta_score / denom)
+            + float(direction_weight) * (direction_score / denom)
+        )
+        if source_similarity_weight > 0:
+            similarity = _safe_morgan_tanimoto(row.get("source_smiles", ""), str(candidate.get("smiles", ""))) or 0.0
+            score += float(source_similarity_weight) * (1.0 - similarity)
+        scored.append((score, candidate))
+    if not scored:
+        return _empty_candidate(), "empty_edit_latent_scores"
+    return min(scored, key=lambda item: item[0])[1], ""
+
+
+def _unpack_edit_latent(latent: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    import numpy as np
+
+    prop_count = len(PROPERTY_COLUMNS)
+    flat = latent.reshape(-1).astype(np.float32)
+    if flat.shape[0] >= 4 * prop_count:
+        return (
+            flat[:prop_count],
+            flat[prop_count : 2 * prop_count],
+            flat[2 * prop_count : 3 * prop_count],
+            flat[3 * prop_count : 4 * prop_count],
+        )
+    if flat.shape[0] >= 3 * prop_count:
+        target_values = flat[:prop_count]
+        active_mask = flat[prop_count : 2 * prop_count]
+        directions = flat[2 * prop_count : 3 * prop_count]
+        return target_values, np.zeros(prop_count, dtype=np.float32), active_mask, directions
+    raise ValueError(f"Edit latent prediction is too small: expected at least {3 * prop_count}, got {flat.shape[0]}")
+
+
 def _best_feature_candidate(
     row: dict[str, str],
     *,
@@ -722,6 +962,8 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
         "",
         f"- condition rows: `{args.condition_rows_csv}`",
         f"- eval split: `{args.eval_split}`",
+        f"- candidate source: `{'molecule_database' if args.candidate_molecule_db_csv else 'train_target_rows'}`",
+        f"- candidate molecule DB: `{args.candidate_molecule_db_csv}`",
         f"- max eval rows per property count: `{args.max_eval_per_property_count}`",
         f"- eval target candidates excluded from retrieval pool: `{not args.allow_eval_target_candidates}`",
         f"- scaffold fallback mode: `{args.scaffold_fallback_mode}`",
@@ -732,6 +974,19 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
                 f"- condition features: `{args.condition_features_dir}`",
                 f"- condition feature array: `{args.condition_feature_array}`",
                 f"- condition feature variant: `{args.condition_feature_variant}`",
+            ]
+        )
+    if args.edit_latent_dir is not None:
+        lines.extend(
+            [
+                f"- edit latent predictions: `{args.edit_latent_dir}`",
+                (
+                    "- edit latent scorer weights: "
+                    f"property={args.edit_latent_property_weight}, "
+                    f"delta={args.edit_latent_delta_weight}, "
+                    f"direction={args.edit_latent_direction_weight}, "
+                    f"source_similarity={args.edit_latent_source_similarity_weight}"
+                ),
             ]
         )
     lines.extend(
@@ -800,7 +1055,10 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "",
             "Notes:",
             "- `target_oracle` is an upper bound because it returns the known target molecule.",
-            "- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a train candidate with the same scaffold and closest active-property values.",
+            "- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a candidate with the same scaffold and closest active-property values from the configured candidate library.",
+            "- `edit_latent_global_retrieval` ranks candidates using predicted target/delta properties from the learned source-conditioned edit latent.",
+            "- `edit_latent_scaffold_retrieval` applies that edit-latent scorer inside the same-scaffold candidate pool.",
+            "- `edit_latent_scaffold_source_rerank` is the main proposed retrieval-style method: it uses the learned edit latent plus source similarity inside the scaffold-preserving pool.",
             "- `vlm_scaffold_feature_retrieval` retrieves same-scaffold train targets by nearest frozen VLM condition feature.",
             "- `vlm_feature_retrieval` retrieves train targets by nearest frozen VLM condition feature without scaffold filtering.",
             "- `global_property_vlm_rerank` first keeps the top property-matched candidates, then reranks them with Understanding-Condition features.",

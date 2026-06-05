@@ -20,6 +20,7 @@ export PYTHONPATH="$PROJECT_DIR:$REPO_DIR/SketchMol-Understanding-Condition${PYT
 
 OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1}"
 CONDITION_ROWS="$OUTPUT_DIR/condition_rows.csv"
+MOLECULE_DB="${SMMED_MOLECULE_DB_CSV:-$OUTPUT_DIR/molecule_database.csv}"
 BENCHMARK_OUTPUT_DIR="${SMMED_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_scaffold_retrieval}"
 SKIP_BUILD="${SMMED_SKIP_BUILD:-0}"
 METHODS="${SMMED_BENCHMARK_METHODS:-source_identity,scaffold_property_retrieval,target_oracle}"
@@ -34,6 +35,7 @@ SEED="${SMMED_SEED:-7}"
 echo "SketchMol multi-property full benchmark workflow"
 echo "  python=$PYTHON_BIN"
 echo "  output_dir=$OUTPUT_DIR"
+echo "  molecule_db=$MOLECULE_DB"
 echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
 echo "  methods=$METHODS"
 echo "  max_eval_per_property_count=$MAX_EVAL_PER_PROPERTY_COUNT"
@@ -45,6 +47,11 @@ fi
 
 if [[ ! -f "$CONDITION_ROWS" ]]; then
   echo "ERROR: condition rows not found: $CONDITION_ROWS" >&2
+  echo "Set SMMED_OUTPUT_DIR or run the dataset build first." >&2
+  exit 2
+fi
+if [[ ! -f "$MOLECULE_DB" ]]; then
+  echo "ERROR: molecule database not found: $MOLECULE_DB" >&2
   echo "Set SMMED_OUTPUT_DIR or run the dataset build first." >&2
   exit 2
 fi
@@ -65,6 +72,7 @@ fi
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/benchmark_multiproperty_retrieval.py" \
   --condition-rows-csv "$CONDITION_ROWS" \
   --output-dir "$BENCHMARK_OUTPUT_DIR" \
+  --candidate-molecule-db-csv "$MOLECULE_DB" \
   --methods "$METHODS" \
   --max-global-candidates "$MAX_GLOBAL_CANDIDATES" \
   --scaffold-fallback-mode "$SCAFFOLD_FALLBACK_MODE" \

@@ -25,8 +25,8 @@ pipeline sanity check 和 ablation 负控。
 ```text
 source molecule image + multi-property instruction
   -> frozen HuggingFace VLM hidden states
-  -> molecular condition features / query tokens
-  -> scaffold-aware multi-property retrieval benchmark
+  -> source-conditioned edit latent connector
+  -> molecule-database scaffold-aware candidate ranking
   -> SketchMol-style 2p-7p strict success table
 ```
 
@@ -83,11 +83,14 @@ SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_v
 ```
 
 默认还会训练一个轻量 edit connector，把 frozen VLM feature 映射到更贴近
-multi-property edit 的 condition feature，并用完全相同的 benchmark 再跑一遍：
+multi-property edit 的 latent。这个 latent 显式预测 target properties、property
+deltas、active-property mask 和 edit directions，并用同一个 benchmark 再跑一遍：
 
 ```text
 SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector/
   pooled.npy
+  edit_latent_predictions.npy
+  edit_latent_schema.json
   index.csv
   metrics.json
 
@@ -110,6 +113,9 @@ SUCC_TRAIN_FEATURE_CONNECTOR=0
 source_identity
 global_property_retrieval
 scaffold_property_retrieval
+edit_latent_global_retrieval
+edit_latent_scaffold_retrieval
+edit_latent_scaffold_source_rerank
 vlm_feature_retrieval
 vlm_scaffold_feature_retrieval
 global_property_vlm_rerank
@@ -118,9 +124,11 @@ target_oracle
 SketchMol structured reference
 ```
 
-这里的 `vlm_scaffold_feature_retrieval` / `scaffold_property_vlm_rerank` 才是
-大模型主结果：它们用 frozen VLM 对 `source image + instruction` 的表示，在
-scaffold-aware candidate space 里检索或重排 target molecule。报告会同时输出：
+这里的 frozen VLM retrieval / rerank 是对照；当前主方法是
+`edit_latent_scaffold_source_rerank`：它先用 Qwen2.5-VL 的
+`source image + instruction` 表示训练一个 source-conditioned edit latent，再在
+大 `molecule_database.csv` 候选库的 same-scaffold pool 里根据 predicted
+target/delta 和 source similarity 选 molecule。报告会同时输出：
 
 ```text
 strict success: 和 SketchMol 2p-7p 多性质表可比较
@@ -128,7 +136,11 @@ scaffold match: 是否保留 source scaffold
 joint success: strict success AND scaffold match
 ```
 
-如果某个 eval scaffold 在 train candidate pool 里没有同 scaffold 候选，默认
+benchmark 默认从 `molecule_database.csv` 构建候选库，并排除 eval target
+molecule，避免直接拿答案；这比只从 train target rows 取候选更符合我们现在
+“先建大数据库，再做 source-conditioned edit ranking”的方向。
+
+如果某个 eval scaffold 在 candidate pool 里没有同 scaffold 候选，默认
 `SMMED_SCAFFOLD_FALLBACK_MODE=source_identity`，也就是退回 source molecule，而
 不是全局检索。这会暴露 candidate stream 覆盖不足的问题，避免把 property
 retrieval 误读成 scaffold-preserving edit。

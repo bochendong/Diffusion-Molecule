@@ -109,13 +109,15 @@ target_oracle
 SketchMol structured reference
 ```
 
-其中 `scaffold_property_retrieval` 是当前最关键的强 baseline：它优先只从
-train pool 里检索同 scaffold、active-property values 最接近 target 的
-molecule。默认会把 eval target 从 retrieval candidate pool 排除，避免直接
-拿到答案。
+其中 `scaffold_property_retrieval` 是当前最关键的强 baseline：它默认从
+`molecule_database.csv` 这个大候选库里检索同 scaffold、active-property
+values 最接近 target 的 molecule。默认会把 eval target 从 retrieval
+candidate pool 排除，避免直接拿到答案。这个设置比只从 train target rows
+取候选更适合我们现在要验证的“大数据库 + scaffold-preserving edit ranking”
+方向。
 
 默认 `SMMED_SCAFFOLD_FALLBACK_MODE=source_identity`。如果某个 eval scaffold
-在 train candidate pool 里完全没有同 scaffold 候选，benchmark 会退回 source
+在 candidate pool 里完全没有同 scaffold 候选，benchmark 会退回 source
 molecule，而不是偷偷改成 global retrieval。这样 strict success 可能更低，但
 scaffold/joint 指标更诚实。需要复现旧的全局 fallback 行为时可以设置：
 
