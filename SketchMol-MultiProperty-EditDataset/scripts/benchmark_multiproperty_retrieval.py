@@ -11,6 +11,7 @@ import math
 import random
 import sys
 from collections import defaultdict
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -104,6 +105,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--edit-latent-delta-weight", type=float, default=0.35)
     parser.add_argument("--edit-latent-direction-weight", type=float, default=0.10)
     parser.add_argument("--edit-latent-source-similarity-weight", type=float, default=0.25)
+    parser.add_argument("--source-tanimoto-thresholds", default="0.4,0.6,0.8")
     parser.add_argument("--compute-tanimoto", action="store_true")
     parser.add_argument("--allow-eval-target-candidates", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
@@ -121,6 +123,7 @@ def main() -> None:
         raise ValueError("--condition-features-dir is required for VLM feature retrieval methods")
     if any(method in EDIT_LATENT_METHODS for method in methods) and args.edit_latent_dir is None:
         raise ValueError("--edit-latent-dir is required for edit-latent retrieval methods")
+    source_tanimoto_thresholds = _parse_float_list(args.source_tanimoto_thresholds)
 
     rows = _read_rows(args.condition_rows_csv)
     train_rows = [row for row in rows if row.get("split") != args.eval_split]
@@ -183,12 +186,12 @@ def main() -> None:
                     edit_latent_direction_weight=args.edit_latent_direction_weight,
                     edit_latent_source_similarity_weight=args.edit_latent_source_similarity_weight,
                     scaffold_fallback_mode=args.scaffold_fallback_mode,
-                    compute_tanimoto=args.compute_tanimoto,
+                    compute_tanimoto=args.compute_tanimoto or bool(source_tanimoto_thresholds),
                     seed=args.seed,
                 )
             )
 
-    summary_rows = _summarize(decoded_rows)
+    summary_rows = _summarize(decoded_rows, source_tanimoto_thresholds=source_tanimoto_thresholds)
     _write_rows(args.output_dir / "benchmark_decoded.csv", decoded_rows)
     _write_rows(args.output_dir / "benchmark_summary.csv", summary_rows)
     _write_report(args.output_dir / "benchmark_report.md", summary_rows, args)
@@ -213,6 +216,7 @@ def main() -> None:
         "edit_latent_delta_weight": args.edit_latent_delta_weight,
         "edit_latent_direction_weight": args.edit_latent_direction_weight,
         "edit_latent_source_similarity_weight": args.edit_latent_source_similarity_weight,
+        "source_tanimoto_thresholds": source_tanimoto_thresholds,
         "scaffold_fallback_mode": args.scaffold_fallback_mode,
         "condition_features_dir": str(args.condition_features_dir) if args.condition_features_dir else None,
         "condition_feature_array": args.condition_feature_array if args.condition_features_dir else None,
@@ -245,6 +249,7 @@ def _safe_scaffold_smiles(smiles: str) -> str | None:
         return None
 
 
+@lru_cache(maxsize=500000)
 def _safe_morgan_tanimoto(smiles_a: str, smiles_b: str) -> float | None:
     try:
         return _morgan_tanimoto(smiles_a, smiles_b)
@@ -495,8 +500,10 @@ def _decode_row(
         "fallback": fallback,
     }
     if compute_tanimoto:
-        out["source_tanimoto"] = _safe_morgan_tanimoto(row.get("source_smiles", ""), generated_smiles) or ""
-        out["target_tanimoto"] = _safe_morgan_tanimoto(row.get("target_smiles", ""), generated_smiles) or ""
+        source_tanimoto = _safe_morgan_tanimoto(row.get("source_smiles", ""), generated_smiles)
+        target_tanimoto = _safe_morgan_tanimoto(row.get("target_smiles", ""), generated_smiles)
+        out["source_tanimoto"] = source_tanimoto if source_tanimoto is not None else ""
+        out["target_tanimoto"] = target_tanimoto if target_tanimoto is not None else ""
     for prop in PROPERTY_COLUMNS:
         if prop in selected_props:
             out[f"{prop}_target"] = target_props[prop]
@@ -897,7 +904,12 @@ def _stable_sample(items: list[dict[str, object]], limit: int, *, key: str, seed
     return [items[idx] for idx in indices]
 
 
-def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+def _summarize(
+    rows: list[dict[str, object]],
+    *,
+    source_tanimoto_thresholds: list[float] | None = None,
+) -> list[dict[str, object]]:
+    source_tanimoto_thresholds = source_tanimoto_thresholds or []
     out = []
     methods = sorted({str(row["method"]) for row in rows})
     for method in methods:
@@ -906,11 +918,15 @@ def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
             selected = [row for row in method_rows if int(row.get("property_count", 0) or 0) == property_count]
             if not selected:
                 continue
-            strict = _fraction(bool(row.get("strict_success")) for row in selected)
-            scaffold = _fraction(bool(row.get("scaffold_match")) for row in selected)
-            joint = _fraction(bool(row.get("joint_success")) for row in selected)
+            strict = _fraction(_to_bool(row.get("strict_success")) for row in selected)
+            scaffold = _fraction(_to_bool(row.get("scaffold_match")) for row in selected)
+            joint = _fraction(_to_bool(row.get("joint_success")) for row in selected)
             reference = SKETCHMOL_REFERENCE_MULTI_PROPERTY.get(property_count, math.nan)
             fallback_stats = _fallback_stats(selected)
+            source_similarity_stats = _source_similarity_stats(
+                selected,
+                thresholds=source_tanimoto_thresholds,
+            )
             summary = {
                 "family": "understanding_multiproperty_direct",
                 "method": method,
@@ -921,6 +937,7 @@ def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
                 "success_rate_strict_in_valid_mols": strict,
                 "scaffold_match_rate": scaffold,
                 "joint_success_rate": joint,
+                **source_similarity_stats,
                 **fallback_stats,
                 "sketchmol_reference_strict": reference,
                 "strict_margin_vs_sketchmol": strict - reference if not math.isnan(reference) else "",
@@ -931,10 +948,14 @@ def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
                     summary[f"{prop}_mae"] = sum(errors) / len(errors)
             out.append(summary)
         if method_rows:
-            strict = _fraction(bool(row.get("strict_success")) for row in method_rows)
-            scaffold = _fraction(bool(row.get("scaffold_match")) for row in method_rows)
-            joint = _fraction(bool(row.get("joint_success")) for row in method_rows)
+            strict = _fraction(_to_bool(row.get("strict_success")) for row in method_rows)
+            scaffold = _fraction(_to_bool(row.get("scaffold_match")) for row in method_rows)
+            joint = _fraction(_to_bool(row.get("joint_success")) for row in method_rows)
             fallback_stats = _fallback_stats(method_rows)
+            source_similarity_stats = _source_similarity_stats(
+                method_rows,
+                thresholds=source_tanimoto_thresholds,
+            )
             out.append(
                 {
                     "family": "understanding_multiproperty_direct",
@@ -946,6 +967,7 @@ def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
                     "success_rate_strict_in_valid_mols": strict,
                     "scaffold_match_rate": scaffold,
                     "joint_success_rate": joint,
+                    **source_similarity_stats,
                     **fallback_stats,
                     "sketchmol_reference_strict": "",
                     "strict_margin_vs_sketchmol": "",
@@ -955,10 +977,15 @@ def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
 
 
 def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argparse.Namespace) -> None:
+    source_tanimoto_thresholds = _parse_float_list(args.source_tanimoto_thresholds)
     lines = [
         "# Multi-Property Direct Benchmark",
         "",
-        "This report compares source-image/property-condition retrieval baselines against the SketchMol multi-property strict-success reference.",
+        (
+            "This report compares source-image/property-condition retrieval baselines against "
+            "the SketchMol multi-property strict-success reference, then adds source-similarity "
+            "metrics for source-conditioned editing."
+        ),
         "",
         f"- condition rows: `{args.condition_rows_csv}`",
         f"- eval split: `{args.eval_split}`",
@@ -967,6 +994,7 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
         f"- max eval rows per property count: `{args.max_eval_per_property_count}`",
         f"- eval target candidates excluded from retrieval pool: `{not args.allow_eval_target_candidates}`",
         f"- scaffold fallback mode: `{args.scaffold_fallback_mode}`",
+        f"- source Tanimoto thresholds: `{','.join(str(value) for value in source_tanimoto_thresholds)}`",
     ]
     if args.condition_features_dir is not None:
         lines.extend(
@@ -1015,9 +1043,37 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
         [
             f"| SketchMol structured reference | {_fmt(0.804)} | {_fmt(0.768)} | {_fmt(0.736)} | {_fmt(0.716)} | {_fmt(0.678)} | {_fmt(0.685)} |  |  |",
             "",
-            "## Joint Edit Success",
+            "## Source-Similarity-Constrained Success",
             "",
-            "`joint success = strict property success AND scaffold match`. This is the main metric for source-conditioned scaffold-preserving edit.",
+            (
+                "`strict@Tanimoto>=t` means strict property success AND "
+                "Morgan fingerprint Tanimoto(source, generated) >= t. "
+                "This is the main source-preservation metric for source-conditioned edit."
+            ),
+            "",
+            "| method | mean source Tani | median source Tani | "
+            + " | ".join(f"strict@{threshold:g}" for threshold in source_tanimoto_thresholds)
+            + " |",
+            "| --- | ---: | ---: | " + " | ".join("---:" for _ in source_tanimoto_thresholds) + " |",
+        ]
+    )
+    for method in methods:
+        all_row = rows_by_key.get((method, "all"))
+        if not all_row:
+            continue
+        values = [
+            _fmt(all_row.get("mean_source_tanimoto")),
+            _fmt(all_row.get("median_source_tanimoto")),
+        ]
+        for threshold in source_tanimoto_thresholds:
+            values.append(_fmt(all_row.get(f"strict_success_at_source_tanimoto_ge_{_threshold_suffix(threshold)}")))
+        lines.append(f"| {method} | {' | '.join(values)} |")
+    lines.extend(
+        [
+            "",
+            "## Scaffold-Match Diagnostics",
+            "",
+            "`joint success = strict property success AND scaffold match`. Keep this as a hard source-preservation diagnostic, not the only edit metric.",
             "",
             "| method | 2p | 3p | 4p | 5p | 6p | 7p | all |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
@@ -1063,9 +1119,9 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "- `vlm_feature_retrieval` retrieves train targets by nearest frozen VLM condition feature without scaffold filtering.",
             "- `global_property_vlm_rerank` first keeps the top property-matched candidates, then reranks them with Understanding-Condition features.",
             f"- `scaffold_property_vlm_rerank` applies the same rerank after same-scaffold property filtering. Unseen-scaffold fallback mode is `{args.scaffold_fallback_mode}`.",
-            "- `global_property_retrieval` ignores scaffold and can satisfy properties while failing edit preservation.",
-            "- High strict success with low joint success should be interpreted as property retrieval, not scaffold-preserving molecular editing.",
-            "- A learned Understanding-Condition model should eventually beat `text_only`/global-style property matching while staying close to the scaffold-aware or oracle rows.",
+            "- `global_property_retrieval` ignores source structure and can satisfy properties while failing source preservation.",
+            "- High strict success with low source Tanimoto should be interpreted as property retrieval, not source-conditioned molecular editing.",
+            "- A learned Understanding-Condition model should eventually improve strict property success at useful source-Tanimoto thresholds.",
             "",
         ]
     )
@@ -1093,6 +1149,12 @@ def _to_float(value: object) -> float:
         return math.nan
 
 
+def _to_bool(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    return str(value if value is not None else "").strip().lower() in {"1", "true", "yes", "y"}
+
+
 def _fraction(values: Iterable[bool]) -> float:
     items = list(values)
     return sum(1 for item in items if item) / len(items) if items else 0.0
@@ -1108,6 +1170,56 @@ def _fallback_stats(rows: list[dict[str, object]]) -> dict[str, float]:
             "empty_scaffold_pool" in str(row.get("fallback", "")).split(",") for row in rows
         ),
     }
+
+
+def _source_similarity_stats(rows: list[dict[str, object]], *, thresholds: list[float]) -> dict[str, float | str]:
+    values = [_to_float(row.get("source_tanimoto")) for row in rows if row.get("source_tanimoto") != ""]
+    values = [value for value in values if not math.isnan(value)]
+    stats: dict[str, float | str] = {
+        "mean_source_tanimoto": sum(values) / len(values) if values else "",
+        "median_source_tanimoto": _median(values) if values else "",
+    }
+    for threshold in thresholds:
+        suffix = _threshold_suffix(threshold)
+        stats[f"source_tanimoto_ge_{suffix}_rate"] = (
+            _fraction(value >= threshold for value in values) if values else ""
+        )
+        stats[f"strict_success_at_source_tanimoto_ge_{suffix}"] = (
+            _fraction(
+                _to_bool(row.get("strict_success")) and _to_float(row.get("source_tanimoto")) >= threshold
+                for row in rows
+            )
+            if rows
+            else ""
+        )
+    return stats
+
+
+def _median(values: list[float]) -> float:
+    if not values:
+        return math.nan
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    if len(ordered) % 2 == 1:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2.0
+
+
+def _parse_float_list(text: str) -> list[float]:
+    out = []
+    for item in str(text or "").split(","):
+        item = item.strip()
+        if not item:
+            continue
+        value = float(item)
+        if value < 0 or value > 1:
+            raise ValueError(f"Source Tanimoto threshold must be in [0, 1], got {value}")
+        out.append(value)
+    return out
+
+
+def _threshold_suffix(value: float) -> str:
+    return f"{float(value):.2f}".rstrip("0").rstrip(".").replace(".", "_")
 
 
 def _fmt(value: object) -> str:

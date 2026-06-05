@@ -49,6 +49,8 @@ EVAL_FRACTION="${SMMED_EVAL_FRACTION:-0.2}"
 CONDITIONS_PER_PAIR="${SMMED_CONDITIONS_PER_PAIR:-3}"
 MIN_CONDITION_PROPERTIES="${SMMED_MIN_CONDITION_PROPERTIES:-2}"
 MAX_CONDITION_PROPERTIES="${SMMED_MAX_CONDITION_PROPERTIES:-7}"
+DIFFUSION_MIN_SOURCE_TANIMOTO="${SMMED_DIFFUSION_MIN_SOURCE_TANIMOTO:-0.4}"
+DIFFUSION_MAX_SOURCE_TANIMOTO="${SMMED_DIFFUSION_MAX_SOURCE_TANIMOTO:-1.0}"
 IMAGE_SIZE="${SMMED_IMAGE_SIZE:-256}"
 SEED="${SMMED_SEED:-7}"
 RENDER_IMAGES="${SMMED_RENDER_IMAGES:-0}"
@@ -57,6 +59,7 @@ MOLECULE_DB="$OUTPUT_DIR/molecule_database.csv"
 PAIR_DB="$OUTPUT_DIR/edit_pairs.csv"
 CONDITION_ROWS="$OUTPUT_DIR/condition_rows.csv"
 BASELINE_VARIANTS="$OUTPUT_DIR/baseline_variants.csv"
+DIFFUSION_EDIT_MANIFEST="$OUTPUT_DIR/diffusion_edit_manifest.csv"
 IMAGE_DIR="$OUTPUT_DIR/images"
 
 echo "SketchMol multi-property edit dataset build"
@@ -66,6 +69,7 @@ echo "  output_dir=$OUTPUT_DIR"
 echo "  limit=$LIMIT"
 echo "  max_pairs=$MAX_PAIRS"
 echo "  conditions_per_pair=$CONDITIONS_PER_PAIR"
+echo "  diffusion_source_tanimoto_range=[$DIFFUSION_MIN_SOURCE_TANIMOTO,$DIFFUSION_MAX_SOURCE_TANIMOTO]"
 echo "  render_images=$RENDER_IMAGES"
 
 mkdir -p "$OUTPUT_DIR"
@@ -109,6 +113,12 @@ fi
   --max-properties "$MAX_CONDITION_PROPERTIES" \
   --seed "$SEED"
 
+"$PYTHON_BIN" "$PROJECT_DIR/scripts/export_diffusion_edit_manifest.py" \
+  --condition-rows-csv "$CONDITION_ROWS" \
+  --output-csv "$DIFFUSION_EDIT_MANIFEST" \
+  --min-source-tanimoto "$DIFFUSION_MIN_SOURCE_TANIMOTO" \
+  --max-source-tanimoto "$DIFFUSION_MAX_SOURCE_TANIMOTO"
+
 "$PYTHON_BIN" - <<PY
 import json
 from pathlib import Path
@@ -120,11 +130,13 @@ summary = {
     "edit_pairs_csv": str(Path("$PAIR_DB")),
     "condition_rows_csv": str(Path("$CONDITION_ROWS")),
     "baseline_variants_csv": str(Path("$BASELINE_VARIANTS")),
+    "diffusion_edit_manifest_csv": str(Path("$DIFFUSION_EDIT_MANIFEST")),
 }
 for name, path in [
     ("molecule_summary", Path("$MOLECULE_DB").with_suffix(".summary.json")),
     ("pair_summary", Path("$PAIR_DB").with_suffix(".summary.json")),
     ("condition_summary", Path("$CONDITION_ROWS").with_suffix(".summary.json")),
+    ("diffusion_edit_manifest_summary", Path("$DIFFUSION_EDIT_MANIFEST").with_suffix(".summary.json")),
 ]:
     if path.exists():
         summary[name] = json.loads(path.read_text())
@@ -138,4 +150,5 @@ echo "  molecule_db=$MOLECULE_DB"
 echo "  edit_pairs=$PAIR_DB"
 echo "  condition_rows=$CONDITION_ROWS"
 echo "  baseline_variants=$BASELINE_VARIANTS"
+echo "  diffusion_edit_manifest=$DIFFUSION_EDIT_MANIFEST"
 echo "  summary=$OUTPUT_DIR/summary.json"

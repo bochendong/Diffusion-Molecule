@@ -50,6 +50,50 @@ def test_summary_tracks_joint_success_and_fallbacks():
     assert by_label["all"]["joint_success_rate"] == 1 / 3
 
 
+def test_summary_tracks_source_similarity_constrained_success():
+    rows = [
+        {
+            "method": "source_similarity_method",
+            "property_count": 2,
+            "strict_success": "True",
+            "scaffold_match": "False",
+            "joint_success": "False",
+            "source_tanimoto": "0.75",
+            "fallback": "",
+        },
+        {
+            "method": "source_similarity_method",
+            "property_count": 2,
+            "strict_success": "False",
+            "scaffold_match": "True",
+            "joint_success": "False",
+            "source_tanimoto": "0.60",
+            "fallback": "",
+        },
+        {
+            "method": "source_similarity_method",
+            "property_count": 2,
+            "strict_success": "True",
+            "scaffold_match": "False",
+            "joint_success": "False",
+            "source_tanimoto": "0.20",
+            "fallback": "",
+        },
+    ]
+
+    summary = benchmark._summarize(rows, source_tanimoto_thresholds=[0.4, 0.6, 0.8])
+    all_row = {row["benchmark_label"]: row for row in summary}["all"]
+
+    assert all_row["success_rate_strict_in_valid_mols"] == 2 / 3
+    assert all_row["scaffold_match_rate"] == 1 / 3
+    assert np.isclose(all_row["mean_source_tanimoto"], 1.55 / 3)
+    assert all_row["median_source_tanimoto"] == 0.60
+    assert all_row["source_tanimoto_ge_0_4_rate"] == 2 / 3
+    assert all_row["strict_success_at_source_tanimoto_ge_0_4"] == 1 / 3
+    assert all_row["strict_success_at_source_tanimoto_ge_0_6"] == 1 / 3
+    assert all_row["strict_success_at_source_tanimoto_ge_0_8"] == 0.0
+
+
 def test_edit_latent_candidate_uses_predicted_target_and_delta():
     prop_count = len(benchmark.PROPERTY_COLUMNS)
     latent = np.zeros(prop_count * 4, dtype=np.float32)

@@ -13,8 +13,10 @@ source molecule image + natural-language multi-property edit instruction
     -> target molecule / property deltas / SketchMol-compatible condition fields
 ```
 
-核心任务是 scaffold-preserving multi-property edit，也就是在保留核心骨架的
-前提下同时控制 2-7 个性质。
+核心任务是 source-conditioned multi-property edit：给定 source molecule image
+和性质编辑指令，生成/找到一个同时满足 2-7 个性质约束、并且和 source molecule
+保持足够结构相似的 target molecule。Scaffold match 仍然保留为诊断指标，但主
+source-preservation 指标改成 Morgan fingerprint Tanimoto(source, generated)。
 
 ## 默认输出
 
@@ -31,6 +33,7 @@ molecule_database.csv
 edit_pairs.csv
 condition_rows.csv
 baseline_variants.csv
+diffusion_edit_manifest.csv
 summary.json
 images/                       # optional; only created when SMMED_RENDER_IMAGES=1
 benchmark_scaffold_retrieval/
@@ -53,16 +56,44 @@ instruction 和 SketchMol-compatible condition columns。
 full, text_only, image_only, random_query, caption_bottleneck
 ```
 
+`diffusion_edit_manifest.csv` 是后续 Understanding stream + diffusion generation
+stream 训练要用的 handoff 表。它保留：
+
+```text
+source_smiles / target_smiles
+source_image / target_image
+instruction / prompt
+condition_properties / property_count
+source_tanimoto / source_similarity_bin
+SketchMol-compatible property setting columns
+```
+
+默认只导出 `source_tanimoto >= 0.4` 的样本，避免 diffusion 训练集退化成
+“无关 source 的性质检索”。需要调整时设置：
+
+```bash
+SMMED_DIFFUSION_MIN_SOURCE_TANIMOTO=0.3
+SMMED_DIFFUSION_MAX_SOURCE_TANIMOTO=1.0
+```
+
 `benchmark_scaffold_retrieval/benchmark_report.md` 是最重要的 report-ready 结果：
 它直接给出 2p-7p strict success table，并附上 SketchMol reference row。报告也会
-输出 `joint success`：
+输出 source-similarity-constrained success：
+
+```text
+strict@Tanimoto>=t = strict property success AND Tanimoto(source, generated) >= t
+```
+
+这个指标比硬 scaffold match 更适合作为我们现在的主结果，因为它允许合理的局部
+结构变化，同时仍然惩罚完全脱离 source 的 property retrieval。报告也保留
+`joint success` 作为硬 scaffold 诊断：
 
 ```text
 joint success = strict property success AND scaffold match
 ```
 
-strict success 用来和 SketchMol 的多性质控制表对齐；joint success 用来判断模型
-是否真的在保留 source scaffold 的前提下完成编辑。
+strict success 用来和 SketchMol 的多性质控制表对齐；`strict@Tanimoto>=t` 用来
+判断模型是否真的在 source-conditioned edit，而不是只在数据库里找满足性质的分子。
 
 ## 一键跑完整 benchmark
 
@@ -80,8 +111,9 @@ bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
 1. 构建 molecule database。
 2. 构建 scaffold-preserving edit pair database。
 3. 生成 2-7 property condition rows。
-4. 跑 SketchMol-style strict success benchmark。
-5. 输出可直接写进 report 的 markdown 表格。
+4. 导出 diffusion/edit 训练 manifest。
+5. 跑 SketchMol-style strict success + source Tanimoto benchmark。
+6. 输出可直接写进 report 的 markdown 表格。
 
 日志目录：
 
@@ -115,6 +147,17 @@ candidate pool 排除，避免直接拿到答案。这个设置比只从 train t
 取候选更适合我们现在要验证的“大数据库 + scaffold-preserving edit ranking”
 方向。
 
+但 report 主结论不要只看 scaffold/joint。当前更应该看：
+
+```text
+2p-7p strict success
+mean/median source Tanimoto
+strict@Tanimoto>=0.4 / 0.6 / 0.8
+```
+
+如果某个方法 strict success 高、但 source Tanimoto 低，它更像 property retrieval，
+不能算真正的 source-conditioned editing。
+
 默认 `SMMED_SCAFFOLD_FALLBACK_MODE=source_identity`。如果某个 eval scaffold
 在 candidate pool 里完全没有同 scaffold 候选，benchmark 会退回 source
 molecule，而不是偷偷改成 global retrieval。这样 strict success 可能更低，但
@@ -138,9 +181,8 @@ git pull origin main
 bash SketchMol-MultiProperty-EditDataset/scripts/submit_build_dataset.sh
 ```
 
-The run script loads `StdEnv/2023`, `python/3.11`, and `rdkit/2025.09.4`
-before building the dataset. Override `SMMED_PYTHON_BIN` only if that Python
-can import RDKit.
+构建脚本会先加载 `StdEnv/2023`、`python/3.11` 和 `rdkit/2025.09.4`。只有当你
+指定的 Python 能 import RDKit 时，才覆盖 `SMMED_PYTHON_BIN`。
 
 默认不会预渲染 molecule PNG：
 
@@ -200,5 +242,8 @@ bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
 
 ## 当前建议
 
-后面 report 的主表先用完整 benchmark 输出的 2p-7p strict success table。
-旧的几百条 Understanding-Condition 数据适合做 pipeline validation，不适合作为主实验结论。
+后面 report 的主表先用完整 benchmark 输出的 2p-7p strict success table 和
+`strict@Tanimoto>=0.4/0.6/0.8`。旧的几百条 Understanding-Condition 数据适合做
+pipeline validation，不适合作为主实验结论。下一步大实验应该用
+`diffusion_edit_manifest.csv` 接 Understanding stream + diffusion generation
+stream，而不是继续扩大纯检索模型。

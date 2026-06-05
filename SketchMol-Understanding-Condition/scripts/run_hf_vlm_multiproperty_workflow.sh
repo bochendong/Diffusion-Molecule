@@ -85,6 +85,7 @@ EDIT_LATENT_DELTA_WEIGHT="${SMMED_EDIT_LATENT_DELTA_WEIGHT:-0.35}"
 EDIT_LATENT_DIRECTION_WEIGHT="${SMMED_EDIT_LATENT_DIRECTION_WEIGHT:-0.10}"
 EDIT_LATENT_SOURCE_SIMILARITY_WEIGHT="${SMMED_EDIT_LATENT_SOURCE_SIMILARITY_WEIGHT:-0.25}"
 SCAFFOLD_FALLBACK_MODE="${SMMED_SCAFFOLD_FALLBACK_MODE:-source_identity}"
+SOURCE_TANIMOTO_THRESHOLDS="${SMMED_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
 
 if [[ "$HF_MODEL_NAME_OR_PATH" == /* && ! -e "$HF_MODEL_NAME_OR_PATH" ]]; then
   echo "ERROR: local HF model path does not exist: $HF_MODEL_NAME_OR_PATH" >&2
@@ -110,6 +111,7 @@ echo "  scaffold_fallback_mode=$SCAFFOLD_FALLBACK_MODE"
 echo "  rerank_candidates=$RERANK_CANDIDATES"
 echo "  rerank_property_weight=$RERANK_PROPERTY_WEIGHT"
 echo "  edit_latent_source_similarity_weight=$EDIT_LATENT_SOURCE_SIMILARITY_WEIGHT"
+echo "  source_tanimoto_thresholds=$SOURCE_TANIMOTO_THRESHOLDS"
 
 if [[ "$SKIP_DATASET_BUILD" != "1" ]]; then
   bash "$DATASET_PROJECT_DIR/scripts/run_build_dataset.sh"
@@ -192,6 +194,7 @@ run_benchmark() {
     --rerank-candidates "$RERANK_CANDIDATES" \
     --rerank-property-weight "$RERANK_PROPERTY_WEIGHT" \
     --scaffold-fallback-mode "$SCAFFOLD_FALLBACK_MODE" \
+    --source-tanimoto-thresholds "$SOURCE_TANIMOTO_THRESHOLDS" \
     "${EDIT_LATENT_ARGS[@]}" \
     "${LIMIT_EVAL_ARGS[@]}"
 }
