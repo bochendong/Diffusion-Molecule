@@ -20,6 +20,59 @@ SketchMol 现有条件流已经是 cross-attention：`MixedEmbedderV2` 把离散
 当前主实验不再以小 CNN / hashed text proxy 作为方法主体。那些结果只保留为
 pipeline sanity check 和 ablation 负控。
 
+## 0.2 3M-Diffusion 启发后的 unified training pipeline
+
+现在已经新增一条真正可跑的训练链路：
+
+```text
+molecule-language / image-language alignment pretraining
+  -> edit-aware condition tokens
+  -> latent diffusion generation stream
+```
+
+代码入口：
+
+```text
+sketchmol_understanding_condition/unified_condition_dataset.py
+sketchmol_understanding_condition/edit_condition_tokens.py
+sketchmol_understanding_condition/latent_diffusion_generation.py
+sketchmol_understanding_condition/unified_featurization.py
+```
+
+一键 smoke：
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull origin main
+
+SUCC_3M_ROOT="Research/Molecule Generation/3M-Diffusion" \
+SUCC_EDIT_MANIFEST="SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv" \
+bash SketchMol-Understanding-Condition/scripts/run_unified_generation_smoke.sh
+```
+
+提交到 Slurm：
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull origin main
+
+bash SketchMol-Understanding-Condition/scripts/submit_unified_generation_pipeline.sh
+```
+
+这条链路会依次运行：
+
+```text
+export_unified_condition_dataset.py
+train_alignment_pretraining.py
+train_edit_condition_tokens.py
+train_latent_diffusion_generation.py
+```
+
+当前 generation stream 先用 `target Morgan fingerprint + target properties + edit
+metadata` 作为 molecular latent，验证 Understanding tokens 到 latent diffusion
+的训练闭环。后续接 SketchMol image latent 或 3M molecule VAE latent 时，只需要替换
+target latent featurizer 和 decoder，condition-token 接口保持不变。
+
 新的主线是：
 
 ```text

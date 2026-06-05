@@ -1,0 +1,316 @@
+{
+  "data_root": "Research/Molecule Generation/3M-Diffusion/data",
+  "datasets": {
+    "ChEBI-20_data": {
+      "duplicate_smiles": 1965,
+      "path": "Research/Molecule Generation/3M-Diffusion/data/ChEBI-20_data",
+      "splits": {
+        "test.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 3300,
+            "max": 146,
+            "mean": 43.871,
+            "median": 40.0,
+            "min": 18
+          },
+          "duplicate_smiles": 0,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/ChEBI-20_data/test.txt",
+          "rows": 3300,
+          "smiles_chars": {
+            "count": 3300,
+            "max": 1135,
+            "mean": 78.966,
+            "median": 56.5,
+            "min": 1
+          },
+          "unique_smiles": 3300
+        },
+        "test_filter.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 1965,
+            "max": 146,
+            "mean": 43.896,
+            "median": 40,
+            "min": 18
+          },
+          "duplicate_smiles": 0,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/ChEBI-20_data/test_filter.txt",
+          "rows": 1965,
+          "smiles_chars": {
+            "count": 1965,
+            "max": 104,
+            "mean": 42.211,
+            "median": 40,
+            "min": 1
+          },
+          "unique_smiles": 1965
+        },
+        "train.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 26407,
+            "max": 166,
+            "mean": 43.391,
+            "median": 40,
+            "min": 19
+          },
+          "duplicate_smiles": 0,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/ChEBI-20_data/train.txt",
+          "rows": 26407,
+          "smiles_chars": {
+            "count": 26407,
+            "max": 1550,
+            "mean": 81.863,
+            "median": 59,
+            "min": 1
+          },
+          "unique_smiles": 26407
+        },
+        "validation.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 3301,
+            "max": 143,
+            "mean": 43.891,
+            "median": 40,
+            "min": 20
+          },
+          "duplicate_smiles": 0,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/ChEBI-20_data/validation.txt",
+          "rows": 3301,
+          "smiles_chars": {
+            "count": 3301,
+            "max": 1598,
+            "mean": 81.783,
+            "median": 58,
+            "min": 3
+          },
+          "unique_smiles": 3301
+        }
+      },
+      "total_rows": 34973,
+      "unique_smiles": 33008
+    },
+    "PubChem324k": {
+      "duplicate_smiles": 2,
+      "path": "Research/Molecule Generation/3M-Diffusion/data/PubChem324k",
+      "splits": {
+        "test.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 2000,
+            "max": 879,
+            "mean": 60.243,
+            "median": 43.0,
+            "min": 20
+          },
+          "duplicate_smiles": 0,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/PubChem324k/test.txt",
+          "rows": 2000,
+          "smiles_chars": {
+            "count": 2000,
+            "max": 1236,
+            "mean": 77.725,
+            "median": 57.0,
+            "min": 2
+          },
+          "unique_smiles": 2000
+        },
+        "train.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 12000,
+            "max": 937,
+            "mean": 59.568,
+            "median": 43.0,
+            "min": 20
+          },
+          "duplicate_smiles": 0,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/PubChem324k/train.txt",
+          "rows": 12000,
+          "smiles_chars": {
+            "count": 12000,
+            "max": 1504,
+            "mean": 79.235,
+            "median": 56.0,
+            "min": 2
+          },
+          "unique_smiles": 12000
+        },
+        "valid.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 1000,
+            "max": 1197,
+            "mean": 60.871,
+            "median": 42.0,
+            "min": 20
+          },
+          "duplicate_smiles": 0,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/PubChem324k/valid.txt",
+          "rows": 1000,
+          "smiles_chars": {
+            "count": 1000,
+            "max": 1186,
+            "mean": 79.324,
+            "median": 57.0,
+            "min": 1
+          },
+          "unique_smiles": 1000
+        }
+      },
+      "total_rows": 15000,
+      "unique_smiles": 14998
+    },
+    "kv_data": {
+      "duplicate_smiles": 1799,
+      "path": "Research/Molecule Generation/3M-Diffusion/data/kv_data",
+      "splits": {
+        "test.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 3000,
+            "max": 391,
+            "mean": 60.827,
+            "median": 50.0,
+            "min": 17
+          },
+          "duplicate_smiles": 1,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/kv_data/test.txt",
+          "rows": 3000,
+          "smiles_chars": {
+            "count": 3000,
+            "max": 1093,
+            "mean": 56.412,
+            "median": 42.0,
+            "min": 1
+          },
+          "unique_smiles": 2999
+        },
+        "test_kv.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 5562,
+            "max": 449,
+            "mean": 22.744,
+            "median": 15.0,
+            "min": 2
+          },
+          "duplicate_smiles": 0,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/kv_data/test_kv.txt",
+          "rows": 5562,
+          "smiles_chars": {
+            "count": 5562,
+            "max": 479,
+            "mean": 42.882,
+            "median": 35.0,
+            "min": 2
+          },
+          "unique_smiles": 5562
+        },
+        "train.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 10500,
+            "max": 449,
+            "mean": 61.053,
+            "median": 50.0,
+            "min": 17
+          },
+          "duplicate_smiles": 8,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/kv_data/train.txt",
+          "rows": 10500,
+          "smiles_chars": {
+            "count": 10500,
+            "max": 1415,
+            "mean": 55.982,
+            "median": 41.0,
+            "min": 1
+          },
+          "unique_smiles": 10492
+        },
+        "validation.txt": {
+          "columns": [
+            "CID",
+            "SMILES",
+            "description"
+          ],
+          "description_words": {
+            "count": 1500,
+            "max": 360,
+            "mean": 62.957,
+            "median": 51.0,
+            "min": 19
+          },
+          "duplicate_smiles": 0,
+          "missing_values": {},
+          "path": "Research/Molecule Generation/3M-Diffusion/data/kv_data/validation.txt",
+          "rows": 1500,
+          "smiles_chars": {
+            "count": 1500,
+            "max": 923,
+            "mean": 60.045,
+            "median": 42.0,
+            "min": 3
+          },
+          "unique_smiles": 1500
+        }
+      },
+      "total_rows": 20562,
+      "unique_smiles": 18763
+    }
+  },
+  "source_root": "Research/Molecule Generation/3M-Diffusion"
+}
