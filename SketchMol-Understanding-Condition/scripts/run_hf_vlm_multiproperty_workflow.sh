@@ -17,6 +17,20 @@ module load rdkit/2025.09.4
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${SMMED_PYTHON_BIN:-${PYTHON_BIN:-python}}}"
 export PYTHONPATH="$PROJECT_DIR:$DATASET_PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
+if ! "$PYTHON_BIN" - <<'PY' >/dev/null 2>&1
+from rdkit import Chem
+import PIL
+import torch
+import transformers
+PY
+then
+  echo "ERROR: PYTHON_BIN=$PYTHON_BIN cannot import the required VLM workflow packages." >&2
+  echo "       It must provide torch, transformers, PIL, and RDKit." >&2
+  echo "       On Nibi, use a unified VLM/RDKit venv such as /home/bdong/.venvs/molscribe_overlay/bin/python," >&2
+  echo "       or set SUCC_PYTHON_BIN to another Python that can import all four packages." >&2
+  exit 2
+fi
+
 DATASET_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1}"
 BASELINE_CSV="${SUCC_BASELINE_CSV:-$DATASET_OUTPUT_DIR/baseline_variants.csv}"
 CONDITION_ROWS="${SMMED_CONDITION_ROWS_CSV:-$DATASET_OUTPUT_DIR/condition_rows.csv}"

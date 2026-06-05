@@ -72,7 +72,6 @@ strict success 用来和 SketchMol 的多性质控制表对齐；joint success �
 cd /scratch/bdong/projects/Diffusion-Molecule
 git pull origin main
 
-SMMED_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
 ```
 

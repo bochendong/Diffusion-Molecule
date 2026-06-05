@@ -36,10 +36,14 @@ source molecule image + multi-property instruction
 cd /scratch/bdong/projects/Diffusion-Molecule
 git pull origin main
 
-SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 SUCC_HF_MODEL_NAME_OR_PATH=Qwen/Qwen2.5-VL-7B-Instruct \
 bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
 ```
+
+提交脚本默认使用 `/home/bdong/.venvs/molscribe_overlay/bin/python` 作为 VLM
+workflow Python。这个 Python 必须能同时 import `torch`、`transformers`、
+`PIL` 和 `rdkit`；脚本会在 VLM job 开始时做早期检查。不要把当前大 VLM
+pipeline 指到没有 RDKit 的 `phystabmol` venv。
 
 Nibi 要求 GPU job 显式指定 GPU type。pipeline 默认先尝试
 `nvidia_h100_80gb_hbm3_3g.40gb:1`，然后 fallback 到 `h100:1`、`a100:1`、
@@ -200,14 +204,17 @@ Python: 3.11.5
 RDKit: 2025.09.4
 ```
 
-模型侧 encoder smoke 可以用已有 venv：
+模型侧旧 encoder smoke 可以用已有 venv：
 
 ```bash
 PYTHONPATH=SketchMol-Understanding-Condition \
   /home/bdong/scratch/venvs/phystabmol/bin/python -c "import torch; print(torch.__version__)"
 ```
 
-注意：`phystabmol` 里有 Torch，但没有 RDKit；pair mining / scaffold preservation evaluation 应使用上面的 Compute Canada RDKit module 环境。
+注意：`phystabmol` 里有 Torch，但没有 RDKit；pair mining / scaffold
+preservation evaluation 应使用上面的 Compute Canada RDKit module 环境。当前
+HF VLM multi-property pipeline 的单个 Python 需要同时有 VLM 依赖和 RDKit，
+默认是 `/home/bdong/.venvs/molscribe_overlay/bin/python`。
 
 提交服务器 smoke job：
 
@@ -322,7 +329,7 @@ success / MAE：
 ```bash
 cd /scratch/bdong/projects/Diffusion-Molecule
 
-SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 SUCC_BASELINE_VARIANTS_CSV=SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv \
 SUCC_VARIANT=full \
 SketchMol-Understanding-Condition/scripts/run_benchmark_export.sh
@@ -333,7 +340,7 @@ condition feature，把 `SUCC_CONDITION_FEATURES_DIR` 指向
 `export_condition_features.py` 产物目录：
 
 ```bash
-SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 SUCC_BASELINE_VARIANTS_CSV=SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv \
 SUCC_VARIANT=full \
 SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12 \
@@ -862,7 +869,7 @@ objective-direction bucket 的 fusion embeddings 靠近、不同 bucket 分离�
 ```bash
 cd /scratch/bdong/projects/Diffusion-Molecule
 
-SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 SUCC_BASELINE_CSV=SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict_v2/baseline_variants.csv \
 SUCC_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/fusion_image_text_encoder_mixed_v2_contrastive_e12 \
 SUCC_EPOCHS=12 \
@@ -894,7 +901,7 @@ SketchMol-Understanding-Condition/scripts/run_delta_bucket_classifier.sh
 materializer，避免只在 internal probe 上自洽：
 
 ```bash
-SUCC_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 SUCC_VARIANT=full \
 SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_mixed_v2_multimodal_fusion_v2_contrastive_e12 \
 SUCC_BENCHMARK_EXPORT_DIR=SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12 \

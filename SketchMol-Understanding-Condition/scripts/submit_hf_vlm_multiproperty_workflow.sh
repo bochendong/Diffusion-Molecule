@@ -24,6 +24,12 @@ PARTITION="${SUCC_SLURM_PARTITION:-}"
 
 mkdir -p "$LOG_DIR"
 
+if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
+  echo "ERROR: SUCC_PYTHON_BIN is not executable: $SUCC_PYTHON_BIN" >&2
+  echo "       Set SUCC_PYTHON_BIN to a VLM/RDKit Python with torch, transformers, PIL, and RDKit." >&2
+  exit 2
+fi
+
 if [[ -n "${SUCC_SLURM_GPUS:-}" ]]; then
   GPU_CANDIDATES=("$SUCC_SLURM_GPUS")
 elif [[ "$GPU_PROFILE" == "h100_10gb_mig" ]]; then
