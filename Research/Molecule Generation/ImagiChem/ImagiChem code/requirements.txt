@@ -1,5 +1,0 @@
-PyQt6
-numpy
-opencv-python
-pubchempy
-rdkit

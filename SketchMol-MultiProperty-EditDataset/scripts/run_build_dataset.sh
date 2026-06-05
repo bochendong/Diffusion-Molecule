@@ -35,7 +35,7 @@ then
   exit 2
 fi
 
-INPUT_CSV="${SMMED_INPUT_CSV:-PhysTabMol/runs/20260601_070814_sketchmol_compare_structure_seed7/tables/train_table.csv}"
+INPUT_CSV="${SMMED_INPUT_CSV:-SketchMol-MultiProperty-EditDataset/data/train_table.csv}"
 OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1}"
 LIMIT="${SMMED_LIMIT:-100000}"
 MAX_PAIRS="${SMMED_MAX_PAIRS:-100000}"

@@ -2,10 +2,7 @@
 .venvs/
 **/__pycache__/
 *.pyc
-PhysTabMol/runs/**/tables/**/structure_prompt_decoded.csv
-PhysTabMol/runs/**/tables/decoded_instruction_candidates.csv
-
-# SketchMolTokenDiffusion generated artifacts
-SketchMolTokenDiffusion/outputs/
-SketchMolTokenDiffusion/logs/
-SketchMolTokenDiffusion/**/__pycache__/
+**/.DS_Store
+outputs/
+*/outputs/
+*/logs/

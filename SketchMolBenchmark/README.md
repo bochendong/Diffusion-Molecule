@@ -6,9 +6,10 @@ This folder is the benchmark-facing home for the real SketchMol baseline in:
 Research/Molecule Generation/SketchMol/SketchMol-v1-main
 ```
 
-The goal is to keep SketchMol baseline artifacts separate from exploratory
-model folders, so downstream comparisons can treat SketchMol as a fixed
-benchmark rather than something hidden inside generated run folders.
+The goal is to keep SketchMol baseline artifacts separate from the current
+Understanding-Condition and MultiProperty dataset work, so downstream
+comparisons can treat SketchMol as a fixed benchmark rather than something
+hidden inside generated run folders.
 
 ## Current Benchmark
 
@@ -36,8 +37,9 @@ condition -> SketchMol image/OCR-style pipeline -> machine-readable molecule
 condition -> direct SMILES / structure decoder -> machine-readable molecule
 ```
 
-This folder owns the first side of that comparison. `SketchMolCompare` can then
-read this folder and compare against SketchSMILES / direct-structure runs.
+This folder owns the first side of that comparison. Direct-structure or
+understanding-conditioned predictions should be materialized into the same
+summary format through this benchmark package before being compared in reports.
 
 ## Commands
 
@@ -123,7 +125,5 @@ bash SketchMolBenchmark/scripts/run_smoke.sh
 
 Direct decoder outputs use the same file names under their own output
 directory, with `source_manifest.json` marking
-`benchmark_kind=direct_structure_prediction`. These summaries can be passed to
-`SketchMolCompare/scripts/run_compare_existing.sh` via
-`SKETCHMOL_COMPARE_SKETCHMOL_SUMMARIES` alongside the real SketchMol+OCR
-summary.
+`benchmark_kind=direct_structure_prediction`. These summaries are the
+report-ready comparison artifacts alongside the real SketchMol+OCR summary.

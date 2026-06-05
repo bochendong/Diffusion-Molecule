@@ -1,6 +1,0 @@
-numpy
-pandas
-pillow
-scikit-learn
-torch
-transformers

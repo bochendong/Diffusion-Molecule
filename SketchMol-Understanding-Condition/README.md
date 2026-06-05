@@ -235,7 +235,7 @@ module purge
 module load StdEnv/2023 python/3.11 rdkit/2025.09.4
 export PYTHONPATH="SketchMol-Understanding-Condition${PYTHONPATH:+:$PYTHONPATH}"
 python SketchMol-Understanding-Condition/scripts/build_edit_dataset.py \
-  --input-csv SketchImageJEPA/data/example_molecules.csv \
+  --input-csv SketchMol-MultiProperty-EditDataset/data/train_table.csv \
   --output-dir SketchMol-Understanding-Condition/outputs/smoke_edit_dataset \
   --max-pairs 12 \
   --min-similarity 0.1 \
@@ -257,7 +257,7 @@ SketchMol-Understanding-Condition/scripts/run_qed_dataset_smoke.sh
 SketchMol-Understanding-Condition/scripts/submit_qed_dataset_smoke.sh
 ```
 
-该脚本从 `PhysTabMol/runs/20260601_070814_sketchmol_compare_structure_seed7/tables/train_table.csv` 读取 5000 个分子，挖 200 个同 scaffold、QED 提升的 source-target edit pairs，并生成：
+该脚本从 `SketchMol-MultiProperty-EditDataset/data/train_table.csv` 读取 5000 个分子，挖 200 个同 scaffold、QED 提升的 source-target edit pairs，并生成：
 
 ```text
 outputs/qed_edit_dataset_5k/edit_pairs.csv
@@ -388,7 +388,7 @@ module purge
 module load StdEnv/2023 python/3.11 rdkit/2025.09.4
 export PYTHONPATH="SketchMol-Understanding-Condition${PYTHONPATH:+:$PYTHONPATH}"
 python SketchMol-Understanding-Condition/scripts/build_mixed_objective_dataset.py \
-  --input-csv PhysTabMol/runs/20260601_070814_sketchmol_compare_structure_seed7/tables/train_table.csv \
+  --input-csv SketchMol-MultiProperty-EditDataset/data/train_table.csv \
   --output-dir SketchMol-Understanding-Condition/outputs/mixed_objective_dataset_8k_strict \
   --limit 8000 \
   --pairs-per-objective 80 \

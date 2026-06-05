@@ -26,7 +26,6 @@ FEATURES_DIR="${SUCC_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/con
 DELTA_OUTPUT_DIR="${SUCC_DELTA_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/delta_bucket_classifier_multimodal_fusion_v2_contrastive_e12}"
 BENCHMARK_EXPORT_DIR="${SUCC_BENCHMARK_EXPORT_DIR:-SketchMol-Understanding-Condition/outputs/benchmark_export_fusion_v2_contrastive_e12}"
 BENCHMARK_OUTPUT_DIR="${SUCC_BENCHMARK_OUTPUT_DIR:-SketchMolBenchmark/outputs/understanding_condition_fusion_v2_contrastive_e12}"
-COMPARE_OUTPUT_DIR="${SUCC_COMPARE_OUTPUT_DIR:-SketchMolCompare/outputs/comparisons/understanding_contrastive_e12}"
 
 TRAIN_TIME="${SUCC_TRAIN_TIME:-04:00:00}"
 TRAIN_MEM="${SUCC_TRAIN_MEM:-16G}"
@@ -40,9 +39,6 @@ PROBE_CPUS="${SUCC_PROBE_CPUS:-1}"
 BENCHMARK_TIME="${SUCC_BENCHMARK_TIME:-00:45:00}"
 BENCHMARK_MEM="${SUCC_BENCHMARK_MEM:-8G}"
 BENCHMARK_CPUS="${SUCC_BENCHMARK_CPUS:-1}"
-COMPARE_TIME="${SUCC_COMPARE_TIME:-00:15:00}"
-COMPARE_MEM="${SUCC_COMPARE_MEM:-4G}"
-COMPARE_CPUS="${SUCC_COMPARE_CPUS:-1}"
 
 mkdir -p "$LOG_DIR"
 
@@ -122,22 +118,9 @@ BENCHMARK_JOB="$(
 )"
 echo "benchmark_job=$BENCHMARK_JOB"
 
-COMPARE_SUMMARIES="SketchMolBenchmark/outputs/current/benchmark_summary.csv SketchMolBenchmark/outputs/direct_structure_current/benchmark_summary.csv SketchMolBenchmark/outputs/understanding_condition_full/benchmark_summary.csv $BENCHMARK_OUTPUT_DIR/benchmark_summary.csv"
-COMPARE_JOB="$(
-  submit_job \
-    "succ-compare-$RUN_TAG" \
-    "$COMPARE_TIME" \
-    "$COMPARE_MEM" \
-    "$COMPARE_CPUS" \
-    "afterok:$BENCHMARK_JOB" \
-    "SKETCHMOL_COMPARE_SKETCHMOL_SUMMARIES='$COMPARE_SUMMARIES' SKETCHMOL_COMPARE_OUT='$COMPARE_OUTPUT_DIR' bash '$REPO_DIR/SketchMolCompare/scripts/run_compare_existing.sh'"
-)"
-echo "compare_job=$COMPARE_JOB"
-
 echo
 echo "Workflow submitted."
 echo "  train_checkpoint=$FUSION_OUTPUT_DIR/fusion_image_text_encoder.pt"
 echo "  condition_features=$FEATURES_DIR"
 echo "  delta_metrics=$DELTA_OUTPUT_DIR/metrics.csv"
 echo "  benchmark_summary=$BENCHMARK_OUTPUT_DIR/benchmark_summary.csv"
-echo "  compare_report=$COMPARE_OUTPUT_DIR/comparison_report.md"

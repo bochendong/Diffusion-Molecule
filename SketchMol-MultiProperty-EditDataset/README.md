@@ -26,6 +26,16 @@ source-preservation 指标改成 Morgan fingerprint Tanimoto(source, generated)�
 SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/
 ```
 
+默认输入表：
+
+```text
+SketchMol-MultiProperty-EditDataset/data/train_table.csv
+```
+
+这张表由旧实验迁移而来，保留 canonical molecule rows 和 SketchMol 风格 7 个
+性质列，避免数据集构建继续依赖已经清理掉的历史项目目录。需要换更大的外部
+数据源时，设置 `SMMED_INPUT_CSV=/path/to/train_table.csv`。
+
 里面会生成：
 
 ```text
@@ -199,7 +209,7 @@ SMMED_RENDER_IMAGES=0
 扩大数据集：
 
 ```bash
-SMMED_INPUT_CSV=PhysTabMol/runs/20260601_070814_sketchmol_compare_structure_seed7/tables/train_table.csv
+SMMED_INPUT_CSV=SketchMol-MultiProperty-EditDataset/data/train_table.csv
 SMMED_OUTPUT_DIR=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_200k_v1
 SMMED_LIMIT=200000
 SMMED_MAX_PAIRS=200000

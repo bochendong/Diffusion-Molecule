@@ -15,7 +15,7 @@ module load rdkit/2025.09.4
 
 export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
-INPUT_CSV="${SUCC_INPUT_CSV:-PhysTabMol/runs/20260601_070814_sketchmol_compare_structure_seed7/tables/train_table.csv}"
+INPUT_CSV="${SUCC_INPUT_CSV:-SketchMol-MultiProperty-EditDataset/data/train_table.csv}"
 OUTPUT_DIR="${SUCC_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/qed_edit_dataset_5k_diverse_strict}"
 LIMIT="${SUCC_LIMIT:-5000}"
 MAX_PAIRS="${SUCC_MAX_PAIRS:-200}"

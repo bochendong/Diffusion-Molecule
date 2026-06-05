@@ -1,7 +1,0 @@
-outputs/runs/
-outputs/stages/
-outputs/repair_dataset*/
-outputs/rendered_inputs/
-*.log
-__pycache__/
-*.pyc
