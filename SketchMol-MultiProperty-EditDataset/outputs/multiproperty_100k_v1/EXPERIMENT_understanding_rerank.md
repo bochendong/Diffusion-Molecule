@@ -174,6 +174,110 @@ scaffold_property_vlm_rerank, property_weight=0.0:
   scaffold all 0.005
 ```
 
+## Full HF VLM Run: 15639850
+
+完整 workflow 日志：
+
+```text
+SketchMol-Understanding-Condition/logs/succ-hf-vlm-15639850.log
+```
+
+本次完整运行成功完成：
+
+```text
+HF VLM feature export:
+  rows 300000
+  pooled shape 300000 x 3584
+  query tokens shape 300000 x 32 x 256
+
+benchmark eval rows:
+  22452
+
+candidate source:
+  molecule_database
+
+candidate molecules:
+  87107
+
+scaffold fallback mode:
+  source_identity
+```
+
+Frozen HF VLM benchmark：
+
+```text
+report:
+  SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm/benchmark_report.md
+
+joint success all:
+  source_identity                  0.155
+  global_property_retrieval        0.003
+  scaffold_property_retrieval      0.194
+  vlm_feature_retrieval            0.000
+  vlm_scaffold_feature_retrieval   0.155
+  global_property_vlm_rerank       0.001
+  scaffold_property_vlm_rerank     0.193
+  target_oracle                    1.000
+```
+
+`global_property_vlm_rerank` 的 strict property success 很高：
+
+```text
+2p 0.999
+3p 0.986
+4p 0.922
+5p 0.806
+6p 0.687
+7p 0.535
+```
+
+但它的 scaffold all 只有 0.001，joint all 也只有 0.001。因此它仍然只是
+property retrieval / selector sanity check，不是 scaffold-preserving edit。
+
+Connector benchmark：
+
+```text
+report:
+  SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector/benchmark_report.md
+
+joint success all:
+  source_identity                       0.155
+  global_property_retrieval             0.003
+  scaffold_property_retrieval           0.194
+  edit_latent_global_retrieval          0.000
+  edit_latent_scaffold_retrieval        0.188
+  edit_latent_scaffold_source_rerank    0.187
+  target_oracle                         1.000
+```
+
+Connector training itself was stable:
+
+```text
+train rows 50000
+eval rows 59880
+epochs 5
+eval MSE 0.323 -> 0.292
+```
+
+However, the connector did not beat the scaffold-property retrieval baseline on
+the actual joint edit metric.
+
+The key diagnostic is fallback rate:
+
+```text
+scaffold_property_retrieval source fallback:           0.841
+vlm_scaffold_feature_retrieval source fallback:        0.996
+scaffold_property_vlm_rerank source fallback:          0.841
+edit_latent_scaffold_retrieval source fallback:        0.841
+edit_latent_scaffold_source_rerank source fallback:    0.841
+```
+
+This means most eval scaffolds do not have same-scaffold candidates in the
+retrieval candidate library. The main bottleneck is therefore not the reranker;
+it is the candidate stream. To improve scaffold-preserving edit, the next method
+needs a source-conditioned visual candidate generator, rather than global
+database retrieval.
+
 ## Interpretation
 
 The good news:

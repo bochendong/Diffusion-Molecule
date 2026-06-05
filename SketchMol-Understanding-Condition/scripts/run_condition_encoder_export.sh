@@ -8,10 +8,20 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
-module purge >/dev/null 2>&1 || true
-module load StdEnv/2023
-module load python/3.11
-module load rdkit/2025.09.4
+if ! command -v module >/dev/null 2>&1 && [[ -f /etc/profile.d/modules.sh ]]; then
+  # Slurm batch shells do not always initialize Environment Modules.
+  # shellcheck source=/dev/null
+  source /etc/profile.d/modules.sh
+fi
+
+if command -v module >/dev/null 2>&1; then
+  module purge >/dev/null 2>&1 || true
+  module load StdEnv/2023
+  module load python/3.11
+  module load rdkit/2025.09.4
+else
+  echo "WARNING: Environment Modules are unavailable; relying on SUCC_PYTHON_BIN/PYTHON_BIN for RDKit." >&2
+fi
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python}}"
 export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"

@@ -9,10 +9,20 @@ REPO_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
 DATASET_PROJECT_DIR="$REPO_DIR/SketchMol-MultiProperty-EditDataset"
 cd "$REPO_DIR"
 
-module purge >/dev/null 2>&1 || true
-module load StdEnv/2023
-module load python/3.11
-module load rdkit/2025.09.4
+if ! command -v module >/dev/null 2>&1 && [[ -f /etc/profile.d/modules.sh ]]; then
+  # Slurm batch shells do not always initialize Environment Modules.
+  # shellcheck source=/dev/null
+  source /etc/profile.d/modules.sh
+fi
+
+if command -v module >/dev/null 2>&1; then
+  module purge >/dev/null 2>&1 || true
+  module load StdEnv/2023
+  module load python/3.11
+  module load rdkit/2025.09.4
+else
+  echo "WARNING: Environment Modules are unavailable; relying on SUCC_PYTHON_BIN for RDKit." >&2
+fi
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${SMMED_PYTHON_BIN:-${PYTHON_BIN:-python}}}"
 export PYTHONPATH="$PROJECT_DIR:$DATASET_PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
@@ -75,6 +85,12 @@ EDIT_LATENT_DELTA_WEIGHT="${SMMED_EDIT_LATENT_DELTA_WEIGHT:-0.35}"
 EDIT_LATENT_DIRECTION_WEIGHT="${SMMED_EDIT_LATENT_DIRECTION_WEIGHT:-0.10}"
 EDIT_LATENT_SOURCE_SIMILARITY_WEIGHT="${SMMED_EDIT_LATENT_SOURCE_SIMILARITY_WEIGHT:-0.25}"
 SCAFFOLD_FALLBACK_MODE="${SMMED_SCAFFOLD_FALLBACK_MODE:-source_identity}"
+
+if [[ "$HF_MODEL_NAME_OR_PATH" == /* && ! -e "$HF_MODEL_NAME_OR_PATH" ]]; then
+  echo "ERROR: local HF model path does not exist: $HF_MODEL_NAME_OR_PATH" >&2
+  echo "       Use the existing checkpoint path or a HuggingFace repo id." >&2
+  exit 2
+fi
 
 echo "HF VLM multi-property understanding workflow"
 echo "  python=$PYTHON_BIN"

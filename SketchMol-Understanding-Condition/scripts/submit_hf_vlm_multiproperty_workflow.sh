@@ -21,12 +21,18 @@ GPU_PROFILE="${SUCC_GPU_PROFILE:-h100_40gb_mig}"
 JOB_NAME="${SUCC_SLURM_JOB_NAME:-succ-hf-vlm}"
 LOG_DIR="${SUCC_LOG_DIR:-logs}"
 PARTITION="${SUCC_SLURM_PARTITION:-}"
+HF_MODEL_NAME_OR_PATH="${SUCC_HF_MODEL_NAME_OR_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}"
 
 mkdir -p "$LOG_DIR"
 
 if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
   echo "ERROR: SUCC_PYTHON_BIN is not executable: $SUCC_PYTHON_BIN" >&2
   echo "       Set SUCC_PYTHON_BIN to a VLM/RDKit Python with torch, transformers, PIL, and RDKit." >&2
+  exit 2
+fi
+if [[ "$HF_MODEL_NAME_OR_PATH" == /* && ! -e "$HF_MODEL_NAME_OR_PATH" ]]; then
+  echo "ERROR: local HF model path does not exist: $HF_MODEL_NAME_OR_PATH" >&2
+  echo "       Use an existing checkpoint path or a HuggingFace repo id." >&2
   exit 2
 fi
 

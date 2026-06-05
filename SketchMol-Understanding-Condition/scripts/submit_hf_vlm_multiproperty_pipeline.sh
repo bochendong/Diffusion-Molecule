@@ -56,12 +56,18 @@ VLM_GPU_PROFILE="${SUCC_GPU_PROFILE:-h100_40gb_mig}"
 VLM_JOB_NAME="${SUCC_SLURM_JOB_NAME:-succ-hf-vlm}"
 VLM_LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 VLM_PARTITION="${SUCC_SLURM_PARTITION:-}"
+HF_MODEL_NAME_OR_PATH="${SUCC_HF_MODEL_NAME_OR_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}"
 
 mkdir -p "$BUILD_LOG_DIR" "$VLM_LOG_DIR"
 
 if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
   echo "ERROR: SUCC_PYTHON_BIN is not executable: $SUCC_PYTHON_BIN" >&2
   echo "       Set SUCC_PYTHON_BIN to a VLM/RDKit Python with torch, transformers, PIL, and RDKit." >&2
+  exit 2
+fi
+if [[ "$HF_MODEL_NAME_OR_PATH" == /* && ! -e "$HF_MODEL_NAME_OR_PATH" ]]; then
+  echo "ERROR: local HF model path does not exist: $HF_MODEL_NAME_OR_PATH" >&2
+  echo "       Use an existing checkpoint path or a HuggingFace repo id." >&2
   exit 2
 fi
 
@@ -91,7 +97,7 @@ echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
 echo "  connector_features_dir=$CONNECTOR_FEATURES_DIR"
 echo "  connector_benchmark_output_dir=$CONNECTOR_BENCHMARK_OUTPUT_DIR"
 echo "  render_images=$SMMED_RENDER_IMAGES"
-echo "  model=${SUCC_HF_MODEL_NAME_OR_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}"
+echo "  model=$HF_MODEL_NAME_OR_PATH"
 echo "  python=$SUCC_PYTHON_BIN"
 echo "  train_feature_connector=$SUCC_TRAIN_FEATURE_CONNECTOR"
 echo "  scaffold_fallback_mode=$SMMED_SCAFFOLD_FALLBACK_MODE"
