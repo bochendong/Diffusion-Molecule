@@ -22,6 +22,8 @@ BASELINE_CSV="${SUCC_BASELINE_CSV:-$DATASET_OUTPUT_DIR/baseline_variants.csv}"
 CONDITION_ROWS="${SMMED_CONDITION_ROWS_CSV:-$DATASET_OUTPUT_DIR/condition_rows.csv}"
 FEATURES_DIR="${SUCC_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm}"
 BENCHMARK_OUTPUT_DIR="${SMMED_BENCHMARK_OUTPUT_DIR:-$DATASET_OUTPUT_DIR/benchmark_hf_vlm}"
+CONNECTOR_FEATURES_DIR="${SUCC_CONNECTOR_FEATURES_DIR:-${FEATURES_DIR}_edit_connector}"
+CONNECTOR_BENCHMARK_OUTPUT_DIR="${SMMED_CONNECTOR_BENCHMARK_OUTPUT_DIR:-${BENCHMARK_OUTPUT_DIR}_edit_connector}"
 HF_MODEL_NAME_OR_PATH="${SUCC_HF_MODEL_NAME_OR_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}"
 HF_DEVICE_MAP="${SUCC_HF_DEVICE_MAP:-auto}"
 HF_DTYPE="${SUCC_HF_DTYPE:-bfloat16}"
@@ -36,10 +38,22 @@ NUM_QUERIES="${SUCC_NUM_QUERIES:-32}"
 QUERY_DIM="${SUCC_QUERY_DIM:-256}"
 SKIP_DATASET_BUILD="${SUCC_SKIP_DATASET_BUILD:-0}"
 SKIP_FEATURE_EXPORT="${SUCC_SKIP_FEATURE_EXPORT:-0}"
-METHODS="${SMMED_BENCHMARK_METHODS:-source_identity,vlm_scaffold_feature_retrieval,target_oracle}"
+TRAIN_FEATURE_CONNECTOR="${SUCC_TRAIN_FEATURE_CONNECTOR:-1}"
+CONNECTOR_EPOCHS="${SUCC_CONNECTOR_EPOCHS:-5}"
+CONNECTOR_BATCH_SIZE="${SUCC_CONNECTOR_BATCH_SIZE:-1024}"
+CONNECTOR_LEARNING_RATE="${SUCC_CONNECTOR_LEARNING_RATE:-1e-3}"
+CONNECTOR_HIDDEN_DIM="${SUCC_CONNECTOR_HIDDEN_DIM:-512}"
+CONNECTOR_TRAIN_LIMIT="${SUCC_CONNECTOR_TRAIN_LIMIT:-50000}"
+CONNECTOR_SOURCE_FEATURE_WEIGHT="${SUCC_CONNECTOR_SOURCE_FEATURE_WEIGHT:-0.25}"
+CONNECTOR_SOURCE_FINGERPRINT_BITS="${SUCC_CONNECTOR_SOURCE_FINGERPRINT_BITS:-256}"
+METHODS="${SMMED_BENCHMARK_METHODS:-source_identity,global_property_retrieval,scaffold_property_retrieval,vlm_feature_retrieval,vlm_scaffold_feature_retrieval,global_property_vlm_rerank,scaffold_property_vlm_rerank,target_oracle}"
 LIMIT_EVAL_ROWS="${SMMED_LIMIT_EVAL_ROWS:-}"
 MAX_EVAL_PER_PROPERTY_COUNT="${SMMED_MAX_EVAL_PER_PROPERTY_COUNT:-5000}"
 MAX_FEATURE_CANDIDATES="${SMMED_MAX_FEATURE_CANDIDATES:-20000}"
+MAX_GLOBAL_CANDIDATES="${SMMED_MAX_GLOBAL_CANDIDATES:-20000}"
+RERANK_CANDIDATES="${SMMED_RERANK_CANDIDATES:-64}"
+RERANK_PROPERTY_WEIGHT="${SMMED_RERANK_PROPERTY_WEIGHT:-0.5}"
+SCAFFOLD_FALLBACK_MODE="${SMMED_SCAFFOLD_FALLBACK_MODE:-source_identity}"
 
 echo "HF VLM multi-property understanding workflow"
 echo "  python=$PYTHON_BIN"
@@ -49,7 +63,13 @@ echo "  baseline_csv=$BASELINE_CSV"
 echo "  condition_rows=$CONDITION_ROWS"
 echo "  features_dir=$FEATURES_DIR"
 echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
+echo "  train_feature_connector=$TRAIN_FEATURE_CONNECTOR"
+echo "  connector_features_dir=$CONNECTOR_FEATURES_DIR"
+echo "  connector_benchmark_output_dir=$CONNECTOR_BENCHMARK_OUTPUT_DIR"
 echo "  methods=$METHODS"
+echo "  scaffold_fallback_mode=$SCAFFOLD_FALLBACK_MODE"
+echo "  rerank_candidates=$RERANK_CANDIDATES"
+echo "  rerank_property_weight=$RERANK_PROPERTY_WEIGHT"
 
 if [[ "$SKIP_DATASET_BUILD" != "1" ]]; then
   bash "$DATASET_PROJECT_DIR/scripts/run_build_dataset.sh"
@@ -88,21 +108,70 @@ if [[ -n "$LIMIT_EVAL_ROWS" ]]; then
   LIMIT_EVAL_ARGS=(--limit-eval-rows "$LIMIT_EVAL_ROWS")
 fi
 
-"$PYTHON_BIN" "$DATASET_PROJECT_DIR/scripts/benchmark_multiproperty_retrieval.py" \
-  --condition-rows-csv "$CONDITION_ROWS" \
-  --output-dir "$BENCHMARK_OUTPUT_DIR" \
-  --methods "$METHODS" \
-  --condition-features-dir "$FEATURES_DIR" \
-  --condition-feature-array pooled \
-  --condition-feature-variant full \
-  --max-eval-per-property-count "$MAX_EVAL_PER_PROPERTY_COUNT" \
-  --max-feature-candidates "$MAX_FEATURE_CANDIDATES" \
-  "${LIMIT_EVAL_ARGS[@]}"
+run_benchmark() {
+  local features_dir="$1"
+  local output_dir="$2"
+  local label="$3"
+  echo
+  echo "Running benchmark: $label"
+  echo "  features=$features_dir"
+  echo "  output=$output_dir"
+  "$PYTHON_BIN" "$DATASET_PROJECT_DIR/scripts/benchmark_multiproperty_retrieval.py" \
+    --condition-rows-csv "$CONDITION_ROWS" \
+    --output-dir "$output_dir" \
+    --methods "$METHODS" \
+    --condition-features-dir "$features_dir" \
+    --condition-feature-array pooled \
+    --condition-feature-variant full \
+    --max-eval-per-property-count "$MAX_EVAL_PER_PROPERTY_COUNT" \
+    --max-global-candidates "$MAX_GLOBAL_CANDIDATES" \
+    --max-feature-candidates "$MAX_FEATURE_CANDIDATES" \
+    --rerank-candidates "$RERANK_CANDIDATES" \
+    --rerank-property-weight "$RERANK_PROPERTY_WEIGHT" \
+    --scaffold-fallback-mode "$SCAFFOLD_FALLBACK_MODE" \
+    "${LIMIT_EVAL_ARGS[@]}"
+}
+
+run_benchmark "$FEATURES_DIR" "$BENCHMARK_OUTPUT_DIR" "frozen_hf_vlm"
+
+if [[ "$TRAIN_FEATURE_CONNECTOR" == "1" ]]; then
+  CONNECTOR_ARGS=()
+  if [[ -n "$CONNECTOR_TRAIN_LIMIT" ]]; then
+    CONNECTOR_ARGS+=(--train-limit "$CONNECTOR_TRAIN_LIMIT")
+  fi
+  echo
+  echo "Training VLM edit connector"
+  echo "  output=$CONNECTOR_FEATURES_DIR"
+  echo "  epochs=$CONNECTOR_EPOCHS"
+  echo "  batch_size=$CONNECTOR_BATCH_SIZE"
+  echo "  source_feature_weight=$CONNECTOR_SOURCE_FEATURE_WEIGHT"
+  "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_vlm_feature_connector.py" \
+    --condition-features-dir "$FEATURES_DIR" \
+    --condition-rows-csv "$CONDITION_ROWS" \
+    --output-dir "$CONNECTOR_FEATURES_DIR" \
+    --epochs "$CONNECTOR_EPOCHS" \
+    --batch-size "$CONNECTOR_BATCH_SIZE" \
+    --learning-rate "$CONNECTOR_LEARNING_RATE" \
+    --hidden-dim "$CONNECTOR_HIDDEN_DIM" \
+    --source-feature-weight "$CONNECTOR_SOURCE_FEATURE_WEIGHT" \
+    --source-fingerprint-bits "$CONNECTOR_SOURCE_FINGERPRINT_BITS" \
+    "${CONNECTOR_ARGS[@]}"
+  run_benchmark "$CONNECTOR_FEATURES_DIR" "$CONNECTOR_BENCHMARK_OUTPUT_DIR" "edit_connector"
+fi
 
 echo
 echo "HF VLM multi-property benchmark ready:"
 echo "  report=$BENCHMARK_OUTPUT_DIR/benchmark_report.md"
 echo "  summary=$BENCHMARK_OUTPUT_DIR/benchmark_summary.csv"
 echo "  decoded=$BENCHMARK_OUTPUT_DIR/benchmark_decoded.csv"
+if [[ "$TRAIN_FEATURE_CONNECTOR" == "1" ]]; then
+  echo "  connector_report=$CONNECTOR_BENCHMARK_OUTPUT_DIR/benchmark_report.md"
+  echo "  connector_summary=$CONNECTOR_BENCHMARK_OUTPUT_DIR/benchmark_summary.csv"
+  echo "  connector_decoded=$CONNECTOR_BENCHMARK_OUTPUT_DIR/benchmark_decoded.csv"
+fi
 echo
 sed -n '1,80p' "$BENCHMARK_OUTPUT_DIR/benchmark_report.md"
+if [[ "$TRAIN_FEATURE_CONNECTOR" == "1" ]]; then
+  echo
+  sed -n '1,80p' "$CONNECTOR_BENCHMARK_OUTPUT_DIR/benchmark_report.md"
+fi

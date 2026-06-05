@@ -24,6 +24,7 @@ BENCHMARK_OUTPUT_DIR="${SMMED_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_scaffo
 SKIP_BUILD="${SMMED_SKIP_BUILD:-0}"
 METHODS="${SMMED_BENCHMARK_METHODS:-source_identity,scaffold_property_retrieval,target_oracle}"
 MAX_GLOBAL_CANDIDATES="${SMMED_MAX_GLOBAL_CANDIDATES:-20000}"
+SCAFFOLD_FALLBACK_MODE="${SMMED_SCAFFOLD_FALLBACK_MODE:-source_identity}"
 LIMIT_EVAL_ROWS="${SMMED_LIMIT_EVAL_ROWS:-}"
 MAX_EVAL_PER_PROPERTY_COUNT="${SMMED_MAX_EVAL_PER_PROPERTY_COUNT:-5000}"
 COMPUTE_TANIMOTO="${SMMED_COMPUTE_TANIMOTO:-0}"
@@ -36,6 +37,7 @@ echo "  output_dir=$OUTPUT_DIR"
 echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
 echo "  methods=$METHODS"
 echo "  max_eval_per_property_count=$MAX_EVAL_PER_PROPERTY_COUNT"
+echo "  scaffold_fallback_mode=$SCAFFOLD_FALLBACK_MODE"
 
 if [[ "$SKIP_BUILD" != "1" ]]; then
   bash "$PROJECT_DIR/scripts/run_build_dataset.sh"
@@ -65,6 +67,7 @@ fi
   --output-dir "$BENCHMARK_OUTPUT_DIR" \
   --methods "$METHODS" \
   --max-global-candidates "$MAX_GLOBAL_CANDIDATES" \
+  --scaffold-fallback-mode "$SCAFFOLD_FALLBACK_MODE" \
   --max-eval-per-property-count "$MAX_EVAL_PER_PROPERTY_COUNT" \
   --seed "$SEED" \
   "${LIMIT_ARGS[@]}" \

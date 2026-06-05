@@ -65,6 +65,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-feature-candidates", type=int, default=20000)
     parser.add_argument("--rerank-candidates", type=int, default=64)
     parser.add_argument("--rerank-property-weight", type=float, default=0.0)
+    parser.add_argument(
+        "--scaffold-fallback-mode",
+        choices=["global", "source_identity", "empty"],
+        default="global",
+        help=(
+            "What scaffold-aware methods should do when no train candidate has "
+            "the eval scaffold. `global` preserves the old behavior, "
+            "`source_identity` keeps the source molecule as an honest edit "
+            "fallback, and `empty` reports no candidate."
+        ),
+    )
     parser.add_argument("--limit-eval-rows", type=int, default=None)
     parser.add_argument("--max-eval-per-property-count", type=int, default=None)
     parser.add_argument("--condition-features-dir", type=Path, default=None)
@@ -128,6 +139,7 @@ def main() -> None:
                     max_feature_candidates=args.max_feature_candidates,
                     rerank_candidates=args.rerank_candidates,
                     rerank_property_weight=args.rerank_property_weight,
+                    scaffold_fallback_mode=args.scaffold_fallback_mode,
                     compute_tanimoto=args.compute_tanimoto,
                     seed=args.seed,
                 )
@@ -150,6 +162,7 @@ def main() -> None:
         "max_feature_candidates": args.max_feature_candidates,
         "rerank_candidates": args.rerank_candidates,
         "rerank_property_weight": args.rerank_property_weight,
+        "scaffold_fallback_mode": args.scaffold_fallback_mode,
         "condition_features_dir": str(args.condition_features_dir) if args.condition_features_dir else None,
         "condition_feature_array": args.condition_feature_array if args.condition_features_dir else None,
         "condition_feature_variant": args.condition_feature_variant if args.condition_features_dir else None,
@@ -241,6 +254,7 @@ def _decode_row(
     max_feature_candidates: int,
     rerank_candidates: int,
     rerank_property_weight: float,
+    scaffold_fallback_mode: str,
     compute_tanimoto: bool,
     seed: int,
 ) -> dict[str, object]:
@@ -261,8 +275,13 @@ def _decode_row(
         pool = by_scaffold.get(row.get("scaffold", ""), [])
         fallback = ""
         if not pool:
-            pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
-            fallback = "global"
+            pool, fallback = _scaffold_fallback_pool(
+                row,
+                candidates=candidates,
+                mode=scaffold_fallback_mode,
+                max_global_candidates=max_global_candidates,
+                seed=seed,
+            )
         candidate = _best_candidate(pool, selected_props=selected_props, target_props=target_props)
         generated_smiles = str(candidate.get("smiles", ""))
         generated_scaffold = str(candidate.get("scaffold", ""))
@@ -283,6 +302,7 @@ def _decode_row(
             feature_context=feature_context,
             scaffold_only=scaffold_only,
             max_candidates=max_feature_candidates,
+            scaffold_fallback_mode=scaffold_fallback_mode,
             seed=seed,
         )
         generated_smiles = str(candidate.get("smiles", ""))
@@ -296,8 +316,13 @@ def _decode_row(
             pool = by_scaffold.get(row.get("scaffold", ""), [])
             fallback = ""
             if not pool:
-                pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
-                fallback = "global"
+                pool, fallback = _scaffold_fallback_pool(
+                    row,
+                    candidates=candidates,
+                    mode=scaffold_fallback_mode,
+                    max_global_candidates=max_global_candidates,
+                    seed=seed,
+                )
         else:
             pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
             fallback = ""
@@ -332,6 +357,7 @@ def _decode_row(
         property_successes.append((not math.isnan(error)) and error <= SKETCHMOL_STRICT_TOLERANCE[prop])
     strict_success = bool(property_successes) and all(property_successes)
     scaffold_match = bool(generated_scaffold and row.get("scaffold") and generated_scaffold == row.get("scaffold"))
+    joint_success = strict_success and scaffold_match
 
     out: dict[str, object] = {
         "method": method,
@@ -347,6 +373,7 @@ def _decode_row(
         "generated_scaffold": generated_scaffold,
         "scaffold_match": scaffold_match,
         "strict_success": strict_success,
+        "joint_success": joint_success,
         "fallback": fallback,
     }
     if compute_tanimoto:
@@ -364,6 +391,35 @@ def _decode_row(
             out[f"{prop}_abs_error"] = ""
             out[f"{prop}_success"] = ""
     return out
+
+
+def _source_candidate(row: Mapping[str, str]) -> dict[str, object]:
+    return {
+        "smiles": _safe_canonical_smiles(row.get("source_smiles", "")) or row.get("source_smiles", ""),
+        "scaffold": row.get("scaffold", ""),
+        "props": _source_props(row),
+    }
+
+
+def _empty_candidate() -> dict[str, object]:
+    return {"smiles": "", "scaffold": "", "props": {}}
+
+
+def _scaffold_fallback_pool(
+    row: Mapping[str, str],
+    *,
+    candidates: list[dict[str, object]],
+    mode: str,
+    max_global_candidates: int,
+    seed: int,
+) -> tuple[list[dict[str, object]], str]:
+    if mode == "global":
+        return _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed), "global"
+    if mode == "source_identity":
+        return [_source_candidate(row)], "source_identity"
+    if mode == "empty":
+        return [_empty_candidate()], "empty_scaffold_pool"
+    raise ValueError(f"Unsupported scaffold fallback mode: {mode}")
 
 
 def _selected_props(row: Mapping[str, str]) -> list[str]:
@@ -517,6 +573,7 @@ def _best_feature_candidate(
     feature_context: dict[str, object],
     scaffold_only: bool,
     max_candidates: int,
+    scaffold_fallback_mode: str,
     seed: int,
 ) -> tuple[dict[str, object], str]:
     import numpy as np
@@ -535,8 +592,15 @@ def _best_feature_candidate(
         pool = list(by_scaffold.get(row.get("scaffold", ""), []))
         fallback = ""
         if not pool:
-            pool = list(feature_context["candidates"])
-            fallback = "global"
+            if scaffold_fallback_mode == "global":
+                pool = list(feature_context["candidates"])
+                fallback = "global"
+            elif scaffold_fallback_mode == "source_identity":
+                return _source_candidate(row), "source_identity"
+            elif scaffold_fallback_mode == "empty":
+                return _empty_candidate(), "empty_scaffold_pool"
+            else:
+                raise ValueError(f"Unsupported scaffold fallback mode: {scaffold_fallback_mode}")
     else:
         pool = list(feature_context["candidates"])
         fallback = ""
@@ -604,7 +668,9 @@ def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
                 continue
             strict = _fraction(bool(row.get("strict_success")) for row in selected)
             scaffold = _fraction(bool(row.get("scaffold_match")) for row in selected)
+            joint = _fraction(bool(row.get("joint_success")) for row in selected)
             reference = SKETCHMOL_REFERENCE_MULTI_PROPERTY.get(property_count, math.nan)
+            fallback_stats = _fallback_stats(selected)
             summary = {
                 "family": "understanding_multiproperty_direct",
                 "method": method,
@@ -614,6 +680,8 @@ def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
                 "n": len(selected),
                 "success_rate_strict_in_valid_mols": strict,
                 "scaffold_match_rate": scaffold,
+                "joint_success_rate": joint,
+                **fallback_stats,
                 "sketchmol_reference_strict": reference,
                 "strict_margin_vs_sketchmol": strict - reference if not math.isnan(reference) else "",
             }
@@ -625,6 +693,8 @@ def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
         if method_rows:
             strict = _fraction(bool(row.get("strict_success")) for row in method_rows)
             scaffold = _fraction(bool(row.get("scaffold_match")) for row in method_rows)
+            joint = _fraction(bool(row.get("joint_success")) for row in method_rows)
+            fallback_stats = _fallback_stats(method_rows)
             out.append(
                 {
                     "family": "understanding_multiproperty_direct",
@@ -635,6 +705,8 @@ def _summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
                     "n": len(method_rows),
                     "success_rate_strict_in_valid_mols": strict,
                     "scaffold_match_rate": scaffold,
+                    "joint_success_rate": joint,
+                    **fallback_stats,
                     "sketchmol_reference_strict": "",
                     "strict_margin_vs_sketchmol": "",
                 }
@@ -652,6 +724,7 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
         f"- eval split: `{args.eval_split}`",
         f"- max eval rows per property count: `{args.max_eval_per_property_count}`",
         f"- eval target candidates excluded from retrieval pool: `{not args.allow_eval_target_candidates}`",
+        f"- scaffold fallback mode: `{args.scaffold_fallback_mode}`",
     ]
     if args.condition_features_dir is not None:
         lines.extend(
@@ -664,8 +737,12 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
     lines.extend(
         [
             "",
-            "| method | 2p | 3p | 4p | 5p | 6p | 7p | scaffold all |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "## Strict Property Success",
+            "",
+            "This table is directly comparable to the SketchMol structured multi-property reference.",
+            "",
+            "| method | 2p | 3p | 4p | 5p | 6p | 7p | scaffold all | joint all |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     methods = [method for method in METHODS if any(row.get("method") == method for row in summary_rows)]
@@ -677,10 +754,49 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             values.append(_fmt(row.get("success_rate_strict_in_valid_mols")) if row else "")
         all_row = rows_by_key.get((method, "all"))
         values.append(_fmt(all_row.get("scaffold_match_rate")) if all_row else "")
+        values.append(_fmt(all_row.get("joint_success_rate")) if all_row else "")
         lines.append(f"| {method} | {' | '.join(values)} |")
     lines.extend(
         [
-            f"| SketchMol structured reference | {_fmt(0.804)} | {_fmt(0.768)} | {_fmt(0.736)} | {_fmt(0.716)} | {_fmt(0.678)} | {_fmt(0.685)} |  |",
+            f"| SketchMol structured reference | {_fmt(0.804)} | {_fmt(0.768)} | {_fmt(0.736)} | {_fmt(0.716)} | {_fmt(0.678)} | {_fmt(0.685)} |  |  |",
+            "",
+            "## Joint Edit Success",
+            "",
+            "`joint success = strict property success AND scaffold match`. This is the main metric for source-conditioned scaffold-preserving edit.",
+            "",
+            "| method | 2p | 3p | 4p | 5p | 6p | 7p | all |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for method in methods:
+        values = []
+        for count in range(2, 8):
+            row = rows_by_key.get((method, count))
+            values.append(_fmt(row.get("joint_success_rate")) if row else "")
+        all_row = rows_by_key.get((method, "all"))
+        values.append(_fmt(all_row.get("joint_success_rate")) if all_row else "")
+        lines.append(f"| {method} | {' | '.join(values)} |")
+    lines.extend(
+        [
+            "",
+            "## Fallback Diagnostics",
+            "",
+            "| method | global fallback | source fallback | empty fallback |",
+            "| --- | ---: | ---: | ---: |",
+        ]
+    )
+    for method in methods:
+        all_row = rows_by_key.get((method, "all"))
+        if not all_row:
+            continue
+        lines.append(
+            f"| {method} | "
+            f"{_fmt(all_row.get('global_fallback_fraction'))} | "
+            f"{_fmt(all_row.get('source_identity_fallback_fraction'))} | "
+            f"{_fmt(all_row.get('empty_fallback_fraction'))} |"
+        )
+    lines.extend(
+        [
             "",
             "Notes:",
             "- `target_oracle` is an upper bound because it returns the known target molecule.",
@@ -688,8 +804,9 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "- `vlm_scaffold_feature_retrieval` retrieves same-scaffold train targets by nearest frozen VLM condition feature.",
             "- `vlm_feature_retrieval` retrieves train targets by nearest frozen VLM condition feature without scaffold filtering.",
             "- `global_property_vlm_rerank` first keeps the top property-matched candidates, then reranks them with Understanding-Condition features.",
-            "- `scaffold_property_vlm_rerank` applies the same rerank after same-scaffold property filtering, with global fallback if the scaffold is unseen.",
+            f"- `scaffold_property_vlm_rerank` applies the same rerank after same-scaffold property filtering. Unseen-scaffold fallback mode is `{args.scaffold_fallback_mode}`.",
             "- `global_property_retrieval` ignores scaffold and can satisfy properties while failing edit preservation.",
+            "- High strict success with low joint success should be interpreted as property retrieval, not scaffold-preserving molecular editing.",
             "- A learned Understanding-Condition model should eventually beat `text_only`/global-style property matching while staying close to the scaffold-aware or oracle rows.",
             "",
         ]
@@ -721,6 +838,18 @@ def _to_float(value: object) -> float:
 def _fraction(values: Iterable[bool]) -> float:
     items = list(values)
     return sum(1 for item in items if item) / len(items) if items else 0.0
+
+
+def _fallback_stats(rows: list[dict[str, object]]) -> dict[str, float]:
+    return {
+        "global_fallback_fraction": _fraction("global" in str(row.get("fallback", "")).split(",") for row in rows),
+        "source_identity_fallback_fraction": _fraction(
+            "source_identity" in str(row.get("fallback", "")).split(",") for row in rows
+        ),
+        "empty_fallback_fraction": _fraction(
+            "empty_scaffold_pool" in str(row.get("fallback", "")).split(",") for row in rows
+        ),
+    }
 
 
 def _fmt(value: object) -> str:

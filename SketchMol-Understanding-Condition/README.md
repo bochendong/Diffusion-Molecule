@@ -82,19 +82,56 @@ SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_v
   metrics.json
 ```
 
+默认还会训练一个轻量 edit connector，把 frozen VLM feature 映射到更贴近
+multi-property edit 的 condition feature，并用完全相同的 benchmark 再跑一遍：
+
+```text
+SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector/
+  pooled.npy
+  index.csv
+  metrics.json
+
+SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector/
+  benchmark_report.md
+  benchmark_summary.csv
+  benchmark_decoded.csv
+  metrics.json
+```
+
+如果只想看 frozen VLM baseline，可以设置：
+
+```bash
+SUCC_TRAIN_FEATURE_CONNECTOR=0
+```
+
 `benchmark_report.md` 会直接包含：
 
 ```text
 source_identity
+global_property_retrieval
+scaffold_property_retrieval
+vlm_feature_retrieval
 vlm_scaffold_feature_retrieval
+global_property_vlm_rerank
+scaffold_property_vlm_rerank
 target_oracle
 SketchMol structured reference
 ```
 
-这里的 `vlm_scaffold_feature_retrieval` 才是大模型主结果：它用 frozen VLM
-对 `source image + instruction` 的表示，在 train condition features 里检索同
-scaffold target molecule，然后用 SketchMol 风格的 2-7 性质 strict success
-评估。
+这里的 `vlm_scaffold_feature_retrieval` / `scaffold_property_vlm_rerank` 才是
+大模型主结果：它们用 frozen VLM 对 `source image + instruction` 的表示，在
+scaffold-aware candidate space 里检索或重排 target molecule。报告会同时输出：
+
+```text
+strict success: 和 SketchMol 2p-7p 多性质表可比较
+scaffold match: 是否保留 source scaffold
+joint success: strict success AND scaffold match
+```
+
+如果某个 eval scaffold 在 train candidate pool 里没有同 scaffold 候选，默认
+`SMMED_SCAFFOLD_FALLBACK_MODE=source_identity`，也就是退回 source molecule，而
+不是全局检索。这会暴露 candidate stream 覆盖不足的问题，避免把 property
+retrieval 误读成 scaffold-preserving edit。
 
 为了保护集群 inode quota，MultiProperty 数据集默认不预生成 PNG。`hf_vlm`
 导出时如果 `source_image` 为空，会从 `source_smiles` 在内存中临时渲染 PIL

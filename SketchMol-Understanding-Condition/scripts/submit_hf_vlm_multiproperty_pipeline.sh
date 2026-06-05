@@ -17,12 +17,20 @@ fi
 DATASET_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1}"
 FEATURES_DIR="${SUCC_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm}"
 BENCHMARK_OUTPUT_DIR="${SMMED_BENCHMARK_OUTPUT_DIR:-$DATASET_OUTPUT_DIR/benchmark_hf_vlm}"
+CONNECTOR_FEATURES_DIR="${SUCC_CONNECTOR_FEATURES_DIR:-${FEATURES_DIR}_edit_connector}"
+CONNECTOR_BENCHMARK_OUTPUT_DIR="${SMMED_CONNECTOR_BENCHMARK_OUTPUT_DIR:-${BENCHMARK_OUTPUT_DIR}_edit_connector}"
 SUBMIT_DATASET_BUILD="${SMMED_SUBMIT_DATASET_BUILD:-1}"
 
 export SMMED_RENDER_IMAGES="${SMMED_RENDER_IMAGES:-0}"
 export SMMED_OUTPUT_DIR="$DATASET_OUTPUT_DIR"
 export SUCC_FEATURES_DIR="$FEATURES_DIR"
 export SMMED_BENCHMARK_OUTPUT_DIR="$BENCHMARK_OUTPUT_DIR"
+export SUCC_CONNECTOR_FEATURES_DIR="$CONNECTOR_FEATURES_DIR"
+export SMMED_CONNECTOR_BENCHMARK_OUTPUT_DIR="$CONNECTOR_BENCHMARK_OUTPUT_DIR"
+export SUCC_TRAIN_FEATURE_CONNECTOR="${SUCC_TRAIN_FEATURE_CONNECTOR:-1}"
+export SMMED_SCAFFOLD_FALLBACK_MODE="${SMMED_SCAFFOLD_FALLBACK_MODE:-source_identity}"
+export SMMED_RERANK_PROPERTY_WEIGHT="${SMMED_RERANK_PROPERTY_WEIGHT:-0.5}"
+export SMMED_RERANK_CANDIDATES="${SMMED_RERANK_CANDIDATES:-64}"
 
 BUILD_ACCOUNT="${SMMED_SLURM_ACCOUNT:-def-hup-ab_gpu}"
 BUILD_TIME="${SMMED_SLURM_TIME:-08:00:00}"
@@ -65,9 +73,15 @@ echo "Submitting inode-safe HF VLM multi-property pipeline"
 echo "  dataset_output_dir=$DATASET_OUTPUT_DIR"
 echo "  features_dir=$FEATURES_DIR"
 echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
+echo "  connector_features_dir=$CONNECTOR_FEATURES_DIR"
+echo "  connector_benchmark_output_dir=$CONNECTOR_BENCHMARK_OUTPUT_DIR"
 echo "  render_images=$SMMED_RENDER_IMAGES"
 echo "  model=${SUCC_HF_MODEL_NAME_OR_PATH:-Qwen/Qwen2.5-VL-7B-Instruct}"
 echo "  python=$SUCC_PYTHON_BIN"
+echo "  train_feature_connector=$SUCC_TRAIN_FEATURE_CONNECTOR"
+echo "  scaffold_fallback_mode=$SMMED_SCAFFOLD_FALLBACK_MODE"
+echo "  rerank_candidates=$SMMED_RERANK_CANDIDATES"
+echo "  rerank_property_weight=$SMMED_RERANK_PROPERTY_WEIGHT"
 echo "  gpu_profile=$VLM_GPU_PROFILE"
 echo "  slurm_gpu_candidates=${GPU_CANDIDATES[*]}"
 
@@ -157,3 +171,6 @@ if [[ -n "$build_job_id" ]]; then
 fi
 echo "  vlm_job=${vlm_job_id:-unknown}"
 echo "  final_report=$BENCHMARK_OUTPUT_DIR/benchmark_report.md"
+if [[ "$SUCC_TRAIN_FEATURE_CONNECTOR" == "1" ]]; then
+  echo "  connector_report=$CONNECTOR_BENCHMARK_OUTPUT_DIR/benchmark_report.md"
+fi

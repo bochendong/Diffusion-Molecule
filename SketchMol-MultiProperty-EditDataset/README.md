@@ -54,7 +54,15 @@ full, text_only, image_only, random_query, caption_bottleneck
 ```
 
 `benchmark_scaffold_retrieval/benchmark_report.md` 是最重要的 report-ready 结果：
-它直接给出 2p-7p strict success table，并附上 SketchMol reference row。
+它直接给出 2p-7p strict success table，并附上 SketchMol reference row。报告也会
+输出 `joint success`：
+
+```text
+joint success = strict property success AND scaffold match
+```
+
+strict success 用来和 SketchMol 的多性质控制表对齐；joint success 用来判断模型
+是否真的在保留 source scaffold 的前提下完成编辑。
 
 ## 一键跑完整 benchmark
 
@@ -101,9 +109,19 @@ target_oracle
 SketchMol structured reference
 ```
 
-其中 `scaffold_property_retrieval` 是当前最关键的强 baseline：它只从 train pool
-里检索同 scaffold、active-property values 最接近 target 的 molecule。默认会把
-eval target 从 retrieval candidate pool 排除，避免直接拿到答案。
+其中 `scaffold_property_retrieval` 是当前最关键的强 baseline：它优先只从
+train pool 里检索同 scaffold、active-property values 最接近 target 的
+molecule。默认会把 eval target 从 retrieval candidate pool 排除，避免直接
+拿到答案。
+
+默认 `SMMED_SCAFFOLD_FALLBACK_MODE=source_identity`。如果某个 eval scaffold
+在 train candidate pool 里完全没有同 scaffold 候选，benchmark 会退回 source
+molecule，而不是偷偷改成 global retrieval。这样 strict success 可能更低，但
+scaffold/joint 指标更诚实。需要复现旧的全局 fallback 行为时可以设置：
+
+```bash
+SMMED_SCAFFOLD_FALLBACK_MODE=global
+```
 
 `target_oracle` 是上界，不是可发表方法；它只用于确认数据和 strict-success
 评估脚本是否正常。
@@ -164,6 +182,18 @@ bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
 SMMED_BENCHMARK_METHODS=source_identity,global_property_retrieval,scaffold_property_retrieval,target_oracle \
 SMMED_MAX_GLOBAL_CANDIDATES=5000 \
 SMMED_MAX_EVAL_PER_PROPERTY_COUNT=1000 \
+bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
+```
+
+如果要看 scaffold fallback 对结论的影响，可以同时跑两组：
+
+```bash
+SMMED_SCAFFOLD_FALLBACK_MODE=source_identity \
+SMMED_BENCHMARK_OUTPUT_DIR=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_scaffold_honest \
+bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
+
+SMMED_SCAFFOLD_FALLBACK_MODE=global \
+SMMED_BENCHMARK_OUTPUT_DIR=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_scaffold_global_fallback \
 bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
 ```
 
