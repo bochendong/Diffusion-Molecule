@@ -40,10 +40,19 @@ METHODS = (
     "scaffold_property_retrieval",
     "vlm_feature_retrieval",
     "vlm_scaffold_feature_retrieval",
+    "global_property_vlm_rerank",
+    "scaffold_property_vlm_rerank",
     "target_oracle",
 )
 
-FEATURE_METHODS = {"vlm_feature_retrieval", "vlm_scaffold_feature_retrieval"}
+FEATURE_METHODS = {
+    "vlm_feature_retrieval",
+    "vlm_scaffold_feature_retrieval",
+    "global_property_vlm_rerank",
+    "scaffold_property_vlm_rerank",
+}
+PURE_FEATURE_METHODS = {"vlm_feature_retrieval", "vlm_scaffold_feature_retrieval"}
+HYBRID_RERANK_METHODS = {"global_property_vlm_rerank", "scaffold_property_vlm_rerank"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,6 +63,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--methods", default=",".join(METHODS))
     parser.add_argument("--max-global-candidates", type=int, default=20000)
     parser.add_argument("--max-feature-candidates", type=int, default=20000)
+    parser.add_argument("--rerank-candidates", type=int, default=64)
+    parser.add_argument("--rerank-property-weight", type=float, default=0.0)
     parser.add_argument("--limit-eval-rows", type=int, default=None)
     parser.add_argument("--max-eval-per-property-count", type=int, default=None)
     parser.add_argument("--condition-features-dir", type=Path, default=None)
@@ -115,6 +126,8 @@ def main() -> None:
                     feature_context=feature_context,
                     max_global_candidates=args.max_global_candidates,
                     max_feature_candidates=args.max_feature_candidates,
+                    rerank_candidates=args.rerank_candidates,
+                    rerank_property_weight=args.rerank_property_weight,
                     compute_tanimoto=args.compute_tanimoto,
                     seed=args.seed,
                 )
@@ -135,6 +148,8 @@ def main() -> None:
         "max_eval_per_property_count": args.max_eval_per_property_count,
         "max_global_candidates": args.max_global_candidates,
         "max_feature_candidates": args.max_feature_candidates,
+        "rerank_candidates": args.rerank_candidates,
+        "rerank_property_weight": args.rerank_property_weight,
         "condition_features_dir": str(args.condition_features_dir) if args.condition_features_dir else None,
         "condition_feature_array": args.condition_feature_array if args.condition_features_dir else None,
         "condition_feature_variant": args.condition_feature_variant if args.condition_features_dir else None,
@@ -224,6 +239,8 @@ def _decode_row(
     feature_context: dict[str, object] | None,
     max_global_candidates: int,
     max_feature_candidates: int,
+    rerank_candidates: int,
+    rerank_property_weight: float,
     compute_tanimoto: bool,
     seed: int,
 ) -> dict[str, object]:
@@ -257,7 +274,7 @@ def _decode_row(
         generated_scaffold = str(candidate.get("scaffold", ""))
         generated_props = dict(candidate.get("props", {}))
         fallback = ""
-    elif method in FEATURE_METHODS:
+    elif method in PURE_FEATURE_METHODS:
         if feature_context is None:
             raise ValueError(f"{method} requires condition feature context")
         scaffold_only = method == "vlm_scaffold_feature_retrieval"
@@ -268,6 +285,37 @@ def _decode_row(
             max_candidates=max_feature_candidates,
             seed=seed,
         )
+        generated_smiles = str(candidate.get("smiles", ""))
+        generated_scaffold = str(candidate.get("scaffold", ""))
+        generated_props = dict(candidate.get("props", {}))
+    elif method in HYBRID_RERANK_METHODS:
+        if feature_context is None:
+            raise ValueError(f"{method} requires condition feature context")
+        scaffold_only = method == "scaffold_property_vlm_rerank"
+        if scaffold_only:
+            pool = by_scaffold.get(row.get("scaffold", ""), [])
+            fallback = ""
+            if not pool:
+                pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
+                fallback = "global"
+        else:
+            pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
+            fallback = ""
+        property_pool = _top_property_candidates(
+            pool,
+            selected_props=selected_props,
+            target_props=target_props,
+            limit=rerank_candidates,
+        )
+        candidate, rerank_fallback = _rerank_property_candidates_by_feature(
+            row,
+            property_pool,
+            feature_context=feature_context,
+            selected_props=selected_props,
+            target_props=target_props,
+            property_weight=rerank_property_weight,
+        )
+        fallback = ",".join(item for item in (fallback, rerank_fallback) if item)
         generated_smiles = str(candidate.get("smiles", ""))
         generated_scaffold = str(candidate.get("scaffold", ""))
         generated_props = dict(candidate.get("props", {}))
@@ -358,6 +406,40 @@ def _best_candidate(
     return best or pool[0]
 
 
+def _property_score(
+    candidate: Mapping[str, object],
+    *,
+    selected_props: list[str],
+    target_props: Mapping[str, float],
+) -> float:
+    props = candidate.get("props", {})
+    score = 0.0
+    for prop in selected_props:
+        target = target_props[prop]
+        actual = float(props.get(prop, math.nan)) if isinstance(props, Mapping) else math.nan
+        if math.isnan(actual):
+            score += 1e6
+        else:
+            score += abs(actual - target) / SKETCHMOL_STRICT_TOLERANCE[prop]
+    return score / max(1, len(selected_props))
+
+
+def _top_property_candidates(
+    pool: list[dict[str, object]],
+    *,
+    selected_props: list[str],
+    target_props: Mapping[str, float],
+    limit: int,
+) -> list[dict[str, object]]:
+    if not pool:
+        return []
+    ranked = sorted(
+        pool,
+        key=lambda candidate: _property_score(candidate, selected_props=selected_props, target_props=target_props),
+    )
+    return ranked[: max(1, int(limit))]
+
+
 def _build_feature_context(
     train_rows: list[dict[str, str]],
     *,
@@ -369,6 +451,7 @@ def _build_feature_context(
     features_by_condition_id = _load_condition_features(condition_features_dir, array_name=array_name, variant=variant)
     candidates = []
     seen: set[tuple[str, str]] = set()
+    features_by_smiles: dict[str, np.ndarray] = {}
     for row in train_rows:
         condition_id = row.get("condition_id", "")
         feature = features_by_condition_id.get(condition_id)
@@ -391,11 +474,13 @@ def _build_feature_context(
                 "feature": feature,
             }
         )
+        features_by_smiles.setdefault(smiles, feature)
     by_scaffold: dict[str, list[dict[str, object]]] = defaultdict(list)
     for candidate in candidates:
         by_scaffold[str(candidate["scaffold"])].append(candidate)
     return {
         "features_by_condition_id": features_by_condition_id,
+        "features_by_smiles": features_by_smiles,
         "candidates": candidates,
         "by_scaffold": by_scaffold,
     }
@@ -462,6 +547,41 @@ def _best_feature_candidate(
     scores = matrix @ np.asarray(query, dtype=np.float32)
     best_idx = int(np.argmax(scores))
     return pool[best_idx], fallback
+
+
+def _rerank_property_candidates_by_feature(
+    row: dict[str, str],
+    pool: list[dict[str, object]],
+    *,
+    feature_context: dict[str, object],
+    selected_props: list[str],
+    target_props: Mapping[str, float],
+    property_weight: float,
+) -> tuple[dict[str, object], str]:
+    import numpy as np
+
+    if not pool:
+        return {"smiles": "", "scaffold": "", "props": {}}, "empty_property_pool"
+    features_by_condition_id = feature_context["features_by_condition_id"]
+    features_by_smiles = feature_context["features_by_smiles"]
+    if not isinstance(features_by_condition_id, Mapping) or not isinstance(features_by_smiles, Mapping):
+        raise TypeError("Invalid feature context")
+    query = features_by_condition_id.get(row.get("condition_id", ""))
+    if query is None:
+        return pool[0], "missing_query_feature"
+
+    scored = []
+    for candidate in pool:
+        smiles = str(candidate.get("smiles", ""))
+        feature = features_by_smiles.get(smiles)
+        if feature is None:
+            continue
+        feature_score = float(np.asarray(feature, dtype=np.float32) @ np.asarray(query, dtype=np.float32))
+        property_penalty = _property_score(candidate, selected_props=selected_props, target_props=target_props)
+        scored.append((feature_score - float(property_weight) * property_penalty, candidate))
+    if not scored:
+        return pool[0], "missing_candidate_features"
+    return max(scored, key=lambda item: item[0])[1], ""
 
 
 def _stable_sample(items: list[dict[str, object]], limit: int, *, key: str, seed: int) -> list[dict[str, object]]:
@@ -567,6 +687,8 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a train candidate with the same scaffold and closest active-property values.",
             "- `vlm_scaffold_feature_retrieval` retrieves same-scaffold train targets by nearest frozen VLM condition feature.",
             "- `vlm_feature_retrieval` retrieves train targets by nearest frozen VLM condition feature without scaffold filtering.",
+            "- `global_property_vlm_rerank` first keeps the top property-matched candidates, then reranks them with Understanding-Condition features.",
+            "- `scaffold_property_vlm_rerank` applies the same rerank after same-scaffold property filtering, with global fallback if the scaffold is unseen.",
             "- `global_property_retrieval` ignores scaffold and can satisfy properties while failing edit preservation.",
             "- A learned Understanding-Condition model should eventually beat `text_only`/global-style property matching while staying close to the scaffold-aware or oracle rows.",
             "",
