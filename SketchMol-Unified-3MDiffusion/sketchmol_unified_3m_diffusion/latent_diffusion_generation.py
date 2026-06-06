@@ -144,17 +144,32 @@ class GaussianLatentDiffusion(nn.Module):
         condition_mask: torch.Tensor | None = None,
         *,
         steps: int | None = None,
+        eta: float = 0.0,
     ) -> torch.Tensor:
-        steps = int(steps or self.timesteps)
+        steps = max(1, min(int(steps or self.timesteps), self.timesteps))
+        eta = float(eta)
         device = condition_tokens.device
         latent = torch.randn(condition_tokens.shape[0], self.denoiser.latent_dim, device=device)
         times = torch.linspace(self.timesteps - 1, 0, steps, device=device).long()
-        for timestep in times:
-            t = timestep.repeat(condition_tokens.shape[0])
+        time_values = times.tolist()
+        time_pairs = list(zip(time_values, [*time_values[1:], -1]))
+        for timestep, next_timestep in time_pairs:
+            t = torch.full((condition_tokens.shape[0],), int(timestep), device=device, dtype=torch.long)
             predictions = self.model_predictions(latent, t, condition_tokens, condition_mask)
-            latent = predictions.pred_x0
-            if int(timestep.item()) > 0:
-                latent = latent + extract(self.sqrt_one_minus_alphas_cumprod, t, latent.shape) * torch.randn_like(latent)
+            if int(next_timestep) < 0:
+                latent = predictions.pred_x0
+                continue
+            next_t = torch.full((condition_tokens.shape[0],), int(next_timestep), device=device, dtype=torch.long)
+            alpha_t = extract(self.alphas_cumprod, t, latent.shape)
+            alpha_next = extract(self.alphas_cumprod, next_t, latent.shape)
+            sigma = eta * torch.sqrt(
+                ((1.0 - alpha_next) / (1.0 - alpha_t).clamp_min(1e-8))
+                * (1.0 - alpha_t / alpha_next).clamp_min(0.0)
+            )
+            noise_scale = torch.sqrt((1.0 - alpha_next - sigma.pow(2)).clamp_min(0.0))
+            latent = torch.sqrt(alpha_next) * predictions.pred_x0 + noise_scale * predictions.pred_noise
+            if eta > 0:
+                latent = latent + sigma * torch.randn_like(latent)
         return latent
 
 

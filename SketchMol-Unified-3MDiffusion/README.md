@@ -93,6 +93,9 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_smoke/
   edit_condition_tokens/edit_condition_connector.pt
   latent_diffusion/latent_diffusion_generation.pt
   eval_latent/metrics.json
+  eval_latent/generated_latents.npy
+  eval_latent/prior_latents.npy
+  eval_latent/target_latents.npy
 ```
 
 ## Slurm
@@ -116,6 +119,9 @@ SMU3M_TRAIN_LIMIT=50000
 SMU3M_BATCH_SIZE=512
 SMU3M_EPOCHS=5
 SMU3M_DIFFUSION_TIMESTEPS=100
+SMU3M_DIFFUSION_OBJECTIVE=pred_x0
+SMU3M_DIFFUSION_TARGET=residual
+SMU3M_EVAL_SAMPLE_ETA=0.0
 SMU3M_REQUIRE_CUDA=1
 SMU3M_RESUME=1
 SMU3M_CHECKPOINT_EVERY=1
@@ -127,7 +133,35 @@ SMU3M_SLURM_MEM=16G
 
 Every training stage writes `checkpoints/latest.pt` after each epoch. If
 `SMU3M_RESUME=1`, the run script resumes from those latest checkpoints when
-they exist.
+they exist. For latent diffusion, the script only resumes checkpoints whose
+stored `diffusion_objective` and `diffusion_target` match the current settings;
+old collapsed `pred_noise` / full-target checkpoints are skipped and retrained.
+
+The current default trains Stage 3 as residual diffusion:
+
+```text
+connector prior = target fingerprint/property/delta heads from edit connector
+diffusion target = normalized target latent - connector prior
+sampling = deterministic DDIM, then add connector prior back
+```
+
+This tests whether Stage 3 can improve a learned edit prior rather than generate
+the whole molecular vector from pure noise.
+
+In `eval_latent/metrics.json`, check the prior baseline before reading the
+generated metrics:
+
+```text
+prior_target_fingerprint_cosine
+prior_target_property_mae
+generated_minus_prior_latent_mae
+latent_block_summary.fingerprint/generated_target_mae
+latent_block_summary.properties/generated_target_mae
+```
+
+If `prior_*` is already poor, the edit connector is the bottleneck. If prior is
+reasonable but generated is worse or barely moves from prior, Stage 3 diffusion
+still needs work.
 
 If you intentionally request a 40GB H100 MIG, use the throughput profile so the
 job increases batch/model size instead of wasting the larger allocation:
@@ -197,7 +231,8 @@ Eval on 1000 edit samples (`eval_latent/metrics.json`):
 
 Alignment and connector stages trained normally, but latent diffusion collapsed
 (loss stuck near 1.0). Generated latents are unrelated to source/target fingerprints.
-Next step: debug Stage 3 diffusion (latent normalization, loss target, training schedule).
+This motivated the current residual Stage 3 defaults (`pred_x0`, residual target,
+DDIM sampling, and prior-vs-generated diagnostics).
 
 ## Validation
 

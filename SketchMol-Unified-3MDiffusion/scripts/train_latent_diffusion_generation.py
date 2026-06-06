@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, Dataset
 
 
@@ -29,7 +30,7 @@ from sketchmol_unified_3m_diffusion.runtime import (  # noqa: E402
     move_batch_to_device,
     resolve_device,
 )
-from sketchmol_unified_3m_diffusion.unified_condition_dataset import EDIT_GENERATION, read_jsonl  # noqa: E402
+from sketchmol_unified_3m_diffusion.unified_condition_dataset import EDIT_GENERATION, PROPERTY_COLUMNS, read_jsonl  # noqa: E402
 from sketchmol_unified_3m_diffusion.unified_featurization import hidden_sequence_for_sample, target_latent_vector  # noqa: E402
 
 
@@ -69,6 +70,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--lr", type=float, default=1e-3)
     parser.add_argument("--fingerprint-dim", type=int, default=512)
     parser.add_argument("--timesteps", type=int, default=100)
+    parser.add_argument("--diffusion-objective", choices=["pred_noise", "pred_x0"], default="pred_x0")
+    parser.add_argument("--diffusion-target", choices=["target", "residual"], default="residual")
+    parser.add_argument("--prior-loss-weight", type=float, default=0.0)
     parser.add_argument("--hidden-dim", type=int, default=512)
     parser.add_argument("--depth", type=int, default=4)
     parser.add_argument("--limit", type=int, default=None)
@@ -123,9 +127,11 @@ def main() -> None:
         hidden_dim=args.hidden_dim,
         depth=args.depth,
     )
-    diffusion = GaussianLatentDiffusion(denoiser, timesteps=args.timesteps, objective="pred_noise").to(device)
+    diffusion = GaussianLatentDiffusion(denoiser, timesteps=args.timesteps, objective=args.diffusion_objective).to(device)
     params = list(diffusion.parameters()) + [p for p in connector.parameters() if p.requires_grad]
     optimizer = torch.optim.AdamW(params, lr=args.lr, weight_decay=1e-4)
+    latent_mean = torch.from_numpy(dataset.latent_mean.astype(np.float32)).to(device)
+    latent_std = torch.from_numpy(dataset.latent_std.astype(np.float32)).to(device)
 
     history = []
     config = _config(args, dataset, connector_config, latent_dim)
@@ -142,6 +148,9 @@ def main() -> None:
     for epoch in range(start_epoch, args.epochs):
         diffusion.train()
         losses = []
+        diffusion_losses = []
+        prior_losses = []
+        train_target_mae = []
         for batch in loader:
             batch = move_batch_to_device(batch, device)
             optimizer.zero_grad()
@@ -149,12 +158,35 @@ def main() -> None:
                 condition = connector(batch["hidden"].float())
             tokens = condition.tokens if args.train_connector else condition.tokens.detach()
             mask = condition.attention_mask if args.train_connector else condition.attention_mask.detach()
-            loss = diffusion.loss(batch["latent"].float(), tokens, mask)
+            target_latent = batch["latent"].float()
+            prior_latent = condition_prior_latent(
+                condition,
+                connector_config=connector_config,
+                latent_mean=latent_mean,
+                latent_std=latent_std,
+                fingerprint_dim=args.fingerprint_dim,
+                latent_dim=latent_dim,
+            )
+            if not args.train_connector:
+                prior_latent = prior_latent.detach()
+            diffusion_target = target_latent - prior_latent if args.diffusion_target == "residual" else target_latent
+            diffusion_loss = diffusion.loss(diffusion_target, tokens, mask)
+            prior_loss = F.mse_loss(prior_latent, target_latent)
+            loss = diffusion_loss + float(args.prior_loss_weight) * prior_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_(params, 1.0)
             optimizer.step()
             losses.append(float(loss.item()))
-        record = {"epoch": epoch + 1, "train_loss": float(np.mean(losses))}
+            diffusion_losses.append(float(diffusion_loss.item()))
+            prior_losses.append(float(prior_loss.item()))
+            train_target_mae.append(float(torch.mean(torch.abs(diffusion_target)).item()))
+        record = {
+            "epoch": epoch + 1,
+            "train_loss": float(np.mean(losses)),
+            "diffusion_loss": float(np.mean(diffusion_losses)),
+            "prior_mse": float(np.mean(prior_losses)),
+            "diffusion_target_mae": float(np.mean(train_target_mae)),
+        }
         history.append(record)
         print(json.dumps(record, sort_keys=True))
         if args.checkpoint_every > 0 and (epoch + 1) % args.checkpoint_every == 0:
@@ -193,6 +225,9 @@ def _config(
         "latent_dim": latent_dim,
         "fingerprint_dim": args.fingerprint_dim,
         "timesteps": args.timesteps,
+        "diffusion_objective": args.diffusion_objective,
+        "diffusion_target": args.diffusion_target,
+        "prior_loss_weight": args.prior_loss_weight,
         "hidden_dim": args.hidden_dim,
         "depth": args.depth,
         "connector_config": connector_config,
@@ -204,6 +239,46 @@ def _config(
         "num_workers": args.num_workers,
         "pin_memory": bool(args.pin_memory),
     }
+
+
+def condition_prior_latent(
+    condition,
+    *,
+    connector_config: dict[str, object],
+    latent_mean: torch.Tensor,
+    latent_std: torch.Tensor,
+    fingerprint_dim: int,
+    latent_dim: int,
+) -> torch.Tensor:
+    """Build a normalized latent prior from edit connector prediction heads."""
+
+    batch = condition.target_fingerprint_logits.shape[0]
+    device = condition.target_fingerprint_logits.device
+    dtype = condition.target_fingerprint_logits.dtype
+    num_props = len(PROPERTY_COLUMNS)
+
+    fingerprint = torch.sigmoid(condition.target_fingerprint_logits[:, :fingerprint_dim])
+    prop_mean = _config_tensor(connector_config, "property_mean", device=device, dtype=dtype)
+    prop_std = _config_tensor(connector_config, "property_std", device=device, dtype=dtype)
+    delta_mean = _config_tensor(connector_config, "delta_mean", device=device, dtype=dtype)
+    delta_std = _config_tensor(connector_config, "delta_std", device=device, dtype=dtype)
+    props = condition.target_properties[:, :num_props] * prop_std[:, :num_props] + prop_mean[:, :num_props]
+    deltas = condition.property_deltas[:, :num_props] * delta_std[:, :num_props] + delta_mean[:, :num_props]
+    active = torch.sigmoid(condition.active_logits[:, :num_props])
+
+    raw = torch.zeros(batch, latent_dim, device=device, dtype=dtype)
+    raw[:, :fingerprint_dim] = fingerprint
+    prop_start = fingerprint_dim
+    delta_start = fingerprint_dim + 32
+    active_start = fingerprint_dim + 64
+    raw[:, prop_start : prop_start + num_props] = props
+    raw[:, delta_start : delta_start + num_props] = deltas
+    raw[:, active_start : active_start + num_props] = active
+    return ((raw - latent_mean) / latent_std.clamp_min(1e-6)).to(dtype=torch.float32)
+
+
+def _config_tensor(config: dict[str, object], key: str, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    return torch.as_tensor(config[key], dtype=dtype, device=device)
 
 
 def _save_checkpoint(

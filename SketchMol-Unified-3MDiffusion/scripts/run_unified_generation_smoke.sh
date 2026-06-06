@@ -20,7 +20,11 @@ EPOCHS="${SMU3M_EPOCHS:-1}"
 EVAL_LIMIT="${SMU3M_EVAL_LIMIT:-1000}"
 EVAL_BATCH_SIZE="${SMU3M_EVAL_BATCH_SIZE:-64}"
 EVAL_SAMPLE_STEPS="${SMU3M_EVAL_SAMPLE_STEPS:-20}"
+EVAL_SAMPLE_ETA="${SMU3M_EVAL_SAMPLE_ETA:-0.0}"
 DIFFUSION_TIMESTEPS="${SMU3M_DIFFUSION_TIMESTEPS:-100}"
+DIFFUSION_OBJECTIVE="${SMU3M_DIFFUSION_OBJECTIVE:-pred_x0}"
+DIFFUSION_TARGET="${SMU3M_DIFFUSION_TARGET:-residual}"
+PRIOR_LOSS_WEIGHT="${SMU3M_PRIOR_LOSS_WEIGHT:-0.0}"
 ALIGNMENT_HIDDEN_DIM="${SMU3M_ALIGNMENT_HIDDEN_DIM:-512}"
 EDIT_HIDDEN_DIM="${SMU3M_EDIT_HIDDEN_DIM:-512}"
 DIFFUSION_HIDDEN_DIM="${SMU3M_DIFFUSION_HIDDEN_DIM:-512}"
@@ -41,6 +45,9 @@ echo "  output_dir=$OUTPUT_DIR"
 echo "  device=$DEVICE"
 echo "  require_cuda=$REQUIRE_CUDA"
 echo "  diffusion_timesteps=$DIFFUSION_TIMESTEPS"
+echo "  diffusion_objective=$DIFFUSION_OBJECTIVE"
+echo "  diffusion_target=$DIFFUSION_TARGET"
+echo "  eval_sample_eta=$EVAL_SAMPLE_ETA"
 echo "  batch_size=$BATCH_SIZE"
 echo "  num_workers=$NUM_WORKERS"
 echo "  pin_memory=$PIN_MEMORY"
@@ -153,6 +160,9 @@ DIFFUSION_ARGS=(
   --epochs "$EPOCHS" \
   --limit "$TRAIN_LIMIT" \
   --timesteps "$DIFFUSION_TIMESTEPS" \
+  --diffusion-objective "$DIFFUSION_OBJECTIVE" \
+  --diffusion-target "$DIFFUSION_TARGET" \
+  --prior-loss-weight "$PRIOR_LOSS_WEIGHT" \
   --hidden-dim "$DIFFUSION_HIDDEN_DIM" \
   --depth "$DIFFUSION_DEPTH" \
   --device "$DEVICE" \
@@ -162,7 +172,13 @@ if [ "$PIN_MEMORY" = "1" ]; then
   DIFFUSION_ARGS+=(--pin-memory)
 fi
 if [ "$RESUME" = "1" ] && [ -f "$OUTPUT_DIR/latent_diffusion/checkpoints/latest.pt" ]; then
-  DIFFUSION_ARGS+=(--resume-checkpoint "$OUTPUT_DIR/latent_diffusion/checkpoints/latest.pt")
+  if [ -f "$OUTPUT_DIR/latent_diffusion/metrics.json" ] \
+    && grep -q "\"diffusion_objective\": \"$DIFFUSION_OBJECTIVE\"" "$OUTPUT_DIR/latent_diffusion/metrics.json" \
+    && grep -q "\"diffusion_target\": \"$DIFFUSION_TARGET\"" "$OUTPUT_DIR/latent_diffusion/metrics.json"; then
+    DIFFUSION_ARGS+=(--resume-checkpoint "$OUTPUT_DIR/latent_diffusion/checkpoints/latest.pt")
+  else
+    echo "Existing latent diffusion checkpoint predates $DIFFUSION_OBJECTIVE/$DIFFUSION_TARGET settings; retraining latent diffusion."
+  fi
 fi
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_latent_diffusion_generation.py" "${DIFFUSION_ARGS[@]}"
 
@@ -174,6 +190,7 @@ fi
   --limit "$EVAL_LIMIT" \
   --batch-size "$EVAL_BATCH_SIZE" \
   --sample-steps "$EVAL_SAMPLE_STEPS" \
+  --sample-eta "$EVAL_SAMPLE_ETA" \
   --device "$DEVICE"
 
 echo "Unified smoke finished:"

@@ -42,6 +42,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=1000)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--sample-steps", type=int, default=None)
+    parser.add_argument("--sample-eta", type=float, default=0.0)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=17)
     return parser.parse_args()
@@ -86,17 +87,19 @@ def main() -> None:
     diffusion = GaussianLatentDiffusion(
         denoiser,
         timesteps=int(diffusion_config["timesteps"]),
-        objective="pred_noise",
+        objective=str(diffusion_config.get("diffusion_objective", "pred_noise")),
     ).to(device)
     diffusion.load_state_dict(diffusion_payload["diffusion_state"])
     diffusion.eval()
 
     latent_mean = torch.tensor(diffusion_config["latent_mean"], dtype=torch.float32, device=device)
     latent_std = torch.tensor(diffusion_config["latent_std"], dtype=torch.float32, device=device)
+    diffusion_target = str(diffusion_config.get("diffusion_target", "target"))
 
     rows = []
     generated_raw = []
     target_raw = []
+    prior_raw = []
     source_latents = []
     with torch.no_grad():
         for start in range(0, len(samples), args.batch_size):
@@ -113,9 +116,22 @@ def main() -> None:
                 condition.tokens,
                 condition.attention_mask,
                 steps=args.sample_steps,
+                eta=args.sample_eta,
             )
+            prior_norm = condition_prior_latent(
+                condition,
+                connector_config=connector_config,
+                latent_mean=latent_mean,
+                latent_std=latent_std,
+                fingerprint_dim=fingerprint_dim,
+                latent_dim=int(diffusion_config["latent_dim"]),
+            )
+            if diffusion_target == "residual":
+                sampled_norm = sampled_norm + prior_norm
             sampled = sampled_norm * latent_std + latent_mean
+            prior = prior_norm * latent_std + latent_mean
             generated_raw.append(sampled.cpu().numpy().astype(np.float32))
+            prior_raw.append(prior.cpu().numpy().astype(np.float32))
             target_raw.append(
                 np.stack([target_latent_vector(sample, fingerprint_dim=fingerprint_dim) for sample in batch]).astype(
                     np.float32
@@ -129,9 +145,14 @@ def main() -> None:
 
     gen = np.concatenate(generated_raw, axis=0)
     target = np.concatenate(target_raw, axis=0)
+    prior = np.concatenate(prior_raw, axis=0)
     source = np.concatenate(source_latents, axis=0)
-    per_row = _per_row_metrics(samples, gen, target, source, fingerprint_dim=fingerprint_dim)
+    np.save(args.output_dir / "generated_latents.npy", gen.astype(np.float32))
+    np.save(args.output_dir / "target_latents.npy", target.astype(np.float32))
+    np.save(args.output_dir / "prior_latents.npy", prior.astype(np.float32))
+    per_row = _per_row_metrics(samples, gen, target, source, prior=prior, fingerprint_dim=fingerprint_dim)
     metrics = _summarize(per_row)
+    metrics["latent_block_summary"] = _latent_block_summary(gen, target, source, prior, fingerprint_dim=fingerprint_dim)
     metrics.update(
         {
             "eval_jsonl": str(args.eval_jsonl),
@@ -141,6 +162,9 @@ def main() -> None:
             "rows": len(samples),
             "batch_size": int(args.batch_size),
             "sample_steps": int(args.sample_steps or diffusion.timesteps),
+            "sample_eta": float(args.sample_eta),
+            "diffusion_objective": str(diffusion_config.get("diffusion_objective", "pred_noise")),
+            "diffusion_target": diffusion_target,
             "fingerprint_dim": fingerprint_dim,
             "device": device_report(device),
         }
@@ -158,7 +182,48 @@ def _source_latent_vector(sample, *, fingerprint_dim: int) -> np.ndarray:
     return np.concatenate([fp, props, deltas, active]).astype(np.float32)
 
 
-def _per_row_metrics(samples, gen: np.ndarray, target: np.ndarray, source: np.ndarray, *, fingerprint_dim: int) -> list[dict[str, object]]:
+def condition_prior_latent(
+    condition,
+    *,
+    connector_config: dict[str, object],
+    latent_mean: torch.Tensor,
+    latent_std: torch.Tensor,
+    fingerprint_dim: int,
+    latent_dim: int,
+) -> torch.Tensor:
+    batch = condition.target_fingerprint_logits.shape[0]
+    device = condition.target_fingerprint_logits.device
+    dtype = condition.target_fingerprint_logits.dtype
+    num_props = len(PROPERTY_COLUMNS)
+    fingerprint = torch.sigmoid(condition.target_fingerprint_logits[:, :fingerprint_dim])
+    prop_mean = _config_tensor(connector_config, "property_mean", device=device, dtype=dtype)
+    prop_std = _config_tensor(connector_config, "property_std", device=device, dtype=dtype)
+    delta_mean = _config_tensor(connector_config, "delta_mean", device=device, dtype=dtype)
+    delta_std = _config_tensor(connector_config, "delta_std", device=device, dtype=dtype)
+    props = condition.target_properties[:, :num_props] * prop_std[:, :num_props] + prop_mean[:, :num_props]
+    deltas = condition.property_deltas[:, :num_props] * delta_std[:, :num_props] + delta_mean[:, :num_props]
+    active = torch.sigmoid(condition.active_logits[:, :num_props])
+    raw = torch.zeros(batch, latent_dim, device=device, dtype=dtype)
+    raw[:, :fingerprint_dim] = fingerprint
+    raw[:, fingerprint_dim : fingerprint_dim + num_props] = props
+    raw[:, fingerprint_dim + 32 : fingerprint_dim + 32 + num_props] = deltas
+    raw[:, fingerprint_dim + 64 : fingerprint_dim + 64 + num_props] = active
+    return ((raw - latent_mean) / latent_std.clamp_min(1e-6)).to(dtype=torch.float32)
+
+
+def _config_tensor(config: dict[str, object], key: str, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
+    return torch.as_tensor(config[key], dtype=dtype, device=device)
+
+
+def _per_row_metrics(
+    samples,
+    gen: np.ndarray,
+    target: np.ndarray,
+    source: np.ndarray,
+    *,
+    prior: np.ndarray | None = None,
+    fingerprint_dim: int,
+) -> list[dict[str, object]]:
     rows = []
     gen_fp = gen[:, :fingerprint_dim]
     target_fp = target[:, :fingerprint_dim]
@@ -170,25 +235,37 @@ def _per_row_metrics(samples, gen: np.ndarray, target: np.ndarray, source: np.nd
         target_props = target_property_vector(sample)
         gen_deltas = gen[idx, delta_start : delta_start + len(PROPERTY_COLUMNS)]
         target_deltas = property_delta_vector(sample)
-        rows.append(
-            {
-                "sample_id": sample.sample_id,
-                "property_count": sample.property_count,
-                "source_tanimoto": sample.source_tanimoto,
-                "source_similarity_bin": sample.source_similarity_bin,
-                "latent_mse": _mse(gen[idx], target[idx]),
-                "latent_mae": _mae(gen[idx], target[idx]),
-                "target_fingerprint_cosine": _cosine(gen_fp[idx], target_fp[idx]),
-                "source_fingerprint_cosine": _cosine(gen_fp[idx], source_fp[idx]),
-                "source_target_fingerprint_cosine": _cosine(source_fp[idx], target_fp[idx]),
-                "target_property_mae": _mae(gen_props, target_props),
-                "source_target_property_mae": _mae(
-                    source[idx, prop_start : prop_start + len(PROPERTY_COLUMNS)],
-                    target_props,
-                ),
-                "delta_mae": _mae(gen_deltas, target_deltas),
-            }
-        )
+        row = {
+            "sample_id": sample.sample_id,
+            "property_count": sample.property_count,
+            "source_tanimoto": sample.source_tanimoto,
+            "source_similarity_bin": sample.source_similarity_bin,
+            "latent_mse": _mse(gen[idx], target[idx]),
+            "latent_mae": _mae(gen[idx], target[idx]),
+            "target_fingerprint_cosine": _cosine(gen_fp[idx], target_fp[idx]),
+            "source_fingerprint_cosine": _cosine(gen_fp[idx], source_fp[idx]),
+            "source_target_fingerprint_cosine": _cosine(source_fp[idx], target_fp[idx]),
+            "target_property_mae": _mae(gen_props, target_props),
+            "source_target_property_mae": _mae(
+                source[idx, prop_start : prop_start + len(PROPERTY_COLUMNS)],
+                target_props,
+            ),
+            "delta_mae": _mae(gen_deltas, target_deltas),
+        }
+        if prior is not None:
+            prior_fp = prior[idx, :fingerprint_dim]
+            prior_props = prior[idx, prop_start : prop_start + len(PROPERTY_COLUMNS)]
+            prior_deltas = prior[idx, delta_start : delta_start + len(PROPERTY_COLUMNS)]
+            row.update(
+                {
+                    "prior_latent_mae": _mae(prior[idx], target[idx]),
+                    "prior_target_fingerprint_cosine": _cosine(prior_fp, target_fp[idx]),
+                    "prior_target_property_mae": _mae(prior_props, target_props),
+                    "prior_delta_mae": _mae(prior_deltas, target_deltas),
+                    "generated_minus_prior_latent_mae": _mae(gen[idx], prior[idx]),
+                }
+            )
+        rows.append(row)
     return rows
 
 
@@ -202,7 +279,13 @@ def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
         "target_property_mae",
         "source_target_property_mae",
         "delta_mae",
+        "prior_latent_mae",
+        "prior_target_fingerprint_cosine",
+        "prior_target_property_mae",
+        "prior_delta_mae",
+        "generated_minus_prior_latent_mae",
     ]
+    numeric_keys = [key for key in numeric_keys if rows and key in rows[0]]
     summary: dict[str, object] = {"overall": _mean_metrics(rows, numeric_keys)}
     by_count = {}
     for count in sorted({str(row.get("property_count", "")) for row in rows}):
@@ -215,6 +298,31 @@ def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
     summary["by_property_count"] = by_count
     summary["by_source_similarity_bin"] = by_similarity
     return summary
+
+
+def _latent_block_summary(
+    gen: np.ndarray,
+    target: np.ndarray,
+    source: np.ndarray,
+    prior: np.ndarray,
+    *,
+    fingerprint_dim: int,
+) -> dict[str, dict[str, float]]:
+    blocks = {
+        "fingerprint": slice(0, fingerprint_dim),
+        "properties": slice(fingerprint_dim, fingerprint_dim + len(PROPERTY_COLUMNS)),
+        "deltas": slice(fingerprint_dim + 32, fingerprint_dim + 32 + len(PROPERTY_COLUMNS)),
+        "active": slice(fingerprint_dim + 64, fingerprint_dim + 64 + len(PROPERTY_COLUMNS)),
+    }
+    return {
+        name: {
+            "generated_target_mae": _mae(gen[:, slc], target[:, slc]),
+            "prior_target_mae": _mae(prior[:, slc], target[:, slc]),
+            "source_target_mae": _mae(source[:, slc], target[:, slc]),
+            "generated_prior_mae": _mae(gen[:, slc], prior[:, slc]),
+        }
+        for name, slc in blocks.items()
+    }
 
 
 def _mean_metrics(rows: list[dict[str, object]], keys: list[str]) -> dict[str, float]:
