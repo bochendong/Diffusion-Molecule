@@ -1,5 +1,8 @@
 import csv
+import importlib.util
 import json
+import sys
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -150,3 +153,65 @@ def test_benchmark_export_writes_condition_aligned_latents(tmp_path):
     assert exported[0, 0] == 0.0
     assert exported[0, 7] == -3.0
     assert exported[0, 21] == -1.0
+
+
+def test_export_latent_benchmark_inputs_aligns_subset(tmp_path, monkeypatch):
+    eval_jsonl = tmp_path / "eval.jsonl"
+    eval_jsonl.write_text(
+        "\n".join(
+            [
+                json.dumps(
+                    {
+                        "sample_id": f"edit:multiproperty_edit:pair_{idx}_cond_00_2p",
+                        "task_type": EDIT_GENERATION,
+                        "split": "eval",
+                        "target_smiles": "CCN",
+                        "source_smiles": "CCO",
+                        "property_count": "2",
+                        "source_tanimoto": "0.5",
+                        "source_similarity_bin": "medium_similarity",
+                        "metadata": {"condition_id": f"pair_{idx}_cond_00_2p"},
+                    }
+                )
+                for idx in range(5)
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    latents_path = tmp_path / "generated_latents.npy"
+    np.save(latents_path, np.zeros((2, 80), dtype=np.float32))
+    metrics_path = tmp_path / "metrics.json"
+    metrics_path.write_text(json.dumps({"rows": 2, "fingerprint_dim": 4}), encoding="utf-8")
+    predictions_path = tmp_path / "predictions.csv"
+    with predictions_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=["sample_id"])
+        writer.writeheader()
+        writer.writerow({"sample_id": "edit:multiproperty_edit:pair_1_cond_00_2p"})
+        writer.writerow({"sample_id": "edit:multiproperty_edit:pair_0_cond_00_2p"})
+
+    argv = [
+        "export_latent_benchmark_inputs.py",
+        "--eval-jsonl",
+        str(eval_jsonl),
+        "--latents-npy",
+        str(latents_path),
+        "--output-dir",
+        str(tmp_path / "export"),
+        "--metrics-json",
+        str(metrics_path),
+        "--predictions-csv",
+        str(predictions_path),
+    ]
+    monkeypatch.setattr(sys, "argv", argv)
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "export_latent_benchmark_inputs.py"
+    spec = importlib.util.spec_from_file_location("export_latent_benchmark_inputs", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    module.main()
+
+    index = list(csv.DictReader((tmp_path / "export" / "index.csv").open(newline="", encoding="utf-8")))
+    assert len(index) == 2
+    assert index[0]["sample_id"] == "edit:multiproperty_edit:pair_1_cond_00_2p"
+    assert index[1]["sample_id"] == "edit:multiproperty_edit:pair_0_cond_00_2p"

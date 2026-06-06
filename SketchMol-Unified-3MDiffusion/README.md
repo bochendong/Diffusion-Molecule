@@ -249,11 +249,62 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_ma
 Those files contain the comparison-ready numbers: 2p-7p strict success,
 mean/median source Tanimoto, and `strict@Tanimoto>=0.4/0.6/0.8`.
 
+## Diffusion Refine
+
+After the first residual Stage 3 run, continue training only diffusion plus
+eval and materialized benchmark:
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
+```
+
+Useful overrides:
+
+```text
+SMU3M_DIFFUSION_EPOCHS=150
+SMU3M_DIFFUSION_LR=3e-4
+SMU3M_TRAIN_DIFFUSION_CONNECTOR=0
+SMU3M_RUN_MATERIALIZED_BENCHMARK=1
+```
+
 ## Latest Run Results
 
 Artifacts live under `outputs/unified_generation_3m_edit_v2/`.
 
-### Current best: job `15692318` (Jun 6 2026, ~2.5 min)
+### Diffusion refine: job `15694324` (Jun 6 2026, ~3.7 min)
+
+Resumed residual diffusion from epoch 50 to 150 with `lr=3e-4`, then reran
+eval and materialized benchmark. Log: `logs/smu3m-diff-refine-15694324.log`.
+
+| Stage | Epochs | Final train loss | Status |
+| --- | ---: | ---: | --- |
+| Latent diffusion | 51–150 | 0.067 → **0.034** | loss down |
+| `diffusion_target_mae` | 51–150 | ~0.146 | flat |
+
+Eval on 1000 edit samples:
+
+| Metric | `15692318` (ep50) | `15694324` (ep150) |
+| --- | ---: | ---: |
+| `target_fingerprint_cosine` | 0.392 | 0.381 |
+| `target_property_mae` | 7.25 | 7.27 |
+| `generated_minus_prior_latent_mae` | 0.045 | **0.071** |
+| `prior_target_property_mae` | 7.43 | 7.43 |
+
+Materialized benchmark joint strict (2p):
+
+| Method | `15692318` | `15694324` |
+| --- | ---: | ---: |
+| `scaffold_property_retrieval` | 0.593 | 0.593 |
+| `edit_latent_scaffold_source_rerank` | 0.454 | 0.453 |
+| `source_identity` | 0.446 | 0.446 |
+
+Extra diffusion epochs lowered MSE loss but did not improve retrieval metrics.
+The frozen connector prior still dominates (`prior_target_property_mae` ≈ 7.43).
+Next step: joint connector + diffusion fine-tune (`SMU3M_TRAIN_DIFFUSION_CONNECTOR=1`).
+
+### Residual fix: job `15692318` (Jun 6 2026, ~2.5 min)
 
 Resumed alignment/connector from epoch 50, retrained Stage 3 diffusion with the
 new defaults (`pred_x0`, `residual` target, DDIM `sample_eta=0.0`). Log:

@@ -38,6 +38,8 @@ MAX_EDIT_LATENT_CANDIDATES="${SMU3M_MAX_EDIT_LATENT_CANDIDATES:-20000}"
 MAX_EVAL_PER_PROPERTY_COUNT="${SMMED_MAX_EVAL_PER_PROPERTY_COUNT:-5000}"
 SCAFFOLD_FALLBACK_MODE="${SMMED_SCAFFOLD_FALLBACK_MODE:-source_identity}"
 LIMIT_EVAL_ROWS="${SMMED_LIMIT_EVAL_ROWS:-}"
+EVAL_PREDICTIONS="${SMU3M_EVAL_PREDICTIONS:-$EVAL_LATENT_DIR/predictions.csv}"
+EVAL_EXPORT_LIMIT="${SMU3M_EVAL_EXPORT_LIMIT:-}"
 ALLOW_EVAL_TARGET_CANDIDATES="${SMMED_ALLOW_EVAL_TARGET_CANDIDATES:-0}"
 SEED="${SMMED_SEED:-7}"
 
@@ -72,7 +74,27 @@ if [[ ! -f "$EVAL_LATENT_DIR/edit_latent_predictions.npy" \
   if [[ -f "$EVAL_METRICS" ]]; then
     EXPORT_ARGS+=(--metrics-json "$EVAL_METRICS")
   fi
+  if [[ -f "$EVAL_PREDICTIONS" ]]; then
+    EXPORT_ARGS+=(--predictions-csv "$EVAL_PREDICTIONS")
+  fi
+  if [[ -n "$EVAL_EXPORT_LIMIT" ]]; then
+    EXPORT_ARGS+=(--limit "$EVAL_EXPORT_LIMIT")
+  fi
   "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_latent_benchmark_inputs.py" "${EXPORT_ARGS[@]}"
+fi
+
+if [[ -z "$LIMIT_EVAL_ROWS" && -f "$EVAL_METRICS" ]]; then
+  LIMIT_EVAL_ROWS="$("$PYTHON_BIN" - "$EVAL_METRICS" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+payload = json.loads(path.read_text(encoding="utf-8"))
+rows = payload.get("rows")
+print(int(rows) if rows else "")
+PY
+)"
 fi
 
 LIMIT_ARGS=()
