@@ -1,0 +1,24 @@
+[project]
+name = "sketchmol-unified-3m-diffusion"
+version = "0.1.0"
+description = "Standalone 3M-style unified molecular alignment and latent diffusion experiments"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+chem = [
+  "rdkit",
+]
+model = [
+  "numpy",
+  "torch",
+]
+test = [
+  "numpy",
+  "pytest",
+  "torch",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

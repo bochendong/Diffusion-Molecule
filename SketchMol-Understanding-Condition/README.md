@@ -23,38 +23,23 @@ SketchMol 现有条件流已经是 cross-attention：`MixedEmbedderV2` 把离散
 当前主实验不再以小 CNN / hashed text proxy 作为方法主体。那些结果只保留为
 pipeline sanity check 和 ablation 负控。
 
-## 0.2 旧 unified smoke 链路
+## 0.2 独立 unified 3M-Diffusion 版本
 
-这条链路来自 3M-Diffusion 启发，主要用途是做早期 smoke test：
-
-```text
-molecule-language / image-language alignment pretraining
-  -> edit-aware condition tokens
-  -> latent diffusion generation stream
-```
-
-代码入口：
+3M-Diffusion 启发的 unified smoke/prototype 已经独立到：
 
 ```text
-sketchmol_understanding_condition/unified_condition_dataset.py
-sketchmol_understanding_condition/edit_condition_tokens.py
-sketchmol_understanding_condition/latent_diffusion_generation.py
-sketchmol_understanding_condition/unified_featurization.py
+SketchMol-Unified-3MDiffusion/
 ```
 
-它会依次运行：
+这个版本有自己的 Python package、scripts、tests 和 `SMU3M_*` 环境变量前缀，
+不再从 `sketchmol_understanding_condition` import 代码。后续如果要改
+description pretraining、edit-aware condition tokens 或 latent-vector diffusion
+这条 3M-style unified 链路，优先改新目录，避免影响当前 understanding stream 和
+UniVideo-style generation stream。
 
-```text
-export_unified_condition_dataset.py
-train_alignment_pretraining.py
-train_edit_condition_tokens.py
-train_latent_diffusion_generation.py
-```
-
-当前 generation stream 先用 `target Morgan fingerprint + target properties + edit
-metadata` 作为 molecular latent，验证 Understanding tokens 到 latent diffusion
-的训练闭环。后续主线不再依赖 3M-Diffusion 数据或其他仓库脚本，而是统一收敛到
-`SketchMol-Understanding-Condition` 内部的 UniVideo-style 双流实现。
+本目录里仍保留少量 shared helper（例如统一 edit row schema 和 latent diffusion
+primitive），因为 UniVideo-style generation stream 还会用到它们；它们不再作为
+3M unified 实验的修改入口。
 
 ## 0.3 UniVideo-style 双流生成模型
 
