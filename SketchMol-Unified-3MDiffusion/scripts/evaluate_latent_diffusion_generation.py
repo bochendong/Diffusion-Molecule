@@ -41,6 +41,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--diffusion-checkpoint", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--limit", type=int, default=1000)
+    parser.add_argument("--max-eval-per-property-count", type=int, default=None)
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--sample-steps", type=int, default=None)
     parser.add_argument("--sample-eta", type=float, default=0.0)
@@ -64,6 +65,8 @@ def main() -> None:
     fingerprint_dim = int(diffusion_config["fingerprint_dim"])
 
     samples = [sample for sample in read_jsonl(args.eval_jsonl) if sample.task_type == EDIT_GENERATION]
+    if args.max_eval_per_property_count is not None and args.max_eval_per_property_count > 0:
+        samples = _sample_by_property_count(samples, args.max_eval_per_property_count, seed=args.seed)
     if args.limit is not None and args.limit > 0:
         samples = samples[: args.limit]
     if not samples:
@@ -76,7 +79,8 @@ def main() -> None:
         hidden_dim=int(connector_config["hidden_dim"]),
         fingerprint_dim=int(connector_config["fingerprint_dim"]),
     ).to(device)
-    connector.load_state_dict(connector_payload["model_state"])
+    connector_state, connector_source = _connector_state_for_eval(connector_payload, diffusion_payload)
+    connector.load_state_dict(connector_state)
     connector.eval()
 
     denoiser = EditLatentDenoiser(
@@ -173,6 +177,8 @@ def main() -> None:
             "diffusion_objective": str(diffusion_config.get("diffusion_objective", "pred_noise")),
             "diffusion_target": diffusion_target,
             "fingerprint_dim": fingerprint_dim,
+            "connector_source": connector_source,
+            "max_eval_per_property_count": args.max_eval_per_property_count,
             "benchmark_export": benchmark_export,
             "device": device_report(device),
         }
@@ -180,6 +186,44 @@ def main() -> None:
     (args.output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     _write_rows(args.output_dir / "predictions.csv", per_row)
     print(json.dumps(metrics, indent=2, sort_keys=True))
+
+
+def _connector_state_for_eval(
+    connector_payload: dict[str, object],
+    diffusion_payload: dict[str, object],
+) -> tuple[dict[str, torch.Tensor], str]:
+    diffusion_config = diffusion_payload.get("config", {})
+    if (
+        isinstance(diffusion_config, dict)
+        and bool(diffusion_config.get("train_connector", False))
+        and "connector_state" in diffusion_payload
+    ):
+        return diffusion_payload["connector_state"], "diffusion_checkpoint.connector_state"
+    return connector_payload["model_state"], "condition_connector.model_state"
+
+
+def _sample_by_property_count(samples, limit_per_count: int, *, seed: int):
+    by_count = {}
+    for sample in samples:
+        key = str(sample.property_count or "unknown")
+        by_count.setdefault(key, []).append(sample)
+    selected = []
+    rng = np.random.default_rng(seed)
+    for key in sorted(by_count, key=_property_count_sort_key):
+        group = by_count[key]
+        if len(group) <= limit_per_count:
+            selected.extend(group)
+            continue
+        indices = sorted(rng.choice(len(group), size=limit_per_count, replace=False).tolist())
+        selected.extend(group[idx] for idx in indices)
+    return selected
+
+
+def _property_count_sort_key(value: str) -> tuple[int, str]:
+    try:
+        return (0, f"{int(float(value)):04d}")
+    except ValueError:
+        return (1, value)
 
 
 def _source_latent_vector(sample, *, fingerprint_dim: int) -> np.ndarray:

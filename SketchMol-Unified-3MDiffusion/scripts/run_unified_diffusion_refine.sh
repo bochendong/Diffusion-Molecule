@@ -19,32 +19,58 @@ BATCH_SIZE="${SMU3M_BATCH_SIZE:-512}"
 EVAL_BATCH_SIZE="${SMU3M_EVAL_BATCH_SIZE:-512}"
 NUM_WORKERS="${SMU3M_NUM_WORKERS:-0}"
 PIN_MEMORY="${SMU3M_PIN_MEMORY:-0}"
-DIFFUSION_EPOCHS="${SMU3M_DIFFUSION_EPOCHS:-150}"
+DIFFUSION_EPOCHS="${SMU3M_DIFFUSION_EPOCHS:-}"
+DIFFUSION_EXTRA_EPOCHS="${SMU3M_DIFFUSION_EXTRA_EPOCHS:-100}"
 DIFFUSION_LR="${SMU3M_DIFFUSION_LR:-3e-4}"
-EVAL_LIMIT="${SMU3M_EVAL_LIMIT:-1000}"
+EVAL_LIMIT="${SMU3M_EVAL_LIMIT:-0}"
+MAX_EVAL_PER_PROPERTY_COUNT="${SMU3M_MAX_EVAL_PER_PROPERTY_COUNT:-250}"
 EVAL_SAMPLE_STEPS="${SMU3M_EVAL_SAMPLE_STEPS:-20}"
 EVAL_SAMPLE_ETA="${SMU3M_EVAL_SAMPLE_ETA:-0.0}"
 DIFFUSION_TIMESTEPS="${SMU3M_DIFFUSION_TIMESTEPS:-100}"
 DIFFUSION_OBJECTIVE="${SMU3M_DIFFUSION_OBJECTIVE:-pred_x0}"
 DIFFUSION_TARGET="${SMU3M_DIFFUSION_TARGET:-residual}"
-PRIOR_LOSS_WEIGHT="${SMU3M_PRIOR_LOSS_WEIGHT:-0.0}"
+PRIOR_LOSS_WEIGHT="${SMU3M_PRIOR_LOSS_WEIGHT:-0.25}"
 DIFFUSION_HIDDEN_DIM="${SMU3M_DIFFUSION_HIDDEN_DIM:-512}"
 DIFFUSION_DEPTH="${SMU3M_DIFFUSION_DEPTH:-4}"
 CHECKPOINT_EVERY="${SMU3M_CHECKPOINT_EVERY:-1}"
 RESUME="${SMU3M_RESUME:-1}"
 REQUIRE_CUDA="${SMU3M_REQUIRE_CUDA:-1}"
 DEVICE="${SMU3M_DEVICE:-auto}"
-TRAIN_DIFFUSION_CONNECTOR="${SMU3M_TRAIN_DIFFUSION_CONNECTOR:-0}"
+TRAIN_DIFFUSION_CONNECTOR="${SMU3M_TRAIN_DIFFUSION_CONNECTOR:-1}"
 RUN_MATERIALIZED_BENCHMARK="${SMU3M_RUN_MATERIALIZED_BENCHMARK:-1}"
+
+if [ -z "$DIFFUSION_EPOCHS" ]; then
+  DIFFUSION_EPOCHS="$("$PYTHON_BIN" - "$DIFFUSION_DIR/checkpoints/latest.pt" "$DIFFUSION_EXTRA_EPOCHS" <<'PY'
+import sys
+import warnings
+from pathlib import Path
+
+import torch
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+checkpoint = Path(sys.argv[1])
+extra_epochs = int(float(sys.argv[2]))
+if checkpoint.exists():
+    payload = torch.load(checkpoint, map_location="cpu")
+    start_epoch = int(payload.get("epoch", 0))
+else:
+    start_epoch = 0
+print(start_epoch + max(1, extra_epochs))
+PY
+)"
+fi
 
 echo "Running Unified 3M Stage 3 diffusion refine"
 echo "  python=$PYTHON_BIN"
 echo "  output_dir=$OUTPUT_DIR"
 echo "  diffusion_dir=$DIFFUSION_DIR"
 echo "  diffusion_epochs=$DIFFUSION_EPOCHS"
+echo "  diffusion_extra_epochs=$DIFFUSION_EXTRA_EPOCHS"
 echo "  diffusion_lr=$DIFFUSION_LR"
+echo "  prior_loss_weight=$PRIOR_LOSS_WEIGHT"
 echo "  train_diffusion_connector=$TRAIN_DIFFUSION_CONNECTOR"
 echo "  eval_limit=$EVAL_LIMIT"
+echo "  max_eval_per_property_count=$MAX_EVAL_PER_PROPERTY_COUNT"
 echo "  run_materialized_benchmark=$RUN_MATERIALIZED_BENCHMARK"
 
 for required in "$TRAIN_JSONL" "$EVAL_JSONL" "$CONNECTOR"; do
@@ -106,6 +132,7 @@ fi
   --diffusion-checkpoint "$DIFFUSION_DIR/latent_diffusion_generation.pt" \
   --output-dir "$EVAL_DIR" \
   --limit "$EVAL_LIMIT" \
+  --max-eval-per-property-count "$MAX_EVAL_PER_PROPERTY_COUNT" \
   --batch-size "$EVAL_BATCH_SIZE" \
   --sample-steps "$EVAL_SAMPLE_STEPS" \
   --sample-eta "$EVAL_SAMPLE_ETA" \

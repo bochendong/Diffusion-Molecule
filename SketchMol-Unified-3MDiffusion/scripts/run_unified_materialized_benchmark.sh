@@ -36,6 +36,7 @@ SOURCE_TANIMOTO_THRESHOLDS="${SMMED_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
 MAX_GLOBAL_CANDIDATES="${SMMED_MAX_GLOBAL_CANDIDATES:-20000}"
 MAX_EDIT_LATENT_CANDIDATES="${SMU3M_MAX_EDIT_LATENT_CANDIDATES:-20000}"
 MAX_EVAL_PER_PROPERTY_COUNT="${SMMED_MAX_EVAL_PER_PROPERTY_COUNT:-5000}"
+RESTRICT_TO_EDIT_LATENT_INDEX="${SMU3M_RESTRICT_BENCHMARK_TO_EDIT_LATENT_INDEX:-1}"
 SCAFFOLD_FALLBACK_MODE="${SMMED_SCAFFOLD_FALLBACK_MODE:-source_identity}"
 LIMIT_EVAL_ROWS="${SMMED_LIMIT_EVAL_ROWS:-}"
 EVAL_PREDICTIONS="${SMU3M_EVAL_PREDICTIONS:-$EVAL_LATENT_DIR/predictions.csv}"
@@ -55,6 +56,7 @@ echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
 echo "  methods=$METHODS"
 echo "  fingerprint_weight=$FINGERPRINT_WEIGHT"
 echo "  source_tanimoto_thresholds=$SOURCE_TANIMOTO_THRESHOLDS"
+echo "  restrict_to_edit_latent_index=$RESTRICT_TO_EDIT_LATENT_INDEX"
 
 for required in "$UNIFIED_EVAL_JSONL" "$GENERATED_LATENTS" "$CONDITION_ROWS" "$MOLECULE_DB"; do
   if [[ ! -f "$required" ]]; then
@@ -83,20 +85,6 @@ if [[ ! -f "$EVAL_LATENT_DIR/edit_latent_predictions.npy" \
   "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_latent_benchmark_inputs.py" "${EXPORT_ARGS[@]}"
 fi
 
-if [[ -z "$LIMIT_EVAL_ROWS" && -f "$EVAL_METRICS" ]]; then
-  LIMIT_EVAL_ROWS="$("$PYTHON_BIN" - "$EVAL_METRICS" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-path = Path(sys.argv[1])
-payload = json.loads(path.read_text(encoding="utf-8"))
-rows = payload.get("rows")
-print(int(rows) if rows else "")
-PY
-)"
-fi
-
 LIMIT_ARGS=()
 if [[ -n "$LIMIT_EVAL_ROWS" ]]; then
   LIMIT_ARGS=(--limit-eval-rows "$LIMIT_EVAL_ROWS")
@@ -105,6 +93,10 @@ TARGET_POOL_ARGS=()
 if [[ "$ALLOW_EVAL_TARGET_CANDIDATES" == "1" ]]; then
   TARGET_POOL_ARGS=(--allow-eval-target-candidates)
 fi
+RESTRICT_ARGS=()
+if [[ "$RESTRICT_TO_EDIT_LATENT_INDEX" == "1" ]]; then
+  RESTRICT_ARGS=(--restrict-eval-to-edit-latent-index)
+fi
 
 "$PYTHON_BIN" "$DATASET_PROJECT_DIR/scripts/benchmark_multiproperty_retrieval.py" \
   --condition-rows-csv "$CONDITION_ROWS" \
@@ -112,6 +104,7 @@ fi
   --candidate-molecule-db-csv "$MOLECULE_DB" \
   --methods "$METHODS" \
   --edit-latent-dir "$EVAL_LATENT_DIR" \
+  "${RESTRICT_ARGS[@]}" \
   --edit-latent-property-weight "$PROPERTY_WEIGHT" \
   --edit-latent-delta-weight "$DELTA_WEIGHT" \
   --edit-latent-direction-weight "$DIRECTION_WEIGHT" \

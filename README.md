@@ -421,6 +421,16 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_ma
   benchmark_decoded.csv
 ```
 
+如果要继续修当前瓶颈，下一轮直接跑 joint connector + diffusion refine。默认会从
+latest checkpoint 额外训练 100 epoch，打开 connector fine-tune 和 prior loss，
+并用 balanced 2p-7p eval 一起输出 SketchMol reference 对照：
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
+```
+
 ### 5. 跑 SketchMol baseline / OCR benchmark
 
 真实 SketchMol baseline 依赖 vendored SketchMol repo 和 MolScribe 环境。提交前确认 checkpoint

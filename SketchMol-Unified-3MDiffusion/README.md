@@ -260,12 +260,20 @@ SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
 ```
 
+The default refine path now jointly fine-tunes the edit connector and diffusion
+from the latest checkpoint, then evaluates a balanced 2p-7p sample and runs the
+materialized benchmark. This avoids the frozen-prior bottleneck seen in job
+`15694324` and prints the SketchMol structured reference row in the benchmark
+report.
+
 Useful overrides:
 
 ```text
-SMU3M_DIFFUSION_EPOCHS=150
+SMU3M_DIFFUSION_EXTRA_EPOCHS=100
 SMU3M_DIFFUSION_LR=3e-4
-SMU3M_TRAIN_DIFFUSION_CONNECTOR=0
+SMU3M_TRAIN_DIFFUSION_CONNECTOR=1
+SMU3M_PRIOR_LOSS_WEIGHT=0.25
+SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=250
 SMU3M_RUN_MATERIALIZED_BENCHMARK=1
 ```
 

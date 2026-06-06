@@ -187,3 +187,14 @@ def test_edit_latent_candidate_can_use_fingerprint_rerank():
 
     assert candidate["smiles"] == "good"
     assert fallback == ""
+
+
+def test_condition_ids_from_edit_latent_index_respects_variant(tmp_path):
+    index_path = tmp_path / "index.csv"
+    with index_path.open("w", newline="", encoding="utf-8") as handle:
+        writer = benchmark.csv.DictWriter(handle, fieldnames=["condition_id", "variant"])
+        writer.writeheader()
+        writer.writerow({"condition_id": "cond_full", "variant": "full"})
+        writer.writerow({"condition_id": "cond_text", "variant": "text_only"})
+
+    assert benchmark._condition_ids_from_edit_latent_index(tmp_path, variant="full") == {"cond_full"}

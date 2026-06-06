@@ -215,3 +215,31 @@ def test_export_latent_benchmark_inputs_aligns_subset(tmp_path, monkeypatch):
     assert len(index) == 2
     assert index[0]["sample_id"] == "edit:multiproperty_edit:pair_1_cond_00_2p"
     assert index[1]["sample_id"] == "edit:multiproperty_edit:pair_0_cond_00_2p"
+
+
+def test_eval_sampling_keeps_multiple_property_counts():
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_latent_diffusion_generation.py"
+    spec = importlib.util.spec_from_file_location("evaluate_latent_diffusion_generation", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    samples = [
+        UnifiedConditionSample(
+            sample_id=f"s{count}_{idx}",
+            task_type=EDIT_GENERATION,
+            split="eval",
+            prompt="",
+            target_smiles="CCN",
+            property_count=str(count),
+        )
+        for count in (2, 3, 4)
+        for idx in range(5)
+    ]
+
+    selected = module._sample_by_property_count(samples, 2, seed=7)
+    by_count = {}
+    for sample in selected:
+        by_count[sample.property_count] = by_count.get(sample.property_count, 0) + 1
+
+    assert by_count == {"2": 2, "3": 2, "4": 2}

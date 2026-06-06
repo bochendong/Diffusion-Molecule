@@ -103,6 +103,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--condition-feature-array", choices=["pooled", "query_tokens"], default="pooled")
     parser.add_argument("--condition-feature-variant", default="full")
     parser.add_argument("--edit-latent-dir", type=Path, default=None)
+    parser.add_argument("--restrict-eval-to-edit-latent-index", action="store_true")
     parser.add_argument("--max-edit-latent-candidates", type=int, default=20000)
     parser.add_argument("--edit-latent-property-weight", type=float, default=1.0)
     parser.add_argument("--edit-latent-delta-weight", type=float, default=0.35)
@@ -132,6 +133,14 @@ def main() -> None:
     rows = _read_rows(args.condition_rows_csv)
     train_rows = [row for row in rows if row.get("split") != args.eval_split]
     eval_rows = [row for row in rows if row.get("split") == args.eval_split]
+    if args.restrict_eval_to_edit_latent_index:
+        if args.edit_latent_dir is None:
+            raise ValueError("--restrict-eval-to-edit-latent-index requires --edit-latent-dir")
+        edit_latent_condition_ids = _condition_ids_from_edit_latent_index(
+            args.edit_latent_dir,
+            variant=args.condition_feature_variant,
+        )
+        eval_rows = [row for row in eval_rows if row.get("condition_id", "") in edit_latent_condition_ids]
     if args.max_eval_per_property_count is not None:
         eval_rows = _sample_eval_rows_by_property_count(eval_rows, args.max_eval_per_property_count, seed=args.seed)
     if args.limit_eval_rows is not None:
@@ -217,6 +226,7 @@ def main() -> None:
         "rerank_candidates": args.rerank_candidates,
         "rerank_property_weight": args.rerank_property_weight,
         "edit_latent_dir": str(args.edit_latent_dir) if args.edit_latent_dir else None,
+        "restrict_eval_to_edit_latent_index": bool(args.restrict_eval_to_edit_latent_index),
         "edit_latent_property_weight": args.edit_latent_property_weight,
         "edit_latent_delta_weight": args.edit_latent_delta_weight,
         "edit_latent_direction_weight": args.edit_latent_direction_weight,
@@ -773,6 +783,23 @@ def _build_edit_latent_context(
     }
 
 
+def _condition_ids_from_edit_latent_index(edit_latent_dir: Path, *, variant: str) -> set[str]:
+    index_path = edit_latent_dir / "index.csv"
+    if not index_path.exists():
+        raise FileNotFoundError(f"Missing edit latent index: {index_path}")
+    condition_ids = set()
+    with index_path.open(newline="", encoding="utf-8") as handle:
+        for row in csv.DictReader(handle):
+            if row.get("variant") != variant:
+                continue
+            condition_id = row.get("condition_id", "")
+            if condition_id:
+                condition_ids.add(condition_id)
+    if not condition_ids:
+        raise ValueError(f"No condition IDs found in {index_path} for variant={variant}")
+    return condition_ids
+
+
 def _best_edit_latent_candidate(
     row: dict[str, str],
     pool: list[dict[str, object]],
@@ -1051,6 +1078,7 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
         f"- eval target candidates excluded from retrieval pool: `{not args.allow_eval_target_candidates}`",
         f"- scaffold fallback mode: `{args.scaffold_fallback_mode}`",
         f"- source Tanimoto thresholds: `{','.join(str(value) for value in source_tanimoto_thresholds)}`",
+        f"- restrict eval to edit-latent index: `{args.restrict_eval_to_edit_latent_index}`",
     ]
     if args.condition_features_dir is not None:
         lines.extend(

@@ -140,7 +140,35 @@ def main() -> None:
         payload = torch.load(args.resume_checkpoint, map_location=device)
         diffusion.load_state_dict(payload["diffusion_state"])
         connector.load_state_dict(payload["connector_state"])
-        optimizer.load_state_dict(payload["optimizer_state"])
+        resume_config = payload.get("config", {})
+        resume_train_connector = bool(resume_config.get("train_connector", False)) if isinstance(resume_config, dict) else False
+        if resume_train_connector == bool(args.train_connector):
+            try:
+                optimizer.load_state_dict(payload["optimizer_state"])
+            except ValueError as exc:
+                print(
+                    json.dumps(
+                        {
+                            "event": "optimizer_state_skipped",
+                            "reason": str(exc),
+                            "checkpoint": str(args.resume_checkpoint),
+                        },
+                        sort_keys=True,
+                    )
+                )
+        else:
+            print(
+                json.dumps(
+                    {
+                        "event": "optimizer_state_skipped",
+                        "reason": "train_connector setting changed",
+                        "checkpoint_train_connector": resume_train_connector,
+                        "current_train_connector": bool(args.train_connector),
+                        "checkpoint": str(args.resume_checkpoint),
+                    },
+                    sort_keys=True,
+                )
+            )
         history = list(payload.get("history", []))
         start_epoch = int(payload.get("epoch", 0))
         print(json.dumps({"event": "resumed", "checkpoint": str(args.resume_checkpoint), "start_epoch": start_epoch}, sort_keys=True))
