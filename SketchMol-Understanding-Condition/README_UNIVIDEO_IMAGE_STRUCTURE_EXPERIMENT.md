@@ -68,18 +68,20 @@ PY
 
 ```bash
 export SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth
+export SUCC_MOLSCRIBE_WORKDIR=${SUCC_MOLSCRIBE_WORKDIR:-"Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate"}
 test -f "$SUCC_MOLSCRIBE_MODEL"
 
-$SUCC_PYTHON_BIN - <<'PY'
+PYTHONPATH="$SUCC_MOLSCRIBE_WORKDIR${PYTHONPATH:+:$PYTHONPATH}" $SUCC_PYTHON_BIN - <<'PY'
 from molscribe import MolScribe
 print("molscribe import ok")
 PY
 ```
 
-如果 MolScribe 不是 pip 包，而是在某个 checkout 里，额外设置：
+如果 MolScribe 不是 pip 包，而是在某个 checkout 里，额外设置到包含
+`molscribe/` 包的目录；对本仓库的 SketchMol checkout，默认就是：
 
 ```bash
-export SUCC_MOLSCRIBE_WORKDIR=/path/to/MolScribe
+export SUCC_MOLSCRIBE_WORKDIR="Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate"
 ```
 
 检查大 VLM 模型路径：
@@ -287,6 +289,43 @@ Diagnostics:
 
 注意：`strict` 是按所有生成样本算的，OCR 失败或 RDKit invalid 都算失败；`success_rate_strict_in_valid_mols` 只在 valid 分子内部算，用于诊断，不作为唯一主结论。
 
+## Latest Run Results
+
+### Upstream training (`15688319`, `succ-univideo-mol`)
+
+Completed dataset export, image VAE, and 3-stage UniVideo training. Latent eval on
+1000 samples (`univideo_molecule/eval_latent/metrics.json`):
+
+| Metric | Value |
+| --- | ---: |
+| `source_latent_cosine` | 0.002 |
+| `target_latent_cosine` | 0.003 |
+| `latent_mae` / `latent_mse` | 0.393 / 0.375 |
+
+Image VAE reconstruction loss stayed near 0.047; diffusion loss stayed near 1.0.
+All 1000 decoded images are blank white 256×256 PNGs (~758 bytes each).
+
+MolScribe OCR failed in this job (`ModuleNotFoundError: No module named 'molscribe'`)
+because `SUCC_MOLSCRIBE_WORKDIR` was not set.
+
+### OCR retry (`15690165`, `succ-univideo-mol-ocr-retry`)
+
+MolScribe infrastructure fix verified: import OK, 1000 images OCR'd in ~3 min.
+Log: `logs/succ-univideo-mol-ocr-retry-15690165.log`.
+
+Benchmark report (`image_structure_benchmark/benchmark_report.md`):
+
+| Metric | Result |
+| --- | ---: |
+| OCR SMILES present | 0 / 1000 |
+| validity all | 0.0 |
+| strict success (2p–7p) | 0.0 |
+| SketchMol reference strict (2p–7p) | 0.68–0.80 |
+
+OCR pipeline works, but benchmark is all zeros because upstream images are blank.
+MolScribe confidence scores are ~0.076 with empty SMILES. Root cause is upstream
+diffusion/VAE collapse, not OCR.
+
 ## 7. 查看 Slurm 状态
 
 提交后脚本会打印 job id：
@@ -334,7 +373,8 @@ squeue -j <job_id> -o "%.18i %.9P %.20j %.8u %.2t %.10M %.6D %R"
 
 ```text
 原因：当前 Python 环境没有 MolScribe，或 MolScribe checkout 不在 PYTHONPATH。
-处理：设置 SUCC_MOLSCRIBE_WORKDIR=/path/to/MolScribe，或换成 molscribe_overlay Python。
+处理：设置 SUCC_MOLSCRIBE_WORKDIR=Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate，
+或换成已经安装 MolScribe 的 Python。
 ```
 
 如果 `generated_images/` 很少：

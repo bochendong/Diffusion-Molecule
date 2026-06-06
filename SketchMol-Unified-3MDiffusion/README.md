@@ -172,6 +172,33 @@ SMU3M_GPU_PROFILE
 SMU3M_SLURM_GPUS
 ```
 
+## Latest Run Results
+
+Server job `15690752` (`smu3m-unified`, Jun 6 2026) completed the full pipeline on
+H100 MIG 3g.40gb in ~4 minutes. Artifacts live under
+`outputs/unified_generation_3m_edit_v2/`; log:
+`logs/smu3m-unified-15690752.log`.
+
+| Stage | Epochs | Final train loss | Status |
+| --- | ---: | ---: | --- |
+| Alignment | 50 | 0.485 | converged |
+| Edit connector | 50 | 0.416 | converged |
+| Latent diffusion | 50 | ~1.0 (spike 9.7 @ ep31) | not learning |
+
+Eval on 1000 edit samples (`eval_latent/metrics.json`):
+
+| Metric | Value |
+| --- | ---: |
+| `source_fingerprint_cosine` | 0.008 |
+| `target_fingerprint_cosine` | 0.009 |
+| `source_target_fingerprint_cosine` (GT pairs) | 0.799 |
+| `target_property_mae` | 554.7 |
+| `latent_mae` / `latent_mse` | 19.8 / 30027 |
+
+Alignment and connector stages trained normally, but latent diffusion collapsed
+(loss stuck near 1.0). Generated latents are unrelated to source/target fingerprints.
+Next step: debug Stage 3 diffusion (latent normalization, loss target, training schedule).
+
 ## Validation
 
 ```bash

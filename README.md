@@ -59,11 +59,116 @@ cd /scratch/bdong/projects/Diffusion-Molecule
 git pull origin main
 ```
 
-常用 Python：
+## Python 环境与 venv
+
+这个仓库没有单一 venv 覆盖所有任务。按 pipeline 选对 Python，比盲目统一到一个
+interpreter 更省事。
+
+### 1. `molscribe_overlay`（主线默认）
 
 ```bash
 export SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
 export SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
+```
+
+用途：
+
+```text
+SketchMol-Understanding-Condition 的 HF VLM / UniVideo / benchmark export
+SketchMol-Unified-3MDiffusion 的 unified 3M training
+SketchMolBenchmark 的 MolScribe OCR（配合 SKETCHMOL_MOLSCRIBE_WORKDIR）
+```
+
+要求能同时 import `torch`、`transformers`、`PIL`、`rdkit`。HF VLM 和
+UniVideo submit 脚本会在 job 开始时做早期检查。
+
+注意：不要把当前大 VLM pipeline 指到没有 RDKit 的 `phystabmol` venv。
+
+### 2. `phystabmol`（Torch 训练 / SketchMol 采样）
+
+```bash
+export SKETCHMOL_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python
+export SKETCHMOL_BENCHMARK_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python
+```
+
+用途：
+
+```text
+SketchMol diffusion 采样（真实 SketchMol baseline）
+部分旧版 CNN / fusion encoder 训练
+SketchMolBenchmark materialization / smoke
+```
+
+特点：有 Torch，但没有 RDKit。pair mining、scaffold-preservation evaluation、
+dataset build 不要单独依赖它。
+
+### 3. Compute Canada module 环境（RDKit 数据构建）
+
+`SketchMol-MultiProperty-EditDataset` 和不少 understanding 脚本会先加载：
+
+```text
+StdEnv/2023
+python/3.11
+rdkit/2025.09.4
+```
+
+只有当你指定的 Python 已经能 import RDKit 时，才覆盖 `SMMED_PYTHON_BIN` 或
+`SUCC_PYTHON_BIN`。
+
+### 4. MolScribe 不是 pip 包
+
+MolScribe 类来自 vendored SketchMol checkout，不在 venv 里 pip install。跑 OCR 时
+要把 `evaluate/` 加进 `PYTHONPATH`：
+
+```bash
+export SUCC_MOLSCRIBE_WORKDIR="Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate"
+export SKETCHMOL_MOLSCRIBE_WORKDIR="$SUCC_MOLSCRIBE_WORKDIR"
+export SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth
+```
+
+UniVideo pipeline 现在会自动检测上面的 SketchMol `evaluate/` 目录；SketchMolBenchmark
+paper repro 也使用同一 workdir。
+
+### 5. 快速自检
+
+主线 Python：
+
+```bash
+$SUCC_PYTHON_BIN - <<'PY'
+import torch, transformers, PIL, rdkit
+print("molscribe_overlay ok")
+PY
+```
+
+MolScribe OCR：
+
+```bash
+PYTHONPATH="$SUCC_MOLSCRIBE_WORKDIR${PYTHONPATH:+:$PYTHONPATH}" $SUCC_PYTHON_BIN - <<'PY'
+from molscribe import MolScribe
+print("molscribe import ok")
+PY
+```
+
+SketchMol 采样 Python：
+
+```bash
+$SKETCHMOL_PYTHON_BIN - <<'PY'
+import torch
+print("phystabmol torch ok")
+PY
+```
+
+### 6. 环境变量对照
+
+```text
+SUCC_PYTHON_BIN              Understanding-Condition 主线
+SMU3M_PYTHON_BIN             Unified-3MDiffusion 主线
+SKETCHMOL_PYTHON_BIN         SketchMol diffusion 采样
+SKETCHMOL_MOLSCRIBE_PYTHON_BIN   MolScribe OCR；默认可与 SUCC_PYTHON_BIN 相同
+SKETCHMOL_BENCHMARK_PYTHON_BIN   benchmark materialization / decode 评估
+SMMED_PYTHON_BIN             multi-property dataset build
+SUCC_MOLSCRIBE_WORKDIR       UniVideo / understanding OCR 的 MolScribe PYTHONPATH
+SKETCHMOL_MOLSCRIBE_WORKDIR  SketchMolBenchmark OCR 的 MolScribe PYTHONPATH
 ```
 
 ## Slurm 资源怎么选
@@ -113,8 +218,27 @@ RAM: 4G-16G
 time: 按实际运行时长留余量
 ```
 
+各 pipeline 默认资源大致如下，提交前先看 `submit_*.sh` 打印的参数，再按 efficiency
+report 往下调：
+
+```text
+Understanding / UniVideo (SUCC_*)
+  默认: 8 CPU, 80G RAM, h100_40gb_mig
+  覆盖: SUCC_SLURM_CPUS, SUCC_SLURM_MEM, SUCC_SLURM_TIME, SUCC_GPU_PROFILE, SUCC_SLURM_GPUS
+
+Unified 3M (SMU3M_*)
+  默认: economy profile + h100_20gb_mig
+  覆盖: SMU3M_SLURM_CPUS, SMU3M_SLURM_MEM, SMU3M_SLURM_TIME, SMU3M_GPU_PROFILE, SMU3M_RESOURCE_PROFILE
+
+Dataset build / smoke (SMMED_* / succ-smoke)
+  默认: 1-2 CPU, 8G RAM, 无 GPU 或短 GPU
+  覆盖: SMMED_SLURM_CPUS, SMMED_SLURM_MEM, SUCC_SLURM_CPUS, SUCC_SLURM_MEM
+```
+
 如果申请 40GB GPU，就应该用对应的 throughput profile，把 batch 和模型宽度调大；
-否则优先用 20GB MIG，避免拿 40GB 跑小 batch。
+否则优先用 20GB MIG，避免拿 40GB 跑小 batch。Understanding / UniVideo 因为还要跑
+7B VLM feature export，通常保留 40GB；只有纯训练、纯 OCR resume 或明确 smoke 时，
+再考虑降到 20GB MIG。
 
 脚本里通常可以用环境变量覆盖资源。例如省资源跑法：
 
@@ -211,6 +335,28 @@ SUCC_RUN_FEATURE_EXPORT=0 \
 SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm \
 SUCC_CONDITION_ROWS=SketchMol-Understanding-Condition/outputs/multiproperty_100k_v1/condition_rows.csv \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+```
+
+如果前面的训练和图片生成已经完成，只需要续跑 MolScribe OCR / image benchmark，
+直接跑 OCR 和评估脚本，不要重提整条 pipeline（否则会重新训练 UniVideo）：
+
+```bash
+export SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
+export SUCC_MOLSCRIBE_WORKDIR="Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate"
+IMAGE_CSV=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/image_path.csv
+
+PYTHONPATH="$SUCC_MOLSCRIBE_WORKDIR${PYTHONPATH:+:$PYTHONPATH}" \
+  $SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/run_molscribe_ocr.py \
+  --model-path /scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
+  --image-csv "$IMAGE_CSV" \
+  --batch-size 16 \
+  --device cuda
+
+$SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/evaluate_univideo_image_benchmark.py \
+  --image-csv "$IMAGE_CSV" \
+  --output-dir SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark \
+  --method univideo_image_vae \
+  --source-tanimoto-thresholds 0.4,0.6,0.8
 ```
 
 ### 4. 跑 unified 3M training
