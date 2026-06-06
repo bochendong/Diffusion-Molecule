@@ -208,31 +208,51 @@ SMU3M_SLURM_GPUS
 
 ## Latest Run Results
 
-Server job `15690752` (`smu3m-unified`, Jun 6 2026) completed the full pipeline on
-H100 MIG 3g.40gb in ~4 minutes. Artifacts live under
-`outputs/unified_generation_3m_edit_v2/`; log:
-`logs/smu3m-unified-15690752.log`.
+Artifacts live under `outputs/unified_generation_3m_edit_v2/`.
+
+### Current best: job `15692318` (Jun 6 2026, ~2.5 min)
+
+Resumed alignment/connector from epoch 50, retrained Stage 3 diffusion with the
+new defaults (`pred_x0`, `residual` target, DDIM `sample_eta=0.0`). Log:
+`logs/smu3m-unified-15692318.log`.
 
 | Stage | Epochs | Final train loss | Status |
 | --- | ---: | ---: | --- |
-| Alignment | 50 | 0.485 | converged |
-| Edit connector | 50 | 0.416 | converged |
-| Latent diffusion | 50 | ~1.0 (spike 9.7 @ ep31) | not learning |
+| Alignment | 50 | resumed @ ep50 | skipped |
+| Edit connector | 50 | resumed @ ep50 | skipped |
+| Latent diffusion | 50 | 0.268 → **0.068** | converged |
 
 Eval on 1000 edit samples (`eval_latent/metrics.json`):
 
 | Metric | Value |
 | --- | ---: |
+| `source_fingerprint_cosine` | 0.371 |
+| `target_fingerprint_cosine` | 0.392 |
+| `source_target_fingerprint_cosine` (GT pairs) | 0.799 |
+| `target_property_mae` | 7.25 |
+| `latent_mae` / `latent_mse` | 0.214 / 5.54 |
+| `prior_target_fingerprint_cosine` | 0.409 |
+| `generated_minus_prior_latent_mae` | 0.045 |
+
+Diffusion collapse is fixed. Generated latents are fingerprint-aligned with
+source/target again. Residual diffusion still adds only a small delta on top of
+the source prior (`generated_minus_prior_latent_mae` ≈ 0.045), so property edit
+signal remains weak.
+
+### Baseline collapse: job `15690752` (Jun 6 2026, ~4 min)
+
+Full 3×50-epoch run before the residual Stage 3 fix. Log:
+`logs/smu3m-unified-15690752.log`.
+
+| Metric | Value |
+| --- | ---: |
 | `source_fingerprint_cosine` | 0.008 |
 | `target_fingerprint_cosine` | 0.009 |
-| `source_target_fingerprint_cosine` (GT pairs) | 0.799 |
 | `target_property_mae` | 554.7 |
 | `latent_mae` / `latent_mse` | 19.8 / 30027 |
 
-Alignment and connector stages trained normally, but latent diffusion collapsed
-(loss stuck near 1.0). Generated latents are unrelated to source/target fingerprints.
-This motivated the current residual Stage 3 defaults (`pred_x0`, residual target,
-DDIM sampling, and prior-vs-generated diagnostics).
+Stage 3 loss stuck near 1.0; generated latents were unrelated to source/target.
+This run motivated the current residual defaults and prior-vs-generated diagnostics.
 
 ## Validation
 
