@@ -1,0 +1,9 @@
+{
+  "eval_jsonl": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/dataset/univideo_edit_eval.jsonl",
+  "generated_images_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/eval_latent/generated_images",
+  "method": "univideo_image_vae",
+  "missing_images": 0,
+  "output_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/image_path.csv",
+  "predictions_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/eval_latent/predictions.csv",
+  "rows": 1000
+}

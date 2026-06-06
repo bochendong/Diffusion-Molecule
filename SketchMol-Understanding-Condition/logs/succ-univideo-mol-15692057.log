@@ -1,0 +1,286 @@
+Running UniVideo-style molecular generation pipeline
+  python=/home/bdong/.venvs/molscribe_overlay/bin/python
+  condition_rows=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv
+  baseline_csv=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/dataset/baseline_variants.csv
+  condition_features_dir=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm
+  unified_output_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1
+  dataset_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/dataset
+  run_dataset_export=1
+  run_feature_export=auto
+  latent_backend=image_vae
+  diffusion_objective=pred_x0
+  sample_eta=0.0
+  max_decode_images=1000
+  run_image_structure_benchmark=1
+  run_molscribe_ocr=auto
+  molscribe_model=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth
+  molscribe_workdir=Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate
+  image_vae_checkpoint=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/molecule_image_vae/molecule_image_vae.pt
+  run_image_vae_train=auto
+  image_vae_foreground_weight=8.0
+  image_vae_sample_latent=0
+{
+  "baseline_variants_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/dataset/baseline_variants.csv",
+  "condition_rows_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv",
+  "eval_jsonl": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/dataset/univideo_edit_eval.jsonl",
+  "eval_rows": 9360,
+  "output_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/dataset",
+  "property_counts": {
+    "2": 20926,
+    "3": 13131,
+    "4": 8267,
+    "5": 4940,
+    "6": 2167,
+    "7": 569
+  },
+  "rows": 50000,
+  "splits": {
+    "eval": 9360,
+    "train": 40640
+  },
+  "tasks": {
+    "edit_generation": 50000
+  },
+  "train_jsonl": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/dataset/univideo_edit_train.jsonl",
+  "train_rows": 40640,
+  "unique_source_smiles": 2824,
+  "unique_target_smiles": 2825,
+  "variants": [
+    "full"
+  ]
+}
+Existing image VAE checkpoint predates foreground-aware training; retraining it.
+Training molecule-image VAE for SketchMol-style 4x32x32 latents
+{"epoch": 1, "eval_background_l1": 0.0018392369311186485, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.1042081918567419, "eval_kl": 1.553137831389904, "eval_loss": 0.017011517891660333, "eval_reconstruction_ink_fraction": 0.04243391752243042, "eval_reconstruction_l1": 0.0170099648530595, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.004213674336001277, "train_blank_canvas_l1": 0.046757806433439256, "train_foreground_l1": 0.16379643008947373, "train_kl": 2.1632436336374283, "train_loss": 0.0278959427767992, "train_reconstruction_ink_fraction": 0.044423414001464843, "train_reconstruction_l1": 0.02789377954185009, "train_target_ink_fraction": 0.03838901336669922}
+{"epoch": 2, "eval_background_l1": 0.0013665219012182206, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.09075515996664762, "eval_kl": 1.1827259734272957, "eval_loss": 0.01460723695345223, "eval_reconstruction_ink_fraction": 0.041473388671875, "eval_reconstruction_l1": 0.014606054173782468, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.0011509475937113167, "train_blank_canvas_l1": 0.04675780651211739, "train_foreground_l1": 0.08141791647076607, "train_kl": 1.3775318125915528, "train_loss": 0.012955357349216937, "train_reconstruction_ink_fraction": 0.04081102783203125, "train_reconstruction_l1": 0.012953979822993279, "train_target_ink_fraction": 0.03838901336669922}
+{"epoch": 3, "eval_background_l1": 0.0010988526591972914, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.08439524099230766, "eval_kl": 1.0782106220722198, "eval_loss": 0.013515089463908225, "eval_reconstruction_ink_fraction": 0.04091113805770874, "eval_reconstruction_l1": 0.013514011341612786, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.0007437479556817562, "train_blank_canvas_l1": 0.04675780656576157, "train_foreground_l1": 0.06316617949962616, "train_kl": 1.1099629726982116, "train_loss": 0.010026689478009939, "train_reconstruction_ink_fraction": 0.03992471130371094, "train_reconstruction_l1": 0.010025579517781734, "train_target_ink_fraction": 0.03838901336669922}
+{"epoch": 4, "eval_background_l1": 0.0009038055777637055, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.0746982041746378, "eval_kl": 0.9215404503047466, "eval_loss": 0.012057946005370468, "eval_reconstruction_ink_fraction": 0.040186285972595215, "eval_reconstruction_l1": 0.012057024403475225, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.0005632964262552559, "train_blank_canvas_l1": 0.0467578065276146, "train_foreground_l1": 0.051821501325368884, "train_kl": 0.9775012871932983, "train_loss": 0.008266210335344077, "train_reconstruction_ink_fraction": 0.03949617919921875, "train_reconstruction_l1": 0.008265232837498188, "train_target_ink_fraction": 0.03838901336669922}
+{"epoch": 5, "eval_background_l1": 0.0007999494664545637, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.07029879838228226, "eval_kl": 0.8704169988632202, "eval_loss": 0.01132014865288511, "eval_reconstruction_ink_fraction": 0.04001694917678833, "eval_reconstruction_l1": 0.011319278331939131, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.0004690836640354246, "train_blank_canvas_l1": 0.0467578064596653, "train_foreground_l1": 0.04636004444360733, "train_kl": 0.9130070193672181, "train_loss": 0.007411791014671326, "train_reconstruction_ink_fraction": 0.039259781494140625, "train_reconstruction_l1": 0.007410878010243177, "train_target_ink_fraction": 0.03838901336669922}
+{"epoch": 6, "eval_background_l1": 0.0006924679528310662, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.07104740221984684, "eval_kl": 0.8535046763718128, "eval_loss": 0.01140862691681832, "eval_reconstruction_ink_fraction": 0.03973644971847534, "eval_reconstruction_l1": 0.011407773534301668, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00039963929686695336, "train_blank_canvas_l1": 0.04675780650138855, "train_foreground_l1": 0.04194488802790642, "train_kl": 0.8697088175773621, "train_loss": 0.006702962216436863, "train_reconstruction_ink_fraction": 0.039084412536621094, "train_reconstruction_l1": 0.006702092506885529, "train_target_ink_fraction": 0.03838901336669922}
+{"epoch": 7, "eval_background_l1": 0.0006018120948283467, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.06661348231136799, "eval_kl": 0.8075339794158936, "eval_loss": 0.010603083472233266, "eval_reconstruction_ink_fraction": 0.03937250375747681, "eval_reconstruction_l1": 0.010602276073768735, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00034816848864313213, "train_blank_canvas_l1": 0.0467578064763546, "train_foreground_l1": 0.03815611098766327, "train_kl": 0.8499436915779114, "train_loss": 0.006090129293948412, "train_reconstruction_ink_fraction": 0.038952182006835936, "train_reconstruction_l1": 0.006089279351681471, "train_target_ink_fraction": 0.03838901336669922}
+{"epoch": 8, "eval_background_l1": 0.0005533673211175483, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.0661056567914784, "eval_kl": 0.8136849440634251, "eval_loss": 0.010525798628805205, "eval_reconstruction_ink_fraction": 0.03931397199630737, "eval_reconstruction_l1": 0.010524985002120957, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.0003105745283840224, "train_blank_canvas_l1": 0.046757806636095044, "train_foreground_l1": 0.03591789660692215, "train_kl": 0.8340733758354187, "train_loss": 0.005728194042891264, "train_reconstruction_ink_fraction": 0.03885149169921875, "train_reconstruction_l1": 0.00572735996812582, "train_target_ink_fraction": 0.03838901336669922}
+{"epoch": 9, "eval_background_l1": 0.0005564573366427794, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.06604654458351433, "eval_kl": 0.7906920947134495, "eval_loss": 0.010550935578066856, "eval_reconstruction_ink_fraction": 0.039363086223602295, "eval_reconstruction_l1": 0.010550144826993346, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00028236666926648467, "train_blank_canvas_l1": 0.04675780649662018, "train_foreground_l1": 0.03386321895718575, "train_kl": 0.8257506763839721, "train_loss": 0.005393302389159799, "train_reconstruction_ink_fraction": 0.038772002868652344, "train_reconstruction_l1": 0.005392476638033986, "train_target_ink_fraction": 0.03838901336669922}
+{"epoch": 10, "eval_background_l1": 0.0005251842194411438, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.06855743238702416, "eval_kl": 0.8247024863958359, "eval_loss": 0.010905330826062709, "eval_reconstruction_ink_fraction": 0.039166033267974854, "eval_reconstruction_l1": 0.010904506052611396, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.0002586646050773561, "train_blank_canvas_l1": 0.04675780651211739, "train_foreground_l1": 0.031799639886021615, "train_kl": 0.8224766429519653, "train_loss": 0.005063603954985738, "train_reconstruction_ink_fraction": 0.03871314392089844, "train_reconstruction_l1": 0.0050627814787626265, "train_target_ink_fraction": 0.03838901336669922}
+{"aux_loss": 1.6027903337178269, "diffusion_loss": 0.0, "epoch": 1, "loss": 1.6027903337178269, "stage": "stage1_connector_alignment"}
+{"aux_loss": 1.4376738268559373, "diffusion_loss": 0.0, "epoch": 2, "loss": 1.4376738268559373, "stage": "stage1_connector_alignment"}
+{"aux_loss": 1.342262767243573, "diffusion_loss": 0.7398255247300065, "epoch": 1, "loss": 1.0753912168224966, "stage": "stage2_diffusion_finetune"}
+{"aux_loss": 1.267437510884653, "diffusion_loss": 0.43865332617534425, "epoch": 2, "loss": 0.7555127040607723, "stage": "stage2_diffusion_finetune"}
+{"aux_loss": 1.2238642108721995, "diffusion_loss": 0.30364317236922855, "epoch": 3, "loss": 0.6096092244302194, "stage": "stage2_diffusion_finetune"}
+{"aux_loss": 1.191718711815481, "diffusion_loss": 0.255514643675699, "epoch": 4, "loss": 0.5534443207613127, "stage": "stage2_diffusion_finetune"}
+{"aux_loss": 1.1640039477761337, "diffusion_loss": 0.22856384651867423, "epoch": 5, "loss": 0.5195648323832535, "stage": "stage2_diffusion_finetune"}
+{"aux_loss": 1.1520964438521017, "diffusion_loss": 0.2187554875931402, "epoch": 1, "loss": 0.5067795986734976, "stage": "stage3_multitask_dropout"}
+{"aux_loss": 1.1318162321105716, "diffusion_loss": 0.21188672529900168, "epoch": 2, "loss": 0.49484078410103566, "stage": "stage3_multitask_dropout"}
+{
+  "eval": {
+    "by_property_count": {
+      "2": {
+        "latent_mae": 0.5293625780460979,
+        "latent_mse": 1.055603344778925,
+        "rows": 479.0,
+        "source_latent_cosine": 0.624608642002346,
+        "source_target_latent_cosine": 0.462618389083079,
+        "target_latent_cosine": 0.6208525345310094
+      },
+      "3": {
+        "latent_mae": 0.5350003606618795,
+        "latent_mse": 1.0802305105485415,
+        "rows": 266.0,
+        "source_latent_cosine": 0.6076586646276176,
+        "source_target_latent_cosine": 0.4656177593354398,
+        "target_latent_cosine": 0.6105798314844697
+      },
+      "4": {
+        "latent_mae": 0.5177739300626389,
+        "latent_mse": 1.037477135235536,
+        "rows": 141.0,
+        "source_latent_cosine": 0.6259841917312273,
+        "source_target_latent_cosine": 0.461663041157634,
+        "target_latent_cosine": 0.6257877641063622
+      },
+      "5": {
+        "latent_mae": 0.5132170232442709,
+        "latent_mse": 1.0270952683228713,
+        "rows": 65.0,
+        "source_latent_cosine": 0.6241900940622629,
+        "source_target_latent_cosine": 0.4774487732232476,
+        "target_latent_cosine": 0.6320301003941334
+      },
+      "6": {
+        "latent_mae": 0.5264725104758614,
+        "latent_mse": 1.0715866386890411,
+        "rows": 38.0,
+        "source_latent_cosine": 0.6090737138887353,
+        "source_target_latent_cosine": 0.4236200412970744,
+        "target_latent_cosine": 0.6173944950034091
+      },
+      "7": {
+        "latent_mae": 0.4988432689146562,
+        "latent_mse": 0.932713741605932,
+        "rows": 11.0,
+        "source_latent_cosine": 0.6424628931224684,
+        "source_target_latent_cosine": 0.4689513692635986,
+        "target_latent_cosine": 0.665791446884251
+      }
+    },
+    "decoded_image_quality": {
+      "generated": {
+        "dark_fraction": 0.0015118408203125,
+        "images": 1000.0,
+        "mean_intensity": 0.9988883430957795,
+        "nonwhite_fraction": 0.004047943115234375,
+        "std_intensity": 0.008414578046373208
+      },
+      "source_oracle": {
+        "dark_fraction": 0.030802249908447266,
+        "images": 128.0,
+        "mean_intensity": 0.9763001906685531,
+        "nonwhite_fraction": 0.04209709167480469,
+        "std_intensity": 0.13306252949405462
+      },
+      "target_oracle": {
+        "dark_fraction": 0.030773162841796875,
+        "images": 128.0,
+        "mean_intensity": 0.976322965696454,
+        "nonwhite_fraction": 0.04204964637756348,
+        "std_intensity": 0.1329852375201881
+      }
+    },
+    "output_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/eval_latent",
+    "overall": {
+      "latent_mae": 0.5277332328259945,
+      "latent_mse": 1.057000929892063,
+      "rows": 1000.0,
+      "source_latent_cosine": 0.6198727644103393,
+      "source_target_latent_cosine": 0.46283321804794775,
+      "target_latent_cosine": 0.6199053272056945
+    },
+    "rows": 1000,
+    "sample_eta": 0.0,
+    "sample_steps": 20
+  },
+  "history": [
+    {
+      "aux_loss": 1.6027903337178269,
+      "diffusion_loss": 0.0,
+      "epoch": 1,
+      "loss": 1.6027903337178269,
+      "stage": "stage1_connector_alignment"
+    },
+    {
+      "aux_loss": 1.4376738268559373,
+      "diffusion_loss": 0.0,
+      "epoch": 2,
+      "loss": 1.4376738268559373,
+      "stage": "stage1_connector_alignment"
+    },
+    {
+      "aux_loss": 1.342262767243573,
+      "diffusion_loss": 0.7398255247300065,
+      "epoch": 1,
+      "loss": 1.0753912168224966,
+      "stage": "stage2_diffusion_finetune"
+    },
+    {
+      "aux_loss": 1.267437510884653,
+      "diffusion_loss": 0.43865332617534425,
+      "epoch": 2,
+      "loss": 0.7555127040607723,
+      "stage": "stage2_diffusion_finetune"
+    },
+    {
+      "aux_loss": 1.2238642108721995,
+      "diffusion_loss": 0.30364317236922855,
+      "epoch": 3,
+      "loss": 0.6096092244302194,
+      "stage": "stage2_diffusion_finetune"
+    },
+    {
+      "aux_loss": 1.191718711815481,
+      "diffusion_loss": 0.255514643675699,
+      "epoch": 4,
+      "loss": 0.5534443207613127,
+      "stage": "stage2_diffusion_finetune"
+    },
+    {
+      "aux_loss": 1.1640039477761337,
+      "diffusion_loss": 0.22856384651867423,
+      "epoch": 5,
+      "loss": 0.5195648323832535,
+      "stage": "stage2_diffusion_finetune"
+    },
+    {
+      "aux_loss": 1.1520964438521017,
+      "diffusion_loss": 0.2187554875931402,
+      "epoch": 1,
+      "loss": 0.5067795986734976,
+      "stage": "stage3_multitask_dropout"
+    },
+    {
+      "aux_loss": 1.1318162321105716,
+      "diffusion_loss": 0.21188672529900168,
+      "epoch": 2,
+      "loss": 0.49484078410103566,
+      "stage": "stage3_multitask_dropout"
+    }
+  ]
+}
+Preparing MolScribe image CSV for image-to-structure benchmark
+{
+  "eval_jsonl": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/dataset/univideo_edit_eval.jsonl",
+  "generated_images_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/eval_latent/generated_images",
+  "method": "univideo_image_vae",
+  "missing_images": 0,
+  "output_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/image_path.csv",
+  "predictions_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/eval_latent/predictions.csv",
+  "rows": 1000
+}
+Running MolScribe OCR and image-to-structure benchmark
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:46: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:46: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/functional.py:505: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at /tmp/build_wheels_tmp.20690/python-3.11/torch/aten/src/ATen/native/TensorShape.cpp:4382.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+  0%|          | 0/63 [00:00<?, ?it/s]/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py:1298: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. Starting in PyTorch 2.9, calling checkpoint without use_reentrant will raise an exception. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
+  return fn(*args, **kwargs)
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/utils/checkpoint.py:238: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  check_backward_validity(args)
+  2%|▏         | 1/63 [00:02<02:24,  2.33s/it]  3%|▎         | 2/63 [00:04<02:10,  2.14s/it]  5%|▍         | 3/63 [00:06<02:03,  2.06s/it]  6%|▋         | 4/63 [00:08<02:00,  2.04s/it]  8%|▊         | 5/63 [00:10<01:56,  2.00s/it] 10%|▉         | 6/63 [00:12<01:53,  1.99s/it] 11%|█         | 7/63 [00:14<01:50,  1.97s/it] 13%|█▎        | 8/63 [00:16<01:48,  1.97s/it] 14%|█▍        | 9/63 [00:18<01:46,  1.97s/it] 16%|█▌        | 10/63 [00:20<01:44,  1.98s/it] 17%|█▋        | 11/63 [00:22<01:42,  1.97s/it] 19%|█▉        | 12/63 [00:23<01:40,  1.96s/it] 21%|██        | 13/63 [00:25<01:38,  1.96s/it] 22%|██▏       | 14/63 [00:27<01:36,  1.97s/it] 24%|██▍       | 15/63 [00:29<01:34,  1.97s/it] 25%|██▌       | 16/63 [00:31<01:32,  1.97s/it] 27%|██▋       | 17/63 [00:33<01:30,  1.97s/it] 29%|██▊       | 18/63 [00:35<01:28,  1.97s/it] 30%|███       | 19/63 [00:37<01:27,  1.98s/it] 32%|███▏      | 20/63 [00:39<01:25,  1.98s/it] 33%|███▎      | 21/63 [00:41<01:23,  1.98s/it] 35%|███▍      | 22/63 [00:43<01:21,  1.98s/it] 37%|███▋      | 23/63 [00:45<01:18,  1.97s/it] 38%|███▊      | 24/63 [00:47<01:17,  1.98s/it] 40%|███▉      | 25/63 [00:49<01:15,  1.98s/it] 41%|████▏     | 26/63 [00:51<01:13,  1.98s/it] 43%|████▎     | 27/63 [00:53<01:11,  1.98s/it] 44%|████▍     | 28/63 [00:55<01:08,  1.97s/it] 46%|████▌     | 29/63 [00:57<01:07,  1.97s/it] 48%|████▊     | 30/63 [00:59<01:04,  1.97s/it] 49%|████▉     | 31/63 [01:01<01:03,  1.98s/it] 51%|█████     | 32/63 [01:03<01:01,  1.98s/it] 52%|█████▏    | 33/63 [01:05<00:59,  1.98s/it] 54%|█████▍    | 34/63 [01:07<00:57,  1.98s/it] 56%|█████▌    | 35/63 [01:09<00:55,  1.98s/it] 57%|█████▋    | 36/63 [01:11<00:53,  1.97s/it] 59%|█████▊    | 37/63 [01:13<00:51,  1.98s/it] 60%|██████    | 38/63 [01:15<00:49,  1.99s/it] 62%|██████▏   | 39/63 [01:17<00:47,  1.99s/it] 63%|██████▎   | 40/63 [01:19<00:45,  1.98s/it] 65%|██████▌   | 41/63 [01:21<00:43,  1.99s/it] 67%|██████▋   | 42/63 [01:23<00:41,  1.99s/it] 68%|██████▊   | 43/63 [01:25<00:39,  1.99s/it] 70%|██████▉   | 44/63 [01:27<00:37,  1.99s/it] 71%|███████▏  | 45/63 [01:29<00:35,  1.99s/it] 73%|███████▎  | 46/63 [01:31<00:33,  1.98s/it] 75%|███████▍  | 47/63 [01:33<00:32,  2.01s/it] 76%|███████▌  | 48/63 [01:35<00:30,  2.01s/it] 78%|███████▊  | 49/63 [01:37<00:28,  2.02s/it] 79%|███████▉  | 50/63 [01:39<00:26,  2.03s/it] 81%|████████  | 51/63 [01:41<00:24,  2.03s/it] 83%|████████▎ | 52/63 [01:43<00:22,  2.03s/it] 84%|████████▍ | 53/63 [01:45<00:20,  2.03s/it] 86%|████████▌ | 54/63 [01:47<00:18,  2.02s/it] 87%|████████▋ | 55/63 [01:49<00:16,  2.02s/it] 89%|████████▉ | 56/63 [01:51<00:14,  2.02s/it] 90%|█████████ | 57/63 [01:53<00:12,  2.02s/it] 92%|█████████▏| 58/63 [01:55<00:10,  2.03s/it] 94%|█████████▎| 59/63 [01:57<00:08,  2.02s/it] 95%|█████████▌| 60/63 [01:59<00:06,  2.03s/it] 97%|█████████▋| 61/63 [02:01<00:04,  2.04s/it] 98%|█████████▊| 62/63 [02:03<00:02,  2.05s/it]100%|██████████| 63/63 [02:05<00:00,  1.98s/it]100%|██████████| 63/63 [02:05<00:00,  1.99s/it]
+save to SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/image_path.csv
+done
+{
+  "decoded_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/benchmark_decoded.csv",
+  "image_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/image_path.csv",
+  "method": "univideo_image_vae",
+  "output_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark",
+  "report": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/benchmark_report.md",
+  "rows": 1000,
+  "source_tanimoto_thresholds": [
+    0.4,
+    0.6,
+    0.8
+  ],
+  "summary_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/benchmark_summary.csv"
+}
+UniVideo-style molecular pipeline finished:
+  dataset=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/dataset/summary.json
+  image_vae=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/molecule_image_vae/molecule_image_vae.pt
+  generated_images=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/eval_latent/generated_images
+  checkpoint=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/univideo_molecule_generation.pt
+  metrics=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/metrics.json
+  eval=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/eval_latent/metrics.json
+  condition_tokens=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/condition_tokens_train/query_tokens.npy
+  image_structure_csv=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/image_path.csv
+  image_structure_report=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/benchmark_report.md
