@@ -377,6 +377,53 @@ Image-to-structure benchmark (`image_structure_benchmark/benchmark_report.md`):
 Decode quality is solved; next bottlenecks are edit signal (raise `target_latent_cosine`)
 and MolScribe-readable rendering.
 
+Follow-up code fix after this run:
+
+- `run_molscribe_ocr.py` now supports a vendored MolScribe raw-token fallback.
+  If graph-to-SMILES conversion returns empty/invalid while the decoder token
+  SMILES is non-empty, the script writes the raw token SMILES and records
+  `molscribe_decode_source=raw_token_fallback`.
+- Residual generation now trains the connector latent auxiliary head against the
+  same edit residual used by diffusion (`target_latent - source_latent`) instead
+  of the absolute target latent. This removes the previous auxiliary/diffusion
+  mismatch that encouraged source-copy behavior.
+- New sampling knobs: `SUCC_RESIDUAL_SAMPLE_SCALE` and
+  `SUCC_CONNECTOR_LATENT_BLEND`.
+
+OCR-only rerun on the existing `15697119` generated images:
+
+```bash
+IMAGE_CSV=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
+
+PYTHONPATH="Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate${PYTHONPATH:+:$PYTHONPATH}" \
+$SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/run_molscribe_ocr.py \
+  --model-path /scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
+  --image-csv "$IMAGE_CSV" \
+  --batch-size 16 \
+  --device cuda
+
+$SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/evaluate_univideo_image_benchmark.py \
+  --image-csv "$IMAGE_CSV" \
+  --output-dir SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark \
+  --method univideo_image_vae \
+  --source-tanimoto-thresholds 0.4,0.6,0.8
+```
+
+Next training run for the residual auxiliary fix:
+
+```bash
+SUCC_UNIFIED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v3_residual_aux \
+SUCC_RUN_IMAGE_VAE_TRAIN=0 \
+SUCC_IMAGE_VAE_CHECKPOINT=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/molecule_image_vae/molecule_image_vae.pt \
+SUCC_RUN_FEATURE_EXPORT=0 \
+SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm \
+SUCC_LATENT_TARGET_MODE=residual \
+SUCC_RESIDUAL_SAMPLE_SCALE=1.25 \
+SUCC_CONNECTOR_LATENT_BLEND=0.1 \
+SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=1 \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+```
+
 ### Residual-ink ablation: job `15692057` (Jun 6 2026, ~2 h)
 
 Foreground-aware VAE retrain (`foreground_weight=8.0`), absolute target latent,

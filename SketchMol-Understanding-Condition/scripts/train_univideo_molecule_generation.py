@@ -182,6 +182,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--timesteps", type=int, default=100)
     parser.add_argument("--diffusion-objective", choices=["pred_noise", "pred_x0"], default="pred_noise")
     parser.add_argument("--latent-target-mode", choices=["absolute", "residual"], default="absolute")
+    parser.add_argument("--residual-sample-scale", type=float, default=1.0)
+    parser.add_argument("--connector-latent-blend", type=float, default=0.0)
     parser.add_argument("--stage1-epochs", type=int, default=2)
     parser.add_argument("--stage2-epochs", type=int, default=5)
     parser.add_argument("--stage3-epochs", type=int, default=2)
@@ -352,6 +354,8 @@ def main() -> None:
         "timesteps": args.timesteps,
         "diffusion_objective": args.diffusion_objective,
         "latent_target_mode": args.latent_target_mode,
+        "residual_sample_scale": args.residual_sample_scale,
+        "connector_latent_blend": args.connector_latent_blend,
         "sample_eta": args.sample_eta,
         "condition_dropout": args.condition_dropout,
         "source_dropout": args.source_dropout,
@@ -394,6 +398,8 @@ def main() -> None:
             device=device,
             latent_backend=args.latent_backend,
             latent_target_mode=args.latent_target_mode,
+            residual_sample_scale=args.residual_sample_scale,
+            connector_latent_blend=args.connector_latent_blend,
             image_vae=image_vae if args.decode_eval_images else None,
             latent_shape=train_data.latent_shape,
             max_decode_images=args.max_decode_images,
@@ -427,9 +433,10 @@ def _train_stage(
             batch = _to_device(batch, device)
             optimizer.zero_grad()
             condition = connector(batch["mllm_hidden"], batch["mllm_mask"])
+            aux_latent_target = _diffusion_target_latent(batch, latent_target_mode)
             aux_loss, _ = univideo_connector_alignment_loss(
                 condition,
-                target_latent=batch["target_latent"],
+                target_latent=aux_latent_target,
                 target_properties=batch["target_properties"],
                 property_deltas=batch["property_deltas"],
                 active_mask=batch["active_mask"],
@@ -487,6 +494,8 @@ def _evaluate(
     device: torch.device,
     latent_backend: str,
     latent_target_mode: str,
+    residual_sample_scale: float,
+    connector_latent_blend: float,
     image_vae: torch.nn.Module | None,
     latent_shape: tuple[int, int, int] | None,
     max_decode_images: int,
@@ -503,15 +512,23 @@ def _evaluate(
         metadata = _metadata_from_batch(batch)
         batch = _to_device(batch, device)
         condition = connector(batch["mllm_hidden"], batch["mllm_mask"])
-        sampled_norm = diffusion.sample(
+        sampled_edit_or_target_norm = diffusion.sample(
             batch["source_latent"],
             condition.tokens,
             condition.attention_mask,
             steps=sample_steps,
             eta=sample_eta,
         )
+        connector_blend = max(0.0, min(1.0, float(connector_latent_blend)))
+        if connector_blend:
+            sampled_edit_or_target_norm = (
+                (1.0 - connector_blend) * sampled_edit_or_target_norm
+                + connector_blend * condition.target_latent
+            )
         if latent_target_mode == "residual":
-            sampled_norm = batch["source_latent"] + sampled_norm
+            sampled_norm = batch["source_latent"] + float(residual_sample_scale) * sampled_edit_or_target_norm
+        else:
+            sampled_norm = sampled_edit_or_target_norm
         sampled = np.stack([dataset.denormalize_latent(row) for row in sampled_norm.cpu().numpy()])
         target = np.stack([dataset.denormalize_latent(row) for row in batch["target_latent"].cpu().numpy()])
         source = np.stack([dataset.denormalize_latent(row) for row in batch["source_latent"].cpu().numpy()])
@@ -568,6 +585,8 @@ def _evaluate(
             "sample_steps": int(sample_steps),
             "sample_eta": float(sample_eta),
             "latent_target_mode": latent_target_mode,
+            "residual_sample_scale": float(residual_sample_scale),
+            "connector_latent_blend": float(connector_latent_blend),
             "output_dir": str(output_dir),
         }
     )

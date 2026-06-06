@@ -64,6 +64,8 @@ echo "  output_dir=${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/
 echo "  condition_rows=${SUCC_CONDITION_ROWS:-auto}"
 echo "  latent_backend=${SUCC_LATENT_BACKEND:-image_vae}"
 echo "  latent_target_mode=${SUCC_LATENT_TARGET_MODE:-auto-residual-for-image-latents}"
+echo "  residual_sample_scale=${SUCC_RESIDUAL_SAMPLE_SCALE:-1.0}"
+echo "  connector_latent_blend=${SUCC_CONNECTOR_LATENT_BLEND:-0.0}"
 echo "  run_image_structure_benchmark=${SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK:-auto}"
 echo "  molscribe_model=${SUCC_MOLSCRIBE_MODEL:-${SKETCHMOL_MOLSCRIBE_MODEL:-auto-if-default-exists}}"
 if [[ "${SUCC_LATENT_BACKEND:-image_vae}" == "image_vae" ]]; then

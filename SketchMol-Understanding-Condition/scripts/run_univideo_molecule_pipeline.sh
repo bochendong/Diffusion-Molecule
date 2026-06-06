@@ -52,6 +52,8 @@ STAGE3_EPOCHS="${SUCC_STAGE3_EPOCHS:-2}"
 TIMESTEPS="${SUCC_TIMESTEPS:-100}"
 DIFFUSION_OBJECTIVE="${SUCC_DIFFUSION_OBJECTIVE:-pred_x0}"
 LATENT_TARGET_MODE="${SUCC_LATENT_TARGET_MODE:-}"
+RESIDUAL_SAMPLE_SCALE="${SUCC_RESIDUAL_SAMPLE_SCALE:-1.0}"
+CONNECTOR_LATENT_BLEND="${SUCC_CONNECTOR_LATENT_BLEND:-0.0}"
 SAMPLE_STEPS="${SUCC_SAMPLE_STEPS:-20}"
 SAMPLE_ETA="${SUCC_SAMPLE_ETA:-0.0}"
 CONDITION_DROPOUT="${SUCC_CONDITION_DROPOUT:-0.1}"
@@ -147,6 +149,8 @@ echo "  run_feature_export=$RUN_FEATURE_EXPORT"
 echo "  latent_backend=$LATENT_BACKEND"
 echo "  diffusion_objective=$DIFFUSION_OBJECTIVE"
 echo "  latent_target_mode=$LATENT_TARGET_MODE"
+echo "  residual_sample_scale=$RESIDUAL_SAMPLE_SCALE"
+echo "  connector_latent_blend=$CONNECTOR_LATENT_BLEND"
 echo "  sample_eta=$SAMPLE_ETA"
 echo "  max_decode_images=$MAX_DECODE_IMAGES"
 echo "  run_image_structure_benchmark=$RUN_IMAGE_STRUCTURE_BENCHMARK"
@@ -313,6 +317,8 @@ fi
   --timesteps "$TIMESTEPS" \
   --diffusion-objective "$DIFFUSION_OBJECTIVE" \
   --latent-target-mode "$LATENT_TARGET_MODE" \
+  --residual-sample-scale "$RESIDUAL_SAMPLE_SCALE" \
+  --connector-latent-blend "$CONNECTOR_LATENT_BLEND" \
   --limit "$TRAIN_LIMIT" \
   --eval-limit "$EVAL_LIMIT" \
   --sample-steps "$SAMPLE_STEPS" \
