@@ -114,8 +114,8 @@ Stage 3: multi-task/dropout
 cd /scratch/bdong/projects/Diffusion-Molecule
 git pull origin main
 
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
-SUCC_CONDITION_ROWS=SketchMol-Understanding-Condition/outputs/multiproperty_100k_v1/condition_rows.csv \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
+SUCC_CONDITION_ROWS=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
 ```
 
@@ -124,7 +124,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline
 ```bash
 SUCC_RUN_FEATURE_EXPORT=0 \
 SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm \
-SUCC_CONDITION_ROWS=SketchMol-Understanding-Condition/outputs/multiproperty_100k_v1/condition_rows.csv \
+SUCC_CONDITION_ROWS=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
 ```
 
@@ -234,7 +234,7 @@ Nibi 要求 GPU job 显式指定 GPU type。pipeline 默认先尝试
 
 ```bash
 SUCC_GPU_PROFILE=h100_full \
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
 bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
 ```
 
@@ -242,7 +242,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipel
 
 ```bash
 SUCC_SLURM_GPUS=h100:1 \
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
 bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
 ```
 
@@ -250,7 +250,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipel
 `SUCC_HF_MODEL_NAME_OR_PATH` 换成本地模型目录，例如：
 
 ```bash
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct
 ```
 
 默认输出：
@@ -342,7 +342,7 @@ image，不会写出海量小文件。
 SUCC_LIMIT=2000 \
 SMMED_LIMIT_EVAL_ROWS=200 \
 SMMED_MAX_EVAL_PER_PROPERTY_COUNT=200 \
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
 bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
 ```
 

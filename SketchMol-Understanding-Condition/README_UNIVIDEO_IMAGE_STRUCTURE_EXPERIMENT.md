@@ -36,7 +36,7 @@ git pull origin main
 检查数据是否存在：
 
 ```bash
-test -f SketchMol-Understanding-Condition/outputs/multiproperty_100k_v1/condition_rows.csv
+test -f SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv
 ```
 
 如果这条失败，说明 multi-property 数据集还没在当前 checkout 里生成或路径不对，需要设置：
@@ -85,7 +85,7 @@ export SUCC_MOLSCRIBE_WORKDIR=/path/to/MolScribe
 检查大 VLM 模型路径：
 
 ```bash
-export SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct
+export SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct
 test -d "$SUCC_HF_MODEL_NAME_OR_PATH"
 ```
 
@@ -112,7 +112,7 @@ df -i /scratch/bdong
 如果使用 SUCC-local molecule-image VAE，直接跑：
 
 ```bash
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
 SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
 SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=1 \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
@@ -365,7 +365,7 @@ squeue -j <job_id> -o "%.18i %.9P %.20j %.8u %.2t %.10M %.6D %R"
 第一次完整跑建议：
 
 ```bash
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
 SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
 SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=1 \
 SUCC_EVAL_LIMIT=1000 \
@@ -376,7 +376,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline
 如果只是快速检查链路，不想等太久：
 
 ```bash
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
 SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
 SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=1 \
 SUCC_EDIT_LIMIT=2000 \

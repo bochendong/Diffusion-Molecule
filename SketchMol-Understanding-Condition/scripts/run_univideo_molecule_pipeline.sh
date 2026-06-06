@@ -25,7 +25,7 @@ export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
 UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1}"
 FEATURES_DIR="${SUCC_CONDITION_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm}"
-DEFAULT_CONDITION_ROWS="SketchMol-Understanding-Condition/outputs/multiproperty_100k_v1/condition_rows.csv"
+DEFAULT_CONDITION_ROWS="SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv"
 CONDITION_ROWS="${SUCC_CONDITION_ROWS:-$DEFAULT_CONDITION_ROWS}"
 DATASET_DIR="${SUCC_UNIVIDEO_DATASET_DIR:-$UNIFIED_OUTPUT_DIR/dataset}"
 BASELINE_CSV="${SUCC_BASELINE_CSV:-$DATASET_DIR/baseline_variants.csv}"
