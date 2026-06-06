@@ -15,6 +15,9 @@ EDIT_LIMIT="${SUCC_EDIT_LIMIT:-500}"
 TRAIN_LIMIT="${SUCC_TRAIN_LIMIT:-500}"
 BATCH_SIZE="${SUCC_BATCH_SIZE:-32}"
 EPOCHS="${SUCC_EPOCHS:-1}"
+EVAL_LIMIT="${SUCC_EVAL_LIMIT:-1000}"
+EVAL_BATCH_SIZE="${SUCC_EVAL_BATCH_SIZE:-64}"
+EVAL_SAMPLE_STEPS="${SUCC_EVAL_SAMPLE_STEPS:-20}"
 
 echo "Running unified Understanding + latent diffusion smoke"
 echo "  python=$PYTHON_BIN"
@@ -75,8 +78,18 @@ mkdir -p "$OUTPUT_DIR"
   --limit "$TRAIN_LIMIT" \
   --timesteps 20
 
+"$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_latent_diffusion_generation.py" \
+  --eval-jsonl "$OUTPUT_DIR/dataset/unified_condition_eval.jsonl" \
+  --condition-connector "$OUTPUT_DIR/edit_condition_tokens/edit_condition_connector.pt" \
+  --diffusion-checkpoint "$OUTPUT_DIR/latent_diffusion/latent_diffusion_generation.pt" \
+  --output-dir "$OUTPUT_DIR/eval_latent" \
+  --limit "$EVAL_LIMIT" \
+  --batch-size "$EVAL_BATCH_SIZE" \
+  --sample-steps "$EVAL_SAMPLE_STEPS"
+
 echo "Unified smoke finished:"
 echo "  dataset=$OUTPUT_DIR/dataset/summary.json"
 echo "  alignment=$OUTPUT_DIR/alignment/alignment_model.pt"
 echo "  connector=$OUTPUT_DIR/edit_condition_tokens/edit_condition_connector.pt"
 echo "  diffusion=$OUTPUT_DIR/latent_diffusion/latent_diffusion_generation.pt"
+echo "  eval=$OUTPUT_DIR/eval_latent/metrics.json"
