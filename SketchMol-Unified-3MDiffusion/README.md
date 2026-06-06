@@ -281,7 +281,52 @@ SMU3M_RUN_MATERIALIZED_BENCHMARK=1
 
 Artifacts live under `outputs/unified_generation_3m_edit_v2/`.
 
-### Diffusion refine: job `15694324` (Jun 6 2026, ~3.7 min)
+### Current best: job `15695020` (Jun 6 2026, ~9 min)
+
+Joint connector + diffusion refine from epoch 150 to 250 with
+`train_diffusion_connector=1`, `prior_loss_weight=0.25`, balanced eval
+(1307 samples, up to 250 per property count), and materialized benchmark.
+Log: `logs/smu3m-diff-refine-15695020.log`.
+
+| Stage | Epochs | Final train loss | Status |
+| --- | ---: | ---: | --- |
+| Latent diffusion + connector | 151–250 | 0.162 → **0.021** | converged |
+| `diffusion_target_mae` | 151–250 | 0.147 → **0.041** | improved |
+| `prior_mse` | 151–250 | 0.304 → **0.060** | improved |
+
+Eval on 1307 edit samples:
+
+| Metric | `15694324` (ep150) | `15695020` (ep250) |
+| --- | ---: | ---: |
+| `prior_target_property_mae` | 7.43 | **6.74** |
+| `target_property_mae` | 7.27 | **6.75** |
+| `target_fingerprint_cosine` | 0.381 | 0.386 |
+| `generated_minus_prior_latent_mae` | 0.071 | **0.020** |
+
+Materialized benchmark joint strict all (1307 samples, 2p–7p):
+
+| Method | `15694324` | `15695020` |
+| --- | ---: | ---: |
+| `scaffold_property_retrieval` | 0.593 (1000, 2p-only table) | **0.317** |
+| `edit_latent_scaffold_source_rerank` | 0.453 | **0.297** |
+| `edit_latent_scaffold_retrieval` | 0.453 | **0.299** |
+| `source_identity` | 0.446 | 0.152 |
+
+Per-property strict for `edit_latent_scaffold_source_rerank` vs SketchMol reference:
+
+| | 2p | 3p | 4p | 5p |
+| --- | ---: | ---: | ---: | ---: |
+| edit latent | 0.640 | 0.420 | 0.248 | 0.168 |
+| scaffold retrieval | 0.656 | 0.460 | 0.272 | 0.172 |
+| SketchMol reference | 0.804 | 0.768 | 0.736 | 0.716 |
+
+Joint connector training fixed the frozen-prior bottleneck. Edit-latent scaffold
+retrieval now tracks the scaffold-property baseline (~0.30 joint strict) but
+remains below SketchMol structured reference, especially on 3p+ tasks.
+`edit_latent_global_retrieval` has high per-property strict with scaffold all = 0,
+so it is not a valid source-conditioned method.
+
+### Frozen-prior plateau: job `15694324` (Jun 6 2026, ~3.7 min)
 
 Resumed residual diffusion from epoch 50 to 150 with `lr=3e-4`, then reran
 eval and materialized benchmark. Log: `logs/smu3m-diff-refine-15694324.log`.
