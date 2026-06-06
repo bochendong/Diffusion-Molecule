@@ -43,6 +43,7 @@ METHODS = (
     "global_property_retrieval",
     "scaffold_property_retrieval",
     "edit_latent_global_retrieval",
+    "edit_latent_source_similarity_rerank",
     "edit_latent_scaffold_retrieval",
     "edit_latent_scaffold_source_rerank",
     "vlm_feature_retrieval",
@@ -62,6 +63,7 @@ PURE_FEATURE_METHODS = {"vlm_feature_retrieval", "vlm_scaffold_feature_retrieval
 HYBRID_RERANK_METHODS = {"global_property_vlm_rerank", "scaffold_property_vlm_rerank"}
 EDIT_LATENT_METHODS = {
     "edit_latent_global_retrieval",
+    "edit_latent_source_similarity_rerank",
     "edit_latent_scaffold_retrieval",
     "edit_latent_scaffold_source_rerank",
 }
@@ -422,7 +424,10 @@ def _decode_row(
         if edit_latent_context is None:
             raise ValueError(f"{method} requires edit latent context")
         scaffold_only = method in {"edit_latent_scaffold_retrieval", "edit_latent_scaffold_source_rerank"}
-        use_source_similarity = method == "edit_latent_scaffold_source_rerank"
+        use_source_similarity = method in {
+            "edit_latent_source_similarity_rerank",
+            "edit_latent_scaffold_source_rerank",
+        }
         if scaffold_only:
             pool = by_scaffold.get(row.get("scaffold", ""), [])
             fallback = ""
@@ -1102,38 +1107,17 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
                 ),
             ]
         )
-    lines.extend(
-        [
-            "",
-            "## Strict Property Success",
-            "",
-            "This table is directly comparable to the SketchMol structured multi-property reference.",
-            "",
-            "| method | 2p | 3p | 4p | 5p | 6p | 7p | scaffold all | joint all |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
-        ]
-    )
     methods = [method for method in METHODS if any(row.get("method") == method for row in summary_rows)]
     rows_by_key = {(row["method"], row["property_count"]): row for row in summary_rows}
-    for method in methods:
-        values = []
-        for count in range(2, 8):
-            row = rows_by_key.get((method, count))
-            values.append(_fmt(row.get("success_rate_strict_in_valid_mols")) if row else "")
-        all_row = rows_by_key.get((method, "all"))
-        values.append(_fmt(all_row.get("scaffold_match_rate")) if all_row else "")
-        values.append(_fmt(all_row.get("joint_success_rate")) if all_row else "")
-        lines.append(f"| {method} | {' | '.join(values)} |")
     lines.extend(
         [
-            f"| SketchMol structured reference | {_fmt(0.804)} | {_fmt(0.768)} | {_fmt(0.736)} | {_fmt(0.716)} | {_fmt(0.678)} | {_fmt(0.685)} |  |  |",
             "",
             "## Source-Similarity-Constrained Success",
             "",
             (
                 "`strict@Tanimoto>=t` means strict property success AND "
                 "Morgan fingerprint Tanimoto(source, generated) >= t. "
-                "This is the main source-preservation metric for source-conditioned edit."
+                "This is the primary source-conditioned editing metric; scaffold match is diagnostic only."
             ),
             "",
             "| method | mean source Tani | median source Tani | "
@@ -1153,6 +1137,32 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
         for threshold in source_tanimoto_thresholds:
             values.append(_fmt(all_row.get(f"strict_success_at_source_tanimoto_ge_{_threshold_suffix(threshold)}")))
         lines.append(f"| {method} | {' | '.join(values)} |")
+    lines.extend(
+        [
+            "",
+            "## Strict Property Success",
+            "",
+            (
+                "This table is directly comparable to the SketchMol structured multi-property reference, "
+                "but it does not measure source similarity by itself."
+            ),
+            "",
+            "| method | 2p | 3p | 4p | 5p | 6p | 7p | mean source Tani all |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for method in methods:
+        values = []
+        for count in range(2, 8):
+            row = rows_by_key.get((method, count))
+            values.append(_fmt(row.get("success_rate_strict_in_valid_mols")) if row else "")
+        all_row = rows_by_key.get((method, "all"))
+        values.append(_fmt(all_row.get("mean_source_tanimoto")) if all_row else "")
+        lines.append(f"| {method} | {' | '.join(values)} |")
+    lines.append(
+        f"| SketchMol structured reference | {_fmt(0.804)} | {_fmt(0.768)} | {_fmt(0.736)} | "
+        f"{_fmt(0.716)} | {_fmt(0.678)} | {_fmt(0.685)} |  |"
+    )
     lines.extend(
         [
             "",
@@ -1198,8 +1208,9 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "- `target_oracle` is an upper bound because it returns the known target molecule.",
             "- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a candidate with the same scaffold and closest active-property values from the configured candidate library.",
             "- `edit_latent_global_retrieval` ranks candidates using predicted target/delta properties from the learned source-conditioned edit latent.",
+            "- `edit_latent_source_similarity_rerank` is the main proposed retrieval-style method: it uses the learned edit latent plus source Tanimoto reranking without requiring scaffold identity.",
             "- `edit_latent_scaffold_retrieval` applies that edit-latent scorer inside the same-scaffold candidate pool.",
-            "- `edit_latent_scaffold_source_rerank` is the main proposed retrieval-style method: it uses the learned edit latent plus optional fingerprint/source-similarity reranking inside the scaffold-preserving pool.",
+            "- `edit_latent_scaffold_source_rerank` is a scaffold-restricted diagnostic version of source-similarity reranking.",
             "- `vlm_scaffold_feature_retrieval` retrieves same-scaffold train targets by nearest frozen VLM condition feature.",
             "- `vlm_feature_retrieval` retrieves train targets by nearest frozen VLM condition feature without scaffold filtering.",
             "- `global_property_vlm_rerank` first keeps the top property-matched candidates, then reranks them with Understanding-Condition features.",

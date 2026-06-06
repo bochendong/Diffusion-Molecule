@@ -235,9 +235,13 @@ eval_latent/index.csv                       # condition_id alignment for the ben
 ```
 
 It then runs `benchmark_multiproperty_retrieval.py` with the normal baselines
-and Unified edit-latent retrieval methods. By default
-`SMU3M_BENCHMARK_FINGERPRINT_WEIGHT=1.0`, so candidate ranking uses predicted
-properties/deltas plus the Unified fingerprint block. The report to read is:
+and Unified edit-latent retrieval methods. The primary proposed row is
+`edit_latent_source_similarity_rerank`: it does not require scaffold identity,
+and instead ranks candidates by predicted edit latent plus source Tanimoto. By
+default `SMU3M_BENCHMARK_FINGERPRINT_WEIGHT=1.0` and
+`SMU3M_BENCHMARK_SOURCE_SIMILARITY_WEIGHT=1.0`, so candidate ranking uses
+predicted properties/deltas, the Unified fingerprint block, and source
+similarity. The report to read is:
 
 ```text
 SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized/
@@ -246,13 +250,13 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_ma
   benchmark_decoded.csv
 ```
 
-Those files contain the comparison-ready numbers: 2p-7p strict success,
-mean/median source Tanimoto, and `strict@Tanimoto>=0.4/0.6/0.8`.
+Those files contain the comparison-ready numbers: `strict@Tanimoto>=0.4/0.6/0.8`
+as the primary edit metric, plus 2p-7p strict success and scaffold diagnostics.
 
 ## Diffusion Refine
 
-After the first residual Stage 3 run, continue training only diffusion plus
-eval and materialized benchmark:
+After the residual Stage 3 runs, continue with joint connector + diffusion
+refine, eval, and materialized benchmark:
 
 ```bash
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \

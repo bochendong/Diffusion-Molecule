@@ -421,6 +421,10 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_ma
   benchmark_decoded.csv
 ```
 
+默认主方法是 `edit_latent_source_similarity_rerank`：不要求骨架完全一致，而是在
+候选分子里按 edit latent、预测 fingerprint 和 source Tanimoto 一起 rerank。
+报告主表看 `strict@Tanimoto>=0.4/0.6/0.8`；scaffold match 只作为诊断。
+
 如果要继续修当前瓶颈，下一轮直接跑 joint connector + diffusion refine。默认会从
 latest checkpoint 额外训练 100 epoch，打开 connector fine-tune 和 prior loss，
 并用 balanced 2p-7p eval 一起输出 SketchMol reference 对照：
