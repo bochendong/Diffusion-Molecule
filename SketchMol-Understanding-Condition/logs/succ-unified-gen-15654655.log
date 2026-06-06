@@ -1,0 +1,57 @@
+Running unified Understanding + latent diffusion smoke
+  python=/home/bdong/.venvs/molscribe_overlay/bin/python
+  3m_root=Research/Molecule Generation/3M-Diffusion
+  edit_manifest=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv
+  output_dir=SketchMol-Understanding-Condition/outputs/unified_generation_3m_edit_v1
+3M-Diffusion data not found; cloning reference repo:
+  url=https://github.com/huaishengzhu/3MDiffusion
+  dest=Research/Molecule Generation/3M-Diffusion
+Cloning into 'Research/Molecule Generation/3M-Diffusion'...
+Updating files:  73% (41/56)Updating files:  75% (42/56)Updating files:  76% (43/56)Updating files:  78% (44/56)Updating files:  80% (45/56)Updating files:  82% (46/56)Updating files:  83% (47/56)Updating files:  85% (48/56)Updating files:  87% (49/56)Updating files:  89% (50/56)Updating files:  91% (51/56)Updating files:  92% (52/56)Updating files:  94% (53/56)Updating files:  96% (54/56)Updating files:  98% (55/56)Updating files: 100% (56/56)Updating files: 100% (56/56), done.
+{
+  "edit_manifest": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv",
+  "eval_jsonl": "SketchMol-Understanding-Condition/outputs/unified_generation_3m_edit_v1/dataset/unified_condition_eval.jsonl",
+  "eval_rows": 14721,
+  "property_counts": {
+    "2": 22381,
+    "3": 13347,
+    "4": 7808,
+    "5": 4354,
+    "6": 1726,
+    "7": 384
+  },
+  "rows": 60266,
+  "splits": {
+    "eval": 14721,
+    "train": 45545
+  },
+  "tasks": {
+    "description_pretrain": 10266,
+    "edit_generation": 50000
+  },
+  "three_m_root": "Research/Molecule Generation/3M-Diffusion",
+  "train_jsonl": "SketchMol-Understanding-Condition/outputs/unified_generation_3m_edit_v1/dataset/unified_condition_train.jsonl",
+  "train_rows": 45545,
+  "unique_source_smiles": 3197,
+  "unique_target_smiles": 13461
+}
+{"epoch": 1, "train_loss": 2.1704918501919575}
+{"epoch": 2, "train_loss": 1.0872429764170326}
+{"epoch": 3, "train_loss": 0.7616194477409459}
+{"epoch": 4, "train_loss": 0.598588151334042}
+{"epoch": 5, "train_loss": 0.4993909373460861}
+{"epoch": 1, "train_loss": 2.8645837585256677}
+{"epoch": 2, "train_loss": 2.4367395684546103}
+{"epoch": 3, "train_loss": 2.171012409289929}
+{"epoch": 4, "train_loss": 1.986956990479671}
+{"epoch": 5, "train_loss": 1.8541984198973382}
+{"epoch": 1, "train_loss": 0.997255939038394}
+{"epoch": 2, "train_loss": 0.970856085372648}
+{"epoch": 3, "train_loss": 0.9455625540826599}
+{"epoch": 4, "train_loss": 0.932144289419102}
+{"epoch": 5, "train_loss": 0.9225711306374907}
+Unified smoke finished:
+  dataset=SketchMol-Understanding-Condition/outputs/unified_generation_3m_edit_v1/dataset/summary.json
+  alignment=SketchMol-Understanding-Condition/outputs/unified_generation_3m_edit_v1/alignment/alignment_model.pt
+  connector=SketchMol-Understanding-Condition/outputs/unified_generation_3m_edit_v1/edit_condition_tokens/edit_condition_connector.pt
+  diffusion=SketchMol-Understanding-Condition/outputs/unified_generation_3m_edit_v1/latent_diffusion/latent_diffusion_generation.pt

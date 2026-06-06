@@ -1,0 +1,438 @@
+HF VLM multi-property understanding workflow
+  python=/home/bdong/.venvs/molscribe_overlay/bin/python
+  model=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct
+  dataset_output_dir=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1
+  baseline_csv=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/baseline_variants.csv
+  condition_rows=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv
+  molecule_db=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/molecule_database.csv
+  features_dir=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm
+  benchmark_output_dir=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm
+  train_feature_connector=1
+  connector_features_dir=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector
+  connector_benchmark_output_dir=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector
+  frozen_methods=source_identity,global_property_retrieval,scaffold_property_retrieval,vlm_feature_retrieval,vlm_scaffold_feature_retrieval,global_property_vlm_rerank,scaffold_property_vlm_rerank,target_oracle
+  edit_methods=source_identity,global_property_retrieval,scaffold_property_retrieval,edit_latent_global_retrieval,edit_latent_scaffold_retrieval,edit_latent_scaffold_source_rerank,target_oracle
+  scaffold_fallback_mode=source_identity
+  rerank_candidates=64
+  rerank_property_weight=0.5
+  edit_latent_source_similarity_weight=0.25
+  source_tanimoto_thresholds=0.4,0.6,0.8
+Exporting condition encoder features
+  python=/home/bdong/.venvs/molscribe_overlay/bin/python
+  baseline_csv=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/baseline_variants.csv
+  encoder=hf_vlm
+  variants=full
+  output_dir=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm
+  pooled_dim=3584
+  num_queries=32
+  query_dim=256
+  hf_model_name_or_path=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct
+  hf_device_map=auto
+  hf_dtype=bfloat16
+  hf_batch_size=1
+  hf_prompt_style=auto
+  hf_render_image_size=256
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+Loading weights:   0%|          | 0/729 [00:00<?, ?it/s]Loading weights:   0%|          | 1/729 [00:00<01:58,  6.14it/s]Loading weights:   0%|          | 2/729 [00:00<02:25,  5.01it/s]Loading weights:   1%|          | 8/729 [00:00<00:59, 12.18it/s]Loading weights:   1%|▏         | 10/729 [00:00<01:01, 11.63it/s]Loading weights:  11%|█         | 80/729 [00:01<00:05, 123.11it/s]Loading weights:  13%|█▎        | 95/729 [00:01<00:05, 110.50it/s]Loading weights:  17%|█▋        | 122/729 [00:02<00:11, 55.08it/s]Loading weights:  33%|███▎      | 239/729 [00:02<00:03, 132.44it/s]Loading weights:  39%|███▉      | 287/729 [00:02<00:02, 150.11it/s]Loading weights:  42%|████▏     | 306/729 [00:02<00:03, 140.25it/s]Loading weights:  65%|██████▍   | 473/729 [00:03<00:00, 308.79it/s]Loading weights: 100%|█████████▉| 728/729 [00:03<00:00, 631.10it/s]Loading weights: 100%|██████████| 729/729 [00:03<00:00, 225.52it/s]
+{
+  "baseline_variants_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/baseline_variants.csv",
+  "encoder": "hf_vlm",
+  "hf_batch_size": 1,
+  "hf_device_map": "auto",
+  "hf_dtype": "bfloat16",
+  "hf_model_name_or_path": "/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct",
+  "hf_prompt_style": "auto",
+  "hf_render_image_size": 256,
+  "image_encoder_checkpoint": null,
+  "index_csv": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm/index.csv",
+  "pooled_npy": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm/pooled.npy",
+  "pooled_shape": [
+    300000,
+    3584
+  ],
+  "query_tokens_npy": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm/query_tokens.npy",
+  "query_tokens_shape": [
+    300000,
+    32,
+    256
+  ],
+  "rows": 300000,
+  "variants": "full"
+}
+Condition encoder export finished.
+
+Running benchmark: frozen_hf_vlm
+  features=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm
+  output=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm
+  methods=source_identity,global_property_retrieval,scaffold_property_retrieval,vlm_feature_retrieval,vlm_scaffold_feature_retrieval,global_property_vlm_rerank,scaffold_property_vlm_rerank,target_oracle
+{
+  "candidate_molecule_db_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/molecule_database.csv",
+  "candidate_molecules": 87107,
+  "candidate_source": "molecule_database",
+  "condition_feature_array": "pooled",
+  "condition_feature_variant": "full",
+  "condition_features_dir": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm",
+  "condition_rows_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv",
+  "decoded_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm/benchmark_decoded.csv",
+  "edit_latent_delta_weight": 0.35,
+  "edit_latent_dir": null,
+  "edit_latent_direction_weight": 0.1,
+  "edit_latent_property_weight": 1.0,
+  "edit_latent_source_similarity_weight": 0.25,
+  "eval_rows": 22452,
+  "eval_target_candidates_excluded": true,
+  "max_edit_latent_candidates": 20000,
+  "max_eval_per_property_count": 5000,
+  "max_feature_candidates": 20000,
+  "max_global_candidates": 20000,
+  "methods": [
+    "source_identity",
+    "global_property_retrieval",
+    "scaffold_property_retrieval",
+    "vlm_feature_retrieval",
+    "vlm_scaffold_feature_retrieval",
+    "global_property_vlm_rerank",
+    "scaffold_property_vlm_rerank",
+    "target_oracle"
+  ],
+  "output_dir": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm",
+  "report": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm/benchmark_report.md",
+  "rerank_candidates": 64,
+  "rerank_property_weight": 0.5,
+  "scaffold_fallback_mode": "source_identity",
+  "source_tanimoto_thresholds": [
+    0.4,
+    0.6,
+    0.8
+  ],
+  "summary_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm/benchmark_summary.csv",
+  "train_rows": 240120
+}
+
+Training VLM edit connector
+  output=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector
+  epochs=5
+  batch_size=1024
+  source_feature_weight=0.25
+{
+  "checkpoint": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector/vlm_feature_connector.pt",
+  "condition_features_dir": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm",
+  "condition_rows_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv",
+  "delta_mean": [
+    -1.0063649415969849,
+    -0.012433500960469246,
+    0.00020673632388934493,
+    -0.1512027084827423,
+    0.006007552146911621,
+    -0.0019068483961746097,
+    -0.004402471240609884
+  ],
+  "delta_std": [
+    83.64410400390625,
+    1.314652442932129,
+    0.17739488184452057,
+    35.23535919189453,
+    1.3336416482925415,
+    1.591177225112915,
+    2.61130428314209
+  ],
+  "edit_latent_predictions_npy": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector/edit_latent_predictions.npy",
+  "epochs": 5,
+  "eval_rows": 59880,
+  "export_dim": 291,
+  "hidden_dim": 512,
+  "history": [
+    {
+      "eval_mse": 0.32284234051475064,
+      "train_mse": 0.3565203824901581
+    },
+    {
+      "eval_mse": 0.31684174609327603,
+      "train_mse": 0.2987081797504425
+    },
+    {
+      "eval_mse": 0.3179875472902694,
+      "train_mse": 0.2682248215293884
+    },
+    {
+      "eval_mse": 0.29924754111386176,
+      "train_mse": 0.2455608015346527
+    },
+    {
+      "eval_mse": 0.2916907812566381,
+      "train_mse": 0.22690971940517426
+    }
+  ],
+  "index_csv": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector/index.csv",
+  "input_dim": 3847,
+  "output_dim": 28,
+  "output_dir": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector",
+  "pooled_npy": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector/pooled.npy",
+  "properties": [
+    "MW",
+    "LogP",
+    "QED",
+    "TPSA",
+    "HBD",
+    "HBA",
+    "RB"
+  ],
+  "source_feature_dim": 263,
+  "source_feature_weight": 0.25,
+  "source_fingerprint_bits": 256,
+  "source_mean": [
+    355.863525390625,
+    3.130410671234131,
+    0.5935895442962646,
+    75.04670715332031,
+    1.5612800121307373,
+    4.578519821166992,
+    5.003779888153076
+  ],
+  "source_std": [
+    92.7176513671875,
+    1.6586947441101074,
+    0.19286373257637024,
+    35.01028060913086,
+    1.2342791557312012,
+    1.8783541917800903,
+    3.05509352684021
+  ],
+  "target_mean": [
+    359.50408935546875,
+    3.149077892303467,
+    0.5899507403373718,
+    78.8382568359375,
+    1.8012930154800415,
+    4.659363746643066,
+    5.173542499542236
+  ],
+  "target_std": [
+    95.9827880859375,
+    1.7062268257141113,
+    0.18724386394023895,
+    36.02185821533203,
+    1.3102816343307495,
+    1.916337013244629,
+    3.0687737464904785
+  ],
+  "train_rows": 50000
+}
+
+Running benchmark: edit_connector
+  features=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector
+  output=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector
+  methods=source_identity,global_property_retrieval,scaffold_property_retrieval,edit_latent_global_retrieval,edit_latent_scaffold_retrieval,edit_latent_scaffold_source_rerank,target_oracle
+  edit_latent=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector
+{
+  "candidate_molecule_db_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/molecule_database.csv",
+  "candidate_molecules": 87107,
+  "candidate_source": "molecule_database",
+  "condition_feature_array": "pooled",
+  "condition_feature_variant": "full",
+  "condition_features_dir": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector",
+  "condition_rows_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv",
+  "decoded_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector/benchmark_decoded.csv",
+  "edit_latent_delta_weight": 0.35,
+  "edit_latent_dir": "SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector",
+  "edit_latent_direction_weight": 0.1,
+  "edit_latent_property_weight": 1.0,
+  "edit_latent_source_similarity_weight": 0.25,
+  "eval_rows": 22452,
+  "eval_target_candidates_excluded": true,
+  "max_edit_latent_candidates": 20000,
+  "max_eval_per_property_count": 5000,
+  "max_feature_candidates": 20000,
+  "max_global_candidates": 20000,
+  "methods": [
+    "source_identity",
+    "global_property_retrieval",
+    "scaffold_property_retrieval",
+    "edit_latent_global_retrieval",
+    "edit_latent_scaffold_retrieval",
+    "edit_latent_scaffold_source_rerank",
+    "target_oracle"
+  ],
+  "output_dir": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector",
+  "report": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector/benchmark_report.md",
+  "rerank_candidates": 64,
+  "rerank_property_weight": 0.5,
+  "scaffold_fallback_mode": "source_identity",
+  "source_tanimoto_thresholds": [
+    0.4,
+    0.6,
+    0.8
+  ],
+  "summary_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector/benchmark_summary.csv",
+  "train_rows": 240120
+}
+
+HF VLM multi-property benchmark ready:
+  report=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm/benchmark_report.md
+  summary=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm/benchmark_summary.csv
+  decoded=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm/benchmark_decoded.csv
+  connector_report=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector/benchmark_report.md
+  connector_summary=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector/benchmark_summary.csv
+  connector_decoded=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector/benchmark_decoded.csv
+
+# Multi-Property Direct Benchmark
+
+This report compares source-image/property-condition retrieval baselines against the SketchMol multi-property strict-success reference, then adds source-similarity metrics for source-conditioned editing.
+
+- condition rows: `SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv`
+- eval split: `eval`
+- candidate source: `molecule_database`
+- candidate molecule DB: `SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/molecule_database.csv`
+- max eval rows per property count: `5000`
+- eval target candidates excluded from retrieval pool: `True`
+- scaffold fallback mode: `source_identity`
+- source Tanimoto thresholds: `0.4,0.6,0.8`
+- condition features: `SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm`
+- condition feature array: `pooled`
+- condition feature variant: `full`
+
+## Strict Property Success
+
+This table is directly comparable to the SketchMol structured multi-property reference.
+
+| method | 2p | 3p | 4p | 5p | 6p | 7p | scaffold all | joint all |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| source_identity | 0.425 | 0.201 | 0.054 | 0.013 | 0.005 | 0.000 | 1.000 | 0.155 |
+| global_property_retrieval | 1.000 | 1.000 | 0.993 | 0.968 | 0.898 | 0.811 | 0.003 | 0.003 |
+| scaffold_property_retrieval | 0.474 | 0.247 | 0.100 | 0.037 | 0.025 | 0.024 | 1.000 | 0.194 |
+| vlm_feature_retrieval | 0.236 | 0.119 | 0.075 | 0.040 | 0.028 | 0.020 | 0.001 | 0.000 |
+| vlm_scaffold_feature_retrieval | 0.425 | 0.201 | 0.054 | 0.013 | 0.005 | 0.000 | 1.000 | 0.155 |
+| global_property_vlm_rerank | 0.999 | 0.986 | 0.922 | 0.806 | 0.687 | 0.535 | 0.001 | 0.001 |
+| scaffold_property_vlm_rerank | 0.474 | 0.247 | 0.099 | 0.036 | 0.023 | 0.024 | 1.000 | 0.193 |
+| target_oracle | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| SketchMol structured reference | 0.804 | 0.768 | 0.736 | 0.716 | 0.678 | 0.685 |  |  |
+
+## Source-Similarity-Constrained Success
+
+`strict@Tanimoto>=t` means strict property success AND Morgan fingerprint Tanimoto(source, generated) >= t. This is the main source-preservation metric for source-conditioned edit.
+
+| method | mean source Tani | median source Tani | strict@0.4 | strict@0.6 | strict@0.8 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| source_identity | 1.000 | 1.000 | 0.155 | 0.155 | 0.155 |
+| global_property_retrieval | 0.141 | 0.122 | 0.031 | 0.009 | 0.001 |
+| scaffold_property_retrieval | 0.941 | 1.000 | 0.181 | 0.165 | 0.135 |
+| vlm_feature_retrieval | 0.185 | 0.159 | 0.012 | 0.003 | 0.000 |
+| vlm_scaffold_feature_retrieval | 0.997 | 1.000 | 0.155 | 0.154 | 0.154 |
+| global_property_vlm_rerank | 0.131 | 0.121 | 0.009 | 0.001 | 0.000 |
+| scaffold_property_vlm_rerank | 0.941 | 1.000 | 0.181 | 0.165 | 0.135 |
+| target_oracle | 0.579 | 0.604 | 0.824 | 0.512 | 0.076 |
+
+## Scaffold-Match Diagnostics
+
+`joint success = strict property success AND scaffold match`. Keep this as a hard source-preservation diagnostic, not the only edit metric.
+
+| method | 2p | 3p | 4p | 5p | 6p | 7p | all |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| source_identity | 0.425 | 0.201 | 0.054 | 0.013 | 0.005 | 0.000 | 0.155 |
+| global_property_retrieval | 0.004 | 0.002 | 0.003 | 0.002 | 0.003 | 0.002 | 0.003 |
+| scaffold_property_retrieval | 0.474 | 0.247 | 0.100 | 0.037 | 0.025 | 0.024 | 0.194 |
+| vlm_feature_retrieval | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| vlm_scaffold_feature_retrieval | 0.425 | 0.201 | 0.054 | 0.013 | 0.005 | 0.000 | 0.155 |
+| global_property_vlm_rerank | 0.000 | 0.000 | 0.001 | 0.001 | 0.001 | 0.000 | 0.001 |
+| scaffold_property_vlm_rerank | 0.474 | 0.247 | 0.099 | 0.036 | 0.023 | 0.024 | 0.193 |
+| target_oracle | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+## Fallback Diagnostics
+
+| method | global fallback | source fallback | empty fallback |
+| --- | ---: | ---: | ---: |
+| source_identity | 0.000 | 0.000 | 0.000 |
+| global_property_retrieval | 0.000 | 0.000 | 0.000 |
+| scaffold_property_retrieval | 0.000 | 0.841 | 0.000 |
+| vlm_feature_retrieval | 0.000 | 0.000 | 0.000 |
+| vlm_scaffold_feature_retrieval | 0.000 | 0.996 | 0.000 |
+| global_property_vlm_rerank | 0.000 | 0.000 | 0.000 |
+| scaffold_property_vlm_rerank | 0.000 | 0.841 | 0.000 |
+| target_oracle | 0.000 | 0.000 | 0.000 |
+
+Notes:
+- `target_oracle` is an upper bound because it returns the known target molecule.
+- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a candidate with the same scaffold and closest active-property values from the configured candidate library.
+- `edit_latent_global_retrieval` ranks candidates using predicted target/delta properties from the learned source-conditioned edit latent.
+- `edit_latent_scaffold_retrieval` applies that edit-latent scorer inside the same-scaffold candidate pool.
+
+# Multi-Property Direct Benchmark
+
+This report compares source-image/property-condition retrieval baselines against the SketchMol multi-property strict-success reference, then adds source-similarity metrics for source-conditioned editing.
+
+- condition rows: `SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv`
+- eval split: `eval`
+- candidate source: `molecule_database`
+- candidate molecule DB: `SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/molecule_database.csv`
+- max eval rows per property count: `5000`
+- eval target candidates excluded from retrieval pool: `True`
+- scaffold fallback mode: `source_identity`
+- source Tanimoto thresholds: `0.4,0.6,0.8`
+- condition features: `SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector`
+- condition feature array: `pooled`
+- condition feature variant: `full`
+- edit latent predictions: `SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_edit_connector`
+- edit latent scorer weights: property=1.0, delta=0.35, direction=0.1, source_similarity=0.25
+
+## Strict Property Success
+
+This table is directly comparable to the SketchMol structured multi-property reference.
+
+| method | 2p | 3p | 4p | 5p | 6p | 7p | scaffold all | joint all |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| source_identity | 0.425 | 0.201 | 0.054 | 0.013 | 0.005 | 0.000 | 1.000 | 0.155 |
+| global_property_retrieval | 1.000 | 1.000 | 0.993 | 0.968 | 0.898 | 0.811 | 0.003 | 0.003 |
+| scaffold_property_retrieval | 0.474 | 0.247 | 0.100 | 0.037 | 0.025 | 0.024 | 1.000 | 0.194 |
+| edit_latent_global_retrieval | 0.316 | 0.190 | 0.124 | 0.082 | 0.050 | 0.029 | 0.000 | 0.000 |
+| edit_latent_scaffold_retrieval | 0.464 | 0.240 | 0.094 | 0.034 | 0.020 | 0.020 | 1.000 | 0.188 |
+| edit_latent_scaffold_source_rerank | 0.465 | 0.240 | 0.094 | 0.034 | 0.020 | 0.020 | 1.000 | 0.187 |
+| target_oracle | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+| SketchMol structured reference | 0.804 | 0.768 | 0.736 | 0.716 | 0.678 | 0.685 |  |  |
+
+## Source-Similarity-Constrained Success
+
+`strict@Tanimoto>=t` means strict property success AND Morgan fingerprint Tanimoto(source, generated) >= t. This is the main source-preservation metric for source-conditioned edit.
+
+| method | mean source Tani | median source Tani | strict@0.4 | strict@0.6 | strict@0.8 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| source_identity | 1.000 | 1.000 | 0.155 | 0.155 | 0.155 |
+| global_property_retrieval | 0.141 | 0.122 | 0.031 | 0.009 | 0.001 |
+| scaffold_property_retrieval | 0.941 | 1.000 | 0.181 | 0.165 | 0.135 |
+| edit_latent_global_retrieval | 0.119 | 0.114 | 0.001 | 0.000 | 0.000 |
+| edit_latent_scaffold_retrieval | 0.942 | 1.000 | 0.178 | 0.163 | 0.136 |
+| edit_latent_scaffold_source_rerank | 0.943 | 1.000 | 0.178 | 0.164 | 0.137 |
+| target_oracle | 0.579 | 0.604 | 0.824 | 0.512 | 0.076 |
+
+## Scaffold-Match Diagnostics
+
+`joint success = strict property success AND scaffold match`. Keep this as a hard source-preservation diagnostic, not the only edit metric.
+
+| method | 2p | 3p | 4p | 5p | 6p | 7p | all |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| source_identity | 0.425 | 0.201 | 0.054 | 0.013 | 0.005 | 0.000 | 0.155 |
+| global_property_retrieval | 0.004 | 0.002 | 0.003 | 0.002 | 0.003 | 0.002 | 0.003 |
+| scaffold_property_retrieval | 0.474 | 0.247 | 0.100 | 0.037 | 0.025 | 0.024 | 0.194 |
+| edit_latent_global_retrieval | 0.000 | 0.000 | 0.000 | 0.000 | 0.001 | 0.000 | 0.000 |
+| edit_latent_scaffold_retrieval | 0.464 | 0.240 | 0.094 | 0.034 | 0.020 | 0.020 | 0.188 |
+| edit_latent_scaffold_source_rerank | 0.465 | 0.240 | 0.094 | 0.034 | 0.020 | 0.020 | 0.187 |
+| target_oracle | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 | 1.000 |
+
+## Fallback Diagnostics
+
+| method | global fallback | source fallback | empty fallback |
+| --- | ---: | ---: | ---: |
+| source_identity | 0.000 | 0.000 | 0.000 |
+| global_property_retrieval | 0.000 | 0.000 | 0.000 |
+| scaffold_property_retrieval | 0.000 | 0.841 | 0.000 |
+| edit_latent_global_retrieval | 0.000 | 0.000 | 0.000 |
+| edit_latent_scaffold_retrieval | 0.000 | 0.841 | 0.000 |
+| edit_latent_scaffold_source_rerank | 0.000 | 0.841 | 0.000 |
+| target_oracle | 0.000 | 0.000 | 0.000 |
+
+Notes:
+- `target_oracle` is an upper bound because it returns the known target molecule.
+- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a candidate with the same scaffold and closest active-property values from the configured candidate library.
+- `edit_latent_global_retrieval` ranks candidates using predicted target/delta properties from the learned source-conditioned edit latent.
+- `edit_latent_scaffold_retrieval` applies that edit-latent scorer inside the same-scaffold candidate pool.
+- `edit_latent_scaffold_source_rerank` is the main proposed retrieval-style method: it uses the learned edit latent plus source similarity inside the scaffold-preserving pool.
+- `vlm_scaffold_feature_retrieval` retrieves same-scaffold train targets by nearest frozen VLM condition feature.
