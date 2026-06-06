@@ -281,6 +281,41 @@ SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=250
 SMU3M_RUN_MATERIALIZED_BENCHMARK=1
 ```
 
+For a longer stability run with the full eval set (9455 edit rows), disable the
+balanced eval cap:
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_DIFFUSION_EXTRA_EPOCHS=200 \
+SMU3M_PRIOR_LOSS_WEIGHT=0.25 \
+SMU3M_EVAL_LIMIT=0 \
+SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=0 \
+SMMED_MAX_EVAL_PER_PROPERTY_COUNT=0 \
+SMU3M_SLURM_TIME=08:00:00 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
+```
+
+To sweep `prior_loss_weight` without overwriting the current best checkpoint,
+write each run to separate diffusion/eval/benchmark directories while resuming
+from the base `latent_diffusion` checkpoint:
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_BASE_DIFFUSION_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/latent_diffusion \
+SMU3M_DIFFUSION_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/latent_diffusion_prior050 \
+SMU3M_EVAL_LATENT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/eval_latent_prior050_full \
+SMU3M_BENCHMARK_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized_prior050_full \
+SMU3M_DIFFUSION_EXTRA_EPOCHS=100 \
+SMU3M_PRIOR_LOSS_WEIGHT=0.5 \
+SMU3M_EVAL_LIMIT=0 \
+SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=0 \
+SMMED_MAX_EVAL_PER_PROPERTY_COUNT=0 \
+SMU3M_SLURM_TIME=08:00:00 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
+```
+
 ## Latest Run Results
 
 Artifacts live under `outputs/unified_generation_3m_edit_v2/`.

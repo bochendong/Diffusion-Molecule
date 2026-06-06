@@ -435,6 +435,20 @@ SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
 ```
 
+想看稳定性时，直接加长训练并扩到全量 9455 eval：
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_DIFFUSION_EXTRA_EPOCHS=200 \
+SMU3M_PRIOR_LOSS_WEIGHT=0.25 \
+SMU3M_EVAL_LIMIT=0 \
+SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=0 \
+SMMED_MAX_EVAL_PER_PROPERTY_COUNT=0 \
+SMU3M_SLURM_TIME=08:00:00 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
+```
+
 ### 5. 跑 SketchMol baseline / OCR benchmark
 
 真实 SketchMol baseline 依赖 vendored SketchMol repo 和 MolScribe 环境。提交前确认 checkpoint

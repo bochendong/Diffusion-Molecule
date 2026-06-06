@@ -12,6 +12,8 @@ TRAIN_JSONL="${SMU3M_TRAIN_JSONL:-$OUTPUT_DIR/dataset/unified_condition_train.js
 EVAL_JSONL="${SMU3M_EVAL_JSONL:-$OUTPUT_DIR/dataset/unified_condition_eval.jsonl}"
 CONNECTOR="${SMU3M_CONDITION_CONNECTOR:-$OUTPUT_DIR/edit_condition_tokens/edit_condition_connector.pt}"
 DIFFUSION_DIR="${SMU3M_DIFFUSION_DIR:-$OUTPUT_DIR/latent_diffusion}"
+BASE_DIFFUSION_DIR="${SMU3M_BASE_DIFFUSION_DIR:-$OUTPUT_DIR/latent_diffusion}"
+RESUME_DIFFUSION_CHECKPOINT="${SMU3M_RESUME_DIFFUSION_CHECKPOINT:-}"
 EVAL_DIR="${SMU3M_EVAL_LATENT_DIR:-$OUTPUT_DIR/eval_latent}"
 
 TRAIN_LIMIT="${SMU3M_TRAIN_LIMIT:-50000}"
@@ -39,8 +41,17 @@ DEVICE="${SMU3M_DEVICE:-auto}"
 TRAIN_DIFFUSION_CONNECTOR="${SMU3M_TRAIN_DIFFUSION_CONNECTOR:-1}"
 RUN_MATERIALIZED_BENCHMARK="${SMU3M_RUN_MATERIALIZED_BENCHMARK:-1}"
 
+if [ "$RESUME" = "1" ] && [ -z "$RESUME_DIFFUSION_CHECKPOINT" ]; then
+  if [ -f "$DIFFUSION_DIR/checkpoints/latest.pt" ]; then
+    RESUME_DIFFUSION_CHECKPOINT="$DIFFUSION_DIR/checkpoints/latest.pt"
+  elif [ -f "$BASE_DIFFUSION_DIR/checkpoints/latest.pt" ]; then
+    RESUME_DIFFUSION_CHECKPOINT="$BASE_DIFFUSION_DIR/checkpoints/latest.pt"
+  fi
+fi
+
 if [ -z "$DIFFUSION_EPOCHS" ]; then
-  DIFFUSION_EPOCHS="$("$PYTHON_BIN" - "$DIFFUSION_DIR/checkpoints/latest.pt" "$DIFFUSION_EXTRA_EPOCHS" <<'PY'
+  RESUME_EPOCH_CHECKPOINT="${RESUME_DIFFUSION_CHECKPOINT:-__none__}"
+  DIFFUSION_EPOCHS="$("$PYTHON_BIN" - "$RESUME_EPOCH_CHECKPOINT" "$DIFFUSION_EXTRA_EPOCHS" <<'PY'
 import sys
 import warnings
 from pathlib import Path
@@ -48,9 +59,10 @@ from pathlib import Path
 import torch
 
 warnings.filterwarnings("ignore", category=FutureWarning)
-checkpoint = Path(sys.argv[1])
+checkpoint_arg = sys.argv[1]
 extra_epochs = int(float(sys.argv[2]))
-if checkpoint.exists():
+checkpoint = Path(checkpoint_arg)
+if checkpoint_arg != "__none__" and checkpoint.exists():
     payload = torch.load(checkpoint, map_location="cpu")
     start_epoch = int(payload.get("epoch", 0))
 else:
@@ -64,6 +76,8 @@ echo "Running Unified 3M Stage 3 diffusion refine"
 echo "  python=$PYTHON_BIN"
 echo "  output_dir=$OUTPUT_DIR"
 echo "  diffusion_dir=$DIFFUSION_DIR"
+echo "  base_diffusion_dir=$BASE_DIFFUSION_DIR"
+echo "  resume_diffusion_checkpoint=$RESUME_DIFFUSION_CHECKPOINT"
 echo "  diffusion_epochs=$DIFFUSION_EPOCHS"
 echo "  diffusion_extra_epochs=$DIFFUSION_EXTRA_EPOCHS"
 echo "  diffusion_lr=$DIFFUSION_LR"
@@ -115,13 +129,31 @@ fi
 if [ "$PIN_MEMORY" = "1" ]; then
   DIFFUSION_ARGS+=(--pin-memory)
 fi
-if [ "$RESUME" = "1" ] && [ -f "$DIFFUSION_DIR/checkpoints/latest.pt" ]; then
-  if [ -f "$DIFFUSION_DIR/metrics.json" ] \
-    && grep -q "\"diffusion_objective\": \"$DIFFUSION_OBJECTIVE\"" "$DIFFUSION_DIR/metrics.json" \
-    && grep -q "\"diffusion_target\": \"$DIFFUSION_TARGET\"" "$DIFFUSION_DIR/metrics.json"; then
-    DIFFUSION_ARGS+=(--resume-checkpoint "$DIFFUSION_DIR/checkpoints/latest.pt")
+if [ "$RESUME" = "1" ] && [ -n "$RESUME_DIFFUSION_CHECKPOINT" ] && [ -f "$RESUME_DIFFUSION_CHECKPOINT" ]; then
+  if "$PYTHON_BIN" - "$RESUME_DIFFUSION_CHECKPOINT" "$DIFFUSION_OBJECTIVE" "$DIFFUSION_TARGET" <<'PY'
+import sys
+import warnings
+from pathlib import Path
+
+import torch
+
+warnings.filterwarnings("ignore", category=FutureWarning)
+checkpoint = Path(sys.argv[1])
+objective = sys.argv[2]
+target = sys.argv[3]
+payload = torch.load(checkpoint, map_location="cpu")
+config = payload.get("config", {})
+ok = (
+    isinstance(config, dict)
+    and str(config.get("diffusion_objective", "pred_noise")) == objective
+    and str(config.get("diffusion_target", "target")) == target
+)
+sys.exit(0 if ok else 1)
+PY
+  then
+    DIFFUSION_ARGS+=(--resume-checkpoint "$RESUME_DIFFUSION_CHECKPOINT")
   else
-    echo "Existing latent diffusion checkpoint predates $DIFFUSION_OBJECTIVE/$DIFFUSION_TARGET settings; retraining latent diffusion."
+    echo "Resume checkpoint predates $DIFFUSION_OBJECTIVE/$DIFFUSION_TARGET settings; retraining latent diffusion."
   fi
 fi
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_latent_diffusion_generation.py" "${DIFFUSION_ARGS[@]}"
