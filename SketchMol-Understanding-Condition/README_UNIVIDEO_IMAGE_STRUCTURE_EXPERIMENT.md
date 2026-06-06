@@ -312,6 +312,55 @@ UniVideo diffusion；只有 generated images 有明显非白像素后，OCR succ
 
 ## Latest Run Results
 
+Artifacts live under `outputs/univideo_molecule_generation_v1/`.
+
+### Current best: job `15692057` (Jun 6 2026, ~2 h)
+
+Foreground-aware VAE retrain (`foreground_weight=8.0`), `pred_x0` diffusion,
+`sample_eta=0.0`, full pipeline through MolScribe OCR benchmark.
+Log: `logs/succ-univideo-mol-15692057.log`.
+
+| Stage | Status |
+| --- | --- |
+| Image VAE retrain (10 ep) | eval loss 0.017 → **0.011**; foreground L1 0.104 → **0.066** |
+| Stage1 connector | aux loss 1.60 → **1.44** |
+| Stage2 diffusion | diffusion loss 0.74 → **0.23** |
+| Stage3 multitask | diffusion loss **0.21** |
+
+Latent eval on 1000 samples (`univideo_molecule/eval_latent/metrics.json`):
+
+| Metric | `15688319` | `15692057` |
+| --- | ---: | ---: |
+| `source_latent_cosine` | 0.003 | **0.620** |
+| `target_latent_cosine` | 0.003 | **0.620** |
+| `latent_mae` / `latent_mse` | 0.393 / 0.375 | 0.528 / 1.057 |
+
+Decoded image quality:
+
+| | generated | target oracle |
+| --- | ---: | ---: |
+| `nonwhite_fraction` | 0.004 | 0.042 |
+| `mean_intensity` | 0.999 | 0.976 |
+| `dark_fraction` | 0.0015 | 0.031 |
+
+~85% of decoded PNGs are still near-blank (~774–802 bytes). 151 images have
+>1% nonwhite pixels; 5 exceed 5% and show recognizable molecular skeletons.
+MolScribe OCR ran successfully but produced no SMILES.
+
+Image-to-structure benchmark (`image_structure_benchmark/benchmark_report.md`):
+
+| Metric | Result |
+| --- | ---: |
+| OCR SMILES present | 0 / 1000 |
+| validity all | 0.0 |
+| strict success (2p–7p) | 0.0 |
+| SketchMol reference strict (2p–7p) | 0.68–0.80 |
+| MolScribe confidence (mean / max) | 0.075 / 0.45 |
+
+Latent alignment improved dramatically, but VAE decode still collapses to white
+for most samples. End-to-end strict success remains 0; bottleneck is now decode
+quality rather than latent conditioning or OCR infrastructure.
+
 ### Upstream training (`15688319`, `succ-univideo-mol`)
 
 Completed dataset export, image VAE, and 3-stage UniVideo training. Latent eval on
