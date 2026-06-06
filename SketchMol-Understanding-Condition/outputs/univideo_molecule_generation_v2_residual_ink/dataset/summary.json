@@ -1,0 +1,30 @@
+{
+  "baseline_variants_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset/baseline_variants.csv",
+  "condition_rows_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv",
+  "eval_jsonl": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset/univideo_edit_eval.jsonl",
+  "eval_rows": 9360,
+  "output_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset",
+  "property_counts": {
+    "2": 20926,
+    "3": 13131,
+    "4": 8267,
+    "5": 4940,
+    "6": 2167,
+    "7": 569
+  },
+  "rows": 50000,
+  "splits": {
+    "eval": 9360,
+    "train": 40640
+  },
+  "tasks": {
+    "edit_generation": 50000
+  },
+  "train_jsonl": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset/univideo_edit_train.jsonl",
+  "train_rows": 40640,
+  "unique_source_smiles": 2824,
+  "unique_target_smiles": 2825,
+  "variants": [
+    "full"
+  ]
+}

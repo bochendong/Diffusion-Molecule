@@ -1,0 +1,88 @@
+{
+  "by_property_count": {
+    "2": {
+      "latent_mae": 0.7509951615445549,
+      "latent_mse": 2.1478942795996874,
+      "rows": 479.0,
+      "source_latent_cosine": 0.9796433022605462,
+      "source_target_latent_cosine": 0.38585354954511014,
+      "target_latent_cosine": 0.3809437374485865
+    },
+    "3": {
+      "latent_mae": 0.7542702251471075,
+      "latent_mse": 2.1294033959283865,
+      "rows": 266.0,
+      "source_latent_cosine": 0.9801291219605744,
+      "source_target_latent_cosine": 0.3935329609027258,
+      "target_latent_cosine": 0.3884277079406614
+    },
+    "4": {
+      "latent_mae": 0.7476626766700272,
+      "latent_mse": 2.1154111486377447,
+      "rows": 141.0,
+      "source_latent_cosine": 0.9825785887517524,
+      "source_target_latent_cosine": 0.39016089228271705,
+      "target_latent_cosine": 0.3849884235160867
+    },
+    "5": {
+      "latent_mae": 0.7376395133825449,
+      "latent_mse": 2.0617841445482696,
+      "rows": 65.0,
+      "source_latent_cosine": 0.9783148811339978,
+      "source_target_latent_cosine": 0.4071381533536262,
+      "target_latent_cosine": 0.4018594040076028
+    },
+    "6": {
+      "latent_mae": 0.8012453223529615,
+      "latent_mse": 2.252788882506521,
+      "rows": 38.0,
+      "source_latent_cosine": 0.9836662652847913,
+      "source_target_latent_cosine": 0.3555175064763296,
+      "target_latent_cosine": 0.3527748672264962
+    },
+    "7": {
+      "latent_mae": 0.69807875698263,
+      "latent_mse": 1.9546051242134788,
+      "rows": 11.0,
+      "source_latent_cosine": 0.9924149371818768,
+      "source_target_latent_cosine": 0.40318261471311484,
+      "target_latent_cosine": 0.40168272742229016
+    }
+  },
+  "decoded_image_quality": {
+    "generated": {
+      "dark_fraction": 0.03154470825195312,
+      "images": 1000.0,
+      "mean_intensity": 0.9761024366021156,
+      "nonwhite_fraction": 0.04282293701171875,
+      "std_intensity": 0.13265616328269242
+    },
+    "source_oracle": {
+      "dark_fraction": 0.030814290046691895,
+      "images": 128.0,
+      "mean_intensity": 0.9763975003734231,
+      "nonwhite_fraction": 0.04156136512756348,
+      "std_intensity": 0.1327866068459116
+    },
+    "target_oracle": {
+      "dark_fraction": 0.030780911445617676,
+      "images": 128.0,
+      "mean_intensity": 0.9764205031096935,
+      "nonwhite_fraction": 0.04151606559753418,
+      "std_intensity": 0.13270970608573407
+    }
+  },
+  "latent_target_mode": "residual",
+  "output_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent",
+  "overall": {
+    "latent_mae": 0.7518557566255331,
+    "latent_mse": 2.1346582385003567,
+    "rows": 1000.0,
+    "source_latent_cosine": 0.9803934189018442,
+    "source_target_latent_cosine": 0.38892495762002643,
+    "target_latent_cosine": 0.38402200448260326
+  },
+  "rows": 1000,
+  "sample_eta": 0.0,
+  "sample_steps": 20
+}

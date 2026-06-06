@@ -325,13 +325,64 @@ UniVideo diffusion；只有 generated images 有明显非白像素后，OCR succ
 
 ## Latest Run Results
 
-Artifacts live under `outputs/univideo_molecule_generation_v1/`.
+Artifacts live under `outputs/univideo_molecule_generation_v2_residual_ink/` (current)
+and `outputs/univideo_molecule_generation_v1/` (previous ablation).
 
-### Current best: job `15692057` (Jun 6 2026, ~2 h)
+### Current best: job `15697119` (Jun 6 2026, ~2 h)
 
-Foreground-aware VAE retrain (`foreground_weight=8.0`), `pred_x0` diffusion,
-`sample_eta=0.0`, full pipeline through MolScribe OCR benchmark.
+Residual edit latent (`SUCC_LATENT_TARGET_MODE=residual`), ink-aware VAE
+(`foreground_weight=8.0`, `ink_loss_weight=4.0`, `ink_fraction_weight=2.0`),
+`pred_x0` diffusion, full pipeline through MolScribe OCR benchmark.
+Log: `logs/succ-univideo-mol-15697119.log`.
+
+| Stage | Status |
+| --- | --- |
+| Image VAE retrain (10 ep) | eval loss 0.053 → **0.031**; ink L1 tracked |
+| Stage1 connector | aux loss 1.63 → **1.47** |
+| Stage2 diffusion | diffusion loss 1.54 → **0.94** |
+| Stage3 multitask | diffusion loss **0.85** |
+
+Latent eval on 1000 samples (`univideo_molecule/eval_latent/metrics.json`):
+
+| Metric | `15692057` (absolute) | `15697119` (residual) |
+| --- | ---: | ---: |
+| `source_latent_cosine` | 0.620 | **0.980** |
+| `target_latent_cosine` | 0.620 | **0.384** |
+| `source_target_latent_cosine` | 0.463 | 0.389 |
+| `latent_mae` / `latent_mse` | 0.528 / 1.057 | 0.752 / 2.135 |
+
+Decoded image quality:
+
+| | generated | target oracle |
+| --- | ---: | ---: |
+| `nonwhite_fraction` | **0.043** | 0.042 |
+| `mean_intensity` | **0.976** | 0.976 |
+| `dark_fraction` | **0.032** | 0.031 |
+
+All 1000 decoded PNGs now contain visible molecular structure (median ~11 KB each;
+v1 median ~802 bytes). Blank-image collapse is fixed. Residual mode keeps generated
+latents near source (`source_latent_cosine` 0.98) but not near target (0.38 ≈
+source-target baseline), so the model mostly copies source rather than performing
+property edits.
+
+Image-to-structure benchmark (`image_structure_benchmark/benchmark_report.md`):
+
+| Metric | `15692057` | `15697119` |
+| --- | ---: | ---: |
+| OCR SMILES present | 0 / 1000 | 0 / 1000 |
+| validity all | 0.0 | 0.0 |
+| strict success (2p–7p) | 0.0 | 0.0 |
+| MolScribe confidence (mean / max) | 0.075 / 0.45 | 0.073 / 0.47 |
+
+Decode quality is solved; next bottlenecks are edit signal (raise `target_latent_cosine`)
+and MolScribe-readable rendering.
+
+### Residual-ink ablation: job `15692057` (Jun 6 2026, ~2 h)
+
+Foreground-aware VAE retrain (`foreground_weight=8.0`), absolute target latent,
+`pred_x0` diffusion, full pipeline through MolScribe OCR benchmark.
 Log: `logs/succ-univideo-mol-15692057.log`.
+Output: `outputs/univideo_molecule_generation_v1/`.
 
 | Stage | Status |
 | --- | --- |
