@@ -63,6 +63,7 @@ echo "  log_dir=$LOG_DIR"
 echo "  output_dir=${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1}"
 echo "  condition_rows=${SUCC_CONDITION_ROWS:-auto}"
 echo "  latent_backend=${SUCC_LATENT_BACKEND:-image_vae}"
+echo "  latent_target_mode=${SUCC_LATENT_TARGET_MODE:-auto-residual-for-image-latents}"
 echo "  run_image_structure_benchmark=${SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK:-auto}"
 echo "  molscribe_model=${SUCC_MOLSCRIBE_MODEL:-${SKETCHMOL_MOLSCRIBE_MODEL:-auto-if-default-exists}}"
 if [[ "${SUCC_LATENT_BACKEND:-image_vae}" == "image_vae" ]]; then

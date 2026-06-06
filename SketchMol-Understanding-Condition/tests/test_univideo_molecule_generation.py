@@ -29,6 +29,7 @@ def test_molecule_image_vae_uses_sketchmol_style_latent_shape():
     assert output.reconstruction.shape == images.shape
     assert torch.isfinite(loss)
     assert "reconstruction_l1" in logs
+    assert "ink_l1" in logs
 
 
 def test_univideo_connector_and_source_conditioned_diffusion_shapes():
@@ -133,6 +134,10 @@ def test_train_univideo_molecule_generation_script_smoke(tmp_path):
             "2",
             "--timesteps",
             "4",
+            "--diffusion-objective",
+            "pred_x0",
+            "--latent-target-mode",
+            "residual",
             "--stage1-epochs",
             "1",
             "--stage2-epochs",

@@ -74,6 +74,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--kl-weight", type=float, default=1e-6)
     parser.add_argument("--foreground-weight", type=float, default=8.0)
     parser.add_argument("--foreground-gamma", type=float, default=1.0)
+    parser.add_argument("--ink-loss-weight", type=float, default=4.0)
+    parser.add_argument("--ink-fraction-weight", type=float, default=2.0)
     parser.add_argument("--sample-latent", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--eval-limit", type=int, default=128)
@@ -110,6 +112,8 @@ def main() -> None:
         train_losses = []
         train_recon = []
         train_kl = []
+        train_ink = []
+        train_ink_fraction = []
         train_foreground = []
         train_background = []
         train_blank = []
@@ -125,6 +129,8 @@ def main() -> None:
                 kl_weight=args.kl_weight,
                 foreground_weight=args.foreground_weight,
                 foreground_gamma=args.foreground_gamma,
+                ink_loss_weight=args.ink_loss_weight,
+                ink_fraction_weight=args.ink_fraction_weight,
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
@@ -132,6 +138,8 @@ def main() -> None:
             train_losses.append(float(loss.item()))
             train_recon.append(float(logs["reconstruction_l1"].item()))
             train_kl.append(float(logs["kl"].item()))
+            train_ink.append(float(logs["ink_l1"].item()))
+            train_ink_fraction.append(float(logs["ink_fraction_l1"].item()))
             train_foreground.append(float(logs["foreground_l1"].item()))
             train_background.append(float(logs["background_l1"].item()))
             train_blank.append(float(logs["blank_canvas_l1"].item()))
@@ -141,6 +149,8 @@ def main() -> None:
             "epoch": epoch + 1,
             "train_loss": float(np.mean(train_losses)),
             "train_reconstruction_l1": float(np.mean(train_recon)),
+            "train_ink_l1": float(np.mean(train_ink)),
+            "train_ink_fraction_l1": float(np.mean(train_ink_fraction)),
             "train_foreground_l1": float(np.mean(train_foreground)),
             "train_background_l1": float(np.mean(train_background)),
             "train_blank_canvas_l1": float(np.mean(train_blank)),
@@ -157,6 +167,8 @@ def main() -> None:
                     kl_weight=args.kl_weight,
                     foreground_weight=args.foreground_weight,
                     foreground_gamma=args.foreground_gamma,
+                    ink_loss_weight=args.ink_loss_weight,
+                    ink_fraction_weight=args.ink_fraction_weight,
                 )
             )
         history.append(record)
@@ -170,6 +182,8 @@ def main() -> None:
         "latent_dim": args.latent_channels * args.latent_size * args.latent_size,
         "foreground_weight": args.foreground_weight,
         "foreground_gamma": args.foreground_gamma,
+        "ink_loss_weight": args.ink_loss_weight,
+        "ink_fraction_weight": args.ink_fraction_weight,
         "sample_latent": args.sample_latent,
         "train_jsonl": str(args.train_jsonl),
         "eval_jsonl": str(args.eval_jsonl) if args.eval_jsonl else None,
@@ -189,11 +203,15 @@ def _evaluate(
     kl_weight: float,
     foreground_weight: float,
     foreground_gamma: float,
+    ink_loss_weight: float,
+    ink_fraction_weight: float,
 ) -> dict[str, float]:
     model.eval()
     losses = []
     recon = []
     kls = []
+    ink_l1s = []
+    ink_fraction_l1s = []
     foreground_l1s = []
     background_l1s = []
     blank_l1s = []
@@ -208,10 +226,14 @@ def _evaluate(
             kl_weight=kl_weight,
             foreground_weight=foreground_weight,
             foreground_gamma=foreground_gamma,
+            ink_loss_weight=ink_loss_weight,
+            ink_fraction_weight=ink_fraction_weight,
         )
         losses.append(float(loss.item()))
         recon.append(float(logs["reconstruction_l1"].item()))
         kls.append(float(logs["kl"].item()))
+        ink_l1s.append(float(logs["ink_l1"].item()))
+        ink_fraction_l1s.append(float(logs["ink_fraction_l1"].item()))
         foreground_l1s.append(float(logs["foreground_l1"].item()))
         background_l1s.append(float(logs["background_l1"].item()))
         blank_l1s.append(float(logs["blank_canvas_l1"].item()))
@@ -220,6 +242,8 @@ def _evaluate(
     return {
         "eval_loss": float(np.mean(losses)),
         "eval_reconstruction_l1": float(np.mean(recon)),
+        "eval_ink_l1": float(np.mean(ink_l1s)),
+        "eval_ink_fraction_l1": float(np.mean(ink_fraction_l1s)),
         "eval_kl": float(np.mean(kls)),
         "eval_foreground_l1": float(np.mean(foreground_l1s)),
         "eval_background_l1": float(np.mean(background_l1s)),

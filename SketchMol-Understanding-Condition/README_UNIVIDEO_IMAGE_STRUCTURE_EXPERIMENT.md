@@ -131,7 +131,10 @@ SUCC_EVAL_LIMIT=1000
 SUCC_MAX_DECODE_IMAGES=$SUCC_EVAL_LIMIT
 SUCC_IMAGE_VAE_EPOCHS=10
 SUCC_IMAGE_VAE_FOREGROUND_WEIGHT=8.0
+SUCC_IMAGE_VAE_INK_LOSS_WEIGHT=4.0
+SUCC_IMAGE_VAE_INK_FRACTION_WEIGHT=2.0
 SUCC_DIFFUSION_OBJECTIVE=pred_x0
+SUCC_LATENT_TARGET_MODE=residual
 SUCC_SAMPLE_ETA=0.0
 ```
 
@@ -140,7 +143,7 @@ SUCC_SAMPLE_ETA=0.0
 ```text
 如果没有 condition features，就导出 HF VLM features；
 如果没有 molecule_image_vae.pt，就先训练 VAE；
-如果已有旧版 molecule_image_vae.pt 但 metrics 里没有 foreground_weight，会自动重训 VAE；
+如果已有旧版 molecule_image_vae.pt 但 metrics 里没有 ink_loss_weight，会自动重训 VAE；
 训练 UniVideo-style generator；
 decode eval latents 为 molecule images；
 跑 MolScribe OCR；
@@ -148,8 +151,18 @@ decode eval latents 为 molecule images；
 ```
 
 这版优先修 blank-image collapse。SUCC-local VAE 训练会提高黑色分子骨架像素权重，
-并在 metrics 里记录 foreground/background/blank-canvas 指标；UniVideo diffusion 默认使用
-`pred_x0` 目标和 deterministic DDIM sampling (`SUCC_SAMPLE_ETA=0.0`)。
+并额外加入 ink/stroke loss，metrics 里会记录 foreground/background/blank-canvas/ink 指标。
+UniVideo diffusion 默认使用 `pred_x0` 目标、residual edit latent
+(`target_latent - source_latent`) 和 deterministic DDIM sampling (`SUCC_SAMPLE_ETA=0.0`)。
+residual 模式会在采样后把预测 edit residual 加回 source latent；这样生成 latent 更容易留在
+source molecule 的 VAE 流形上，避免 latent cosine 看起来不错但 decoder 输出白图。
+
+如果要做 ablation，把 generation stream 切回旧的 absolute target latent：
+
+```bash
+SUCC_LATENT_TARGET_MODE=absolute \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+```
 
 ## 3. 如果已经有 VLM features
 

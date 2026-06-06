@@ -51,11 +51,19 @@ STAGE2_EPOCHS="${SUCC_STAGE2_EPOCHS:-5}"
 STAGE3_EPOCHS="${SUCC_STAGE3_EPOCHS:-2}"
 TIMESTEPS="${SUCC_TIMESTEPS:-100}"
 DIFFUSION_OBJECTIVE="${SUCC_DIFFUSION_OBJECTIVE:-pred_x0}"
+LATENT_TARGET_MODE="${SUCC_LATENT_TARGET_MODE:-}"
 SAMPLE_STEPS="${SUCC_SAMPLE_STEPS:-20}"
 SAMPLE_ETA="${SUCC_SAMPLE_ETA:-0.0}"
 CONDITION_DROPOUT="${SUCC_CONDITION_DROPOUT:-0.1}"
 SOURCE_DROPOUT="${SUCC_SOURCE_DROPOUT:-0.05}"
 LATENT_BACKEND="${SUCC_LATENT_BACKEND:-image_vae}"
+if [[ -z "$LATENT_TARGET_MODE" ]]; then
+  if [[ "$LATENT_BACKEND" == "fingerprint_property_vector" ]]; then
+    LATENT_TARGET_MODE="absolute"
+  else
+    LATENT_TARGET_MODE="residual"
+  fi
+fi
 IMAGE_SIZE="${SUCC_IMAGE_SIZE:-256}"
 IMAGE_VAE_DIR="${SUCC_IMAGE_VAE_DIR:-$UNIFIED_OUTPUT_DIR/molecule_image_vae}"
 IMAGE_VAE_CHECKPOINT="${SUCC_IMAGE_VAE_CHECKPOINT:-$IMAGE_VAE_DIR/molecule_image_vae.pt}"
@@ -66,6 +74,8 @@ IMAGE_VAE_LIMIT="${SUCC_IMAGE_VAE_LIMIT:-$TRAIN_LIMIT}"
 IMAGE_VAE_EVAL_LIMIT="${SUCC_IMAGE_VAE_EVAL_LIMIT:-256}"
 IMAGE_VAE_FOREGROUND_WEIGHT="${SUCC_IMAGE_VAE_FOREGROUND_WEIGHT:-8.0}"
 IMAGE_VAE_FOREGROUND_GAMMA="${SUCC_IMAGE_VAE_FOREGROUND_GAMMA:-1.0}"
+IMAGE_VAE_INK_LOSS_WEIGHT="${SUCC_IMAGE_VAE_INK_LOSS_WEIGHT:-4.0}"
+IMAGE_VAE_INK_FRACTION_WEIGHT="${SUCC_IMAGE_VAE_INK_FRACTION_WEIGHT:-2.0}"
 IMAGE_VAE_SAMPLE_LATENT="${SUCC_IMAGE_VAE_SAMPLE_LATENT:-0}"
 VAE_BATCH_SIZE="${SUCC_VAE_BATCH_SIZE:-16}"
 DECODE_EVAL_IMAGES="${SUCC_DECODE_EVAL_IMAGES:-1}"
@@ -136,6 +146,7 @@ echo "  run_dataset_export=$RUN_DATASET_EXPORT"
 echo "  run_feature_export=$RUN_FEATURE_EXPORT"
 echo "  latent_backend=$LATENT_BACKEND"
 echo "  diffusion_objective=$DIFFUSION_OBJECTIVE"
+echo "  latent_target_mode=$LATENT_TARGET_MODE"
 echo "  sample_eta=$SAMPLE_ETA"
 echo "  max_decode_images=$MAX_DECODE_IMAGES"
 echo "  run_image_structure_benchmark=$RUN_IMAGE_STRUCTURE_BENCHMARK"
@@ -146,6 +157,8 @@ if [[ "$LATENT_BACKEND" == "image_vae" ]]; then
   echo "  image_vae_checkpoint=$IMAGE_VAE_CHECKPOINT"
   echo "  run_image_vae_train=$RUN_IMAGE_VAE_TRAIN"
   echo "  image_vae_foreground_weight=$IMAGE_VAE_FOREGROUND_WEIGHT"
+  echo "  image_vae_ink_loss_weight=$IMAGE_VAE_INK_LOSS_WEIGHT"
+  echo "  image_vae_ink_fraction_weight=$IMAGE_VAE_INK_FRACTION_WEIGHT"
   echo "  image_vae_sample_latent=$IMAGE_VAE_SAMPLE_LATENT"
 elif [[ "$LATENT_BACKEND" == "sketchmol_vae" ]]; then
   echo "  sketchmol_root=$SKETCHMOL_ROOT"
@@ -196,8 +209,8 @@ mkdir -p "$UNIFIED_OUTPUT_DIR"
 LATENT_BACKEND_ARGS=()
 if [[ "$LATENT_BACKEND" == "image_vae" ]]; then
   if [[ "$RUN_IMAGE_VAE_TRAIN" == "auto" && -f "$IMAGE_VAE_CHECKPOINT" ]]; then
-    if [[ ! -f "$IMAGE_VAE_DIR/metrics.json" ]] || ! grep -q '"foreground_weight"' "$IMAGE_VAE_DIR/metrics.json"; then
-      echo "Existing image VAE checkpoint predates foreground-aware training; retraining it."
+    if [[ ! -f "$IMAGE_VAE_DIR/metrics.json" ]] || ! grep -q '"ink_loss_weight"' "$IMAGE_VAE_DIR/metrics.json"; then
+      echo "Existing image VAE checkpoint predates ink-aware training; retraining it."
       RUN_IMAGE_VAE_TRAIN=1
     fi
   fi
@@ -213,7 +226,9 @@ if [[ "$LATENT_BACKEND" == "image_vae" ]]; then
       --limit "$IMAGE_VAE_LIMIT" \
       --eval-limit "$IMAGE_VAE_EVAL_LIMIT" \
       --foreground-weight "$IMAGE_VAE_FOREGROUND_WEIGHT" \
-      --foreground-gamma "$IMAGE_VAE_FOREGROUND_GAMMA"
+      --foreground-gamma "$IMAGE_VAE_FOREGROUND_GAMMA" \
+      --ink-loss-weight "$IMAGE_VAE_INK_LOSS_WEIGHT" \
+      --ink-fraction-weight "$IMAGE_VAE_INK_FRACTION_WEIGHT"
     )
     if [[ "$IMAGE_VAE_SAMPLE_LATENT" == "1" ]]; then
       IMAGE_VAE_TRAIN_ARGS+=(--sample-latent)
@@ -297,6 +312,7 @@ fi
   --stage3-epochs "$STAGE3_EPOCHS" \
   --timesteps "$TIMESTEPS" \
   --diffusion-objective "$DIFFUSION_OBJECTIVE" \
+  --latent-target-mode "$LATENT_TARGET_MODE" \
   --limit "$TRAIN_LIMIT" \
   --eval-limit "$EVAL_LIMIT" \
   --sample-steps "$SAMPLE_STEPS" \

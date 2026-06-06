@@ -181,6 +181,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-decode-images", type=int, default=64)
     parser.add_argument("--timesteps", type=int, default=100)
     parser.add_argument("--diffusion-objective", choices=["pred_noise", "pred_x0"], default="pred_noise")
+    parser.add_argument("--latent-target-mode", choices=["absolute", "residual"], default="absolute")
     parser.add_argument("--stage1-epochs", type=int, default=2)
     parser.add_argument("--stage2-epochs", type=int, default=5)
     parser.add_argument("--stage3-epochs", type=int, default=2)
@@ -291,6 +292,7 @@ def main() -> None:
                 epochs=args.stage1_epochs,
                 diffusion_weight=0.0,
                 aux_weight=1.0,
+                latent_target_mode=args.latent_target_mode,
             )
         )
     if args.stage2_epochs > 0:
@@ -306,6 +308,7 @@ def main() -> None:
                 epochs=args.stage2_epochs,
                 diffusion_weight=1.0,
                 aux_weight=args.aux_loss_weight,
+                latent_target_mode=args.latent_target_mode,
             )
         )
     if args.stage3_epochs > 0:
@@ -321,6 +324,7 @@ def main() -> None:
                 epochs=args.stage3_epochs,
                 diffusion_weight=1.0,
                 aux_weight=args.aux_loss_weight,
+                latent_target_mode=args.latent_target_mode,
             )
         )
 
@@ -347,6 +351,7 @@ def main() -> None:
         "sketchmol_scale_factor": args.sketchmol_scale_factor,
         "timesteps": args.timesteps,
         "diffusion_objective": args.diffusion_objective,
+        "latent_target_mode": args.latent_target_mode,
         "sample_eta": args.sample_eta,
         "condition_dropout": args.condition_dropout,
         "source_dropout": args.source_dropout,
@@ -388,6 +393,7 @@ def main() -> None:
             sample_eta=args.sample_eta,
             device=device,
             latent_backend=args.latent_backend,
+            latent_target_mode=args.latent_target_mode,
             image_vae=image_vae if args.decode_eval_images else None,
             latent_shape=train_data.latent_shape,
             max_decode_images=args.max_decode_images,
@@ -408,6 +414,7 @@ def _train_stage(
     epochs: int,
     diffusion_weight: float,
     aux_weight: float,
+    latent_target_mode: str,
 ) -> list[dict[str, float | str | int]]:
     records = []
     for epoch in range(epochs):
@@ -438,8 +445,9 @@ def _train_stage(
                 },
             )
             if diffusion_weight > 0:
+                diffusion_target = _diffusion_target_latent(batch, latent_target_mode)
                 diffusion_loss = diffusion.loss(
-                    batch["target_latent"],
+                    diffusion_target,
                     batch["source_latent"],
                     condition.tokens,
                     condition.attention_mask,
@@ -459,6 +467,7 @@ def _train_stage(
             "loss": float(np.mean(losses)),
             "aux_loss": float(np.mean(aux_losses)),
             "diffusion_loss": float(np.mean(diffusion_losses)),
+            "latent_target_mode": latent_target_mode,
         }
         records.append(record)
         print(json.dumps(record, sort_keys=True))
@@ -477,6 +486,7 @@ def _evaluate(
     sample_eta: float,
     device: torch.device,
     latent_backend: str,
+    latent_target_mode: str,
     image_vae: torch.nn.Module | None,
     latent_shape: tuple[int, int, int] | None,
     max_decode_images: int,
@@ -500,6 +510,8 @@ def _evaluate(
             steps=sample_steps,
             eta=sample_eta,
         )
+        if latent_target_mode == "residual":
+            sampled_norm = batch["source_latent"] + sampled_norm
         sampled = np.stack([dataset.denormalize_latent(row) for row in sampled_norm.cpu().numpy()])
         target = np.stack([dataset.denormalize_latent(row) for row in batch["target_latent"].cpu().numpy()])
         source = np.stack([dataset.denormalize_latent(row) for row in batch["source_latent"].cpu().numpy()])
@@ -555,6 +567,7 @@ def _evaluate(
             "rows": len(rows),
             "sample_steps": int(sample_steps),
             "sample_eta": float(sample_eta),
+            "latent_target_mode": latent_target_mode,
             "output_dir": str(output_dir),
         }
     )
@@ -622,6 +635,18 @@ def _to_device(batch: dict[str, object], device: torch.device) -> dict[str, obje
     for key, value in batch.items():
         out[key] = value.to(device) if torch.is_tensor(value) else value
     return out
+
+
+def _diffusion_target_latent(batch: dict[str, object], latent_target_mode: str) -> torch.Tensor:
+    target = batch["target_latent"]
+    source = batch["source_latent"]
+    if not torch.is_tensor(target) or not torch.is_tensor(source):
+        raise TypeError("source_latent and target_latent must be tensors")
+    if latent_target_mode == "absolute":
+        return target
+    if latent_target_mode == "residual":
+        return target - source
+    raise ValueError(f"Unsupported latent_target_mode: {latent_target_mode}")
 
 
 def _metadata_from_batch(batch: dict[str, object]) -> list[dict[str, str]]:

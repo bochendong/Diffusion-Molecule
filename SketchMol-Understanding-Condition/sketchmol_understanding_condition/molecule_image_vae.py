@@ -141,31 +141,45 @@ def vae_loss(
     kl_weight: float = 1e-6,
     foreground_weight: float = 8.0,
     foreground_gamma: float = 1.0,
+    ink_loss_weight: float = 4.0,
+    ink_fraction_weight: float = 2.0,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Foreground-aware reconstruction plus small KL regularization.
 
     Molecule drawings are mostly white canvas. Plain pixel L1 can look good while
     the model learns to output blank white images, so dark/ink pixels receive
-    extra reconstruction weight.
+    extra reconstruction weight and explicit ink-mass supervision.
     """
 
     abs_error = (output.reconstruction - target).abs()
     target_ink = molecule_ink_mask(target)
+    reconstruction_ink = molecule_ink_mask(output.reconstruction)
     weights = 1.0 + float(foreground_weight) * target_ink.pow(float(foreground_gamma))
     reconstruction_loss = (abs_error * weights).sum() / weights.expand_as(abs_error).sum().clamp_min(1e-6)
+    ink_l1 = ((reconstruction_ink - target_ink).abs() * weights).sum() / weights.sum().clamp_min(1e-6)
+    ink_fraction_l1 = (reconstruction_ink.mean(dim=(1, 2, 3)) - target_ink.mean(dim=(1, 2, 3))).abs().mean()
     kl = -0.5 * torch.mean(1.0 + output.logvar - output.mean.pow(2) - output.logvar.exp())
-    loss = reconstruction_loss + float(kl_weight) * kl
+    loss = (
+        reconstruction_loss
+        + float(ink_loss_weight) * ink_l1
+        + float(ink_fraction_weight) * ink_fraction_l1
+        + float(kl_weight) * kl
+    )
     foreground_mask = target_ink > 0.05
     foreground_error = abs_error[foreground_mask.expand_as(abs_error)]
     background_error = abs_error[(~foreground_mask).expand_as(abs_error)]
     return loss, {
         "loss": loss.detach(),
         "reconstruction_l1": reconstruction_loss.detach(),
+        "ink_l1": ink_l1.detach(),
+        "ink_fraction_l1": ink_fraction_l1.detach(),
         "foreground_l1": foreground_error.mean().detach() if foreground_error.numel() else target.new_tensor(0.0),
         "background_l1": background_error.mean().detach() if background_error.numel() else target.new_tensor(0.0),
         "blank_canvas_l1": F.l1_loss(torch.ones_like(target), target).detach(),
         "target_ink_fraction": (target_ink > 0.05).to(dtype=target.dtype).mean().detach(),
-        "reconstruction_ink_fraction": (molecule_ink_mask(output.reconstruction) > 0.05).to(dtype=target.dtype).mean().detach(),
+        "reconstruction_ink_fraction": (reconstruction_ink > 0.05).to(dtype=target.dtype).mean().detach(),
+        "target_ink_mean": target_ink.mean().detach(),
+        "reconstruction_ink_mean": reconstruction_ink.mean().detach(),
         "kl": kl.detach(),
     }
 
