@@ -72,6 +72,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--lr", type=float, default=1e-4)
     parser.add_argument("--kl-weight", type=float, default=1e-6)
+    parser.add_argument("--foreground-weight", type=float, default=8.0)
+    parser.add_argument("--foreground-gamma", type=float, default=1.0)
+    parser.add_argument("--sample-latent", action="store_true")
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--eval-limit", type=int, default=128)
     parser.add_argument("--device", default="auto")
@@ -107,25 +110,55 @@ def main() -> None:
         train_losses = []
         train_recon = []
         train_kl = []
+        train_foreground = []
+        train_background = []
+        train_blank = []
+        train_target_ink = []
+        train_recon_ink = []
         for batch in train_loader:
             images = batch["image"].to(device)
             optimizer.zero_grad()
-            output = model(images, sample=True)
-            loss, logs = vae_loss(output, images, kl_weight=args.kl_weight)
+            output = model(images, sample=args.sample_latent)
+            loss, logs = vae_loss(
+                output,
+                images,
+                kl_weight=args.kl_weight,
+                foreground_weight=args.foreground_weight,
+                foreground_gamma=args.foreground_gamma,
+            )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             train_losses.append(float(loss.item()))
             train_recon.append(float(logs["reconstruction_l1"].item()))
             train_kl.append(float(logs["kl"].item()))
+            train_foreground.append(float(logs["foreground_l1"].item()))
+            train_background.append(float(logs["background_l1"].item()))
+            train_blank.append(float(logs["blank_canvas_l1"].item()))
+            train_target_ink.append(float(logs["target_ink_fraction"].item()))
+            train_recon_ink.append(float(logs["reconstruction_ink_fraction"].item()))
         record = {
             "epoch": epoch + 1,
             "train_loss": float(np.mean(train_losses)),
             "train_reconstruction_l1": float(np.mean(train_recon)),
+            "train_foreground_l1": float(np.mean(train_foreground)),
+            "train_background_l1": float(np.mean(train_background)),
+            "train_blank_canvas_l1": float(np.mean(train_blank)),
+            "train_target_ink_fraction": float(np.mean(train_target_ink)),
+            "train_reconstruction_ink_fraction": float(np.mean(train_recon_ink)),
             "train_kl": float(np.mean(train_kl)),
         }
         if eval_loader is not None:
-            record.update(_evaluate(model, eval_loader, device=device, kl_weight=args.kl_weight))
+            record.update(
+                _evaluate(
+                    model,
+                    eval_loader,
+                    device=device,
+                    kl_weight=args.kl_weight,
+                    foreground_weight=args.foreground_weight,
+                    foreground_gamma=args.foreground_gamma,
+                )
+            )
         history.append(record)
         print(json.dumps(record, sort_keys=True))
 
@@ -135,6 +168,9 @@ def main() -> None:
         "latent_size": args.latent_size,
         "base_channels": args.base_channels,
         "latent_dim": args.latent_channels * args.latent_size * args.latent_size,
+        "foreground_weight": args.foreground_weight,
+        "foreground_gamma": args.foreground_gamma,
+        "sample_latent": args.sample_latent,
         "train_jsonl": str(args.train_jsonl),
         "eval_jsonl": str(args.eval_jsonl) if args.eval_jsonl else None,
         "history": history,
@@ -145,22 +181,51 @@ def main() -> None:
 
 
 @torch.no_grad()
-def _evaluate(model: MoleculeImageVAE, loader: DataLoader, *, device: torch.device, kl_weight: float) -> dict[str, float]:
+def _evaluate(
+    model: MoleculeImageVAE,
+    loader: DataLoader,
+    *,
+    device: torch.device,
+    kl_weight: float,
+    foreground_weight: float,
+    foreground_gamma: float,
+) -> dict[str, float]:
     model.eval()
     losses = []
     recon = []
     kls = []
+    foreground_l1s = []
+    background_l1s = []
+    blank_l1s = []
+    target_ink_fractions = []
+    reconstruction_ink_fractions = []
     for batch in loader:
         images = batch["image"].to(device)
         output = model(images, sample=False)
-        loss, logs = vae_loss(output, images, kl_weight=kl_weight)
+        loss, logs = vae_loss(
+            output,
+            images,
+            kl_weight=kl_weight,
+            foreground_weight=foreground_weight,
+            foreground_gamma=foreground_gamma,
+        )
         losses.append(float(loss.item()))
         recon.append(float(logs["reconstruction_l1"].item()))
         kls.append(float(logs["kl"].item()))
+        foreground_l1s.append(float(logs["foreground_l1"].item()))
+        background_l1s.append(float(logs["background_l1"].item()))
+        blank_l1s.append(float(logs["blank_canvas_l1"].item()))
+        target_ink_fractions.append(float(logs["target_ink_fraction"].item()))
+        reconstruction_ink_fractions.append(float(logs["reconstruction_ink_fraction"].item()))
     return {
         "eval_loss": float(np.mean(losses)),
         "eval_reconstruction_l1": float(np.mean(recon)),
         "eval_kl": float(np.mean(kls)),
+        "eval_foreground_l1": float(np.mean(foreground_l1s)),
+        "eval_background_l1": float(np.mean(background_l1s)),
+        "eval_blank_canvas_l1": float(np.mean(blank_l1s)),
+        "eval_target_ink_fraction": float(np.mean(target_ink_fractions)),
+        "eval_reconstruction_ink_fraction": float(np.mean(reconstruction_ink_fractions)),
     }
 
 

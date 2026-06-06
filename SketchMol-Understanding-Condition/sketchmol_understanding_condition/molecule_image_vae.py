@@ -139,17 +139,42 @@ def vae_loss(
     target: torch.Tensor,
     *,
     kl_weight: float = 1e-6,
+    foreground_weight: float = 8.0,
+    foreground_gamma: float = 1.0,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
-    """Pixel reconstruction plus small KL regularization."""
+    """Foreground-aware reconstruction plus small KL regularization.
 
-    reconstruction_loss = F.l1_loss(output.reconstruction, target)
+    Molecule drawings are mostly white canvas. Plain pixel L1 can look good while
+    the model learns to output blank white images, so dark/ink pixels receive
+    extra reconstruction weight.
+    """
+
+    abs_error = (output.reconstruction - target).abs()
+    target_ink = molecule_ink_mask(target)
+    weights = 1.0 + float(foreground_weight) * target_ink.pow(float(foreground_gamma))
+    reconstruction_loss = (abs_error * weights).sum() / weights.expand_as(abs_error).sum().clamp_min(1e-6)
     kl = -0.5 * torch.mean(1.0 + output.logvar - output.mean.pow(2) - output.logvar.exp())
     loss = reconstruction_loss + float(kl_weight) * kl
+    foreground_mask = target_ink > 0.05
+    foreground_error = abs_error[foreground_mask.expand_as(abs_error)]
+    background_error = abs_error[(~foreground_mask).expand_as(abs_error)]
     return loss, {
         "loss": loss.detach(),
         "reconstruction_l1": reconstruction_loss.detach(),
+        "foreground_l1": foreground_error.mean().detach() if foreground_error.numel() else target.new_tensor(0.0),
+        "background_l1": background_error.mean().detach() if background_error.numel() else target.new_tensor(0.0),
+        "blank_canvas_l1": F.l1_loss(torch.ones_like(target), target).detach(),
+        "target_ink_fraction": (target_ink > 0.05).to(dtype=target.dtype).mean().detach(),
+        "reconstruction_ink_fraction": (molecule_ink_mask(output.reconstruction) > 0.05).to(dtype=target.dtype).mean().detach(),
         "kl": kl.detach(),
     }
+
+
+def molecule_ink_mask(images: torch.Tensor) -> torch.Tensor:
+    """Return a soft ink mask where dark molecule strokes are near 1."""
+
+    luminance = ((images.clamp(-1.0, 1.0) + 1.0) * 0.5).mean(dim=1, keepdim=True)
+    return (1.0 - luminance).clamp(0.0, 1.0)
 
 
 def save_molecule_image_vae(

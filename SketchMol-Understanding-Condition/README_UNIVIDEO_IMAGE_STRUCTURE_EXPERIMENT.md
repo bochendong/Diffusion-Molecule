@@ -129,6 +129,10 @@ SUCC_RUN_FEATURE_EXPORT=auto
 SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=auto
 SUCC_EVAL_LIMIT=1000
 SUCC_MAX_DECODE_IMAGES=$SUCC_EVAL_LIMIT
+SUCC_IMAGE_VAE_EPOCHS=10
+SUCC_IMAGE_VAE_FOREGROUND_WEIGHT=8.0
+SUCC_DIFFUSION_OBJECTIVE=pred_x0
+SUCC_SAMPLE_ETA=0.0
 ```
 
 含义是：
@@ -136,11 +140,16 @@ SUCC_MAX_DECODE_IMAGES=$SUCC_EVAL_LIMIT
 ```text
 如果没有 condition features，就导出 HF VLM features；
 如果没有 molecule_image_vae.pt，就先训练 VAE；
+如果已有旧版 molecule_image_vae.pt 但 metrics 里没有 foreground_weight，会自动重训 VAE；
 训练 UniVideo-style generator；
 decode eval latents 为 molecule images；
 跑 MolScribe OCR；
 跑 RDKit / SketchMol-style benchmark。
 ```
+
+这版优先修 blank-image collapse。SUCC-local VAE 训练会提高黑色分子骨架像素权重，
+并在 metrics 里记录 foreground/background/blank-canvas 指标；UniVideo diffusion 默认使用
+`pred_x0` 目标和 deterministic DDIM sampling (`SUCC_SAMPLE_ETA=0.0`)。
 
 ## 3. 如果已经有 VLM features
 
@@ -253,6 +262,10 @@ univideo_molecule/eval_latent/predictions.csv
 univideo_molecule/eval_latent/generated_images/*.png
   latent-space 评估和生成图片。
 
+univideo_molecule/eval_latent/source_oracle_images/*.png
+univideo_molecule/eval_latent/target_oracle_images/*.png
+  直接 decode source / target VAE latents 的诊断图片；用于判断 VAE 本身是否能画出结构。
+
 univideo_molecule/image_structure_benchmark/image_path.csv
   MolScribe 输入/输出 CSV；OCR 后会包含 SMILES 和 molscribe_score。
 
@@ -279,6 +292,10 @@ Source-Similarity-Constrained Success:
   strict@0.4 / strict@0.6 / strict@0.8
 
 Diagnostics:
+  molecule_image_vae eval_target_ink_fraction
+  molecule_image_vae eval_reconstruction_ink_fraction
+  eval_latent decoded_image_quality.target_oracle.nonwhite_fraction
+  eval_latent decoded_image_quality.generated.nonwhite_fraction
   OCR present
   valid
   source scaffold
@@ -288,6 +305,10 @@ Diagnostics:
 ```
 
 注意：`strict` 是按所有生成样本算的，OCR 失败或 RDKit invalid 都算失败；`success_rate_strict_in_valid_mols` 只在 valid 分子内部算，用于诊断，不作为唯一主结论。
+
+先看 VAE/oracle 诊断，再看 OCR：如果 `target_oracle.nonwhite_fraction` 仍接近 0，
+说明 VAE 还在白图坍缩；如果 target oracle 有结构但 generated 仍接近 0，问题转向
+UniVideo diffusion；只有 generated images 有明显非白像素后，OCR success 才有解释意义。
 
 ## Latest Run Results
 

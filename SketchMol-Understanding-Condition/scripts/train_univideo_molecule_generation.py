@@ -180,6 +180,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--decode-eval-images", action="store_true")
     parser.add_argument("--max-decode-images", type=int, default=64)
     parser.add_argument("--timesteps", type=int, default=100)
+    parser.add_argument("--diffusion-objective", choices=["pred_noise", "pred_x0"], default="pred_noise")
     parser.add_argument("--stage1-epochs", type=int, default=2)
     parser.add_argument("--stage2-epochs", type=int, default=5)
     parser.add_argument("--stage3-epochs", type=int, default=2)
@@ -192,6 +193,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--eval-limit", type=int, default=1000)
     parser.add_argument("--sample-steps", type=int, default=20)
+    parser.add_argument("--sample-eta", type=float, default=0.0)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=23)
     parser.add_argument("--export-condition-tokens", action="store_true")
@@ -270,7 +272,7 @@ def main() -> None:
     diffusion = SourceConditionedGaussianLatentDiffusion(
         denoiser,
         timesteps=args.timesteps,
-        objective="pred_noise",
+        objective=args.diffusion_objective,
         condition_dropout=args.condition_dropout,
         source_dropout=args.source_dropout,
     ).to(device)
@@ -344,6 +346,8 @@ def main() -> None:
         "sketchmol_vae_checkpoint": str(args.sketchmol_vae_checkpoint) if args.sketchmol_vae_checkpoint else None,
         "sketchmol_scale_factor": args.sketchmol_scale_factor,
         "timesteps": args.timesteps,
+        "diffusion_objective": args.diffusion_objective,
+        "sample_eta": args.sample_eta,
         "condition_dropout": args.condition_dropout,
         "source_dropout": args.source_dropout,
         "stats": {key: value.tolist() for key, value in train_data.stats.items()},
@@ -381,6 +385,7 @@ def main() -> None:
             output_dir=args.output_dir / "eval_latent",
             batch_size=args.eval_batch_size,
             sample_steps=args.sample_steps,
+            sample_eta=args.sample_eta,
             device=device,
             latent_backend=args.latent_backend,
             image_vae=image_vae if args.decode_eval_images else None,
@@ -469,6 +474,7 @@ def _evaluate(
     output_dir: Path,
     batch_size: int,
     sample_steps: int,
+    sample_eta: float,
     device: torch.device,
     latent_backend: str,
     image_vae: torch.nn.Module | None,
@@ -492,6 +498,7 @@ def _evaluate(
             condition.tokens,
             condition.attention_mask,
             steps=sample_steps,
+            eta=sample_eta,
         )
         sampled = np.stack([dataset.denormalize_latent(row) for row in sampled_norm.cpu().numpy()])
         target = np.stack([dataset.denormalize_latent(row) for row in batch["target_latent"].cpu().numpy()])
@@ -511,18 +518,48 @@ def _evaluate(
         )
 
     gen = np.concatenate(generated, axis=0)
+    target_all = np.concatenate(targets, axis=0)
+    source_all = np.concatenate(sources, axis=0)
     np.save(output_dir / "generated_latents.npy", gen.astype(np.float32))
+    np.save(output_dir / "target_latents.npy", target_all.astype(np.float32))
+    np.save(output_dir / "source_latents.npy", source_all.astype(np.float32))
+    image_quality = {}
     if image_vae is not None and latent_shape is not None:
-        _decode_latents_to_images(
+        image_quality["generated"] = _decode_latents_to_images(
             image_vae,
             gen,
             output_dir / "generated_images",
             latent_shape=latent_shape,
             max_images=max_decode_images,
+            filename_prefix="generated",
+        )
+        oracle_max_images = min(max_decode_images, 128)
+        image_quality["target_oracle"] = _decode_latents_to_images(
+            image_vae,
+            target_all,
+            output_dir / "target_oracle_images",
+            latent_shape=latent_shape,
+            max_images=oracle_max_images,
+        )
+        image_quality["source_oracle"] = _decode_latents_to_images(
+            image_vae,
+            source_all,
+            output_dir / "source_oracle_images",
+            latent_shape=latent_shape,
+            max_images=oracle_max_images,
         )
     _write_rows(output_dir / "predictions.csv", rows)
     metrics = _summarize(rows)
-    metrics.update({"rows": len(rows), "sample_steps": int(sample_steps), "output_dir": str(output_dir)})
+    metrics.update(
+        {
+            "rows": len(rows),
+            "sample_steps": int(sample_steps),
+            "sample_eta": float(sample_eta),
+            "output_dir": str(output_dir),
+        }
+    )
+    if image_quality:
+        metrics["decoded_image_quality"] = image_quality
     (output_dir / "metrics.json").write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return metrics
 
@@ -769,18 +806,49 @@ def _decode_latents_to_images(
     *,
     latent_shape: tuple[int, int, int],
     max_images: int,
-) -> None:
+    filename_prefix: str = "decoded",
+) -> dict[str, float]:
     from PIL import Image
 
     output_dir.mkdir(parents=True, exist_ok=True)
     device = next(image_vae.parameters()).device
     total = min(max_images, int(latents.shape[0]))
+    stats = []
     for start in range(0, total, 16):
         chunk = latents[start : start + 16].reshape(-1, *latent_shape)
         tensor = torch.from_numpy(chunk.astype(np.float32)).to(device)
         decoded = image_vae.decode(tensor).detach().cpu()
         for offset, image_tensor in enumerate(decoded):
-            Image.fromarray(tensor_to_uint8_image(image_tensor)).save(output_dir / f"generated_{start + offset:05d}.png")
+            image = tensor_to_uint8_image(image_tensor)
+            stats.append(_image_quality_stats(image))
+            Image.fromarray(image).save(output_dir / f"{filename_prefix}_{start + offset:05d}.png")
+    return _summarize_image_quality(stats)
+
+
+def _image_quality_stats(image: np.ndarray) -> dict[str, float]:
+    gray = image.astype(np.float32).mean(axis=2) / 255.0
+    return {
+        "mean_intensity": float(gray.mean()),
+        "std_intensity": float(gray.std()),
+        "nonwhite_fraction": float(np.mean(gray < 0.98)),
+        "dark_fraction": float(np.mean(gray < 0.75)),
+    }
+
+
+def _summarize_image_quality(stats: list[dict[str, float]]) -> dict[str, float]:
+    if not stats:
+        return {
+            "images": 0.0,
+            "mean_intensity": 0.0,
+            "std_intensity": 0.0,
+            "nonwhite_fraction": 0.0,
+            "dark_fraction": 0.0,
+        }
+    keys = list(stats[0].keys())
+    return {
+        "images": float(len(stats)),
+        **{key: float(np.mean([row[key] for row in stats])) for key in keys},
+    }
 
 
 def _safe_std(values: np.ndarray) -> np.ndarray:
