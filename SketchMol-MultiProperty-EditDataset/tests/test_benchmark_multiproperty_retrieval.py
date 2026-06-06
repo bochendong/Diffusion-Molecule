@@ -137,8 +137,53 @@ def test_edit_latent_candidate_uses_predicted_target_and_delta():
         property_weight=1.0,
         delta_weight=0.35,
         direction_weight=0.1,
+        fingerprint_weight=0.0,
         source_similarity_weight=0.0,
     )
+
+    assert candidate["smiles"] == "good"
+    assert fallback == ""
+
+
+def test_edit_latent_candidate_can_use_fingerprint_rerank():
+    prop_count = len(benchmark.PROPERTY_COLUMNS)
+    latent = np.zeros(prop_count * 4, dtype=np.float32)
+    mw_idx = benchmark.PROPERTY_COLUMNS.index("MW")
+    latent[mw_idx] = 200.0
+    latent[prop_count + mw_idx] = 100.0
+    latent[2 * prop_count + mw_idx] = 1.0
+    latent[3 * prop_count + mw_idx] = 1.0
+
+    original_fingerprint = benchmark._safe_morgan_fingerprint_bits
+    try:
+        benchmark._safe_morgan_fingerprint_bits = lambda smiles, dim: np.asarray(
+            {
+                "bad": [0.0, 1.0, 0.0],
+                "good": [1.0, 0.0, 0.0],
+            }[smiles],
+            dtype=np.float32,
+        )
+        candidate, fallback = benchmark._best_edit_latent_candidate(
+            {"condition_id": "cond_1", "source_smiles": ""},
+            [
+                {"smiles": "bad", "scaffold": "s", "props": {"MW": 200.0}},
+                {"smiles": "good", "scaffold": "s", "props": {"MW": 200.0}},
+            ],
+            edit_latent_context={
+                "predictions_by_condition_id": {"cond_1": latent},
+                "fingerprints_by_condition_id": {"cond_1": np.asarray([1.0, 0.0, 0.0], dtype=np.float32)},
+                "fingerprint_dim": 3,
+            },
+            selected_props=["MW"],
+            source_props={prop: 0.0 for prop in benchmark.PROPERTY_COLUMNS},
+            property_weight=1.0,
+            delta_weight=0.0,
+            direction_weight=0.0,
+            fingerprint_weight=1.0,
+            source_similarity_weight=0.0,
+        )
+    finally:
+        benchmark._safe_morgan_fingerprint_bits = original_fingerprint
 
     assert candidate["smiles"] == "good"
     assert fallback == ""

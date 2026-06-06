@@ -15,6 +15,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Mapping
 
+import numpy as np
+
 
 REPO_DIR = Path(__file__).resolve().parents[2]
 DATASET_DIR = REPO_DIR / "SketchMol-MultiProperty-EditDataset"
@@ -30,6 +32,7 @@ from sketchmol_multiproperty_dataset.common import (
 )
 from sketchmol_understanding_condition.chem import (
     canonical_smiles as _canonical_smiles,
+    morgan_fingerprint_bits as _morgan_fingerprint_bits,
     morgan_tanimoto as _morgan_tanimoto,
     scaffold_smiles as _scaffold_smiles,
 )
@@ -104,6 +107,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--edit-latent-property-weight", type=float, default=1.0)
     parser.add_argument("--edit-latent-delta-weight", type=float, default=0.35)
     parser.add_argument("--edit-latent-direction-weight", type=float, default=0.10)
+    parser.add_argument("--edit-latent-fingerprint-weight", type=float, default=0.0)
     parser.add_argument("--edit-latent-source-similarity-weight", type=float, default=0.25)
     parser.add_argument("--source-tanimoto-thresholds", default="0.4,0.6,0.8")
     parser.add_argument("--compute-tanimoto", action="store_true")
@@ -184,6 +188,7 @@ def main() -> None:
                     edit_latent_property_weight=args.edit_latent_property_weight,
                     edit_latent_delta_weight=args.edit_latent_delta_weight,
                     edit_latent_direction_weight=args.edit_latent_direction_weight,
+                    edit_latent_fingerprint_weight=args.edit_latent_fingerprint_weight,
                     edit_latent_source_similarity_weight=args.edit_latent_source_similarity_weight,
                     scaffold_fallback_mode=args.scaffold_fallback_mode,
                     compute_tanimoto=args.compute_tanimoto or bool(source_tanimoto_thresholds),
@@ -215,6 +220,7 @@ def main() -> None:
         "edit_latent_property_weight": args.edit_latent_property_weight,
         "edit_latent_delta_weight": args.edit_latent_delta_weight,
         "edit_latent_direction_weight": args.edit_latent_direction_weight,
+        "edit_latent_fingerprint_weight": args.edit_latent_fingerprint_weight,
         "edit_latent_source_similarity_weight": args.edit_latent_source_similarity_weight,
         "source_tanimoto_thresholds": source_tanimoto_thresholds,
         "scaffold_fallback_mode": args.scaffold_fallback_mode,
@@ -255,6 +261,26 @@ def _safe_morgan_tanimoto(smiles_a: str, smiles_b: str) -> float | None:
         return _morgan_tanimoto(smiles_a, smiles_b)
     except RuntimeError:
         return None
+
+
+@lru_cache(maxsize=500000)
+def _safe_morgan_fingerprint_bits(smiles: str, dim: int) -> np.ndarray | None:
+    try:
+        bits = _morgan_fingerprint_bits(smiles, n_bits=dim)
+    except RuntimeError:
+        return None
+    if bits is None:
+        return None
+    return np.asarray(bits, dtype=np.float32)
+
+
+def _cosine_similarity(left: np.ndarray, right: np.ndarray) -> float:
+    left = np.asarray(left, dtype=np.float32).reshape(-1)
+    right = np.asarray(right, dtype=np.float32).reshape(-1)
+    denom = float(np.linalg.norm(left) * np.linalg.norm(right))
+    if denom <= 1e-8:
+        return 0.0
+    return float(np.dot(left, right) / denom)
 
 
 def _candidate_pool(
@@ -341,6 +367,7 @@ def _decode_row(
     edit_latent_property_weight: float,
     edit_latent_delta_weight: float,
     edit_latent_direction_weight: float,
+    edit_latent_fingerprint_weight: float,
     edit_latent_source_similarity_weight: float,
     scaffold_fallback_mode: str,
     compute_tanimoto: bool,
@@ -410,6 +437,7 @@ def _decode_row(
             property_weight=edit_latent_property_weight,
             delta_weight=edit_latent_delta_weight,
             direction_weight=edit_latent_direction_weight,
+            fingerprint_weight=edit_latent_fingerprint_weight,
             source_similarity_weight=edit_latent_source_similarity_weight if use_source_similarity else 0.0,
         )
         fallback = ",".join(item for item in (fallback, edit_fallback) if item)
@@ -714,18 +742,33 @@ def _build_edit_latent_context(
             f"Edit latent row mismatch: {array_path} has {predictions.shape[0]} rows, "
             f"index.csv has {len(index_rows)} rows"
         )
+    fingerprint_path = edit_latent_dir / "edit_latent_fingerprints.npy"
+    fingerprints = None
+    if fingerprint_path.exists():
+        fingerprints = np.load(fingerprint_path)
+        if fingerprints.shape[0] != len(index_rows):
+            raise ValueError(
+                f"Edit latent fingerprint row mismatch: {fingerprint_path} has {fingerprints.shape[0]} rows, "
+                f"index.csv has {len(index_rows)} rows"
+            )
     known_condition_ids = {row.get("condition_id", "") for row in condition_rows}
     predictions_by_condition_id: dict[str, np.ndarray] = {}
-    for index_row, prediction in zip(index_rows, predictions.astype(np.float32)):
+    fingerprints_by_condition_id: dict[str, np.ndarray] = {}
+    for row_idx, (index_row, prediction) in enumerate(zip(index_rows, predictions.astype(np.float32))):
         if index_row.get("variant") != variant:
             continue
         condition_id = index_row.get("condition_id", "")
         if not condition_id or condition_id not in known_condition_ids:
             continue
         predictions_by_condition_id.setdefault(condition_id, prediction)
+        if fingerprints is not None:
+            fingerprints_by_condition_id.setdefault(condition_id, fingerprints[row_idx].astype(np.float32))
     return {
         "predictions_by_condition_id": predictions_by_condition_id,
+        "fingerprints_by_condition_id": fingerprints_by_condition_id,
+        "fingerprint_dim": int(fingerprints.shape[1]) if fingerprints is not None and fingerprints.ndim == 2 else 0,
         "array_path": str(array_path),
+        "fingerprint_path": str(fingerprint_path) if fingerprints is not None else None,
         "index_path": str(index_path),
     }
 
@@ -740,19 +783,24 @@ def _best_edit_latent_candidate(
     property_weight: float,
     delta_weight: float,
     direction_weight: float,
+    fingerprint_weight: float,
     source_similarity_weight: float,
 ) -> tuple[dict[str, object], str]:
-    import numpy as np
-
     if not pool:
         return _empty_candidate(), "empty_edit_latent_pool"
     predictions_by_condition_id = edit_latent_context["predictions_by_condition_id"]
     if not isinstance(predictions_by_condition_id, Mapping):
         raise TypeError("Invalid edit latent context: predictions_by_condition_id")
-    latent = predictions_by_condition_id.get(row.get("condition_id", ""))
+    condition_id = row.get("condition_id", "")
+    latent = predictions_by_condition_id.get(condition_id)
     if latent is None:
         return _source_candidate(row), "missing_edit_latent"
     target_values, delta_values, _active_mask, directions = _unpack_edit_latent(np.asarray(latent, dtype=np.float32))
+    fingerprints_by_condition_id = edit_latent_context.get("fingerprints_by_condition_id", {})
+    predicted_fingerprint = None
+    if fingerprint_weight > 0 and isinstance(fingerprints_by_condition_id, Mapping):
+        predicted_fingerprint = fingerprints_by_condition_id.get(condition_id)
+    fingerprint_dim = int(edit_latent_context.get("fingerprint_dim") or 0)
 
     scored = []
     for candidate in pool:
@@ -785,6 +833,14 @@ def _best_edit_latent_candidate(
             + float(delta_weight) * (delta_score / denom)
             + float(direction_weight) * (direction_score / denom)
         )
+        if predicted_fingerprint is not None and fingerprint_dim > 0:
+            candidate_fingerprint = _safe_morgan_fingerprint_bits(str(candidate.get("smiles", "")), fingerprint_dim)
+            if candidate_fingerprint is None:
+                score += float(fingerprint_weight) * 1e6
+            else:
+                score += float(fingerprint_weight) * (
+                    1.0 - _cosine_similarity(np.asarray(predicted_fingerprint, dtype=np.float32), candidate_fingerprint)
+                )
         if source_similarity_weight > 0:
             similarity = _safe_morgan_tanimoto(row.get("source_smiles", ""), str(candidate.get("smiles", ""))) or 0.0
             score += float(source_similarity_weight) * (1.0 - similarity)
@@ -1013,6 +1069,7 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
                     f"property={args.edit_latent_property_weight}, "
                     f"delta={args.edit_latent_delta_weight}, "
                     f"direction={args.edit_latent_direction_weight}, "
+                    f"fingerprint={args.edit_latent_fingerprint_weight}, "
                     f"source_similarity={args.edit_latent_source_similarity_weight}"
                 ),
             ]
@@ -1114,7 +1171,7 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a candidate with the same scaffold and closest active-property values from the configured candidate library.",
             "- `edit_latent_global_retrieval` ranks candidates using predicted target/delta properties from the learned source-conditioned edit latent.",
             "- `edit_latent_scaffold_retrieval` applies that edit-latent scorer inside the same-scaffold candidate pool.",
-            "- `edit_latent_scaffold_source_rerank` is the main proposed retrieval-style method: it uses the learned edit latent plus source similarity inside the scaffold-preserving pool.",
+            "- `edit_latent_scaffold_source_rerank` is the main proposed retrieval-style method: it uses the learned edit latent plus optional fingerprint/source-similarity reranking inside the scaffold-preserving pool.",
             "- `vlm_scaffold_feature_retrieval` retrieves same-scaffold train targets by nearest frozen VLM condition feature.",
             "- `vlm_feature_retrieval` retrieves train targets by nearest frozen VLM condition feature without scaffold filtering.",
             "- `global_property_vlm_rerank` first keeps the top property-matched candidates, then reranks them with Understanding-Condition features.",

@@ -1,8 +1,10 @@
 import csv
 import json
 
+import numpy as np
 import torch
 
+from sketchmol_unified_3m_diffusion.benchmark_export import write_edit_latent_benchmark_inputs
 from sketchmol_unified_3m_diffusion.edit_condition_tokens import (
     EditConditionTokenConnector,
     edit_condition_loss,
@@ -13,6 +15,7 @@ from sketchmol_unified_3m_diffusion.latent_diffusion_generation import (
 )
 from sketchmol_unified_3m_diffusion.unified_condition_dataset import (
     EDIT_GENERATION,
+    UnifiedConditionSample,
     read_3m_description_samples,
     read_edit_generation_samples,
     split_samples,
@@ -111,3 +114,39 @@ def test_edit_condition_connector_and_diffusion_loss_shapes():
     diffusion_loss = diffusion.loss(torch.randn(3, 20), output.tokens, output.attention_mask)
 
     assert torch.isfinite(diffusion_loss)
+
+
+def test_benchmark_export_writes_condition_aligned_latents(tmp_path):
+    sample = UnifiedConditionSample(
+        sample_id="edit:multiproperty_edit:pair_1_cond_00_2p",
+        task_type=EDIT_GENERATION,
+        split="eval",
+        prompt="",
+        target_smiles="CCN",
+        source_smiles="CCO",
+        property_count="2",
+        source_tanimoto="0.5",
+        source_similarity_bin="medium_similarity",
+        metadata={"condition_id": "pair_1_cond_00_2p"},
+    )
+    fingerprint_dim = 4
+    latent_dim = fingerprint_dim + 64 + 7
+    latent = np.zeros((1, latent_dim), dtype=np.float32)
+    latent[0, :fingerprint_dim] = [1.0, 0.0, 1.0, 0.0]
+    latent[0, fingerprint_dim : fingerprint_dim + 7] = np.arange(7, dtype=np.float32)
+    latent[0, fingerprint_dim + 32 : fingerprint_dim + 39] = np.arange(7, dtype=np.float32) - 3.0
+    latent[0, fingerprint_dim + 64 : fingerprint_dim + 71] = 1.0
+
+    summary = write_edit_latent_benchmark_inputs([sample], latent, tmp_path, fingerprint_dim=fingerprint_dim)
+
+    exported = np.load(tmp_path / "edit_latent_predictions.npy")
+    fingerprints = np.load(tmp_path / "edit_latent_fingerprints.npy")
+    index = list(csv.DictReader((tmp_path / "index.csv").open(newline="", encoding="utf-8")))
+
+    assert summary["rows"] == 1
+    assert exported.shape == (1, 28)
+    assert fingerprints.tolist() == [[1.0, 0.0, 1.0, 0.0]]
+    assert index[0]["condition_id"] == "pair_1_cond_00_2p"
+    assert exported[0, 0] == 0.0
+    assert exported[0, 7] == -3.0
+    assert exported[0, 21] == -1.0

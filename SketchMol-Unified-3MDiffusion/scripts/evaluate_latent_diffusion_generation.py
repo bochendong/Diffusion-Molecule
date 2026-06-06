@@ -22,6 +22,7 @@ from sketchmol_unified_3m_diffusion.latent_diffusion_generation import (  # noqa
     EditLatentDenoiser,
     GaussianLatentDiffusion,
 )
+from sketchmol_unified_3m_diffusion.benchmark_export import write_edit_latent_benchmark_inputs  # noqa: E402
 from sketchmol_unified_3m_diffusion.runtime import device_report, resolve_device  # noqa: E402
 from sketchmol_unified_3m_diffusion.unified_condition_dataset import EDIT_GENERATION, PROPERTY_COLUMNS, read_jsonl  # noqa: E402
 from sketchmol_unified_3m_diffusion.unified_featurization import (  # noqa: E402
@@ -150,6 +151,12 @@ def main() -> None:
     np.save(args.output_dir / "generated_latents.npy", gen.astype(np.float32))
     np.save(args.output_dir / "target_latents.npy", target.astype(np.float32))
     np.save(args.output_dir / "prior_latents.npy", prior.astype(np.float32))
+    benchmark_export = write_edit_latent_benchmark_inputs(
+        samples,
+        gen,
+        args.output_dir,
+        fingerprint_dim=fingerprint_dim,
+    )
     per_row = _per_row_metrics(samples, gen, target, source, prior=prior, fingerprint_dim=fingerprint_dim)
     metrics = _summarize(per_row)
     metrics["latent_block_summary"] = _latent_block_summary(gen, target, source, prior, fingerprint_dim=fingerprint_dim)
@@ -166,6 +173,7 @@ def main() -> None:
             "diffusion_objective": str(diffusion_config.get("diffusion_objective", "pred_noise")),
             "diffusion_target": diffusion_target,
             "fingerprint_dim": fingerprint_dim,
+            "benchmark_export": benchmark_export,
             "device": device_report(device),
         }
     )

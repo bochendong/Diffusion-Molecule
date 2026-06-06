@@ -401,6 +401,26 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v1/
   eval_latent/metrics.json
 ```
 
+如果 Unified 3M 已经跑完，要把 latent 结果落到可和论文表对齐的分子 benchmark，
+跑 materialized benchmark。它会从 `generated_latents.npy` 自动补导出
+`edit_latent_predictions.npy` / `edit_latent_fingerprints.npy`，再输出
+2p-7p strict success、source Tanimoto 和 strict@Tanimoto 阈值：
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/run_unified_materialized_benchmark.sh
+```
+
+结果目录：
+
+```text
+SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized/
+  benchmark_report.md
+  benchmark_summary.csv
+  benchmark_decoded.csv
+```
+
 ### 5. 跑 SketchMol baseline / OCR benchmark
 
 真实 SketchMol baseline 依赖 vendored SketchMol repo 和 MolScribe 环境。提交前确认 checkpoint

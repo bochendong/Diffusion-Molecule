@@ -38,6 +38,7 @@ sketchmol_unified_3m_diffusion/
   chem.py
   image_features.py
   text_features.py
+  benchmark_export.py
 
 scripts/
   preflight_unified_3m.py
@@ -46,6 +47,8 @@ scripts/
   train_edit_condition_tokens.py
   train_latent_diffusion_generation.py
   evaluate_latent_diffusion_generation.py
+  export_latent_benchmark_inputs.py
+  run_unified_materialized_benchmark.sh
   run_unified_generation_smoke.sh
   submit_unified_generation_pipeline.sh
 ```
@@ -96,6 +99,9 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_smoke/
   eval_latent/generated_latents.npy
   eval_latent/prior_latents.npy
   eval_latent/target_latents.npy
+  eval_latent/edit_latent_predictions.npy
+  eval_latent/edit_latent_fingerprints.npy
+  eval_latent/index.csv
 ```
 
 ## Slurm
@@ -205,6 +211,43 @@ SMU3M_LOG_DIR
 SMU3M_GPU_PROFILE
 SMU3M_SLURM_GPUS
 ```
+
+## Materialized Benchmark
+
+Latent-space metrics are only diagnostics. To compare against SketchMol-style
+paper tables, materialize the Unified 3M eval latents through the shared
+multi-property benchmark:
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/run_unified_materialized_benchmark.sh
+```
+
+The wrapper uses `eval_latent/generated_latents.npy` plus
+`dataset/unified_condition_eval.jsonl`. If the eval directory was produced
+before benchmark export existed, it automatically writes:
+
+```text
+eval_latent/edit_latent_predictions.npy     # target props / deltas / active / directions
+eval_latent/edit_latent_fingerprints.npy    # Unified target fingerprint block
+eval_latent/index.csv                       # condition_id alignment for the benchmark
+```
+
+It then runs `benchmark_multiproperty_retrieval.py` with the normal baselines
+and Unified edit-latent retrieval methods. By default
+`SMU3M_BENCHMARK_FINGERPRINT_WEIGHT=1.0`, so candidate ranking uses predicted
+properties/deltas plus the Unified fingerprint block. The report to read is:
+
+```text
+SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized/
+  benchmark_report.md
+  benchmark_summary.csv
+  benchmark_decoded.csv
+```
+
+Those files contain the comparison-ready numbers: 2p-7p strict success,
+mean/median source Tanimoto, and `strict@Tanimoto>=0.4/0.6/0.8`.
 
 ## Latest Run Results
 
