@@ -1,0 +1,20 @@
+[project]
+name = "smiles-dual-stream-editor-atomas"
+version = "0.1.0"
+description = "Standalone pure-SMILES dual-stream experiment inspired by SMI-Editor and Atomas"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+chem = [
+  "rdkit",
+]
+model = [
+  "torch",
+]
+test = []
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+

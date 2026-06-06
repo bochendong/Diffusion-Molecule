@@ -1,0 +1,44 @@
+experiment:
+  name: smiles_dual_stream_editor_atomas_large
+
+paths:
+  input_csv: SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv
+  fallback_input_csv: SketchMol-MultiProperty-EditDataset/data/train_table.csv
+  manifest_jsonl: SMILES-DualStream-EditorAtomas/outputs/manifests/large_train.jsonl
+  train_output_dir: SMILES-DualStream-EditorAtomas/outputs/runs/large
+
+data:
+  source_column: source_smiles
+  target_column: target_smiles
+  smiles_column: smiles
+  instruction_column: instruction
+  id_column: sample_id
+  split_column: split
+  limit: null
+  seed: 7
+  overwrite_manifest: false
+
+train:
+  epochs: 50
+  batch_size: 256
+  eval_batch_size: 512
+  embed_dim: 256
+  hidden_dim: 512
+  lr: 0.0005
+  weight_decay: 0.01
+  reconstruction_loss_weight: 1.0
+  alignment_loss_weight: 0.3
+  molecule_alignment_weight: 1.0
+  token_alignment_weight: 0.1
+  fragment_alignment_weight: 0.2
+  fragment_chunk_size: 8
+  gradient_accumulation_steps: 2
+  grad_clip: 1.0
+  eval_fraction: 0.02
+  max_sequence_length: 256
+  seed: 7
+  device: auto
+  save_every: 1
+  eval_every: 1
+  resume: true
+  fp16: true

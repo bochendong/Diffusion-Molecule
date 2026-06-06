@@ -19,6 +19,10 @@ SketchMol-Unified-3MDiffusion
   独立 3M-style unified 路线：description pretraining + edit-generation rows
   -> alignment -> edit tokens -> latent diffusion。
 
+SMILES-DualStream-EditorAtomas
+  独立纯 SMILES 双流路线：SMI-Editor-style edit reconstruction +
+  Atomas-style token/fragment/molecule hierarchical alignment，不使用图像。
+
 SketchMolBenchmark
   真实 SketchMol + MolScribe/OCR baseline，以及直接预测结果 materialization。
 
@@ -69,6 +73,7 @@ interpreter 更省事。
 ```bash
 export SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
 export SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
+export SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
 ```
 
 用途：
@@ -478,6 +483,43 @@ Understanding-condition 结果导出到 SketchMolBenchmark：
 SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 SUCC_VARIANT=full \
 bash SketchMol-Understanding-Condition/scripts/run_benchmark_export.sh
+```
+
+### 7. 跑 pure-SMILES Editor-Atomas large training
+
+这是独立纯 SMILES 路线，不读取或生成 molecule image。默认会先准备
+`large_train.jsonl`，再训练 edit reconstruction + molecule/token/fragment
+hierarchical alignment model；按 epoch 写 `latest_checkpoint.pt`，重新运行时可
+resume。
+
+先 dry-run 看配置、输入和资源：
+
+```bash
+SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+SDEA_DRY_RUN=1 \
+bash SMILES-DualStream-EditorAtomas/scripts/submit_large_train.sh
+```
+
+默认 economy profile 用 20GB H100 MIG：
+
+```bash
+SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SMILES-DualStream-EditorAtomas/scripts/submit_large_train.sh
+```
+
+如果明确要用 40GB，就用 throughput profile；脚本会同步放大 batch / hidden：
+
+```bash
+SDEA_RESOURCE_PROFILE=throughput_40gb \
+SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SMILES-DualStream-EditorAtomas/scripts/submit_large_train.sh
+```
+
+只准备 manifest，不提交训练：
+
+```bash
+SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SMILES-DualStream-EditorAtomas/scripts/prepare_large_manifest.sh --overwrite-manifest
 ```
 
 ## 本地检查
