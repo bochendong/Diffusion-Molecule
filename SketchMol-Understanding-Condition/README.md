@@ -1,5 +1,8 @@
 # SketchMol Understanding-Condition Stream
 
+当前 UniVideo-style image-to-structure 完整实验的运行说明见：
+[`README_UNIVIDEO_IMAGE_STRUCTURE_EXPERIMENT.md`](README_UNIVIDEO_IMAGE_STRUCTURE_EXPERIMENT.md)。
+
 ## 0. 核心判断
 
 这个方向可以做，但不能把故事讲成“旁边加一个 LLM”。比较稳的研究切入点是：
@@ -20,9 +23,9 @@ SketchMol 现有条件流已经是 cross-attention：`MixedEmbedderV2` 把离散
 当前主实验不再以小 CNN / hashed text proxy 作为方法主体。那些结果只保留为
 pipeline sanity check 和 ablation 负控。
 
-## 0.2 3M-Diffusion 启发后的 unified training pipeline
+## 0.2 旧 unified smoke 链路
 
-现在已经新增一条真正可跑的训练链路：
+这条链路来自 3M-Diffusion 启发，主要用途是做早期 smoke test：
 
 ```text
 molecule-language / image-language alignment pretraining
@@ -39,27 +42,7 @@ sketchmol_understanding_condition/latent_diffusion_generation.py
 sketchmol_understanding_condition/unified_featurization.py
 ```
 
-一键 smoke：
-
-```bash
-cd /scratch/bdong/projects/Diffusion-Molecule
-git pull origin main
-
-SUCC_3M_ROOT="Research/Molecule Generation/3M-Diffusion" \
-SUCC_EDIT_MANIFEST="SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv" \
-bash SketchMol-Understanding-Condition/scripts/run_unified_generation_smoke.sh
-```
-
-提交到 Slurm：
-
-```bash
-cd /scratch/bdong/projects/Diffusion-Molecule
-git pull origin main
-
-bash SketchMol-Understanding-Condition/scripts/submit_unified_generation_pipeline.sh
-```
-
-这条链路会依次运行：
+它会依次运行：
 
 ```text
 export_unified_condition_dataset.py
@@ -70,8 +53,155 @@ train_latent_diffusion_generation.py
 
 当前 generation stream 先用 `target Morgan fingerprint + target properties + edit
 metadata` 作为 molecular latent，验证 Understanding tokens 到 latent diffusion
-的训练闭环。后续接 SketchMol image latent 或 3M molecule VAE latent 时，只需要替换
-target latent featurizer 和 decoder，condition-token 接口保持不变。
+的训练闭环。后续主线不再依赖 3M-Diffusion 数据或其他仓库脚本，而是统一收敛到
+`SketchMol-Understanding-Condition` 内部的 UniVideo-style 双流实现。
+
+## 0.3 UniVideo-style 双流生成模型
+
+根据 UniVideo 的训练方式，现在新增了更贴近最终主线的双流模型：
+
+```text
+Understanding stream:
+  source molecule image / source SMILES / instruction
+    -> frozen HF VLM condition features
+    -> connector
+    -> diffusion-readable condition tokens C'
+
+Generation stream:
+  source molecule image / SMILES
+    -> molecule-image VAE
+    -> source latent z_src, shape 4x32x32
+    -> source-conditioned latent diffusion
+    -> generated target latent z_tgt
+    -> VAE decoder
+    -> generated target molecule image
+```
+
+这里的 VAE backend 对齐 SketchMol 的 latent 接口：输入 256x256 分子图像，
+latent 是 `4 x 32 x 32`。如果 edit dataset 没有现成 PNG，会用 RDKit 从
+SMILES 在内存里渲染分子图，不额外制造海量小文件。
+
+代码入口：
+
+```text
+sketchmol_understanding_condition/molecule_image_vae.py
+sketchmol_understanding_condition/univideo_molecule.py
+scripts/train_molecule_image_vae.py
+scripts/train_univideo_molecule_generation.py
+scripts/run_univideo_molecule_pipeline.sh
+scripts/submit_univideo_molecule_pipeline.sh
+```
+
+训练分三段，对应 UniVideo 的 staged training 思路：
+
+```text
+Stage 1: connector alignment
+  只训练 connector，让 frozen VLM hidden/query features 对齐 target latent、
+  target properties、property deltas、active mask、edit direction 和 similarity bin。
+
+Stage 2: diffusion fine-tuning
+  训练 connector + source-conditioned diffusion denoiser，用 target latent 的
+  pred_noise diffusion loss 学生成。
+
+Stage 3: multi-task/dropout
+  加 condition dropout 和 source dropout，模拟 classifier-free guidance/多任务
+  条件缺失，避免模型只记某一种输入形式。
+```
+
+一键提交：
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull origin main
+
+SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
+SUCC_CONDITION_ROWS=SketchMol-Understanding-Condition/outputs/multiproperty_100k_v1/condition_rows.csv \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+```
+
+如果 HF VLM features 已经由之前的 pipeline 导出过，可以跳过大模型导出：
+
+```bash
+SUCC_RUN_FEATURE_EXPORT=0 \
+SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm \
+SUCC_CONDITION_ROWS=SketchMol-Understanding-Condition/outputs/multiproperty_100k_v1/condition_rows.csv \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+```
+
+默认输出：
+
+```text
+SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/
+  dataset/summary.json
+  molecule_image_vae/molecule_image_vae.pt
+  molecule_image_vae/metrics.json
+  molecule_image_vae/reconstructions/*.png
+  univideo_molecule/univideo_molecule_generation.pt
+  univideo_molecule/metrics.json
+  univideo_molecule/eval_latent/metrics.json
+  univideo_molecule/eval_latent/generated_latents.npy
+  univideo_molecule/eval_latent/generated_images/*.png
+  univideo_molecule/image_structure_benchmark/image_path.csv
+  univideo_molecule/image_structure_benchmark/benchmark_decoded.csv
+  univideo_molecule/image_structure_benchmark/benchmark_summary.csv
+  univideo_molecule/image_structure_benchmark/benchmark_report.md
+  univideo_molecule/condition_tokens_train/query_tokens.npy
+```
+
+`image_structure_benchmark` 是最终可和 SketchMolBenchmark 横向看的部分：
+
+```text
+generated_images/*.png
+  -> MolScribe OCR
+  -> generated SMILES
+  -> RDKit validity / properties / source Tanimoto
+  -> 2p-7p strict success table
+```
+
+如果集群默认路径 `/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth`
+存在，脚本会自动用它。否则手动设置：
+
+```bash
+SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
+SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=1 \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+```
+
+如果只想先生成给 MolScribe 用的 `image_path.csv`，不跑 OCR：
+
+```bash
+SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=prepare \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+```
+
+默认 `SUCC_LATENT_BACKEND=image_vae`。如果没有提供
+`SUCC_IMAGE_VAE_CHECKPOINT`，一键脚本会先在当前 edit dataset 上训练一个
+SUCC-local molecule-image VAE，然后冻结它用于 source/target latent 编码和
+generated latent 解码。旧的 `fingerprint_property_vector` backend 仍然保留，
+只用于快速 sanity check：
+
+```bash
+SUCC_LATENT_BACKEND=fingerprint_property_vector \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+```
+
+如果服务器上已经有原始 SketchMol AutoencoderKL 权重，可以直接接真实
+SketchMol VAE latent/decoder，而不是训练 SUCC-local VAE：
+
+```bash
+SUCC_LATENT_BACKEND=sketchmol_vae \
+SUCC_SKETCHMOL_ROOT="Research/Molecule Generation/SketchMol/SketchMol-v1-main" \
+SUCC_SKETCHMOL_VAE_CONFIG="Research/Molecule Generation/SketchMol/SketchMol-v1-main/configs/autoencoder/autoencoder_kl_pubchem400w_32x32x4.yaml" \
+SUCC_SKETCHMOL_VAE_CHECKPOINT=/scratch/bdong/models/sketchmol/autoencoder_kl_pubchem400w_32x32x4.ckpt \
+SUCC_RUN_FEATURE_EXPORT=0 \
+SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+```
+
+本地仓库目前没有这个 SketchMol VAE `.ckpt` 文件；脚本已经预留接口，但真实
+权重路径需要在计算节点上按实际位置设置。`SUCC_SKETCHMOL_VAE_CHECKPOINT`
+可以是单独 AutoencoderKL checkpoint，也可以是完整 SketchMol diffusion
+checkpoint；adapter 会自动抽取 `first_stage_model.*` 权重。
 
 新的主线是：
 
