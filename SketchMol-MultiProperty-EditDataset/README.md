@@ -216,6 +216,17 @@ git pull origin main
 bash SketchMol-MultiProperty-EditDataset/scripts/submit_source_neighbor_dataset.sh
 ```
 
+Slurm 默认资源按串行 RDKit/CSV 构建收紧：
+
+```text
+SMMED_SLURM_CPUS=1
+SMMED_SLURM_MEM=8G
+SMMED_SLURM_TIME=02:00:00
+```
+
+脚本也会设置 `OMP_NUM_THREADS=1`、`MKL_NUM_THREADS=1`、`OPENBLAS_NUM_THREADS=1`
+和 `NUMEXPR_NUM_THREADS=1`，避免串行 job 申请多核但实际只跑一个线程。
+
 默认输出目录：
 
 ```text

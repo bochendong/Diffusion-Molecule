@@ -14,11 +14,16 @@ if ! command -v sbatch >/dev/null 2>&1; then
 fi
 
 ACCOUNT="${SMMED_SLURM_ACCOUNT:-def-hup-ab_gpu}"
-TIME="${SMMED_SLURM_TIME:-04:00:00}"
-MEM="${SMMED_SLURM_MEM:-16G}"
+TIME="${SMMED_SLURM_TIME:-02:00:00}"
+MEM="${SMMED_SLURM_MEM:-8G}"
 CPUS="${SMMED_SLURM_CPUS:-1}"
 JOB_NAME="${SMMED_SLURM_JOB_NAME:-smmed-src-neighbor}"
 LOG_DIR="${SMMED_LOG_DIR:-$PROJECT_DIR/logs}"
+
+export OMP_NUM_THREADS="${OMP_NUM_THREADS:-1}"
+export MKL_NUM_THREADS="${MKL_NUM_THREADS:-1}"
+export OPENBLAS_NUM_THREADS="${OPENBLAS_NUM_THREADS:-1}"
+export NUMEXPR_NUM_THREADS="${NUMEXPR_NUM_THREADS:-1}"
 
 mkdir -p "$LOG_DIR"
 
@@ -28,6 +33,7 @@ echo "  time=$TIME"
 echo "  mem=$MEM"
 echo "  cpus=$CPUS"
 echo "  log_dir=$LOG_DIR"
+echo "  resource_note=serial RDKit/CSV build; override SMMED_SLURM_CPUS/MEM/TIME only for larger inputs"
 
 sbatch \
   --account="$ACCOUNT" \
