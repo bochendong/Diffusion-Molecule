@@ -1,0 +1,324 @@
+source-aware sweep task: shared_tiny
+  source_similarity_loss_weight=0.02
+  hard_negative_loss_weight=0.01
+  source_aware_shared_gradient=1
+  hard_negative_margin=0.2
+  source_aware_temperature=0.07
+  output_dir=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny
+Running unified 3M Understanding + latent diffusion pipeline
+  python=/home/bdong/.venvs/molscribe_overlay/bin/python
+  3m_root=Research/Molecule Generation/3M-Diffusion
+  edit_manifest=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv
+  output_dir=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny
+  device=auto
+  require_cuda=1
+  diffusion_timesteps=100
+  diffusion_objective=pred_x0
+  diffusion_target=residual
+  eval_sample_eta=0.0
+  batch_size=32
+  num_workers=0
+  pin_memory=0
+  alignment_hidden_dim=512
+  edit_hidden_dim=512
+  diffusion_hidden_dim=512
+  num_queries=16
+  diffusion_depth=4
+  source_similarity_loss_weight=0.02
+  hard_negative_loss_weight=0.01
+  source_aware_temperature=0.07
+  hard_negative_margin=0.2
+  source_aware_shared_gradient=1
+  include_pubchem=0
+  include_kv=0
+{
+  "cuda_available": true,
+  "cuda_device_count": 1,
+  "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 2g.20gb",
+  "edit_manifest": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv",
+  "edit_manifest_first_usable_row": 1,
+  "event": "preflight_ok",
+  "numpy_version": "1.26.4",
+  "require_cuda": true,
+  "three_m_files": {
+    "ChEBI-20_data": [
+      "train.txt",
+      "validation.txt",
+      "test.txt"
+    ]
+  },
+  "three_m_root": "Research/Molecule Generation/3M-Diffusion",
+  "torch_version": "2.12.0"
+}
+{
+  "edit_manifest": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv",
+  "eval_jsonl": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/dataset/unified_condition_eval.jsonl",
+  "eval_rows": 14721,
+  "property_counts": {
+    "2": 22381,
+    "3": 13347,
+    "4": 7808,
+    "5": 4354,
+    "6": 1726,
+    "7": 384
+  },
+  "rows": 60266,
+  "splits": {
+    "eval": 14721,
+    "train": 45545
+  },
+  "tasks": {
+    "description_pretrain": 10266,
+    "edit_generation": 50000
+  },
+  "three_m_root": "Research/Molecule Generation/3M-Diffusion",
+  "train_jsonl": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/dataset/unified_condition_train.jsonl",
+  "train_rows": 45545,
+  "unique_source_smiles": 3197,
+  "unique_target_smiles": 13461
+}
+{"cuda_available": true, "cuda_device_count": 1, "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 2g.20gb", "device": "cuda", "event": "device", "torch_version": "2.12.0"}
+{"epoch": 1, "train_loss": 1.6964658253062308}
+{"epoch": 2, "train_loss": 0.7817468683662422}
+{"epoch": 3, "train_loss": 0.5358014815916003}
+{"epoch": 4, "train_loss": 0.41797121162683276}
+{"epoch": 5, "train_loss": 0.34714519538330646}
+{"cuda_available": true, "cuda_device_count": 1, "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 2g.20gb", "device": "cuda", "event": "device", "torch_version": "2.12.0"}
+{"epoch": 1, "train_active_bce": 0.5874750810184689, "train_delta_mse": 0.36027681473231277, "train_direction_ce": 0.6843145470419892, "train_fingerprint_bce": 0.2323766559573942, "train_loss": 2.783252473509274, "train_similarity_ce": 0.9493993453987013, "train_source_aware_hard_negative": 0.4192620509590045, "train_source_similarity_mse": 0.200193916791198, "train_target_property_mse": 0.4195624434151202}
+{"epoch": 2, "train_active_bce": 0.5541251258049101, "train_delta_mse": 0.26974206403109363, "train_direction_ce": 0.6222390986814483, "train_fingerprint_bce": 0.20989308076138, "train_loss": 2.4084458593690434, "train_similarity_ce": 0.9009076722130791, "train_source_aware_hard_negative": 0.3442804107785037, "train_source_similarity_mse": 0.1779221675185375, "train_target_property_mse": 0.2606063737395904}
+{"epoch": 3, "train_active_bce": 0.5116636159621203, "train_delta_mse": 0.18772585177647202, "train_direction_ce": 0.551612059353654, "train_fingerprint_bce": 0.19680346667249496, "train_loss": 2.142533230668739, "train_similarity_ce": 0.8495966513826267, "train_source_aware_hard_negative": 0.29549937431818873, "train_source_similarity_mse": 0.16350889718013137, "train_target_property_mse": 0.2131165111913384}
+{"epoch": 4, "train_active_bce": 0.4918323288016515, "train_delta_mse": 0.16673701418099532, "train_direction_ce": 0.5274210417355273, "train_fingerprint_bce": 0.18737085819338398, "train_loss": 2.0350067559100853, "train_similarity_ce": 0.8122176541138899, "train_source_aware_hard_negative": 0.2787589162247051, "train_source_similarity_mse": 0.15227692781092617, "train_target_property_mse": 0.20099288032152204}
+{"epoch": 5, "train_active_bce": 0.4789561024787674, "train_delta_mse": 0.15168225266368418, "train_direction_ce": 0.5122782956068448, "train_fingerprint_bce": 0.17682414850931064, "train_loss": 1.9219532548817175, "train_similarity_ce": 0.7732271611314466, "train_source_aware_hard_negative": 0.24299651750414128, "train_source_similarity_mse": 0.13858200338807203, "train_target_property_mse": 0.1683368295995219}
+{"cuda_available": true, "cuda_device_count": 1, "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 2g.20gb", "device": "cuda", "event": "device", "torch_version": "2.12.0"}
+{"diffusion_loss": 0.3348050169905277, "diffusion_target_mae": 0.3340792581203984, "epoch": 1, "prior_mse": 0.6528007383649281, "train_loss": 0.3348050169905277}
+{"diffusion_loss": 0.19882655254203815, "diffusion_target_mae": 0.33399177484848896, "epoch": 2, "prior_mse": 0.6527008044559873, "train_loss": 0.19882655254203815}
+{"diffusion_loss": 0.16290451140269308, "diffusion_target_mae": 0.33403764190357943, "epoch": 3, "prior_mse": 0.6529625409315061, "train_loss": 0.16290451140269308}
+{"diffusion_loss": 0.14629541851039565, "diffusion_target_mae": 0.33404915431978577, "epoch": 4, "prior_mse": 0.6528985689773168, "train_loss": 0.14629541851039565}
+{"diffusion_loss": 0.13546479848281065, "diffusion_target_mae": 0.3340540964285658, "epoch": 5, "prior_mse": 0.6529645633763319, "train_loss": 0.13546479848281065}
+{"cuda_available": true, "cuda_device_count": 1, "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 2g.20gb", "device": "cuda", "event": "device", "torch_version": "2.12.0"}
+{
+  "batch_size": 64,
+  "benchmark_export": {
+    "edit_latent_fingerprints": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/eval_latent/edit_latent_fingerprints.npy",
+    "edit_latent_predictions": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/eval_latent/edit_latent_predictions.npy",
+    "fingerprint_dim": 512,
+    "index_csv": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/eval_latent/index.csv",
+    "rows": 1000,
+    "variant": "full"
+  },
+  "by_property_count": {
+    "2": {
+      "delta_mae": 2.4892251133380165,
+      "generated_minus_prior_latent_mae": 0.12200174144054034,
+      "latent_mae": 0.26384377629163275,
+      "latent_mse": 5.559219769116147,
+      "prior_delta_mae": 2.3209039231081565,
+      "prior_latent_mae": 0.2320422280175858,
+      "prior_target_fingerprint_cosine": 0.45870244429936596,
+      "prior_target_property_mae": 7.745636560471661,
+      "rows": 498.0,
+      "source_fingerprint_cosine": 0.3938905350144449,
+      "source_target_fingerprint_cosine": 0.8022456000782916,
+      "source_target_property_mae": 6.295815136657661,
+      "target_fingerprint_cosine": 0.40970625726723076,
+      "target_property_mae": 8.033000244074557
+    },
+    "3": {
+      "delta_mae": 2.726047611048099,
+      "generated_minus_prior_latent_mae": 0.11999237192831491,
+      "latent_mae": 0.2853816370719035,
+      "latent_mse": 8.167802360748114,
+      "prior_delta_mae": 2.5258142140071853,
+      "prior_latent_mae": 0.25725574820880365,
+      "prior_target_fingerprint_cosine": 0.4562109279875635,
+      "prior_target_property_mae": 9.310355038275361,
+      "rows": 253.0,
+      "source_fingerprint_cosine": 0.40153270425968235,
+      "source_target_fingerprint_cosine": 0.8170229704292759,
+      "source_target_property_mae": 7.784621986004675,
+      "target_fingerprint_cosine": 0.41290852367154457,
+      "target_property_mae": 9.41607069285962
+    },
+    "4": {
+      "delta_mae": 3.0097030540035195,
+      "generated_minus_prior_latent_mae": 0.12186629549689489,
+      "latent_mae": 0.2810445600380636,
+      "latent_mse": 7.307973815459911,
+      "prior_delta_mae": 2.345251477540356,
+      "prior_latent_mae": 0.24808558219507948,
+      "prior_target_fingerprint_cosine": 0.4588324400154142,
+      "prior_target_property_mae": 8.939447965115717,
+      "rows": 146.0,
+      "source_fingerprint_cosine": 0.39623473879818605,
+      "source_target_fingerprint_cosine": 0.7768574407416308,
+      "source_target_property_mae": 10.190626446514914,
+      "target_fingerprint_cosine": 0.4122820824879289,
+      "target_property_mae": 8.987752558433847
+    },
+    "5": {
+      "delta_mae": 2.9615121181331463,
+      "generated_minus_prior_latent_mae": 0.11490904534263398,
+      "latent_mae": 0.28777407665750876,
+      "latent_mse": 8.741543143542845,
+      "prior_delta_mae": 2.52626371383667,
+      "prior_latent_mae": 0.25839879575060376,
+      "prior_target_fingerprint_cosine": 0.45972842174308787,
+      "prior_target_property_mae": 9.571581402821327,
+      "rows": 67.0,
+      "source_fingerprint_cosine": 0.3880073417741958,
+      "source_target_fingerprint_cosine": 0.779614618018377,
+      "source_target_property_mae": 11.669823347632565,
+      "target_fingerprint_cosine": 0.41523559783265,
+      "target_property_mae": 9.703626719873343
+    },
+    "6": {
+      "delta_mae": 2.9314037513520037,
+      "generated_minus_prior_latent_mae": 0.11942437410886798,
+      "latent_mae": 0.29363969287702013,
+      "latent_mse": 10.970442233873266,
+      "prior_delta_mae": 2.8649468017475948,
+      "prior_latent_mae": 0.27186799687998636,
+      "prior_target_fingerprint_cosine": 0.4820589510025804,
+      "prior_target_property_mae": 10.688986071518489,
+      "rows": 28.0,
+      "source_fingerprint_cosine": 0.41323026263385226,
+      "source_target_fingerprint_cosine": 0.7534925484050908,
+      "source_target_property_mae": 14.90597663606916,
+      "target_fingerprint_cosine": 0.4216123945808885,
+      "target_property_mae": 10.326464205980301
+    },
+    "7": {
+      "delta_mae": 3.531656175851822,
+      "generated_minus_prior_latent_mae": 0.15616516023874283,
+      "latent_mae": 0.24544991366565228,
+      "latent_mse": 3.6840761229395866,
+      "prior_delta_mae": 2.970312714576721,
+      "prior_latent_mae": 0.17335095442831516,
+      "prior_target_fingerprint_cosine": 0.438108863113963,
+      "prior_target_property_mae": 4.031821578741074,
+      "rows": 8.0,
+      "source_fingerprint_cosine": 0.3323702832443747,
+      "source_target_fingerprint_cosine": 0.7196860976511666,
+      "source_target_property_mae": 13.784869194030762,
+      "target_fingerprint_cosine": 0.36325499230178593,
+      "target_property_mae": 5.950060486793518
+    }
+  },
+  "by_source_similarity_bin": {
+    "easy_high_similarity": {
+      "delta_mae": 2.4879992964547037,
+      "generated_minus_prior_latent_mae": 0.11687116145835695,
+      "latent_mae": 0.2781740512320961,
+      "latent_mse": 7.6654550961538215,
+      "prior_delta_mae": 2.2988026140320703,
+      "prior_latent_mae": 0.2484282763575874,
+      "prior_target_fingerprint_cosine": 0.46515211965584086,
+      "prior_target_property_mae": 8.7545939102265,
+      "rows": 414.0,
+      "source_fingerprint_cosine": 0.40479367860541143,
+      "source_target_fingerprint_cosine": 0.8694197459867351,
+      "source_target_property_mae": 6.762187095655912,
+      "target_fingerprint_cosine": 0.42249566217980006,
+      "target_property_mae": 9.07053206882615
+    },
+    "hard_similarity": {
+      "delta_mae": 2.9073672090415603,
+      "generated_minus_prior_latent_mae": 0.13504104174811532,
+      "latent_mae": 0.24622924625873566,
+      "latent_mse": 3.862406534591207,
+      "prior_delta_mae": 2.4575105389511145,
+      "prior_latent_mae": 0.20285687719782194,
+      "prior_target_fingerprint_cosine": 0.434727077180301,
+      "prior_target_property_mae": 6.126254328423077,
+      "rows": 108.0,
+      "source_fingerprint_cosine": 0.35742193936250416,
+      "source_target_fingerprint_cosine": 0.6483491561457493,
+      "source_target_property_mae": 10.273549172613356,
+      "target_fingerprint_cosine": 0.369021741765788,
+      "target_property_mae": 6.61316121397195
+    },
+    "medium_similarity": {
+      "delta_mae": 2.789680537600148,
+      "generated_minus_prior_latent_mae": 0.1218209893727153,
+      "latent_mae": 0.27685736104160175,
+      "latent_mse": 6.764852899481313,
+      "prior_delta_mae": 2.4965964982200366,
+      "prior_latent_mae": 0.2477347501339274,
+      "prior_target_fingerprint_cosine": 0.45842163640369976,
+      "prior_target_property_mae": 8.796675784567908,
+      "rows": 478.0,
+      "source_fingerprint_cosine": 0.3967265305527439,
+      "source_target_fingerprint_cosine": 0.7714943149527365,
+      "source_target_property_mae": 8.353749910283787,
+      "target_fingerprint_cosine": 0.41099827707017506,
+      "target_property_mae": 8.812499298460812
+    }
+  },
+  "condition_connector": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/edit_condition_tokens/edit_condition_connector.pt",
+  "connector_source": "condition_connector.model_state",
+  "device": {
+    "cuda_available": true,
+    "cuda_device_count": 1,
+    "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 2g.20gb",
+    "device": "cuda",
+    "torch_version": "2.12.0"
+  },
+  "diffusion_checkpoint": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/latent_diffusion/latent_diffusion_generation.pt",
+  "diffusion_objective": "pred_x0",
+  "diffusion_target": "residual",
+  "eval_jsonl": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/dataset/unified_condition_eval.jsonl",
+  "fingerprint_dim": 512,
+  "latent_block_summary": {
+    "active": {
+      "generated_prior_mae": 0.056898925453424454,
+      "generated_target_mae": 0.3254697620868683,
+      "prior_target_mae": 0.3172144591808319,
+      "source_target_mae": 0.0
+    },
+    "deltas": {
+      "generated_prior_mae": 2.145540952682495,
+      "generated_target_mae": 2.677494764328003,
+      "prior_target_mae": 2.4104888439178467,
+      "source_target_mae": 0.0
+    },
+    "fingerprint": {
+      "generated_prior_mae": 0.06918281316757202,
+      "generated_target_mae": 0.15716929733753204,
+      "prior_target_mae": 0.12779252231121063,
+      "source_target_mae": 0.03497656434774399
+    },
+    "properties": {
+      "generated_prior_mae": 2.9873483180999756,
+      "generated_target_mae": 8.681796073913574,
+      "prior_target_mae": 8.490848541259766,
+      "source_target_mae": 7.902181148529053
+    }
+  },
+  "max_eval_per_property_count": null,
+  "output_dir": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/eval_latent",
+  "overall": {
+    "delta_mae": 2.677494664281607,
+    "generated_minus_prior_latent_mae": 0.12119952627271414,
+    "latent_mae": 0.27409463438391685,
+    "latent_mse": 6.8242380014955994,
+    "prior_delta_mae": 2.410488546565175,
+    "prior_latent_mae": 0.24317505971342326,
+    "prior_target_fingerprint_cosine": 0.4586490440739591,
+    "prior_target_property_mae": 8.490848371326923,
+    "rows": 1000.0,
+    "source_fingerprint_cosine": 0.39582143399800235,
+    "source_target_fingerprint_cosine": 0.7987357662496573,
+    "source_target_property_mae": 7.90218122535944,
+    "target_fingerprint_cosine": 0.41122472869268595,
+    "target_property_mae": 8.681796352267265
+  },
+  "rows": 1000,
+  "sample_eta": 0.0,
+  "sample_steps": 20
+}
+Unified smoke finished:
+  dataset=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/dataset/summary.json
+  alignment=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/alignment/alignment_model.pt
+  connector=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/edit_condition_tokens/edit_condition_connector.pt
+  diffusion=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/latent_diffusion/latent_diffusion_generation.pt
+  eval=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/shared_tiny/eval_latent/metrics.json

@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "/home/bdong/scratch/projects/Diffusion-Molecule"
+mkdir -p "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/logs"
+exec > >(tee "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/logs/balanced_030_010.log") 2>&1
+echo "source-aware sweep task: balanced_030_010"
+echo "  source_similarity_loss_weight=0.30"
+echo "  hard_negative_loss_weight=0.10"
+echo "  source_aware_shared_gradient=0"
+echo "  hard_negative_margin=0.2"
+echo "  source_aware_temperature=0.07"
+echo "  output_dir=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/balanced_030_010"
+export SMU3M_OUTPUT_DIR="SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/balanced_030_010"
+export SMU3M_SOURCE_SIMILARITY_LOSS_WEIGHT="0.30"
+export SMU3M_HARD_NEGATIVE_LOSS_WEIGHT="0.10"
+export SMU3M_SOURCE_AWARE_SHARED_GRADIENT="0"
+export SMU3M_HARD_NEGATIVE_MARGIN="0.2"
+export SMU3M_SOURCE_AWARE_TEMPERATURE="0.07"
+export SMU3M_RESUME="0"
+bash "/home/bdong/scratch/projects/Diffusion-Molecule/SketchMol-Unified-3MDiffusion/scripts/run_unified_generation_smoke.sh"

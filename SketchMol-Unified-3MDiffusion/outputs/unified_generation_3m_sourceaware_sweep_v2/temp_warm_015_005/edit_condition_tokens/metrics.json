@@ -1,0 +1,131 @@
+{
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 2.8188384913307636,
+      "train_active_bce": 0.5883034093522875,
+      "train_delta_mse": 0.35671545341845945,
+      "train_direction_ce": 0.6839344867208402,
+      "train_fingerprint_bce": 0.23647140192120608,
+      "train_similarity_ce": 0.9509671526000327,
+      "train_source_aware_hard_negative": 0.272060822674912,
+      "train_source_similarity_mse": 0.19521938509980588,
+      "train_target_property_mse": 0.4197743083923256
+    },
+    {
+      "epoch": 2,
+      "train_loss": 2.3913988098737193,
+      "train_active_bce": 0.5466427158811115,
+      "train_delta_mse": 0.24947691295143182,
+      "train_direction_ce": 0.6077449611308823,
+      "train_fingerprint_bce": 0.21458537857803262,
+      "train_similarity_ce": 0.8954920339800582,
+      "train_source_aware_hard_negative": 0.20914163505739364,
+      "train_source_similarity_mse": 0.1725509064712735,
+      "train_target_property_mse": 0.25229050591000435
+    },
+    {
+      "epoch": 3,
+      "train_loss": 2.1537569969986516,
+      "train_active_bce": 0.5054750079377216,
+      "train_delta_mse": 0.18085377930725222,
+      "train_direction_ce": 0.5446794943807629,
+      "train_fingerprint_bce": 0.20262880160323452,
+      "train_similarity_ce": 0.8449257330657556,
+      "train_source_aware_hard_negative": 0.17892918953614717,
+      "train_source_similarity_mse": 0.15901894403521666,
+      "train_target_property_mse": 0.21605608361400075
+    },
+    {
+      "epoch": 4,
+      "train_loss": 2.062531774728456,
+      "train_active_bce": 0.4884552612477673,
+      "train_delta_mse": 0.16512621192361465,
+      "train_direction_ce": 0.5246724859585146,
+      "train_fingerprint_bce": 0.19435822866175453,
+      "train_similarity_ce": 0.8134200538182484,
+      "train_source_aware_hard_negative": 0.16719331674942278,
+      "train_source_similarity_mse": 0.14925362100995113,
+      "train_target_property_mse": 0.20527377004561834
+    },
+    {
+      "epoch": 5,
+      "train_loss": 1.9651935175766329,
+      "train_active_bce": 0.4767314562814939,
+      "train_delta_mse": 0.15212431396372406,
+      "train_direction_ce": 0.5103046780904573,
+      "train_fingerprint_bce": 0.18606338715797718,
+      "train_similarity_ce": 0.7781855716408239,
+      "train_source_aware_hard_negative": 0.1527167387988827,
+      "train_source_similarity_mse": 0.1387545461722353,
+      "train_target_property_mse": 0.18152514554278143
+    }
+  ],
+  "config": {
+    "token_dim": 512,
+    "context_dim": 256,
+    "num_queries": 16,
+    "hidden_dim": 512,
+    "fingerprint_dim": 512,
+    "property_mean": [
+      [
+        380.37188720703125,
+        3.3850910663604736,
+        0.5734283924102783,
+        76.85115051269531,
+        1.4654088020324707,
+        4.850388526916504,
+        5.328375816345215
+      ]
+    ],
+    "property_std": [
+      [
+        92.54057312011719,
+        1.5156290531158447,
+        0.19167348742485046,
+        33.44403839111328,
+        1.21761155128479,
+        1.6826292276382446,
+        2.8697164058685303
+      ]
+    ],
+    "delta_mean": [
+      [
+        0.2141815572977066,
+        0.001111030811443925,
+        -0.00016171472088899463,
+        0.015510168857872486,
+        -0.003477617399767041,
+        0.0034036256838589907,
+        0.001405845396220684
+      ]
+    ],
+    "delta_std": [
+      [
+        54.65355682373047,
+        0.9295074343681335,
+        0.13416267931461334,
+        23.238704681396484,
+        0.8401129245758057,
+        1.1983991861343384,
+        1.8697692155838013
+      ]
+    ],
+    "device": "auto",
+    "batch_size": 32,
+    "num_workers": 0,
+    "pin_memory": false,
+    "source_similarity_loss_weight": 0.15,
+    "hard_negative_loss_weight": 0.05,
+    "source_aware_temperature": 0.1,
+    "hard_negative_margin": 0.2,
+    "source_aware_shared_gradient": false
+  },
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.12.0",
+    "cuda_available": true,
+    "cuda_device_count": 1,
+    "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 2g.20gb"
+  }
+}
