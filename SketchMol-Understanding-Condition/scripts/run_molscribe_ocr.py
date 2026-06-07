@@ -23,18 +23,31 @@ from sketchmol_understanding_condition.molscribe_images import (  # noqa: E402
 )
 
 
+def _prepend_sys_path_ordered(entries: list[Path]) -> None:
+    """Put runtime overlays on sys.path in an exact left-to-right order."""
+
+    ordered: list[str] = []
+    for entry in entries:
+        text = str(entry)
+        if text and text not in ordered:
+            ordered.append(text)
+    for text in reversed(ordered):
+        while text in sys.path:
+            sys.path.remove(text)
+        sys.path.insert(0, text)
+
+
 def _ensure_vendored_molscribe_path() -> Path | None:
     """Prefer SketchMol evaluate/molscribe and the onmt220 overlay over pip copies."""
 
+    path_entries: list[Path] = []
     onmt_overlay = os.environ.get("SUCC_ONMT_OVERLAY") or os.environ.get(
         "SKETCHMOL_ONMT_OVERLAY", "/scratch/bdong/python_overlays/onmt220"
     )
     if onmt_overlay:
         overlay_dir = Path(onmt_overlay)
         if overlay_dir.is_dir():
-            overlay_text = str(overlay_dir)
-            if overlay_text not in sys.path:
-                sys.path.insert(0, overlay_text)
+            path_entries.append(overlay_dir)
 
     candidates = [
         os.environ.get("SUCC_MOLSCRIBE_WORKDIR"),
@@ -52,10 +65,11 @@ def _ensure_vendored_molscribe_path() -> Path | None:
             evaluate_dir = root / "evaluate"
         else:
             continue
-        evaluate_text = str(evaluate_dir)
-        if evaluate_text not in sys.path:
-            sys.path.insert(0, evaluate_text)
+        path_entries.append(evaluate_dir)
+        path_entries.append(evaluate_dir.parent)
+        _prepend_sys_path_ordered(path_entries)
         return evaluate_dir
+    _prepend_sys_path_ordered(path_entries)
     return None
 
 
@@ -64,7 +78,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-path", required=True, type=Path)
     parser.add_argument("--image-csv", required=True, type=Path)
     parser.add_argument("--image-column", default="image_path")
-    parser.add_argument("--batch-size", type=int, default=100)
+    parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--device", default="cuda")
     parser.add_argument(
         "--backend",

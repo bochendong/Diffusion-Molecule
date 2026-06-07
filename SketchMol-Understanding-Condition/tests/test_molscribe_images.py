@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -47,6 +48,23 @@ def test_postprocess_smiles_sketchmol_filters_broken_and_keeps_low_score():
     assert smiles == ["CCO", "", "CCN", ""]
     assert broken_rate == 0.25
     assert low_score_rate == 0.25
+
+
+def test_prepend_sys_path_ordered_keeps_onmt_overlay_first():
+    module = _load_run_molscribe_ocr_module()
+    original = list(sys.path)
+    overlay = Path("/tmp/onmt220")
+    evaluate = Path("/tmp/SketchMol/evaluate")
+    root = Path("/tmp/SketchMol")
+
+    try:
+        sys.path[:] = [str(evaluate), "/tmp/old"]
+        module._prepend_sys_path_ordered([overlay, evaluate, root])
+
+        assert sys.path[:3] == [str(overlay), str(evaluate), str(root)]
+        assert sys.path.count(str(evaluate)) == 1
+    finally:
+        sys.path[:] = original
 
 
 def test_select_smiles_prefers_graph_smiles():

@@ -104,9 +104,10 @@ if [[ -d "$SKETCHMOL_ROOT/evaluate/molscribe" ]]; then
   DEFAULT_MOLSCRIBE_WORKDIR="$SKETCHMOL_ROOT/evaluate"
 fi
 MOLSCRIBE_WORKDIR="${SUCC_MOLSCRIBE_WORKDIR:-${SKETCHMOL_MOLSCRIBE_WORKDIR:-$DEFAULT_MOLSCRIBE_WORKDIR}}"
-MOLSCRIBE_BATCH_SIZE="${SUCC_MOLSCRIBE_BATCH_SIZE:-100}"
+MOLSCRIBE_BATCH_SIZE="${SUCC_MOLSCRIBE_BATCH_SIZE:-16}"
 MOLSCRIBE_DEVICE="${SUCC_MOLSCRIBE_DEVICE:-cuda}"
 MOLSCRIBE_BACKEND="${SUCC_MOLSCRIBE_BACKEND:-sketchmol}"
+MOLSCRIBE_RUNNER="${SUCC_MOLSCRIBE_RUNNER:-official}"
 SOURCE_TANIMOTO_THRESHOLDS="${SUCC_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
 PREPROCESS_IMAGES="${SUCC_PREPROCESS_IMAGES:-0}"
 
@@ -137,6 +138,9 @@ echo "  run_image_structure_benchmark=$RUN_IMAGE_STRUCTURE_BENCHMARK"
 echo "  run_molscribe_ocr=$RUN_MOLSCRIBE_OCR"
 echo "  molscribe_model=${MOLSCRIBE_MODEL:-missing}"
 echo "  molscribe_workdir=${MOLSCRIBE_WORKDIR:-pythonpath-default}"
+echo "  molscribe_runner=$MOLSCRIBE_RUNNER"
+echo "  molscribe_batch_size=$MOLSCRIBE_BATCH_SIZE"
+echo "  preprocess_images=$PREPROCESS_IMAGES"
 if [[ "$LATENT_BACKEND" == "image_vae" ]]; then
   echo "  image_vae_checkpoint=$IMAGE_VAE_CHECKPOINT"
   echo "  run_image_vae_train=$RUN_IMAGE_VAE_TRAIN"
@@ -355,7 +359,17 @@ if [[ "$LATENT_BACKEND" != "fingerprint_property_vector" && "$DECODE_EVAL_IMAGES
           else
             OCR_ARGS+=(--no-preprocess-images)
           fi
-          "$PYTHON_BIN" "$PROJECT_DIR/scripts/run_molscribe_ocr.py" "${OCR_ARGS[@]}"
+          if [[ "$MOLSCRIBE_RUNNER" == "official" && "$PREPROCESS_IMAGES" == "0" ]]; then
+            run_official_molscribe_predict_csv "$PYTHON_BIN" "$MOLSCRIBE_MODEL" "$IMAGE_CSV" "$MOLSCRIBE_BATCH_SIZE"
+          elif [[ "$MOLSCRIBE_RUNNER" == "official" ]]; then
+            echo "WARNING: official predict_csv.py cannot use SUCC_PREPROCESS_IMAGES=1; using wrapper runner." >&2
+            "$PYTHON_BIN" "$PROJECT_DIR/scripts/run_molscribe_ocr.py" "${OCR_ARGS[@]}"
+          elif [[ "$MOLSCRIBE_RUNNER" == "wrapper" ]]; then
+            "$PYTHON_BIN" "$PROJECT_DIR/scripts/run_molscribe_ocr.py" "${OCR_ARGS[@]}"
+          else
+            echo "ERROR: SUCC_MOLSCRIBE_RUNNER must be official or wrapper, got: $MOLSCRIBE_RUNNER" >&2
+            exit 2
+          fi
           "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_univideo_image_benchmark.py" \
             --image-csv "$IMAGE_CSV" \
             --output-dir "$STRUCTURE_BENCHMARK_DIR" \

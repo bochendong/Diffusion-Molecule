@@ -42,9 +42,10 @@ else
   exit 2
 fi
 
-MOLSCRIBE_BATCH_SIZE="${SUCC_MOLSCRIBE_BATCH_SIZE:-100}"
+MOLSCRIBE_BATCH_SIZE="${SUCC_MOLSCRIBE_BATCH_SIZE:-16}"
 MOLSCRIBE_DEVICE="${SUCC_MOLSCRIBE_DEVICE:-cuda}"
 MOLSCRIBE_BACKEND="${SUCC_MOLSCRIBE_BACKEND:-sketchmol}"
+MOLSCRIBE_RUNNER="${SUCC_MOLSCRIBE_RUNNER:-official}"
 PREPROCESS_IMAGES="${SUCC_PREPROCESS_IMAGES:-0}"
 RAW_SMILES_FALLBACK="${SUCC_RAW_SMILES_FALLBACK:-0}"
 SOURCE_TANIMOTO_THRESHOLDS="${SUCC_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
@@ -95,6 +96,8 @@ echo "  image_csv=$IMAGE_CSV"
 echo "  benchmark_dir=$STRUCTURE_BENCHMARK_DIR"
 echo "  molscribe_model=$MOLSCRIBE_MODEL"
 echo "  molscribe_backend=$MOLSCRIBE_BACKEND"
+echo "  molscribe_runner=$MOLSCRIBE_RUNNER"
+echo "  molscribe_batch_size=$MOLSCRIBE_BATCH_SIZE"
 echo "  molscribe_device=$MOLSCRIBE_DEVICE"
 echo "  preprocess_images=$PREPROCESS_IMAGES"
 echo "  raw_smiles_fallback=$RAW_SMILES_FALLBACK"
@@ -103,7 +106,17 @@ prepend_molscribe_pythonpath
 check_molscribe_import
 
 echo "Running MolScribe OCR"
-"$PYTHON_BIN" "$PROJECT_DIR/scripts/run_molscribe_ocr.py" "${OCR_ARGS[@]}"
+if [[ "$MOLSCRIBE_RUNNER" == "official" && "$PREPROCESS_IMAGES" == "0" ]]; then
+  run_official_molscribe_predict_csv "$PYTHON_BIN" "$MOLSCRIBE_MODEL" "$IMAGE_CSV" "$MOLSCRIBE_BATCH_SIZE"
+elif [[ "$MOLSCRIBE_RUNNER" == "official" ]]; then
+  echo "WARNING: official predict_csv.py cannot use SUCC_PREPROCESS_IMAGES=1; using wrapper runner." >&2
+  "$PYTHON_BIN" "$PROJECT_DIR/scripts/run_molscribe_ocr.py" "${OCR_ARGS[@]}"
+elif [[ "$MOLSCRIBE_RUNNER" == "wrapper" ]]; then
+  "$PYTHON_BIN" "$PROJECT_DIR/scripts/run_molscribe_ocr.py" "${OCR_ARGS[@]}"
+else
+  echo "ERROR: SUCC_MOLSCRIBE_RUNNER must be official or wrapper, got: $MOLSCRIBE_RUNNER" >&2
+  exit 2
+fi
 
 if [[ "$RUN_DIAGNOSTIC" == "1" ]]; then
   echo "Running MolScribe diagnostic"

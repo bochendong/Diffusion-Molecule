@@ -379,8 +379,10 @@ and MolScribe-readable rendering.
 
 Follow-up code fix after this run:
 
-- `run_molscribe_ocr.py` binarizes images before MolScribe (`--preprocess-images`,
-  default on) and validates SMILES with RDKit before accepting raw-token fallback.
+- SUCC OCR now follows the confirmed-good SketchMolBenchmark route by default:
+  `evaluate/predict_csv.py`, `onmt220` prepended, batch size 16, and no image
+  preprocessing. The local `run_molscribe_ocr.py` wrapper remains available for
+  diagnostics/fallback and validates SMILES with RDKit before accepting raw-token fallback.
   Raw fallback is **off by default** so garbage token strings like `C)C)C)...`
   no longer inflate validity.
 - `evaluate_univideo_image_benchmark.py` sets `ocr_smiles_present` from RDKit-valid
@@ -398,20 +400,12 @@ OCR-only rerun on the existing `15697119` generated images:
 ```bash
 IMAGE_CSV=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
 
-PYTHONPATH="Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate${PYTHONPATH:+:$PYTHONPATH}" \
-$SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/run_molscribe_ocr.py \
-  --model-path /scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
-  --image-csv "$IMAGE_CSV" \
-  --batch-size 16 \
-  --device cuda \
-  --preprocess-images \
-  --no-raw-smiles-fallback
-
-$SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/evaluate_univideo_image_benchmark.py \
-  --image-csv "$IMAGE_CSV" \
-  --output-dir SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark \
-  --method univideo_image_vae \
-  --source-tanimoto-thresholds 0.4,0.6,0.8
+SUCC_IMAGE_CSV="$IMAGE_CSV" \
+SUCC_MOLSCRIBE_RUNNER=official \
+SUCC_MOLSCRIBE_BATCH_SIZE=16 \
+SUCC_PREPROCESS_IMAGES=0 \
+SUCC_RUN_MOLSCRIBE_DIAGNOSTIC=1 \
+bash SketchMol-Understanding-Condition/scripts/run_succ_ocr_benchmark.sh
 ```
 
 Next training run for the residual auxiliary fix:

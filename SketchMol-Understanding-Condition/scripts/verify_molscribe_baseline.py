@@ -124,6 +124,7 @@ def _run_official_predict_csv(
     if onmt_overlay is not None and onmt_overlay.is_dir():
         pythonpath_parts.append(str(onmt_overlay))
     pythonpath_parts.append(str(molscribe_workdir))
+    pythonpath_parts.append(str(molscribe_workdir.parent))
     if env.get("PYTHONPATH"):
         pythonpath_parts.append(env["PYTHONPATH"])
     env["PYTHONPATH"] = ":".join(pythonpath_parts)

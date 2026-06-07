@@ -141,7 +141,7 @@ set +e
 "$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" evaluate/predict_csv.py \
   --model_path "$SKETCHMOL_MOLSCRIBE_MODEL" \
   --image_path "$IMAGE_CSV" \
-  -n "${SKETCHMOL_MOLSCRIBE_BATCH_SIZE:-100}" \
+  -n "${SKETCHMOL_MOLSCRIBE_BATCH_SIZE:-16}" \
   2>&1 | tee -a "$RUN_LOG"
 OCR_STATUS=${PIPESTATUS[0]}
 set -e
