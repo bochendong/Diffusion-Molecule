@@ -38,8 +38,11 @@ def rdkit_version() -> str:
 def canonical_smiles(smiles: str) -> Optional[str]:
     """Return canonical SMILES, or None if parsing fails."""
 
+    text = str(smiles or "").strip()
+    if not text:
+        return None
     Chem, *_ = _rdkit()
-    mol = Chem.MolFromSmiles(smiles)
+    mol = Chem.MolFromSmiles(text)
     if mol is None:
         return None
     return Chem.MolToSmiles(mol, canonical=True)

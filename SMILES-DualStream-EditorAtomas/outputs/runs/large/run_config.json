@@ -20,7 +20,7 @@
   "molecule_alignment_weight": 1.0,
   "output_dir": "/scratch/bdong/projects/Diffusion-Molecule/SMILES-DualStream-EditorAtomas/outputs/runs/large",
   "reconstruction_loss_weight": 1.0,
-  "resume": true,
+  "resume": false,
   "resume_from": null,
   "save_every": 1,
   "seed": 7,

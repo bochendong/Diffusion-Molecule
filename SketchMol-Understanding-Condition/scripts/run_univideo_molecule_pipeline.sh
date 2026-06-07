@@ -104,8 +104,9 @@ if [[ -d "$SKETCHMOL_ROOT/evaluate/molscribe" ]]; then
   DEFAULT_MOLSCRIBE_WORKDIR="$SKETCHMOL_ROOT/evaluate"
 fi
 MOLSCRIBE_WORKDIR="${SUCC_MOLSCRIBE_WORKDIR:-${SKETCHMOL_MOLSCRIBE_WORKDIR:-$DEFAULT_MOLSCRIBE_WORKDIR}}"
-MOLSCRIBE_BATCH_SIZE="${SUCC_MOLSCRIBE_BATCH_SIZE:-16}"
+MOLSCRIBE_BATCH_SIZE="${SUCC_MOLSCRIBE_BATCH_SIZE:-100}"
 MOLSCRIBE_DEVICE="${SUCC_MOLSCRIBE_DEVICE:-cuda}"
+MOLSCRIBE_BACKEND="${SUCC_MOLSCRIBE_BACKEND:-sketchmol}"
 SOURCE_TANIMOTO_THRESHOLDS="${SUCC_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
 
 prepend_molscribe_pythonpath() {
@@ -367,7 +368,8 @@ if [[ "$LATENT_BACKEND" != "fingerprint_property_vector" && "$DECODE_EVAL_IMAGES
             --model-path "$MOLSCRIBE_MODEL" \
             --image-csv "$IMAGE_CSV" \
             --batch-size "$MOLSCRIBE_BATCH_SIZE" \
-            --device "$MOLSCRIBE_DEVICE"
+            --device "$MOLSCRIBE_DEVICE" \
+            --backend "$MOLSCRIBE_BACKEND"
           "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_univideo_image_benchmark.py" \
             --image-csv "$IMAGE_CSV" \
             --output-dir "$STRUCTURE_BENCHMARK_DIR" \

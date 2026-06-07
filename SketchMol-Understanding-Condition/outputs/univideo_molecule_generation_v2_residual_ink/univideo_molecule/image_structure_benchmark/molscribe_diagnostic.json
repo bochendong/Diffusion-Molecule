@@ -1,0 +1,392 @@
+{
+  "cohorts": [
+    {
+      "decode_source_counts": {
+        "empty": 128
+      },
+      "exact_match_rate": 0.0,
+      "examples": [
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_source/rdkit_source_00000.png",
+          "index": 0,
+          "molscribe_score": 0.11355773359537125,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_source/rdkit_source_00001.png",
+          "index": 1,
+          "molscribe_score": 0.11389422416687012,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_source/rdkit_source_00002.png",
+          "index": 2,
+          "molscribe_score": 0.11442767828702927,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1C(F)(F)F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_source/rdkit_source_00003.png",
+          "index": 3,
+          "molscribe_score": 0.14211638271808624,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1C(F)(F)F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_source/rdkit_source_00004.png",
+          "index": 4,
+          "molscribe_score": 0.1420680433511734,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        }
+      ],
+      "final_valid_rate": 1.0,
+      "graph_usable_rate": 0.0,
+      "image_stats_mean": {
+        "dark_fraction": 0.023250102996826172,
+        "mean_intensity": 0.9763799370266497,
+        "nonwhite_fraction": 0.041657090187072754,
+        "std_intensity": 0.13300796854309738,
+        "unique_rgb_colors": 4.484375
+      },
+      "mean_source_tanimoto": null,
+      "median_source_tanimoto": null,
+      "n": 128,
+      "name": "rdkit_source",
+      "raw_usable_rate": 0.0859375
+    },
+    {
+      "decode_source_counts": {
+        "empty": 128
+      },
+      "exact_match_rate": 0.0,
+      "examples": [
+        {
+          "decode_source": "empty",
+          "expected_smiles": "COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_target/rdkit_target_00000.png",
+          "index": 0,
+          "molscribe_score": 0.1449156403541565,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_target/rdkit_target_00001.png",
+          "index": 1,
+          "molscribe_score": 0.14546582102775574,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_target/rdkit_target_00002.png",
+          "index": 2,
+          "molscribe_score": 0.1463317722082138,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_target/rdkit_target_00003.png",
+          "index": 3,
+          "molscribe_score": 0.13956387341022491,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/tmp/univideo_molscribe_diag_aef8ra_o/rdkit_target/rdkit_target_00004.png",
+          "index": 4,
+          "molscribe_score": 0.1395665854215622,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        }
+      ],
+      "final_valid_rate": 1.0,
+      "graph_usable_rate": 0.0,
+      "image_stats_mean": {
+        "dark_fraction": 0.02322983741760254,
+        "mean_intensity": 0.9764030766673386,
+        "nonwhite_fraction": 0.041615843772888184,
+        "std_intensity": 0.1329279642086476,
+        "unique_rgb_colors": 4.46875
+      },
+      "mean_source_tanimoto": null,
+      "median_source_tanimoto": null,
+      "n": 128,
+      "name": "rdkit_target",
+      "raw_usable_rate": 0.0703125
+    },
+    {
+      "decode_source_counts": {
+        "empty": 128
+      },
+      "exact_match_rate": 0.0,
+      "examples": [
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00000.png",
+          "index": 0,
+          "molscribe_score": 0.10453853011131287,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00001.png",
+          "index": 1,
+          "molscribe_score": 0.10490123927593231,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00002.png",
+          "index": 2,
+          "molscribe_score": 0.10549195855855942,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1C(F)(F)F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00003.png",
+          "index": 3,
+          "molscribe_score": 0.09886112064123154,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1C(F)(F)F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00004.png",
+          "index": 4,
+          "molscribe_score": 0.09878727048635483,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        }
+      ],
+      "final_valid_rate": 1.0,
+      "graph_usable_rate": 0.0,
+      "image_stats_mean": {
+        "dark_fraction": 0.02303779125213623,
+        "mean_intensity": 0.9763975003734231,
+        "nonwhite_fraction": 0.043295979499816895,
+        "std_intensity": 0.132786606089212,
+        "unique_rgb_colors": 8.0
+      },
+      "mean_source_tanimoto": null,
+      "median_source_tanimoto": null,
+      "n": 128,
+      "name": "source_oracle",
+      "raw_usable_rate": 0.0703125
+    },
+    {
+      "decode_source_counts": {
+        "empty": 128
+      },
+      "exact_match_rate": 0.0,
+      "examples": [
+        {
+          "decode_source": "empty",
+          "expected_smiles": "COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00000.png",
+          "index": 0,
+          "molscribe_score": 0.12122666835784912,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00001.png",
+          "index": 1,
+          "molscribe_score": 0.12163693457841873,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00002.png",
+          "index": 2,
+          "molscribe_score": 0.12237334251403809,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00003.png",
+          "index": 3,
+          "molscribe_score": 0.1036120280623436,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00004.png",
+          "index": 4,
+          "molscribe_score": 0.10362160950899124,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        }
+      ],
+      "final_valid_rate": 1.0,
+      "graph_usable_rate": 0.0,
+      "image_stats_mean": {
+        "dark_fraction": 0.023019075393676758,
+        "mean_intensity": 0.9764205040410161,
+        "nonwhite_fraction": 0.043244004249572754,
+        "std_intensity": 0.13270970527082682,
+        "unique_rgb_colors": 8.0
+      },
+      "mean_source_tanimoto": null,
+      "median_source_tanimoto": null,
+      "n": 128,
+      "name": "target_oracle",
+      "raw_usable_rate": 0.09375
+    },
+    {
+      "decode_source_counts": {
+        "empty": 128
+      },
+      "exact_match_rate": 0.0,
+      "examples": [
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00000.png",
+          "index": 0,
+          "molscribe_score": 0.11867502331733704,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00001.png",
+          "index": 1,
+          "molscribe_score": 0.10632702708244324,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00002.png",
+          "index": 2,
+          "molscribe_score": 0.09654596447944641,
+          "raw_smiles": "C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1C(F)(F)F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00003.png",
+          "index": 3,
+          "molscribe_score": 0.11373058706521988,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        },
+        {
+          "decode_source": "empty",
+          "expected_smiles": "O=C(c1ccccc1C(F)(F)F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
+          "final_smiles": "",
+          "graph_smiles": "",
+          "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00004.png",
+          "index": 4,
+          "molscribe_score": 0.10837120562791824,
+          "raw_smiles": "C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)C1)",
+          "valid": true
+        }
+      ],
+      "final_valid_rate": 1.0,
+      "graph_usable_rate": 0.0,
+      "image_stats_mean": {
+        "dark_fraction": 0.023173809051513672,
+        "mean_intensity": 0.9762318381108344,
+        "nonwhite_fraction": 0.04474747180938721,
+        "std_intensity": 0.13289672357495874,
+        "unique_rgb_colors": 8.0
+      },
+      "mean_source_tanimoto": null,
+      "median_source_tanimoto": null,
+      "n": 128,
+      "name": "generated",
+      "raw_usable_rate": 0.203125
+    }
+  ],
+  "device": "cuda",
+  "limit": 128,
+  "run_dir": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink"
+}

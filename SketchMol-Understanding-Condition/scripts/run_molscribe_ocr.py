@@ -6,10 +6,15 @@ from __future__ import annotations
 import argparse
 import csv
 import re
+import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+
+PROJECT_DIR = Path(__file__).resolve().parents[1]
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
 
 
 def parse_args() -> argparse.Namespace:
@@ -17,13 +22,28 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model-path", required=True, type=Path)
     parser.add_argument("--image-csv", required=True, type=Path)
     parser.add_argument("--image-column", default="image_path")
-    parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--batch-size", type=int, default=100)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--backend",
+        choices=("sketchmol", "custom"),
+        default="sketchmol",
+        help=(
+            "sketchmol: SketchMol evaluate/predict_csv.py graph decode + postprocess; "
+            "custom: local wrapper with optional binarization/raw-token fallback."
+        ),
+    )
+    parser.add_argument(
+        "--preprocess-images",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Custom backend only: binarize molecule images before MolScribe inference.",
+    )
     parser.add_argument(
         "--raw-smiles-fallback",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="For vendored MolScribe, use decoder token SMILES when graph conversion returns empty/invalid.",
+        default=False,
+        help="Custom backend only: use decoder token SMILES when graph conversion fails.",
     )
     return parser.parse_args()
 
@@ -47,12 +67,20 @@ def main() -> None:
 
     device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
     model = MolScribe(str(args.model_path), device=device)
-    smiles, scores, diagnostics = _predict(
-        model,
-        paths,
-        batch_size=args.batch_size,
-        raw_smiles_fallback=args.raw_smiles_fallback,
-    )
+    if args.backend == "sketchmol":
+        smiles, scores, diagnostics = _predict_sketchmol(
+            model,
+            paths,
+            batch_size=args.batch_size,
+        )
+    else:
+        smiles, scores, diagnostics = _predict(
+            model,
+            paths,
+            batch_size=args.batch_size,
+            preprocess_images=args.preprocess_images,
+            raw_smiles_fallback=args.raw_smiles_fallback,
+        )
     if len(smiles) != len(rows):
         raise ValueError(f"MolScribe returned {len(smiles)} predictions for {len(rows)} images")
 
@@ -65,18 +93,78 @@ def main() -> None:
     print("done")
 
 
+def _postprocess_smiles_sketchmol(
+    input_smiles: list[object],
+    scores: list[object],
+) -> tuple[list[str], float, float]:
+    """Match SketchMol evaluate/predict_csv.py postprocessing."""
+
+    cleaned: list[str | None] = []
+    broken_num = 0
+    low_score = 0
+    total = len(input_smiles)
+    for index in range(total):
+        text = _clean_smiles(input_smiles[index])
+        score = float(scores[index])
+        if "." in text:
+            cleaned.append(None)
+            broken_num += 1
+        elif "invalid" in text.lower():
+            cleaned.append(None)
+        elif score < 0.85:
+            low_score += 1
+            cleaned.append(text)
+        else:
+            cleaned.append(text)
+    broken_rate = broken_num / total if total else 0.0
+    low_score_rate = low_score / total if total else 0.0
+    return ["" if value is None else value for value in cleaned], broken_rate, low_score_rate
+
+
+def _predict_sketchmol(
+    model: Any,
+    paths: list[str],
+    *,
+    batch_size: int,
+) -> tuple[list[str], list[float | None], list[dict[str, object]]]:
+    result = model.predict_images_from_csv(paths, batch_size)
+    if isinstance(result, tuple) and len(result) >= 3:
+        graph_smiles, _molblock, token_scores = result[:3]
+    else:
+        raise ValueError(f"Unexpected MolScribe output shape: {type(result)!r}")
+
+    smiles, broken_rate, low_score_rate = _postprocess_smiles_sketchmol(graph_smiles, token_scores)
+    diagnostics = [
+        {
+            "molscribe_decode_source": "sketchmol_graph",
+            "molscribe_graph_smiles": _clean_smiles(raw),
+            "molscribe_raw_smiles": "",
+        }
+        for raw in graph_smiles
+    ]
+    print(
+        f"SketchMol OCR postprocess: broken_rate={broken_rate:.3f} low_score_rate={low_score_rate:.3f}",
+        flush=True,
+    )
+    return smiles, [float(score) for score in token_scores], diagnostics
+
+
 def _predict(
     model: Any,
     paths: list[str],
     *,
     batch_size: int,
-    raw_smiles_fallback: bool = True,
+    preprocess_images: bool = True,
+    raw_smiles_fallback: bool = False,
 ) -> tuple[list[str], list[float | None], list[dict[str, object]]]:
-    if raw_smiles_fallback and _looks_like_vendored_molscribe(model):
-        try:
-            return _predict_vendored_with_raw_fallback(model, paths, batch_size=batch_size)
-        except Exception as exc:
-            print(f"WARNING: raw-token MolScribe fallback failed; using public API path: {exc}")
+    if _looks_like_vendored_molscribe(model):
+        return _predict_vendored(
+            model,
+            paths,
+            batch_size=batch_size,
+            preprocess_images=preprocess_images,
+            raw_smiles_fallback=raw_smiles_fallback,
+        )
 
     try:
         outputs = model.predict_image_files(paths, return_atoms_bonds=False, return_confidence=True)
@@ -85,30 +173,30 @@ def _predict(
 
     if outputs is not None:
         if isinstance(outputs, tuple):
-            smiles = list(outputs[0])
+            smiles = [_clean_smiles(value) for value in outputs[0]]
             scores = [None] * len(smiles)
             return smiles, scores, _empty_diagnostics(len(smiles), source="predict_image_files_tuple")
-        smiles = [str(output.get("smiles", "") or "") for output in outputs]
+        smiles = [_clean_smiles(output.get("smiles", "") or "") for output in outputs]
         scores = [output.get("confidence") for output in outputs]
         return smiles, scores, _empty_diagnostics(len(smiles), source="predict_image_files_dict")
 
     if hasattr(model, "predict_images_from_csv"):
         result = model.predict_images_from_csv(paths, batch_size=batch_size)
         if isinstance(result, tuple) and len(result) >= 3:
-            smiles = list(result[0])
+            smiles = [_clean_smiles(value) for value in result[0]]
             return smiles, [float(score) for score in result[2]], _empty_diagnostics(
                 len(smiles),
                 source="predict_images_from_csv",
             )
         if isinstance(result, tuple):
-            smiles = list(result[0])
+            smiles = [_clean_smiles(value) for value in result[0]]
             return smiles, [None] * len(smiles), _empty_diagnostics(len(smiles), source="predict_images_from_csv")
 
     result = model.predict_image_files(paths)
     if isinstance(result, tuple):
-        smiles = list(result[0])
+        smiles = [_clean_smiles(value) for value in result[0]]
         return smiles, [None] * len(smiles), _empty_diagnostics(len(smiles), source="predict_image_files_plain")
-    smiles = [str(item) for item in result]
+    smiles = [_clean_smiles(str(item)) for item in result]
     return smiles, [None] * len(smiles), _empty_diagnostics(len(smiles), source="predict_image_files_plain")
 
 
@@ -116,11 +204,13 @@ def _looks_like_vendored_molscribe(model: Any) -> bool:
     return all(hasattr(model, name) for name in ("encoder", "decoder", "transform"))
 
 
-def _predict_vendored_with_raw_fallback(
+def _predict_vendored(
     model: Any,
     paths: list[str],
     *,
     batch_size: int,
+    preprocess_images: bool,
+    raw_smiles_fallback: bool,
 ) -> tuple[list[str], list[float | None], list[dict[str, object]]]:
     import cv2
     import torch
@@ -131,7 +221,10 @@ def _predict_vendored_with_raw_fallback(
         image = cv2.imread(path)
         if image is None:
             raise ValueError(f"Could not read image for MolScribe OCR: {path}")
-        input_images.append(cv2.cvtColor(image, cv2.COLOR_BGR2RGB))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        if preprocess_images:
+            image = preprocess_image_for_molscribe(image)
+        input_images.append(image)
 
     predictions = []
     device = model.device
@@ -153,13 +246,14 @@ def _predict_vendored_with_raw_fallback(
         node_symbols,
         edges,
         images=input_images,
+        num_workers=min(16, max(1, len(input_images))),
     )
     graph_smiles = [_clean_smiles(value) for value in graph_smiles]
 
     final_smiles: list[str] = []
     diagnostics: list[dict[str, object]] = []
     for graph_value, raw_value in zip(graph_smiles, raw_smiles):
-        final, source = _select_smiles(graph_value, raw_value)
+        final, source = _select_smiles(graph_value, raw_value, allow_raw_fallback=raw_smiles_fallback)
         final_smiles.append(final)
         diagnostics.append(
             {
@@ -171,12 +265,33 @@ def _predict_vendored_with_raw_fallback(
     return final_smiles, token_scores, diagnostics
 
 
-def _select_smiles(graph_value: object, raw_value: object) -> tuple[str, str]:
+def preprocess_image_for_molscribe(image_rgb: np.ndarray) -> np.ndarray:
+    """Convert soft RGB molecule renders to high-contrast black-on-white PNG-like arrays."""
+
+    import cv2
+
+    if image_rgb.ndim != 3 or image_rgb.shape[2] != 3:
+        raise ValueError(f"Expected HWC RGB image, got shape {image_rgb.shape}")
+
+    gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    if float(binary.mean()) < 127.0:
+        binary = 255 - binary
+    return cv2.cvtColor(binary, cv2.COLOR_GRAY2RGB)
+
+
+def _select_smiles(
+    graph_value: object,
+    raw_value: object,
+    *,
+    allow_raw_fallback: bool,
+) -> tuple[str, str]:
     graph_smiles = _clean_smiles(graph_value)
     raw_smiles = _clean_smiles(raw_value)
     if _usable_smiles(graph_smiles):
         return graph_smiles, "graph"
-    if _usable_smiles(raw_smiles):
+    if allow_raw_fallback and _usable_smiles(raw_smiles):
         return raw_smiles, "raw_token_fallback"
     return "", "empty"
 
@@ -188,7 +303,20 @@ def _clean_smiles(value: object) -> str:
 
 def _usable_smiles(value: object) -> bool:
     text = _clean_smiles(value)
-    return bool(text and "invalid" not in text.lower() and text != "<invalid>")
+    if not text or "invalid" in text.lower() or text == "<invalid>":
+        return False
+    if len(text) > 512:
+        return False
+    if text.count("(") != text.count(")"):
+        return False
+    if text.count("[") != text.count("]"):
+        return False
+    try:
+        from sketchmol_understanding_condition.chem import canonical_smiles
+
+        return canonical_smiles(text) is not None
+    except Exception:
+        return False
 
 
 def _mean_score(value: object) -> float | None:

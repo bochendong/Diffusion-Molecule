@@ -379,10 +379,13 @@ and MolScribe-readable rendering.
 
 Follow-up code fix after this run:
 
-- `run_molscribe_ocr.py` now supports a vendored MolScribe raw-token fallback.
-  If graph-to-SMILES conversion returns empty/invalid while the decoder token
-  SMILES is non-empty, the script writes the raw token SMILES and records
-  `molscribe_decode_source=raw_token_fallback`.
+- `run_molscribe_ocr.py` binarizes images before MolScribe (`--preprocess-images`,
+  default on) and validates SMILES with RDKit before accepting raw-token fallback.
+  Raw fallback is **off by default** so garbage token strings like `C)C)C)...`
+  no longer inflate validity.
+- `evaluate_univideo_image_benchmark.py` sets `ocr_smiles_present` from RDKit-valid
+  SMILES only.
+- Diagnostic script: `scripts/diagnose_univideo_molscribe_ocr.py`.
 - Residual generation now trains the connector latent auxiliary head against the
   same edit residual used by diffusion (`target_latent - source_latent`) instead
   of the absolute target latent. This removes the previous auxiliary/diffusion
@@ -400,7 +403,9 @@ $SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/run_molscribe_ocr.py 
   --model-path /scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
   --image-csv "$IMAGE_CSV" \
   --batch-size 16 \
-  --device cuda
+  --device cuda \
+  --preprocess-images \
+  --no-raw-smiles-fallback
 
 $SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/evaluate_univideo_image_benchmark.py \
   --image-csv "$IMAGE_CSV" \

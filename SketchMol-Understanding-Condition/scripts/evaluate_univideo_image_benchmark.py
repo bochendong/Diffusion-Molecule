@@ -129,7 +129,7 @@ def _decode_row(row: Mapping[str, str], *, method: str, smiles_column: str) -> d
             "exact_target_match": exact_target_match,
             "source_identity": source_identity,
             "image_path_exists": bool(row.get("image_path") and Path(row.get("image_path", "")).exists()),
-            "ocr_smiles_present": bool(str(raw_smiles or "").strip()),
+            "ocr_smiles_present": valid,
         }
     )
     for prop in PROPERTY_COLUMNS:
