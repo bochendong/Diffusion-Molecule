@@ -65,10 +65,20 @@ MAX_EVAL_PER_PROPERTY_COUNT="${SMMED_MAX_EVAL_PER_PROPERTY_COUNT:-5000}"
 RESTRICT_TO_EDIT_LATENT_INDEX="${SMU3M_RESTRICT_BENCHMARK_TO_EDIT_LATENT_INDEX:-1}"
 SCAFFOLD_FALLBACK_MODE="${SMMED_SCAFFOLD_FALLBACK_MODE:-source_identity}"
 LIMIT_EVAL_ROWS="${SMMED_LIMIT_EVAL_ROWS:-}"
+EVAL_SHARD_COUNT="${SMMED_EVAL_SHARD_COUNT:-1}"
+EVAL_SHARD_INDEX="${SMMED_EVAL_SHARD_INDEX:-${SLURM_ARRAY_TASK_ID:-0}}"
 EVAL_PREDICTIONS="${SMU3M_EVAL_PREDICTIONS:-$EVAL_LATENT_DIR/predictions.csv}"
 EVAL_EXPORT_LIMIT="${SMU3M_EVAL_EXPORT_LIMIT:-}"
 ALLOW_EVAL_TARGET_CANDIDATES="${SMMED_ALLOW_EVAL_TARGET_CANDIDATES:-0}"
 SEED="${SMMED_SEED:-7}"
+
+if (( EVAL_SHARD_COUNT > 1 )); then
+  if [[ -n "${SMU3M_BENCHMARK_SHARD_OUTPUT_DIR:-}" ]]; then
+    BENCHMARK_OUTPUT_DIR="$SMU3M_BENCHMARK_SHARD_OUTPUT_DIR"
+  else
+    BENCHMARK_OUTPUT_DIR="$BENCHMARK_OUTPUT_DIR/shards/shard_${EVAL_SHARD_INDEX}_of_${EVAL_SHARD_COUNT}"
+  fi
+fi
 
 export PYTHONPATH="$PROJECT_DIR:$DATASET_PROJECT_DIR:$REPO_DIR/SketchMol-Understanding-Condition${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -86,6 +96,8 @@ echo "  max_edit_latent_candidates=$MAX_EDIT_LATENT_CANDIDATES"
 echo "  source_similarity_rerank_candidates=$SOURCE_SIMILARITY_RERANK_CANDIDATES"
 echo "  source_tanimoto_thresholds=$SOURCE_TANIMOTO_THRESHOLDS"
 echo "  restrict_to_edit_latent_index=$RESTRICT_TO_EDIT_LATENT_INDEX"
+echo "  eval_shard_index=$EVAL_SHARD_INDEX"
+echo "  eval_shard_count=$EVAL_SHARD_COUNT"
 
 for required in "$UNIFIED_EVAL_JSONL" "$GENERATED_LATENTS" "$CONDITION_ROWS" "$MOLECULE_DB"; do
   if [[ ! -f "$required" ]]; then
@@ -111,7 +123,32 @@ if [[ ! -f "$EVAL_LATENT_DIR/edit_latent_predictions.npy" \
   if [[ -n "$EVAL_EXPORT_LIMIT" ]]; then
     EXPORT_ARGS+=(--limit "$EVAL_EXPORT_LIMIT")
   fi
-  "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_latent_benchmark_inputs.py" "${EXPORT_ARGS[@]}"
+  EXPORT_LOCK_DIR="$EVAL_LATENT_DIR/.benchmark_export.lock"
+  if mkdir "$EXPORT_LOCK_DIR" 2>/dev/null; then
+    cleanup_export_lock() {
+      rmdir "$EXPORT_LOCK_DIR" 2>/dev/null || true
+    }
+    trap cleanup_export_lock EXIT
+    "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_latent_benchmark_inputs.py" "${EXPORT_ARGS[@]}"
+    cleanup_export_lock
+    trap - EXIT
+  else
+    echo "Waiting for benchmark export lock: $EXPORT_LOCK_DIR"
+    for _ in $(seq 1 720); do
+      if [[ -f "$EVAL_LATENT_DIR/edit_latent_predictions.npy" \
+        && -f "$EVAL_LATENT_DIR/edit_latent_fingerprints.npy" \
+        && -f "$EVAL_LATENT_DIR/index.csv" ]]; then
+        break
+      fi
+      sleep 10
+    done
+  fi
+  if [[ ! -f "$EVAL_LATENT_DIR/edit_latent_predictions.npy" \
+    || ! -f "$EVAL_LATENT_DIR/edit_latent_fingerprints.npy" \
+    || ! -f "$EVAL_LATENT_DIR/index.csv" ]]; then
+    echo "ERROR: timed out waiting for benchmark export files in $EVAL_LATENT_DIR" >&2
+    exit 2
+  fi
 fi
 
 LIMIT_ARGS=()
@@ -143,6 +180,8 @@ fi
   --max-global-candidates "$MAX_GLOBAL_CANDIDATES" \
   --max-edit-latent-candidates "$MAX_EDIT_LATENT_CANDIDATES" \
   --max-eval-per-property-count "$MAX_EVAL_PER_PROPERTY_COUNT" \
+  --eval-shard-count "$EVAL_SHARD_COUNT" \
+  --eval-shard-index "$EVAL_SHARD_INDEX" \
   --scaffold-fallback-mode "$SCAFFOLD_FALLBACK_MODE" \
   --source-tanimoto-thresholds "$SOURCE_TANIMOTO_THRESHOLDS" \
   --compute-tanimoto \

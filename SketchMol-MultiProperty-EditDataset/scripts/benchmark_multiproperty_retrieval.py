@@ -126,6 +126,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-tanimoto-thresholds", default="0.4,0.6,0.8")
     parser.add_argument("--compute-tanimoto", action="store_true")
     parser.add_argument("--allow-eval-target-candidates", action="store_true")
+    parser.add_argument("--eval-shard-count", type=int, default=1)
+    parser.add_argument("--eval-shard-index", type=int, default=0)
     parser.add_argument("--seed", type=int, default=7)
     return parser.parse_args()
 
@@ -158,11 +160,17 @@ def main() -> None:
         eval_rows = _sample_eval_rows_by_property_count(eval_rows, args.max_eval_per_property_count, seed=args.seed)
     if args.limit_eval_rows is not None:
         eval_rows = eval_rows[: args.limit_eval_rows]
+    all_selected_eval_rows = list(eval_rows)
+    eval_rows = _shard_eval_rows(
+        eval_rows,
+        shard_count=args.eval_shard_count,
+        shard_index=args.eval_shard_index,
+    )
     excluded_targets = set()
     if not args.allow_eval_target_candidates:
         excluded_targets = {
             _safe_canonical_smiles(row.get("target_smiles", "")) or row.get("target_smiles", "")
-            for row in eval_rows
+            for row in all_selected_eval_rows
             if row.get("target_smiles")
         }
     if args.candidate_molecule_db_csv is not None:
@@ -231,6 +239,9 @@ def main() -> None:
         "methods": methods,
         "train_rows": len(train_rows),
         "eval_rows": len(eval_rows),
+        "eval_rows_before_shard": len(all_selected_eval_rows),
+        "eval_shard_count": args.eval_shard_count,
+        "eval_shard_index": args.eval_shard_index,
         "candidate_molecules": len(candidates),
         "candidate_source": candidate_source,
         "candidate_molecule_db_csv": str(args.candidate_molecule_db_csv) if args.candidate_molecule_db_csv else None,
@@ -376,6 +387,21 @@ def _sample_eval_rows_by_property_count(rows: list[dict[str, str]], limit: int, 
         indices = sorted(rng.sample(range(len(group)), limit))
         sampled.extend(group[idx] for idx in indices)
     return sampled
+
+
+def _shard_eval_rows(
+    rows: list[dict[str, str]],
+    *,
+    shard_count: int,
+    shard_index: int,
+) -> list[dict[str, str]]:
+    if shard_count <= 0:
+        raise ValueError(f"--eval-shard-count must be positive, got {shard_count}")
+    if shard_index < 0 or shard_index >= shard_count:
+        raise ValueError(f"--eval-shard-index must be in [0, {shard_count}), got {shard_index}")
+    if shard_count == 1:
+        return rows
+    return [row for row_index, row in enumerate(rows) if row_index % shard_count == shard_index]
 
 
 def _decode_row(

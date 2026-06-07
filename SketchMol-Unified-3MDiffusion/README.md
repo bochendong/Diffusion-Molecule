@@ -220,6 +220,7 @@ multi-property benchmark:
 
 ```bash
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_BENCHMARK_SHARDS=5 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```
@@ -262,6 +263,18 @@ For the default fast profile, the directory is:
 SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized_primary_fast/
 ```
 
+With `SMU3M_BENCHMARK_SHARDS=5`, the submit script launches a Slurm array with
+five parallel shards. Each shard writes to
+`benchmark_materialized_primary_fast/shards/shard_<i>_of_5/`. After the array
+finishes, merge the shard outputs:
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/merge_unified_materialized_benchmark_shards.sh
+```
+
 Those files contain the comparison-ready numbers: `strict@Tanimoto>=0.4/0.6/0.8`
 as the primary edit metric, plus 2p-7p strict success and scaffold diagnostics.
 
@@ -299,6 +312,7 @@ Then run the materialized benchmark as a separate job:
 ```bash
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
 SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_BENCHMARK_SHARDS=5 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```

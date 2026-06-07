@@ -16,9 +16,11 @@ fi
 export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2}"
 export SMU3M_PYTHON_BIN="${SMU3M_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 export SMU3M_BENCHMARK_PROFILE="${SMU3M_BENCHMARK_PROFILE:-primary_fast}"
+export SMU3M_BENCHMARK_SHARDS="${SMU3M_BENCHMARK_SHARDS:-1}"
 export SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES="${SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES:-256}"
 export SMU3M_RESTRICT_BENCHMARK_TO_EDIT_LATENT_INDEX="${SMU3M_RESTRICT_BENCHMARK_TO_EDIT_LATENT_INDEX:-1}"
 export SMMED_MAX_EVAL_PER_PROPERTY_COUNT="${SMMED_MAX_EVAL_PER_PROPERTY_COUNT:-5000}"
+export SMMED_EVAL_SHARD_COUNT="$SMU3M_BENCHMARK_SHARDS"
 
 case "$SMU3M_BENCHMARK_PROFILE" in
   primary_fast)
@@ -49,6 +51,12 @@ BENCH_CPUS="${SMU3M_BENCHMARK_SLURM_CPUS:-${SMU3M_SLURM_CPUS:-$DEFAULT_BENCH_CPU
 BENCH_JOB_NAME="${SMU3M_BENCHMARK_SLURM_JOB_NAME:-smu3m-diff-bench}"
 BENCH_LOG_DIR="${SMU3M_LOG_DIR:-$PROJECT_DIR/logs}"
 BENCH_PARTITION="${SMU3M_BENCHMARK_SLURM_PARTITION:-${SMU3M_SLURM_PARTITION:-}}"
+BENCH_ARRAY_CONCURRENCY="${SMU3M_BENCHMARK_ARRAY_CONCURRENCY:-$SMU3M_BENCHMARK_SHARDS}"
+
+if (( SMU3M_BENCHMARK_SHARDS <= 0 )); then
+  echo "ERROR: SMU3M_BENCHMARK_SHARDS must be positive, got $SMU3M_BENCHMARK_SHARDS" >&2
+  exit 2
+fi
 
 if [[ ! -x "$SMU3M_PYTHON_BIN" ]]; then
   echo "ERROR: SMU3M_PYTHON_BIN is not executable: $SMU3M_PYTHON_BIN" >&2
@@ -65,6 +73,7 @@ mkdir -p "$BENCH_LOG_DIR"
 echo "Submitting Unified 3M materialized benchmark"
 echo "  output_dir=$SMU3M_OUTPUT_DIR"
 echo "  benchmark_profile=$SMU3M_BENCHMARK_PROFILE"
+echo "  benchmark_shards=$SMU3M_BENCHMARK_SHARDS"
 echo "  source_similarity_rerank_candidates=$SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES"
 echo "  max_eval_per_property_count=$SMMED_MAX_EVAL_PER_PROPERTY_COUNT"
 echo "  python=$SMU3M_PYTHON_BIN"
@@ -78,11 +87,16 @@ BENCH_SBATCH_ARGS=(
   --time="$BENCH_TIME"
   --mem="$BENCH_MEM"
   --cpus-per-task="$BENCH_CPUS"
-  --output="$BENCH_LOG_DIR/%x-%j.log"
   --export=ALL
 )
 if [[ -n "$BENCH_PARTITION" ]]; then
   BENCH_SBATCH_ARGS+=(--partition="$BENCH_PARTITION")
+fi
+if (( SMU3M_BENCHMARK_SHARDS > 1 )); then
+  BENCH_SBATCH_ARGS+=(--array="0-$((SMU3M_BENCHMARK_SHARDS - 1))%$BENCH_ARRAY_CONCURRENCY")
+  BENCH_SBATCH_ARGS+=(--output="$BENCH_LOG_DIR/%x-%A_%a.log")
+else
+  BENCH_SBATCH_ARGS+=(--output="$BENCH_LOG_DIR/%x-%j.log")
 fi
 
 bench_output="$(
@@ -98,17 +112,29 @@ if [[ -z "$bench_job_id" ]]; then
 fi
 
 case "$SMU3M_BENCHMARK_PROFILE" in
-  full) default_report="$SMU3M_OUTPUT_DIR/benchmark_materialized/benchmark_report.md" ;;
-  *) default_report="$SMU3M_OUTPUT_DIR/benchmark_materialized_${SMU3M_BENCHMARK_PROFILE}/benchmark_report.md" ;;
+  full) default_output_dir="$SMU3M_OUTPUT_DIR/benchmark_materialized" ;;
+  *) default_output_dir="$SMU3M_OUTPUT_DIR/benchmark_materialized_${SMU3M_BENCHMARK_PROFILE}" ;;
 esac
 if [[ -n "${SMU3M_BENCHMARK_OUTPUT_DIR:-}" ]]; then
-  report_path="$SMU3M_BENCHMARK_OUTPUT_DIR/benchmark_report.md"
+  output_base_dir="$SMU3M_BENCHMARK_OUTPUT_DIR"
 else
-  report_path="$default_report"
+  output_base_dir="$default_output_dir"
 fi
+report_path="$output_base_dir/benchmark_report.md"
 
 echo
 echo "Materialized benchmark submitted."
 echo "  job_id=$bench_job_id"
-echo "  log=$BENCH_LOG_DIR/${BENCH_JOB_NAME}-${bench_job_id}.log"
-echo "  benchmark_report=$report_path"
+if (( SMU3M_BENCHMARK_SHARDS > 1 )); then
+  merge_next="SMU3M_OUTPUT_DIR=$SMU3M_OUTPUT_DIR SMU3M_BENCHMARK_PROFILE=$SMU3M_BENCHMARK_PROFILE SMU3M_PYTHON_BIN=$SMU3M_PYTHON_BIN"
+  if [[ -n "${SMU3M_BENCHMARK_OUTPUT_DIR:-}" ]]; then
+    merge_next="$merge_next SMU3M_BENCHMARK_OUTPUT_DIR=$SMU3M_BENCHMARK_OUTPUT_DIR"
+  fi
+  merge_next="$merge_next bash $PROJECT_DIR/scripts/merge_unified_materialized_benchmark_shards.sh"
+  echo "  logs=$BENCH_LOG_DIR/${BENCH_JOB_NAME}-${bench_job_id}_<shard>.log"
+  echo "  shard_reports=$output_base_dir/shards/shard_<shard>_of_${SMU3M_BENCHMARK_SHARDS}/benchmark_report.md"
+  echo "  merge_next=$merge_next"
+else
+  echo "  log=$BENCH_LOG_DIR/${BENCH_JOB_NAME}-${bench_job_id}.log"
+  echo "  benchmark_report=$report_path"
+fi

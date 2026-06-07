@@ -452,8 +452,19 @@ bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
 ```bash
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
 SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_BENCHMARK_SHARDS=5 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
+```
+
+5-way shard 会提交 Slurm array `0-4`，各自写到
+`benchmark_materialized_primary_fast/shards/shard_<i>_of_5/`。五个 shard 都完成后合并：
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/merge_unified_materialized_benchmark_shards.sh
 ```
 
 想看稳定性时，直接加长训练并扩到全量 9455 eval：
@@ -475,6 +486,7 @@ bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
 ```bash
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
 SMU3M_BENCHMARK_PROFILE=full \
+SMU3M_BENCHMARK_SHARDS=5 \
 SMU3M_BENCHMARK_SLURM_TIME=08:00:00 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
