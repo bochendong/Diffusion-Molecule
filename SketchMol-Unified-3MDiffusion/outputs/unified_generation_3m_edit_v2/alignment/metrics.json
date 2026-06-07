@@ -1,0 +1,211 @@
+{
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 4.309942875589643
+    },
+    {
+      "epoch": 2,
+      "train_loss": 2.5637158763651944
+    },
+    {
+      "epoch": 3,
+      "train_loss": 1.8688409450102825
+    },
+    {
+      "epoch": 4,
+      "train_loss": 1.509819016164663
+    },
+    {
+      "epoch": 5,
+      "train_loss": 1.3019710000680418
+    },
+    {
+      "epoch": 6,
+      "train_loss": 1.1659823814216925
+    },
+    {
+      "epoch": 7,
+      "train_loss": 1.0500549771347825
+    },
+    {
+      "epoch": 8,
+      "train_loss": 0.9853613455684818
+    },
+    {
+      "epoch": 9,
+      "train_loss": 0.9448587803208098
+    },
+    {
+      "epoch": 10,
+      "train_loss": 0.8726063638317342
+    },
+    {
+      "epoch": 11,
+      "train_loss": 0.8353089507745237
+    },
+    {
+      "epoch": 12,
+      "train_loss": 0.8092714779231013
+    },
+    {
+      "epoch": 13,
+      "train_loss": 0.7818624973297119
+    },
+    {
+      "epoch": 14,
+      "train_loss": 0.7633856632271592
+    },
+    {
+      "epoch": 15,
+      "train_loss": 0.7313234988523989
+    },
+    {
+      "epoch": 16,
+      "train_loss": 0.7220039160884156
+    },
+    {
+      "epoch": 17,
+      "train_loss": 0.7049048731521684
+    },
+    {
+      "epoch": 18,
+      "train_loss": 0.6941754568596276
+    },
+    {
+      "epoch": 19,
+      "train_loss": 0.660014522927148
+    },
+    {
+      "epoch": 20,
+      "train_loss": 0.6580076208528207
+    },
+    {
+      "epoch": 21,
+      "train_loss": 0.6408209022210569
+    },
+    {
+      "epoch": 22,
+      "train_loss": 0.6321056558161365
+    },
+    {
+      "epoch": 23,
+      "train_loss": 0.6205299064821127
+    },
+    {
+      "epoch": 24,
+      "train_loss": 0.6119410936929741
+    },
+    {
+      "epoch": 25,
+      "train_loss": 0.6090723711008929
+    },
+    {
+      "epoch": 26,
+      "train_loss": 0.6075960945109932
+    },
+    {
+      "epoch": 27,
+      "train_loss": 0.6001987968172345
+    },
+    {
+      "epoch": 28,
+      "train_loss": 0.5762493017376685
+    },
+    {
+      "epoch": 29,
+      "train_loss": 0.5804826167165017
+    },
+    {
+      "epoch": 30,
+      "train_loss": 0.5731371145467369
+    },
+    {
+      "epoch": 31,
+      "train_loss": 0.559617819226518
+    },
+    {
+      "epoch": 32,
+      "train_loss": 0.5611153278423815
+    },
+    {
+      "epoch": 33,
+      "train_loss": 0.5475252136892202
+    },
+    {
+      "epoch": 34,
+      "train_loss": 0.5504228287205404
+    },
+    {
+      "epoch": 35,
+      "train_loss": 0.5333667944888679
+    },
+    {
+      "epoch": 36,
+      "train_loss": 0.5327765065796521
+    },
+    {
+      "epoch": 37,
+      "train_loss": 0.5230136501545809
+    },
+    {
+      "epoch": 38,
+      "train_loss": 0.5230477388416018
+    },
+    {
+      "epoch": 39,
+      "train_loss": 0.5137606378720732
+    },
+    {
+      "epoch": 40,
+      "train_loss": 0.5171792631854817
+    },
+    {
+      "epoch": 41,
+      "train_loss": 0.504536834298348
+    },
+    {
+      "epoch": 42,
+      "train_loss": 0.5045325719580358
+    },
+    {
+      "epoch": 43,
+      "train_loss": 0.49600204551706506
+    },
+    {
+      "epoch": 44,
+      "train_loss": 0.498890257003356
+    },
+    {
+      "epoch": 45,
+      "train_loss": 0.5021723244263201
+    },
+    {
+      "epoch": 46,
+      "train_loss": 0.49255635908671785
+    },
+    {
+      "epoch": 47,
+      "train_loss": 0.4935066973676487
+    },
+    {
+      "epoch": 48,
+      "train_loss": 0.4902332628868064
+    },
+    {
+      "epoch": 49,
+      "train_loss": 0.48489234277180265
+    },
+    {
+      "epoch": 50,
+      "train_loss": 0.4878640624941612
+    }
+  ],
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.12.0",
+    "cuda_available": true,
+    "cuda_device_count": 1,
+    "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 3g.40gb"
+  }
+}
