@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
-# Shared SketchMol vendored MolScribe setup for the molscribe_overlay venv.
+# SUCC-only MolScribe runtime env.
 #
-# SketchMol ships a patched molscribe under evaluate/molscribe. Importing the
-# upstream pip package instead breaks graph decoding. Always prepend the vendored
-# evaluate directory before running OCR.
-#
-# molscribe_overlay reuses phystabmol's bundled OpenNMT, which is too old for
-# graph->SMILES decoding. Prepend the onmt220 overlay first; job 15544986
-# (paper_repro_mw400_real_official_ocr) succeeded only with this layout.
+# OCR fixes live under SketchMol-Understanding-Condition/ only. Do not patch
+# Research/.../evaluate/molscribe or SketchMolBenchmark scripts; prepend
+# PYTHONPATH here (and in run_molscribe_ocr.py) at runtime instead.
 
 SKETCHMOL_ROOT="${SKETCHMOL_ROOT:-Research/Molecule Generation/SketchMol/SketchMol-v1-main}"
 MOLSCRIBE_WORKDIR="${SUCC_MOLSCRIBE_WORKDIR:-${SKETCHMOL_MOLSCRIBE_WORKDIR:-${MOLSCRIBE_WORKDIR:-$SKETCHMOL_ROOT/evaluate}}}"
