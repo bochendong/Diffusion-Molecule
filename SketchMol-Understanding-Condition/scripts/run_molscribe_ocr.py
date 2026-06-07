@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import re
 import sys
 from pathlib import Path
@@ -13,12 +14,49 @@ from typing import Any
 import numpy as np
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
+REPO_DIR = PROJECT_DIR.parent
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 from sketchmol_understanding_condition.molscribe_images import (  # noqa: E402
     load_preprocessed_rgb_image,
 )
+
+
+def _ensure_vendored_molscribe_path() -> Path | None:
+    """Prefer SketchMol evaluate/molscribe and the onmt220 overlay over pip copies."""
+
+    onmt_overlay = os.environ.get("SUCC_ONMT_OVERLAY") or os.environ.get(
+        "SKETCHMOL_ONMT_OVERLAY", "/scratch/bdong/python_overlays/onmt220"
+    )
+    if onmt_overlay:
+        overlay_dir = Path(onmt_overlay)
+        if overlay_dir.is_dir():
+            overlay_text = str(overlay_dir)
+            if overlay_text not in sys.path:
+                sys.path.insert(0, overlay_text)
+
+    candidates = [
+        os.environ.get("SUCC_MOLSCRIBE_WORKDIR"),
+        os.environ.get("SKETCHMOL_MOLSCRIBE_WORKDIR"),
+        str(REPO_DIR / "Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate"),
+        str(REPO_DIR / "Research/Molecule Generation/SketchMol/SketchMol-v1-main"),
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        root = Path(candidate)
+        if (root / "molscribe").is_dir():
+            evaluate_dir = root
+        elif (root / "evaluate" / "molscribe").is_dir():
+            evaluate_dir = root / "evaluate"
+        else:
+            continue
+        evaluate_text = str(evaluate_dir)
+        if evaluate_text not in sys.path:
+            sys.path.insert(0, evaluate_text)
+        return evaluate_dir
+    return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -40,8 +78,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--preprocess-images",
         action=argparse.BooleanOptionalAction,
-        default=True,
-        help="Convert images to high-contrast black-on-white before MolScribe inference.",
+        default=False,
+        help=(
+            "Optional UC binarization before MolScribe. SketchMol predict_csv.py "
+            "does not use this; default is off to match SketchMol."
+        ),
     )
     parser.add_argument(
         "--raw-smiles-fallback",
@@ -67,7 +108,14 @@ def main() -> None:
         raise FileNotFoundError(f"Missing {len(missing)} image files. First missing:\n{preview}")
 
     import torch
+
+    evaluate_dir = _ensure_vendored_molscribe_path()
     from molscribe import MolScribe
+
+    if evaluate_dir is not None:
+        print(f"Using SketchMol MolScribe from {evaluate_dir}", flush=True)
+    if args.device != "cpu" and not torch.cuda.is_available():
+        print("WARNING: CUDA unavailable; MolScribe OCR requires GPU for reliable decoding.", flush=True)
 
     device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
     model = MolScribe(str(args.model_path), device=device)
@@ -131,15 +179,22 @@ def _predict_sketchmol(
     paths: list[str],
     *,
     batch_size: int,
-    preprocess_images: bool = True,
+    preprocess_images: bool = False,
 ) -> tuple[list[str], list[float | None], list[dict[str, object]]]:
-    input_images = [
-        load_preprocessed_rgb_image(path, preprocess=preprocess_images) for path in paths
-    ]
-    if hasattr(model, "predict_imagespredict_images_from_csv_helper"):
-        result = model.predict_imagespredict_images_from_csv_helper(input_images, batch_size)
-    else:
+    if preprocess_images:
+        input_images = [
+            load_preprocessed_rgb_image(path, preprocess=True) for path in paths
+        ]
+        if hasattr(model, "predict_imagespredict_images_from_csv_helper"):
+            result = model.predict_imagespredict_images_from_csv_helper(input_images, batch_size)
+        else:
+            raise ValueError("MolScribe model missing predict_imagespredict_images_from_csv_helper")
+    elif hasattr(model, "predict_images_from_csv"):
+        # Match SketchMol evaluate/predict_csv.py: cv2.imread paths, internal CropWhite/ToGray.
         result = model.predict_images_from_csv(paths, batch_size)
+    else:
+        input_images = [load_preprocessed_rgb_image(path, preprocess=False) for path in paths]
+        result = model.predict_imagespredict_images_from_csv_helper(input_images, batch_size)
     if isinstance(result, tuple) and len(result) >= 3:
         graph_smiles, _molblock, token_scores = result[:3]
     else:

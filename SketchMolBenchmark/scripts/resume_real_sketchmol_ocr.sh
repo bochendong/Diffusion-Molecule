@@ -9,8 +9,11 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$PROJECT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# shellcheck source=../../SketchMol-Understanding-Condition/scripts/molscribe_env.sh
+source "$REPO_ROOT/SketchMol-Understanding-Condition/scripts/molscribe_env.sh"
+
 SOURCE_CSV="${SKETCHMOL_BENCHMARK_SOURCE_CSV:-${1:-}}"
-SKETCHMOL_REPO="${SKETCHMOL_REPO:-Research/Molecule Generation/SketchMol/SketchMol-v1-main}"
+SKETCHMOL_REPO="${SKETCHMOL_REPO:-$SKETCHMOL_ROOT}"
 PYTHON_BIN="${SKETCHMOL_MOLSCRIBE_PYTHON_BIN:-${SKETCHMOL_PYTHON_BIN:-python}}"
 BATCH_SIZE="${SKETCHMOL_MOLSCRIBE_BATCH_SIZE:-100}"
 OUTPUT_DIR="${SKETCHMOL_BENCHMARK_OUTPUT_DIR:-SketchMolBenchmark/outputs/current}"
@@ -18,14 +21,12 @@ SKETCHMOL_MODULES="${SKETCHMOL_MODULES:-gcc opencv/4.13.0 rdkit/2024.09.6}"
 
 if ! command -v module >/dev/null 2>&1; then
   if [[ -f /cvmfs/soft.computecanada.ca/config/profile/bash.sh ]]; then
-    # Slurm --wrap shells may not initialize Lmod automatically.
     # shellcheck source=/dev/null
     source /cvmfs/soft.computecanada.ca/config/profile/bash.sh
   fi
 fi
 
 if command -v module >/dev/null 2>&1; then
-  # MolScribe uses cluster-provided OpenCV/RDKit Python modules.
   # shellcheck disable=SC2086
   module load $SKETCHMOL_MODULES
 fi
@@ -37,7 +38,7 @@ ERROR: provide the existing SketchMol image_path.csv.
 Example:
   SKETCHMOL_BENCHMARK_SOURCE_CSV=/path/to/image_path.csv \\
   SKETCHMOL_MOLSCRIBE_MODEL=/path/to/swin_base_char_aux_200k.pth \\
-  SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/path/to/venv/bin/python \\
+  SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \\
   bash SketchMolBenchmark/scripts/resume_real_sketchmol_ocr.sh
 EOF
   exit 2
@@ -64,25 +65,6 @@ if ! command -v "$PYTHON_BIN" >/dev/null 2>&1 && [[ ! -x "$PYTHON_BIN" ]]; then
   exit 2
 fi
 
-if ! PYTHONPATH="$SKETCHMOL_REPO/evaluate:$SKETCHMOL_REPO${PYTHONPATH:+:$PYTHONPATH}" \
-  "$PYTHON_BIN" - <<'PY'
-import sys
-
-try:
-    from timm.models.helpers import build_model_with_cfg, overlay_external_default_cfg  # noqa: F401
-    from timm.models.vision_transformer import checkpoint_filter_fn, _init_vit_weights  # noqa: F401
-    from molscribe import MolScribe  # noqa: F401
-except Exception as exc:
-    print("ERROR: MolScribe/timm compatibility check failed:", file=sys.stderr)
-    print(f"  {exc}", file=sys.stderr)
-    print("Hint: install a MolScribe-compatible timm, for example:", file=sys.stderr)
-    print(f"  {sys.executable} -m pip install --force-reinstall --no-deps timm==0.4.12", file=sys.stderr)
-    sys.exit(2)
-PY
-then
-  exit 2
-fi
-
 INFERRED_RUN_NAME="$(printf '%s\n' "$SOURCE_CSV" | sed -n 's#.*SketchMolBenchmark/runs/\([^/]*\)/.*#\1#p')"
 BENCHMARK_NAME="${SKETCHMOL_RUN_NAME:-${SKETCHMOL_BENCHMARK_NAME:-${INFERRED_RUN_NAME:-real_sketchmol_ocr_resume_$(date +%Y%m%d_%H%M%S)}}}"
 RUN_DIR="SketchMolBenchmark/runs/$BENCHMARK_NAME"
@@ -97,19 +79,23 @@ mkdir -p "$(dirname "$RUN_LOG_ABS")"
 
 echo "Resume real SketchMol + OCR benchmark:"
 echo "  python=$PYTHON_BIN"
+echo "  onmt_overlay=$ONMT_OVERLAY"
+echo "  molscribe_workdir=$MOLSCRIBE_WORKDIR"
 echo "  sketchmol_repo=$SKETCHMOL_REPO"
 echo "  molscribe_model=$SKETCHMOL_MOLSCRIBE_MODEL"
 echo "  image_csv=$SOURCE_CSV"
 echo "  output_dir=$OUTPUT_DIR"
 echo "  benchmark_name=$BENCHMARK_NAME"
 
+prepend_molscribe_pythonpath
+PYTHON_BIN="$PYTHON_BIN" check_molscribe_import
+
 pushd "$SKETCHMOL_REPO" >/dev/null
-PYTHONPATH="$PWD/evaluate:$PWD${PYTHONPATH:+:$PYTHONPATH}" \
-  "$PYTHON_BIN" evaluate/predict_csv.py \
-    --model_path "$SKETCHMOL_MOLSCRIBE_MODEL" \
-    --image_path "$SOURCE_CSV" \
-    -n "$BATCH_SIZE" \
-    2>&1 | tee -a "$RUN_LOG_ABS"
+"$PYTHON_BIN" evaluate/predict_csv.py \
+  --model_path "$SKETCHMOL_MOLSCRIBE_MODEL" \
+  --image_path "$SOURCE_CSV" \
+  -n "$BATCH_SIZE" \
+  2>&1 | tee -a "$RUN_LOG_ABS"
 popd >/dev/null
 
 SKETCHMOL_BENCHMARK_SOURCE_CSV="$SOURCE_CSV" \

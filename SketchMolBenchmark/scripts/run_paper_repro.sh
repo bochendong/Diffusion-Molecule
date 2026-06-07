@@ -139,6 +139,10 @@ echo "  image_csv=$IMAGE_CSV" | tee -a "$RUN_LOG"
 
 pushd "$SKETCHMOL_MOLSCRIBE_WORKDIR_ABS" >/dev/null
 set +e
+# shellcheck source=../../SketchMol-Understanding-Condition/scripts/molscribe_env.sh
+source "$REPO_ROOT/SketchMol-Understanding-Condition/scripts/molscribe_env.sh"
+prepend_molscribe_pythonpath
+PYTHON_BIN="$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" check_molscribe_import
 PYTHONPATH="$PWD:$SKETCHMOL_REPO_ABS/evaluate:$SKETCHMOL_REPO_ABS${PYTHONPATH:+:$PYTHONPATH}" \
 "$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" predict_csv.py \
   --model_path "$SKETCHMOL_MOLSCRIBE_MODEL" \

@@ -120,19 +120,58 @@ rdkit/2025.09.4
 只有当你指定的 Python 已经能 import RDKit 时，才覆盖 `SMMED_PYTHON_BIN` 或
 `SUCC_PYTHON_BIN`。
 
-### 4. MolScribe 不是 pip 包
+### 4. MolScribe OCR 环境（vendored + onmt220）
 
-MolScribe 类来自 vendored SketchMol checkout，不在 venv 里 pip install。跑 OCR 时
-要把 `evaluate/` 加进 `PYTHONPATH`：
+MolScribe 类来自 vendored SketchMol checkout，不在 venv 里 pip install。`molscribe_overlay`
+还会继承 `phystabmol` 自带的旧版 OpenNMT；**如果不额外 prepend onmt220 overlay，graph→SMILES
+会全部返回空字符串**（OCR present = 0%）。
+
+仓库里唯一确认成功的 OCR run 是 Slurm job **15544986**，输出目录
+`SketchMolBenchmark/outputs/paper_repro_mw400_real_official_ocr`（OCR present 100%，validity 90%）。
+它使用的组合是：
+
+```text
+Python:   /home/bdong/.venvs/molscribe_overlay/bin/python
+ONMT:     /scratch/bdong/python_overlays/onmt220          # 必须在 PYTHONPATH 最前
+MolScribe: SketchMol-v1-main/evaluate/molscribe           # vendored，不是 pip 包
+OCR 脚本:  evaluate/predict_csv.py                         # 原版，不做额外二值化
+GPU:      必须（login 节点 CPU 上不可靠）
+```
+
+推荐环境变量：
 
 ```bash
+export SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
+export SKETCHMOL_MOLSCRIBE_PYTHON_BIN="$SUCC_PYTHON_BIN"
 export SUCC_MOLSCRIBE_WORKDIR="Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate"
 export SKETCHMOL_MOLSCRIBE_WORKDIR="$SUCC_MOLSCRIBE_WORKDIR"
 export SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth
+export SUCC_ONMT_OVERLAY=/scratch/bdong/python_overlays/onmt220
+export SKETCHMOL_ONMT_OVERLAY="$SUCC_ONMT_OVERLAY"
 ```
 
-UniVideo pipeline 现在会自动检测上面的 SketchMol `evaluate/` 目录；SketchMolBenchmark
-paper repro 也使用同一 workdir。
+Understanding-Condition 和 SketchMolBenchmark 的 OCR shell 脚本会 source
+`SketchMol-Understanding-Condition/scripts/molscribe_env.sh`，自动把 **onmt220 → evaluate/**
+ 按顺序 prepend 到 `PYTHONPATH`。
+
+不要对 SketchMol 扩散图使用 Understanding-Condition 里额外的 `--preprocess-images`
+二值化；默认应与 `predict_csv.py` 一致（`--no-preprocess-images`）。
+
+如果 diffusion 已经采样完、只需要重跑 OCR：
+
+```bash
+SKETCHMOL_BENCHMARK_SOURCE_CSV=/path/to/image_path.csv \
+SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
+bash SketchMolBenchmark/scripts/resume_real_sketchmol_ocr.sh
+```
+
+UniVideo 的 OCR rerun：
+
+```bash
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_succ_ocr_benchmark.sh
+```
 
 ### 5. 快速自检
 
@@ -145,14 +184,23 @@ print("molscribe_overlay ok")
 PY
 ```
 
-MolScribe OCR：
+MolScribe OCR（必须同时检查 vendored molscribe 和 onmt220 overlay）：
 
 ```bash
-PYTHONPATH="$SUCC_MOLSCRIBE_WORKDIR${PYTHONPATH:+:$PYTHONPATH}" $SUCC_PYTHON_BIN - <<'PY'
-from molscribe import MolScribe
-print("molscribe import ok")
-PY
+# shellcheck source=SketchMol-Understanding-Condition/scripts/molscribe_env.sh
+source SketchMol-Understanding-Condition/scripts/molscribe_env.sh
+PYTHON_BIN="$SUCC_PYTHON_BIN" prepend_molscribe_pythonpath
+PYTHON_BIN="$SUCC_PYTHON_BIN" check_molscribe_import
 ```
+
+期望输出包含：
+
+```text
+molscribe import ok (.../SketchMol-v1-main/evaluate/molscribe/__init__.py)
+onmt import ok (/scratch/bdong/python_overlays/onmt220/onmt/__init__.py)
+```
+
+如果 `onmt` 来自 `phystabmol/lib/python3.11/site-packages/onmt/`，OCR 很可能全是空 SMILES。
 
 SketchMol 采样 Python：
 
@@ -174,6 +222,8 @@ SKETCHMOL_BENCHMARK_PYTHON_BIN   benchmark materialization / decode 评估
 SMMED_PYTHON_BIN             multi-property dataset build
 SUCC_MOLSCRIBE_WORKDIR       UniVideo / understanding OCR 的 MolScribe PYTHONPATH
 SKETCHMOL_MOLSCRIBE_WORKDIR  SketchMolBenchmark OCR 的 MolScribe PYTHONPATH
+SUCC_ONMT_OVERLAY              MolScribe OCR 用的 OpenNMT overlay（默认 onmt220）
+SKETCHMOL_ONMT_OVERLAY         同上，SketchMolBenchmark 别名
 ```
 
 ## Slurm 资源怎么选
@@ -497,17 +547,29 @@ bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark
 
 ### 5. 跑 SketchMol baseline / OCR benchmark
 
-真实 SketchMol baseline 依赖 vendored SketchMol repo 和 MolScribe 环境。提交前确认 checkpoint
-路径不是占位符。
+真实 SketchMol baseline 依赖 vendored SketchMol repo、**onmt220 overlay** 和
+`molscribe_overlay` venv。提交前确认 checkpoint 路径不是占位符。
 
 ```bash
+SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
 bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
 ```
 
 如果 diffusion 已经生成了 `image_path.csv`，只需要继续 OCR / materialization：
 
 ```bash
+SKETCHMOL_BENCHMARK_SOURCE_CSV=/path/to/image_path.csv \
+SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
 bash SketchMolBenchmark/scripts/resume_real_sketchmol_ocr.sh
+```
+
+Understanding-Condition 已有 UniVideo 图的 OCR rerun：
+
+```bash
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_succ_ocr_benchmark.sh
 ```
 
 ### 6. 汇总或复用已有结果

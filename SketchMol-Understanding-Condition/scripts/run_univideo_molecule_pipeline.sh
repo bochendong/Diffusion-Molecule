@@ -108,35 +108,14 @@ MOLSCRIBE_BATCH_SIZE="${SUCC_MOLSCRIBE_BATCH_SIZE:-100}"
 MOLSCRIBE_DEVICE="${SUCC_MOLSCRIBE_DEVICE:-cuda}"
 MOLSCRIBE_BACKEND="${SUCC_MOLSCRIBE_BACKEND:-sketchmol}"
 SOURCE_TANIMOTO_THRESHOLDS="${SUCC_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
+PREPROCESS_IMAGES="${SUCC_PREPROCESS_IMAGES:-0}"
 
-prepend_molscribe_pythonpath() {
-  if [[ -z "$MOLSCRIBE_WORKDIR" ]]; then
-    return
-  fi
-  if [[ -d "$MOLSCRIBE_WORKDIR/evaluate/molscribe" ]]; then
-    export PYTHONPATH="$MOLSCRIBE_WORKDIR/evaluate:$MOLSCRIBE_WORKDIR${PYTHONPATH:+:$PYTHONPATH}"
-  else
-    export PYTHONPATH="$MOLSCRIBE_WORKDIR${PYTHONPATH:+:$PYTHONPATH}"
-  fi
-}
+# shellcheck source=./molscribe_env.sh
+source "$SCRIPT_DIR/molscribe_env.sh"
 
-check_molscribe_import() {
-  "$PYTHON_BIN" - <<'PY'
-import sys
-
-try:
-    from timm.models.helpers import build_model_with_cfg, overlay_external_default_cfg  # noqa: F401
-    from timm.models.vision_transformer import checkpoint_filter_fn, _init_vit_weights  # noqa: F401
-    from molscribe import MolScribe  # noqa: F401
-except Exception as exc:
-    print("ERROR: MolScribe/timm compatibility check failed:", file=sys.stderr)
-    print(f"  {exc}", file=sys.stderr)
-    print("Hint: set SUCC_MOLSCRIBE_WORKDIR to a MolScribe checkout/evaluate directory,", file=sys.stderr)
-    print("      or install a compatible MolScribe + timm into SUCC_PYTHON_BIN.", file=sys.stderr)
-    print(f"      {sys.executable} -m pip install --force-reinstall --no-deps timm==0.4.12", file=sys.stderr)
-    sys.exit(2)
-PY
-}
+if [[ -z "${MOLSCRIBE_WORKDIR:-}" && -d "$SKETCHMOL_ROOT/evaluate/molscribe" ]]; then
+  MOLSCRIBE_WORKDIR="$SKETCHMOL_ROOT/evaluate"
+fi
 
 echo "Running UniVideo-style molecular generation pipeline"
 echo "  python=$PYTHON_BIN"
@@ -364,13 +343,19 @@ if [[ "$LATENT_BACKEND" != "fingerprint_property_vector" && "$DECODE_EVAL_IMAGES
           echo "Skipping MolScribe OCR/evaluation because MolScribe is unavailable in auto mode."
           echo "Set SUCC_MOLSCRIBE_WORKDIR=$SKETCHMOL_ROOT/evaluate or install MolScribe into $PYTHON_BIN."
         else
-          "$PYTHON_BIN" "$PROJECT_DIR/scripts/run_molscribe_ocr.py" \
-            --model-path "$MOLSCRIBE_MODEL" \
-            --image-csv "$IMAGE_CSV" \
-            --batch-size "$MOLSCRIBE_BATCH_SIZE" \
-            --device "$MOLSCRIBE_DEVICE" \
-            --backend "$MOLSCRIBE_BACKEND" \
-            --preprocess-images
+          OCR_ARGS=(
+            --model-path "$MOLSCRIBE_MODEL"
+            --image-csv "$IMAGE_CSV"
+            --batch-size "$MOLSCRIBE_BATCH_SIZE"
+            --device "$MOLSCRIBE_DEVICE"
+            --backend "$MOLSCRIBE_BACKEND"
+          )
+          if [[ "$PREPROCESS_IMAGES" == "1" ]]; then
+            OCR_ARGS+=(--preprocess-images)
+          else
+            OCR_ARGS+=(--no-preprocess-images)
+          fi
+          "$PYTHON_BIN" "$PROJECT_DIR/scripts/run_molscribe_ocr.py" "${OCR_ARGS[@]}"
           "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_univideo_image_benchmark.py" \
             --image-csv "$IMAGE_CSV" \
             --output-dir "$STRUCTURE_BENCHMARK_DIR" \

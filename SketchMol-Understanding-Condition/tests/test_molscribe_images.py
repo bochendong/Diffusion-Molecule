@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
@@ -83,3 +84,59 @@ def test_select_smiles_returns_empty_when_both_paths_fail():
 
     assert smiles == ""
     assert source == "empty"
+
+
+def test_predict_sketchmol_uses_path_reader_when_not_preprocessing():
+    module = _load_run_molscribe_ocr_module()
+    calls: list[str] = []
+
+    class FakeModel:
+        def predict_images_from_csv(self, paths, batch_size):
+            calls.append("from_csv")
+            return (["CCO"], ["molblock"], [0.9])
+
+        def predict_imagespredict_images_from_csv_helper(self, input_images, batch_size):
+            calls.append("helper")
+            return (["CCN"], ["molblock"], [0.8])
+
+    smiles, scores, diagnostics = module._predict_sketchmol(
+        FakeModel(),
+        ["/tmp/fake.png"],
+        batch_size=1,
+        preprocess_images=False,
+    )
+
+    assert calls == ["from_csv"]
+    assert smiles == ["CCO"]
+    assert scores == [0.9]
+    assert diagnostics[0]["molscribe_decode_source"] == "sketchmol_graph"
+
+
+def test_predict_sketchmol_uses_helper_when_preprocessing():
+    module = _load_run_molscribe_ocr_module()
+    calls: list[str] = []
+
+    class FakeModel:
+        def predict_images_from_csv(self, paths, batch_size):
+            calls.append("from_csv")
+            return (["CCO"], ["molblock"], [0.9])
+
+        def predict_imagespredict_images_from_csv_helper(self, input_images, batch_size):
+            calls.append("helper")
+            return (["CCN"], ["molblock"], [0.8])
+
+    with patch.object(
+        module,
+        "load_preprocessed_rgb_image",
+        return_value=np.zeros((8, 8, 3), dtype=np.uint8),
+    ):
+        smiles, scores, _ = module._predict_sketchmol(
+            FakeModel(),
+            ["/tmp/fake.png"],
+            batch_size=1,
+            preprocess_images=True,
+        )
+
+    assert calls == ["helper"]
+    assert smiles == ["CCN"]
+    assert scores == [0.8]

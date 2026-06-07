@@ -132,6 +132,11 @@ if [[ -z "$IMAGE_CSV" || ! -f "$IMAGE_CSV" ]]; then
 fi
 echo "  image_csv=$IMAGE_CSV" | tee -a "$RUN_LOG"
 
+# shellcheck source=../../SketchMol-Understanding-Condition/scripts/molscribe_env.sh
+source "$REPO_ROOT/SketchMol-Understanding-Condition/scripts/molscribe_env.sh"
+prepend_molscribe_pythonpath
+PYTHON_BIN="$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" check_molscribe_import
+
 set +e
 "$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" evaluate/predict_csv.py \
   --model_path "$SKETCHMOL_MOLSCRIBE_MODEL" \

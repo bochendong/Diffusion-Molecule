@@ -41,6 +41,43 @@ This folder owns the first side of that comparison. Direct-structure or
 understanding-conditioned predictions should be materialized into the same
 summary format through this benchmark package before being compared in reports.
 
+## MolScribe OCR Requirements
+
+MolScribe OCR in this repo is **not** a plain `pip install molscribe` setup. The only
+confirmed-good OCR artifact is:
+
+```text
+SketchMolBenchmark/outputs/paper_repro_mw400_real_official_ocr
+Slurm job 15544986
+OCR present 100%, validity 90%, molscribe_score_mean ~0.89
+```
+
+Use this stack:
+
+```text
+Python:    /home/bdong/.venvs/molscribe_overlay/bin/python
+ONMT:      /scratch/bdong/python_overlays/onmt220
+MolScribe: Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe
+Script:    evaluate/predict_csv.py
+GPU:       required
+```
+
+`molscribe_overlay` inherits an older OpenNMT from `phystabmol`. Without prepending
+`onmt220`, `predict_csv.py` often finishes with empty `SMILES` columns even though
+`molscribe_score` is populated.
+
+Shared setup lives in
+`SketchMol-Understanding-Condition/scripts/molscribe_env.sh`. Resume / paper repro /
+UniVideo OCR scripts source it automatically.
+
+Quick check:
+
+```bash
+source SketchMol-Understanding-Condition/scripts/molscribe_env.sh
+PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python prepend_molscribe_pythonpath
+PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python check_molscribe_import
+```
+
 ## Commands
 
 Materialize an already-generated and OCR-decoded SketchMol CSV:
@@ -93,16 +130,25 @@ cd /scratch/bdong/projects/Diffusion-Molecule
 SKETCHMOL_PYTHON_BIN=/scratch/bdong/venvs/phystabmol/bin/python \
 SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 SKETCHMOL_MOLSCRIBE_WORKDIR="Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate" \
+SKETCHMOL_ONMT_OVERLAY=/scratch/bdong/python_overlays/onmt220 \
 SKETCHMOL_CKPT=/scratch/bdong/checkpoints/sketchmol/model_weights.ckpt \
 SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
 bash SketchMolBenchmark/scripts/submit_paper_repro.sh
 ```
 
-The `/home/bdong/.venvs/molscribe_overlay` interpreter is a lightweight OCR
-environment that reuses the existing `phystabmol` heavy torch stack and adds
-module-backed OpenCV/RDKit paths. A true upstream-style MolScribe environment
-with `python=3.7` remains preferable if a conda/mamba installation becomes
-available.
+The `/home/bdong/.venvs/molscribe_overlay` interpreter reuses the `phystabmol` torch
+stack and adds module-backed OpenCV/RDKit paths. OCR scripts also prepend the
+`onmt220` overlay via `molscribe_env.sh`; do not omit it.
+
+If sampling succeeded but OCR returned empty SMILES, rerun only OCR:
+
+```bash
+SKETCHMOL_BENCHMARK_SOURCE_CSV=/path/to/image_path.csv \
+SKETCHMOL_BENCHMARK_OUTPUT_DIR=SketchMolBenchmark/outputs/my_run_official_ocr \
+SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
+bash SketchMolBenchmark/scripts/resume_real_sketchmol_ocr.sh
+```
 
 Run the lightweight tests:
 
