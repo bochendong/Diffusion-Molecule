@@ -17,6 +17,7 @@ export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outpu
 export SMU3M_PYTHON_BIN="${SMU3M_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 export SMU3M_BENCHMARK_PROFILE="${SMU3M_BENCHMARK_PROFILE:-primary_fast}"
 export SMU3M_BENCHMARK_SHARDS="${SMU3M_BENCHMARK_SHARDS:-1}"
+export SMU3M_BENCHMARK_SUBMIT_MODE="${SMU3M_BENCHMARK_SUBMIT_MODE:-jobs}"
 export SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES="${SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES:-256}"
 export SMU3M_RESTRICT_BENCHMARK_TO_EDIT_LATENT_INDEX="${SMU3M_RESTRICT_BENCHMARK_TO_EDIT_LATENT_INDEX:-1}"
 export SMMED_MAX_EVAL_PER_PROPERTY_COUNT="${SMMED_MAX_EVAL_PER_PROPERTY_COUNT:-5000}"
@@ -57,6 +58,14 @@ if (( SMU3M_BENCHMARK_SHARDS <= 0 )); then
   echo "ERROR: SMU3M_BENCHMARK_SHARDS must be positive, got $SMU3M_BENCHMARK_SHARDS" >&2
   exit 2
 fi
+case "$SMU3M_BENCHMARK_SUBMIT_MODE" in
+  jobs | array) ;;
+  *)
+    echo "ERROR: unsupported SMU3M_BENCHMARK_SUBMIT_MODE=$SMU3M_BENCHMARK_SUBMIT_MODE" >&2
+    echo "Use jobs or array." >&2
+    exit 2
+    ;;
+esac
 
 if [[ ! -x "$SMU3M_PYTHON_BIN" ]]; then
   echo "ERROR: SMU3M_PYTHON_BIN is not executable: $SMU3M_PYTHON_BIN" >&2
@@ -74,6 +83,7 @@ echo "Submitting Unified 3M materialized benchmark"
 echo "  output_dir=$SMU3M_OUTPUT_DIR"
 echo "  benchmark_profile=$SMU3M_BENCHMARK_PROFILE"
 echo "  benchmark_shards=$SMU3M_BENCHMARK_SHARDS"
+echo "  submit_mode=$SMU3M_BENCHMARK_SUBMIT_MODE"
 echo "  source_similarity_rerank_candidates=$SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES"
 echo "  max_eval_per_property_count=$SMMED_MAX_EVAL_PER_PROPERTY_COUNT"
 echo "  python=$SMU3M_PYTHON_BIN"
@@ -92,23 +102,49 @@ BENCH_SBATCH_ARGS=(
 if [[ -n "$BENCH_PARTITION" ]]; then
   BENCH_SBATCH_ARGS+=(--partition="$BENCH_PARTITION")
 fi
-if (( SMU3M_BENCHMARK_SHARDS > 1 )); then
+bench_job_ids=()
+if (( SMU3M_BENCHMARK_SHARDS > 1 )) && [[ "$SMU3M_BENCHMARK_SUBMIT_MODE" == "array" ]]; then
   BENCH_SBATCH_ARGS+=(--array="0-$((SMU3M_BENCHMARK_SHARDS - 1))%$BENCH_ARRAY_CONCURRENCY")
   BENCH_SBATCH_ARGS+=(--output="$BENCH_LOG_DIR/%x-%A_%a.log")
+  bench_output="$(
+    sbatch "${BENCH_SBATCH_ARGS[@]}" \
+      --wrap="bash '$PROJECT_DIR/scripts/run_unified_materialized_benchmark.sh'"
+  )"
+  echo "$bench_output"
+  bench_job_id="$(echo "$bench_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+  if [[ -z "$bench_job_id" ]]; then
+    echo "ERROR: failed to parse benchmark array job id." >&2
+    exit 1
+  fi
+  bench_job_ids=("$bench_job_id")
+elif (( SMU3M_BENCHMARK_SHARDS > 1 )); then
+  for shard_index in $(seq 0 "$((SMU3M_BENCHMARK_SHARDS - 1))"); do
+    shard_output="$(
+      sbatch "${BENCH_SBATCH_ARGS[@]}" \
+        --output="$BENCH_LOG_DIR/${BENCH_JOB_NAME}-s${shard_index}-%j.log" \
+        --wrap="SMMED_EVAL_SHARD_INDEX=$shard_index bash '$PROJECT_DIR/scripts/run_unified_materialized_benchmark.sh'"
+    )"
+    echo "$shard_output"
+    shard_job_id="$(echo "$shard_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+    if [[ -z "$shard_job_id" ]]; then
+      echo "ERROR: failed to parse benchmark shard job id for shard $shard_index." >&2
+      exit 1
+    fi
+    bench_job_ids+=("$shard_job_id")
+  done
 else
   BENCH_SBATCH_ARGS+=(--output="$BENCH_LOG_DIR/%x-%j.log")
-fi
-
-bench_output="$(
-  sbatch "${BENCH_SBATCH_ARGS[@]}" \
-    --wrap="bash '$PROJECT_DIR/scripts/run_unified_materialized_benchmark.sh'"
-)"
-echo "$bench_output"
-bench_job_id="$(echo "$bench_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
-
-if [[ -z "$bench_job_id" ]]; then
-  echo "ERROR: failed to parse benchmark job id." >&2
-  exit 1
+  bench_output="$(
+    sbatch "${BENCH_SBATCH_ARGS[@]}" \
+      --wrap="bash '$PROJECT_DIR/scripts/run_unified_materialized_benchmark.sh'"
+  )"
+  echo "$bench_output"
+  bench_job_id="$(echo "$bench_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+  if [[ -z "$bench_job_id" ]]; then
+    echo "ERROR: failed to parse benchmark job id." >&2
+    exit 1
+  fi
+  bench_job_ids=("$bench_job_id")
 fi
 
 case "$SMU3M_BENCHMARK_PROFILE" in
@@ -124,17 +160,21 @@ report_path="$output_base_dir/benchmark_report.md"
 
 echo
 echo "Materialized benchmark submitted."
-echo "  job_id=$bench_job_id"
+echo "  job_ids=${bench_job_ids[*]}"
 if (( SMU3M_BENCHMARK_SHARDS > 1 )); then
   merge_next="SMU3M_OUTPUT_DIR=$SMU3M_OUTPUT_DIR SMU3M_BENCHMARK_PROFILE=$SMU3M_BENCHMARK_PROFILE SMU3M_PYTHON_BIN=$SMU3M_PYTHON_BIN"
   if [[ -n "${SMU3M_BENCHMARK_OUTPUT_DIR:-}" ]]; then
     merge_next="$merge_next SMU3M_BENCHMARK_OUTPUT_DIR=$SMU3M_BENCHMARK_OUTPUT_DIR"
   fi
   merge_next="$merge_next bash $PROJECT_DIR/scripts/merge_unified_materialized_benchmark_shards.sh"
-  echo "  logs=$BENCH_LOG_DIR/${BENCH_JOB_NAME}-${bench_job_id}_<shard>.log"
+  if [[ "$SMU3M_BENCHMARK_SUBMIT_MODE" == "array" ]]; then
+    echo "  logs=$BENCH_LOG_DIR/${BENCH_JOB_NAME}-${bench_job_ids[0]}_<shard>.log"
+  else
+    echo "  logs=$BENCH_LOG_DIR/${BENCH_JOB_NAME}-s<shard>-<job_id>.log"
+  fi
   echo "  shard_reports=$output_base_dir/shards/shard_<shard>_of_${SMU3M_BENCHMARK_SHARDS}/benchmark_report.md"
   echo "  merge_next=$merge_next"
 else
-  echo "  log=$BENCH_LOG_DIR/${BENCH_JOB_NAME}-${bench_job_id}.log"
+  echo "  log=$BENCH_LOG_DIR/${BENCH_JOB_NAME}-${bench_job_ids[0]}.log"
   echo "  benchmark_report=$report_path"
 fi

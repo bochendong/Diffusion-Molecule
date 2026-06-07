@@ -457,7 +457,8 @@ SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```
 
-5-way shard 会提交 Slurm array `0-4`，各自写到
+5-way shard 默认会循环调用 5 次 `sbatch`，每个 job 拿一个独立 job id，
+各自写到
 `benchmark_materialized_primary_fast/shards/shard_<i>_of_5/`。五个 shard 都完成后合并：
 
 ```bash
@@ -466,6 +467,8 @@ SMU3M_BENCHMARK_PROFILE=primary_fast \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/merge_unified_materialized_benchmark_shards.sh
 ```
+
+如果想改回 Slurm array，用 `SMU3M_BENCHMARK_SUBMIT_MODE=array`。
 
 想看稳定性时，直接加长训练并扩到全量 9455 eval：
 
