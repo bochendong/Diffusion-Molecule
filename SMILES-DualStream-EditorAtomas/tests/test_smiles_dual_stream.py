@@ -94,6 +94,53 @@ class SmilesDualStreamTests(unittest.TestCase):
             self.assertEqual(example.target_smiles, "CCN")
             self.assertIn("fragment_jaccard", example.alignment)
 
+    def test_optimizer_step_updates_weights_with_fp16_autocast(self) -> None:
+        try:
+            import torch
+        except ImportError:
+            self.skipTest("torch not installed")
+        from smiles_dual_stream.model import SmilesDualStreamModel
+        from smiles_dual_stream.train import _collate, _optimizer_step
+        from smiles_dual_stream.tokenization import BOS, EOS, PAD
+
+        pad_id = 0
+        bos_id = 1
+        eos_id = 2
+        model = SmilesDualStreamModel(8, embed_dim=16, hidden_dim=32, pad_id=pad_id)
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model.to(device)
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+        scaler = torch.cuda.amp.GradScaler(enabled=device.type == "cuda")
+        batch = _collate(
+            [
+                {
+                    "input_ids": [3, 4, eos_id],
+                    "decoder_input_ids": [bos_id, 5, 6],
+                    "target_ids": [5, 6, eos_id],
+                }
+            ],
+            pad_id=pad_id,
+            device=device,
+        )
+        before = next(model.parameters()).detach().clone()
+        with torch.cuda.amp.autocast(enabled=scaler.is_enabled()):
+            output = model(
+                batch["input_ids"],
+                batch["decoder_input_ids"],
+                batch["target_ids"],
+                reconstruction_loss_weight=1.0,
+                alignment_loss_weight=0.3,
+                molecule_alignment_weight=1.0,
+                token_alignment_weight=0.1,
+                fragment_alignment_weight=0.2,
+            )
+            loss = output["loss"]
+        scaler.scale(loss).backward()
+        skipped = _optimizer_step(model, optimizer, scaler, grad_clip=1.0)
+        after = next(model.parameters()).detach()
+        self.assertEqual(skipped, 0)
+        self.assertFalse(torch.equal(before.to(after.dtype), after.cpu() if after.device.type != "cpu" else after))
+
 
 if __name__ == "__main__":
     unittest.main()

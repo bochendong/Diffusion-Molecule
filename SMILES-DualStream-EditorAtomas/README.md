@@ -202,9 +202,20 @@ Training curve (50 epochs):
 
 Eval metrics on the 2% holdout (`51507` rows) were flat across all 50 epochs
 (`eval_loss=2.179`, `eval_reconstruction_loss=0.903`,
-`eval_alignment_loss=4.252`). Edit reconstruction improved on train, but
-hierarchical alignment on held-out rows did not move yet; next runs should check
-eval refresh logic and/or tune `alignment_loss_weight`.
+`eval_alignment_loss=4.252`). Post-mortem on the saved checkpoints shows this
+run is **not** a valid learning/eval curve:
+
+| Finding | Evidence |
+| --- | --- |
+| Weights never updated after initialization | `checkpoint_epoch_0001.pt` … `checkpoint_epoch_0050.pt` have identical `model_state` |
+| Reported train-loss "convergence" is mostly batch-shuffle noise | In-batch InfoNCE changes with shuffled train batches even when weights are fixed |
+| Flat eval is deterministic, not "held-out plateau" | Eval batches are in fixed order; with fixed weights the loss is bit-identical every epoch |
+| Likely trigger | fp16 + in-batch InfoNCE produced non-finite grads; `GradScaler.step()` silently skipped optimizer updates while `global_step` still advanced |
+
+So job `15709935` only proves the large pipeline/manifest/checkpoint path runs end
+to end. It does **not** prove the model learned. The next run should use the fixed
+trainer (fp32 alignment losses, optimizer-step skip logging, eval token accuracy
++ paired molecule cosine) and confirm `skipped_optimizer_steps=0`.
 
 Tracked metrics artifacts (checkpoints excluded):
 

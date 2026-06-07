@@ -522,9 +522,10 @@ SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SMILES-DualStream-EditorAtomas/scripts/prepare_large_manifest.sh --overwrite-manifest
 ```
 
-最新 large run：job `15709935`（50 epoch，222753 pair_edit 行）。train
-reconstruction loss 从 0.922 降到 0.516，但 51507 eval 行上的 alignment 指标
-全程持平；详见 `SMILES-DualStream-EditorAtomas/README.md`。
+最新 large run：job `15709935`（50 epoch，222753 pair_edit 行）。该 job
+只验证了大规模 pipeline 能跑通；checkpoint 对比显示权重从初始化后未再更新，
+flat eval 是固定 eval batch + 固定初始权重的确定性结果，不能当作有效评估。
+详见 `SMILES-DualStream-EditorAtomas/README.md`。
 
 ## 本地检查
 

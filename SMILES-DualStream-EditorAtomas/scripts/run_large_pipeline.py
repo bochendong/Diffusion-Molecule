@@ -83,6 +83,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.prepare_only:
         return 0
 
+    import os
+
     train_args = [
         "--config",
         str(args.config),
@@ -91,8 +93,13 @@ def main(argv: list[str] | None = None) -> int:
         "--output-dir",
         str(train_output_dir),
     ]
-    if bool(train.get("resume", True)):
-        train_args.append("--resume")
+    resume = bool(train.get("resume", True))
+    resume_env = os.environ.get("SDEA_RESUME", "").strip().lower()
+    if resume_env in {"0", "false", "no"}:
+        resume = False
+    elif resume_env in {"1", "true", "yes"}:
+        resume = True
+    train_args.append("--resume" if resume else "--no-resume")
     return train_main(train_args)
 
 

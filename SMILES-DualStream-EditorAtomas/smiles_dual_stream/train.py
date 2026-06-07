@@ -140,6 +140,8 @@ def main(argv: list[str] | None = None) -> int:
     token_alignment_weight = float(config.get("token_alignment_weight", 0.1))
     fragment_alignment_weight = float(config.get("fragment_alignment_weight", 0.2))
     log_path = output_dir / "train_log.jsonl"
+    if checkpoint_payload is None:
+        log_path.write_text("", encoding="utf-8")
 
     for epoch in range(start_epoch, epochs + 1):
         model.train()
@@ -147,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
         random.Random(seed + epoch).shuffle(shuffled)
         totals = {"loss": 0.0, "reconstruction_loss": 0.0, "alignment_loss": 0.0}
         total_batches = 0
+        optimizer_steps = 0
+        skipped_optimizer_steps = 0
         optimizer.zero_grad(set_to_none=True)
         for batch_index, batch_rows in enumerate(_batches(shuffled, batch_size), start=1):
             batch = _collate(batch_rows, pad_id=pad_id, device=device)
@@ -164,11 +168,13 @@ def main(argv: list[str] | None = None) -> int:
                 loss = output["loss"] / grad_accum
             scaler.scale(loss).backward()
             if batch_index % grad_accum == 0:
-                if grad_clip > 0:
-                    scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-                scaler.step(optimizer)
-                scaler.update()
+                skipped_optimizer_steps += _optimizer_step(
+                    model,
+                    optimizer,
+                    scaler,
+                    grad_clip=grad_clip,
+                )
+                optimizer_steps += 1
                 optimizer.zero_grad(set_to_none=True)
                 global_step += 1
             totals["loss"] += float(output["loss"].detach().cpu())
@@ -179,17 +185,21 @@ def main(argv: list[str] | None = None) -> int:
             total_batches += 1
 
         if total_batches and total_batches % grad_accum != 0:
-            if grad_clip > 0:
-                scaler.unscale_(optimizer)
-                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
-            scaler.step(optimizer)
-            scaler.update()
+            skipped_optimizer_steps += _optimizer_step(
+                model,
+                optimizer,
+                scaler,
+                grad_clip=grad_clip,
+            )
+            optimizer_steps += 1
             optimizer.zero_grad(set_to_none=True)
             global_step += 1
 
         record = {
             "epoch": epoch,
             "global_step": global_step,
+            "optimizer_steps": optimizer_steps,
+            "skipped_optimizer_steps": skipped_optimizer_steps,
             "loss": totals["loss"] / max(total_batches, 1),
             "reconstruction_loss": totals["reconstruction_loss"] / max(total_batches, 1),
             "alignment_loss": totals["alignment_loss"] / max(total_batches, 1),
@@ -207,6 +217,8 @@ def main(argv: list[str] | None = None) -> int:
                         eval_batch_size,
                         pad_id,
                         device,
+                        seed=seed + epoch,
+                        use_autocast=scaler.is_enabled(),
                         reconstruction_loss_weight=reconstruction_weight,
                         alignment_loss_weight=alignment_weight,
                         molecule_alignment_weight=molecule_alignment_weight,
@@ -373,6 +385,8 @@ def _evaluate(
     pad_id: int,
     device,
     *,
+    seed: int,
+    use_autocast: bool,
     reconstruction_loss_weight: float,
     alignment_loss_weight: float,
     molecule_alignment_weight: float,
@@ -380,8 +394,11 @@ def _evaluate(
     fragment_alignment_weight: float,
 ) -> dict[str, float]:
     import torch
+    import torch.nn.functional as F
 
     model.eval()
+    shuffled = list(dataset)
+    random.Random(seed).shuffle(shuffled)
     totals = {
         "loss": 0.0,
         "reconstruction_loss": 0.0,
@@ -390,24 +407,63 @@ def _evaluate(
         "token_alignment_loss": 0.0,
         "fragment_alignment_loss": 0.0,
     }
+    token_correct = 0
+    token_total = 0
+    molecule_cosine_sum = 0.0
+    molecule_cosine_count = 0
     total_batches = 0
     with torch.no_grad():
-        for batch_rows in _batches(dataset, batch_size):
+        for batch_rows in _batches(shuffled, batch_size):
             batch = _collate(batch_rows, pad_id=pad_id, device=device)
-            output = model(
-                batch["input_ids"],
-                batch["decoder_input_ids"],
-                batch["target_ids"],
-                reconstruction_loss_weight=reconstruction_loss_weight,
-                alignment_loss_weight=alignment_loss_weight,
-                molecule_alignment_weight=molecule_alignment_weight,
-                token_alignment_weight=token_alignment_weight,
-                fragment_alignment_weight=fragment_alignment_weight,
-            )
+            with torch.cuda.amp.autocast(enabled=use_autocast and device.type == "cuda"):
+                output = model(
+                    batch["input_ids"],
+                    batch["decoder_input_ids"],
+                    batch["target_ids"],
+                    reconstruction_loss_weight=reconstruction_loss_weight,
+                    alignment_loss_weight=alignment_loss_weight,
+                    molecule_alignment_weight=molecule_alignment_weight,
+                    token_alignment_weight=token_alignment_weight,
+                    fragment_alignment_weight=fragment_alignment_weight,
+                )
             for key in totals:
                 totals[key] += float(output[key].detach().cpu())
+            logits = output["logits"]
+            preds = logits.argmax(dim=-1)
+            mask = batch["target_ids"].ne(pad_id)
+            token_correct += int(((preds == batch["target_ids"]) & mask).sum().item())
+            token_total += int(mask.sum().item())
+            _, input_pooled = model.encode(batch["input_ids"], model.encoder)
+            _, target_pooled = model.encode(batch["target_ids"], model.target_encoder)
+            input_proj = F.normalize(model.projection(input_pooled.float()), dim=-1)
+            target_proj = F.normalize(model.projection(target_pooled.float()), dim=-1)
+            molecule_cosine_sum += float(F.cosine_similarity(input_proj, target_proj, dim=-1).sum().item())
+            molecule_cosine_count += int(input_proj.shape[0])
             total_batches += 1
-    return {key: value / max(total_batches, 1) for key, value in totals.items()}
+    metrics = {key: value / max(total_batches, 1) for key, value in totals.items()}
+    metrics["token_accuracy"] = token_correct / max(token_total, 1)
+    metrics["molecule_cosine"] = molecule_cosine_sum / max(molecule_cosine_count, 1)
+    metrics["rows"] = float(len(dataset))
+    return metrics
+
+
+def _optimizer_step(model, optimizer, scaler, *, grad_clip: float) -> int:
+    """Apply one optimizer step. Returns 1 when GradScaler skips the update."""
+
+    import torch
+
+    reference = next(model.parameters()).detach().clone()
+    if grad_clip > 0:
+        scaler.unscale_(optimizer)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+    scaler.step(optimizer)
+    scaler.update()
+    updated = next(model.parameters()).detach()
+    if reference.device != updated.device:
+        updated = updated.to(reference.device)
+    if reference.dtype != updated.dtype:
+        updated = updated.to(reference.dtype)
+    return int(torch.equal(reference, updated))
 
 
 def _split_rows(rows: list[dict[str, object]], *, eval_fraction: float, seed: int) -> tuple[list[dict[str, object]], list[dict[str, object]]]:

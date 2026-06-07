@@ -87,22 +87,28 @@ if TORCH_AVAILABLE:
                 target_ids.reshape(-1),
                 ignore_index=self.pad_id,
             )
+            # Contrastive alignment losses overflow easily in fp16; keep them in fp32.
+            alignment_dtype = torch.float32 if input_pooled.dtype != torch.float32 else input_pooled.dtype
+            projected_input = self.projection(input_pooled.to(alignment_dtype))
+            projected_target = self.projection(target_pooled.to(alignment_dtype))
+            projected_input_hidden = self.projection(input_hidden.to(alignment_dtype))
+            projected_target_hidden = self.projection(target_hidden.to(alignment_dtype))
             molecule_alignment_loss = symmetric_infonce(
-                F.normalize(self.projection(input_pooled), dim=-1),
-                F.normalize(self.projection(target_pooled), dim=-1),
-                self.temperature.clamp_min(1e-3),
+                F.normalize(projected_input, dim=-1),
+                F.normalize(projected_target, dim=-1),
+                self.temperature.clamp_min(1e-3).to(alignment_dtype),
             )
             token_alignment_loss = local_set_alignment_loss(
-                F.normalize(self.projection(input_hidden), dim=-1),
-                F.normalize(self.projection(target_hidden), dim=-1),
+                F.normalize(projected_input_hidden, dim=-1),
+                F.normalize(projected_target_hidden, dim=-1),
                 input_mask,
                 target_mask,
             )
             input_fragments, input_fragment_mask = chunked_pool(input_hidden, input_mask, self.fragment_chunk_size)
             target_fragments, target_fragment_mask = chunked_pool(target_hidden, target_mask, self.fragment_chunk_size)
             fragment_alignment_loss = local_set_alignment_loss(
-                F.normalize(self.projection(input_fragments), dim=-1),
-                F.normalize(self.projection(target_fragments), dim=-1),
+                F.normalize(self.projection(input_fragments.to(alignment_dtype)), dim=-1),
+                F.normalize(self.projection(target_fragments.to(alignment_dtype)), dim=-1),
                 input_fragment_mask,
                 target_fragment_mask,
             )
