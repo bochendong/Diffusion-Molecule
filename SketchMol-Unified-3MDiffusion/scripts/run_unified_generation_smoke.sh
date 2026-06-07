@@ -18,9 +18,14 @@ NUM_WORKERS="${SMU3M_NUM_WORKERS:-0}"
 PIN_MEMORY="${SMU3M_PIN_MEMORY:-0}"
 EPOCHS="${SMU3M_EPOCHS:-1}"
 EVAL_LIMIT="${SMU3M_EVAL_LIMIT:-1000}"
+MAX_EVAL_PER_PROPERTY_COUNT="${SMU3M_MAX_EVAL_PER_PROPERTY_COUNT:-}"
 EVAL_BATCH_SIZE="${SMU3M_EVAL_BATCH_SIZE:-64}"
 EVAL_SAMPLE_STEPS="${SMU3M_EVAL_SAMPLE_STEPS:-20}"
 EVAL_SAMPLE_ETA="${SMU3M_EVAL_SAMPLE_ETA:-0.0}"
+ALIGNMENT_SEED="${SMU3M_ALIGNMENT_SEED:-7}"
+EDIT_SEED="${SMU3M_EDIT_SEED:-11}"
+DIFFUSION_SEED="${SMU3M_DIFFUSION_SEED:-13}"
+EVAL_SEED="${SMU3M_EVAL_SEED:-17}"
 DIFFUSION_TIMESTEPS="${SMU3M_DIFFUSION_TIMESTEPS:-100}"
 DIFFUSION_OBJECTIVE="${SMU3M_DIFFUSION_OBJECTIVE:-pred_x0}"
 DIFFUSION_TARGET="${SMU3M_DIFFUSION_TARGET:-residual}"
@@ -55,7 +60,14 @@ echo "  require_cuda=$REQUIRE_CUDA"
 echo "  diffusion_timesteps=$DIFFUSION_TIMESTEPS"
 echo "  diffusion_objective=$DIFFUSION_OBJECTIVE"
 echo "  diffusion_target=$DIFFUSION_TARGET"
+echo "  eval_limit=$EVAL_LIMIT"
+echo "  max_eval_per_property_count=${MAX_EVAL_PER_PROPERTY_COUNT:-none}"
+echo "  eval_sample_steps=$EVAL_SAMPLE_STEPS"
 echo "  eval_sample_eta=$EVAL_SAMPLE_ETA"
+echo "  alignment_seed=$ALIGNMENT_SEED"
+echo "  edit_seed=$EDIT_SEED"
+echo "  diffusion_seed=$DIFFUSION_SEED"
+echo "  eval_seed=$EVAL_SEED"
 echo "  batch_size=$BATCH_SIZE"
 echo "  num_workers=$NUM_WORKERS"
 echo "  pin_memory=$PIN_MEMORY"
@@ -133,7 +145,8 @@ ALIGNMENT_ARGS=(
   --limit "$TRAIN_LIMIT" \
   --hidden-dim "$ALIGNMENT_HIDDEN_DIM" \
   --device "$DEVICE" \
-  --checkpoint-every "$CHECKPOINT_EVERY"
+  --checkpoint-every "$CHECKPOINT_EVERY" \
+  --seed "$ALIGNMENT_SEED"
 )
 if [ "$PIN_MEMORY" = "1" ]; then
   ALIGNMENT_ARGS+=(--pin-memory)
@@ -158,6 +171,7 @@ EDIT_ARGS=(
   --hard-negative-margin "$HARD_NEGATIVE_MARGIN" \
   --device "$DEVICE" \
   --checkpoint-every "$CHECKPOINT_EVERY" \
+  --seed "$EDIT_SEED" \
   --export-features
 )
 if [ "$SOURCE_AWARE_SHARED_GRADIENT" = "1" ]; then
@@ -187,7 +201,8 @@ DIFFUSION_ARGS=(
   --hidden-dim "$DIFFUSION_HIDDEN_DIM" \
   --depth "$DIFFUSION_DEPTH" \
   --device "$DEVICE" \
-  --checkpoint-every "$CHECKPOINT_EVERY"
+  --checkpoint-every "$CHECKPOINT_EVERY" \
+  --seed "$DIFFUSION_SEED"
 )
 if [ "$TRAIN_DIFFUSION_CONNECTOR" = "1" ]; then
   DIFFUSION_ARGS+=(--train-connector)
@@ -206,7 +221,7 @@ if [ "$RESUME" = "1" ] && [ -f "$OUTPUT_DIR/latent_diffusion/checkpoints/latest.
 fi
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_latent_diffusion_generation.py" "${DIFFUSION_ARGS[@]}"
 
-"$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_latent_diffusion_generation.py" \
+EVAL_ARGS=(
   --eval-jsonl "$OUTPUT_DIR/dataset/unified_condition_eval.jsonl" \
   --condition-connector "$OUTPUT_DIR/edit_condition_tokens/edit_condition_connector.pt" \
   --diffusion-checkpoint "$OUTPUT_DIR/latent_diffusion/latent_diffusion_generation.pt" \
@@ -215,7 +230,13 @@ fi
   --batch-size "$EVAL_BATCH_SIZE" \
   --sample-steps "$EVAL_SAMPLE_STEPS" \
   --sample-eta "$EVAL_SAMPLE_ETA" \
-  --device "$DEVICE"
+  --device "$DEVICE" \
+  --seed "$EVAL_SEED"
+)
+if [[ -n "$MAX_EVAL_PER_PROPERTY_COUNT" ]]; then
+  EVAL_ARGS+=(--max-eval-per-property-count "$MAX_EVAL_PER_PROPERTY_COUNT")
+fi
+"$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_latent_diffusion_generation.py" "${EVAL_ARGS[@]}"
 
 echo "Unified smoke finished:"
 echo "  dataset=$OUTPUT_DIR/dataset/summary.json"

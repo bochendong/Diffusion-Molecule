@@ -24,6 +24,8 @@ PIN_MEMORY="${SMU3M_PIN_MEMORY:-0}"
 DIFFUSION_EPOCHS="${SMU3M_DIFFUSION_EPOCHS:-}"
 DIFFUSION_EXTRA_EPOCHS="${SMU3M_DIFFUSION_EXTRA_EPOCHS:-100}"
 DIFFUSION_LR="${SMU3M_DIFFUSION_LR:-3e-4}"
+DIFFUSION_SEED="${SMU3M_DIFFUSION_SEED:-13}"
+EVAL_SEED="${SMU3M_EVAL_SEED:-17}"
 EVAL_LIMIT="${SMU3M_EVAL_LIMIT:-0}"
 MAX_EVAL_PER_PROPERTY_COUNT="${SMU3M_MAX_EVAL_PER_PROPERTY_COUNT:-250}"
 EVAL_SAMPLE_STEPS="${SMU3M_EVAL_SAMPLE_STEPS:-20}"
@@ -81,6 +83,8 @@ echo "  resume_diffusion_checkpoint=$RESUME_DIFFUSION_CHECKPOINT"
 echo "  diffusion_epochs=$DIFFUSION_EPOCHS"
 echo "  diffusion_extra_epochs=$DIFFUSION_EXTRA_EPOCHS"
 echo "  diffusion_lr=$DIFFUSION_LR"
+echo "  diffusion_seed=$DIFFUSION_SEED"
+echo "  eval_seed=$EVAL_SEED"
 echo "  prior_loss_weight=$PRIOR_LOSS_WEIGHT"
 echo "  train_diffusion_connector=$TRAIN_DIFFUSION_CONNECTOR"
 echo "  eval_limit=$EVAL_LIMIT"
@@ -122,6 +126,7 @@ DIFFUSION_ARGS=(
   --depth "$DIFFUSION_DEPTH"
   --device "$DEVICE"
   --checkpoint-every "$CHECKPOINT_EVERY"
+  --seed "$DIFFUSION_SEED"
 )
 if [ "$TRAIN_DIFFUSION_CONNECTOR" = "1" ]; then
   DIFFUSION_ARGS+=(--train-connector)
@@ -168,7 +173,8 @@ fi
   --batch-size "$EVAL_BATCH_SIZE" \
   --sample-steps "$EVAL_SAMPLE_STEPS" \
   --sample-eta "$EVAL_SAMPLE_ETA" \
-  --device "$DEVICE"
+  --device "$DEVICE" \
+  --seed "$EVAL_SEED"
 
 if [ "$RUN_MATERIALIZED_BENCHMARK" = "1" ]; then
   rm -f \

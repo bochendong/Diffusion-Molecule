@@ -77,7 +77,12 @@ SMU3M_TRAIN_LIMIT
 SMU3M_BATCH_SIZE
 SMU3M_EPOCHS
 SMU3M_EVAL_LIMIT
+SMU3M_MAX_EVAL_PER_PROPERTY_COUNT
 SMU3M_EVAL_SAMPLE_STEPS
+SMU3M_ALIGNMENT_SEED
+SMU3M_EDIT_SEED
+SMU3M_DIFFUSION_SEED
+SMU3M_EVAL_SEED
 SMU3M_DIFFUSION_TIMESTEPS
 SMU3M_DEVICE
 SMU3M_REQUIRE_CUDA
@@ -342,6 +347,55 @@ baseline, property MAE, delta MAE, and the corresponding prior deltas. Set
 `label:source_weight:hard_weight:shared_gradient:margin:temperature` entries.
 Increase `SMU3M_SWEEP_CONCURRENCY` only when the subtasks are CPU-only or you
 are sure that concurrent subtasks can share the requested GPU safely.
+
+After job `15729225`, the short sweep found two Pareto-improving configurations
+over the in-job baseline: `hard002_head` and `balanced_005_001`. To follow up,
+run the packed winner/full and diffusion-prior ablations:
+
+```bash
+SMU3M_FOLLOWUP_OUTPUT_ROOT=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_followup_v1 \
+SMU3M_SWEEP_OUTPUT_ROOT=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2 \
+SMU3M_FOLLOWUP_PLAN=all \
+SMU3M_FOLLOWUP_LAUNCHER=glost \
+SMU3M_FOLLOWUP_CONCURRENCY=1 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_sourceaware_followup.sh
+```
+
+The default follow-up runs:
+
+```text
+baseline_full_s11
+hard002_full_s11, hard002_full_s23, hard002_full_s37
+balanced005001_full_s11
+sharedtiny_full_s11
+hard002_freeze_p000_steps1, hard002_freeze_p000_steps5, hard002_freeze_p000_steps20
+hard002_joint_p025_steps20, hard002_joint_p050_steps20, hard002_joint_p100_steps20
+```
+
+The first group reruns the best connector settings with full latent eval
+(`SMU3M_EVAL_LIMIT=0`). The second group starts from the pulled
+`hard002_head` connector artifacts and tests whether generation quality is lost
+by the diffusion sampler. It writes `followup_summary.md` /
+`followup_summary.csv`.
+
+To materialize the current sweep winners into the shared benchmark, submit:
+
+```bash
+SMU3M_SWEEP_OUTPUT_ROOT=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2 \
+SMU3M_WINNER_LABELS=hard002_head,balanced_005_001 \
+SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_BENCHMARK_SHARDS=5 \
+SMU3M_BENCHMARK_SUBMIT_MODE=array \
+SMU3M_BENCHMARK_PRIOR_ONLY=1 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_sourceaware_winner_benchmarks.sh
+```
+
+With `SMU3M_BENCHMARK_PRIOR_ONLY=1`, each winner gets two benchmark lines: the
+sampled generated latents and a prior-only materialization using
+`eval_latent/prior_latents.npy`. This directly tests whether the connector prior
+is stronger than the latent diffusion sample.
 
 ## Diffusion Refine
 

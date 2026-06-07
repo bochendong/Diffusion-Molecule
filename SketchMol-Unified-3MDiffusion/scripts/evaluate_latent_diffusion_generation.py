@@ -174,6 +174,7 @@ def main() -> None:
             "batch_size": int(args.batch_size),
             "sample_steps": int(args.sample_steps or diffusion.timesteps),
             "sample_eta": float(args.sample_eta),
+            "seed": int(args.seed),
             "diffusion_objective": str(diffusion_config.get("diffusion_objective", "pred_noise")),
             "diffusion_target": diffusion_target,
             "fingerprint_dim": fingerprint_dim,

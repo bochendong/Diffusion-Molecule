@@ -252,6 +252,7 @@ def _config(args: argparse.Namespace, dataset: EditConditionDataset) -> dict[str
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
         "pin_memory": bool(args.pin_memory),
+        "seed": args.seed,
         "source_similarity_loss_weight": args.source_similarity_loss_weight,
         "hard_negative_loss_weight": args.hard_negative_loss_weight,
         "source_aware_temperature": args.source_aware_temperature,

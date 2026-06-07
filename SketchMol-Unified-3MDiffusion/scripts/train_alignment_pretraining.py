@@ -184,6 +184,7 @@ def _config(args: argparse.Namespace) -> dict[str, object]:
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
         "pin_memory": bool(args.pin_memory),
+        "seed": args.seed,
     }
 
 

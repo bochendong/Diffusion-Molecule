@@ -71,8 +71,9 @@ if [[ ! -x "$SMU3M_PYTHON_BIN" ]]; then
   echo "ERROR: SMU3M_PYTHON_BIN is not executable: $SMU3M_PYTHON_BIN" >&2
   exit 2
 fi
-if [[ ! -f "$SMU3M_OUTPUT_DIR/eval_latent/generated_latents.npy" ]]; then
-  echo "ERROR: missing eval latents: $SMU3M_OUTPUT_DIR/eval_latent/generated_latents.npy" >&2
+GENERATED_LATENTS="${SMU3M_GENERATED_LATENTS:-$SMU3M_OUTPUT_DIR/eval_latent/generated_latents.npy}"
+if [[ ! -f "$GENERATED_LATENTS" ]]; then
+  echo "ERROR: missing eval latents: $GENERATED_LATENTS" >&2
   echo "Run submit_unified_diffusion_refine.sh first." >&2
   exit 2
 fi
@@ -81,6 +82,7 @@ mkdir -p "$BENCH_LOG_DIR"
 
 echo "Submitting Unified 3M materialized benchmark"
 echo "  output_dir=$SMU3M_OUTPUT_DIR"
+echo "  generated_latents=$GENERATED_LATENTS"
 echo "  benchmark_profile=$SMU3M_BENCHMARK_PROFILE"
 echo "  benchmark_shards=$SMU3M_BENCHMARK_SHARDS"
 echo "  submit_mode=$SMU3M_BENCHMARK_SUBMIT_MODE"
