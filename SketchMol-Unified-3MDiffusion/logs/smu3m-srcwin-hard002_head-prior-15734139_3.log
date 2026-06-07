@@ -1,0 +1,18 @@
+Unified 3M materialized benchmark
+  python=/home/bdong/.venvs/molscribe_overlay/bin/python
+  unified_output_dir=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/hard002_head
+  eval_latent_dir=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/hard002_head/eval_latent_prior_only
+  condition_rows=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv
+  molecule_db=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/molecule_database.csv
+  benchmark_output_dir=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/hard002_head/benchmark_materialized_prior_only_primary_fast/shards/shard_3_of_5
+  benchmark_profile=primary_fast
+  methods=source_identity,scaffold_property_retrieval,edit_latent_source_similarity_rerank,edit_latent_scaffold_source_rerank,target_oracle
+  fingerprint_weight=1.0
+  max_edit_latent_candidates=5000
+  source_similarity_rerank_candidates=256
+  source_tanimoto_thresholds=0.4,0.6,0.8
+  restrict_to_edit_latent_index=1
+  eval_shard_index=3
+  eval_shard_count=5
+Waiting for benchmark export lock: SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/hard002_head/eval_latent_prior_only/.benchmark_export.lock
+ERROR: timed out waiting for benchmark export files in SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2/hard002_head/eval_latent_prior_only

@@ -1,0 +1,31 @@
+{
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 4.332265588674653
+    },
+    {
+      "epoch": 2,
+      "train_loss": 2.6875304907895208
+    },
+    {
+      "epoch": 3,
+      "train_loss": 2.0973126861486544
+    },
+    {
+      "epoch": 4,
+      "train_loss": 1.7455372596054934
+    },
+    {
+      "epoch": 5,
+      "train_loss": 1.5111167966649774
+    }
+  ],
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.12.0",
+    "cuda_available": true,
+    "cuda_device_count": 1,
+    "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 2g.20gb"
+  }
+}
