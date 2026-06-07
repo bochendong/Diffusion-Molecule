@@ -11,6 +11,7 @@ from sketchmol_unified_3m_diffusion.benchmark_export import write_edit_latent_be
 from sketchmol_unified_3m_diffusion.edit_condition_tokens import (
     EditConditionTokenConnector,
     edit_condition_loss,
+    source_aware_fingerprint_losses,
 )
 from sketchmol_unified_3m_diffusion.latent_diffusion_generation import (
     EditLatentDenoiser,
@@ -122,6 +123,36 @@ def test_edit_condition_connector_and_diffusion_loss_shapes():
     diffusion_loss = diffusion.loss(torch.randn(3, 20), output.tokens, output.attention_mask)
 
     assert torch.isfinite(diffusion_loss)
+
+
+def test_source_aware_fingerprint_losses_backprop_to_logits():
+    logits = torch.randn(4, 16, requires_grad=True)
+    losses = source_aware_fingerprint_losses(
+        logits,
+        target_properties=torch.randn(4, 7),
+        property_deltas=torch.randn(4, 7),
+        active_mask=torch.tensor(
+            [
+                [1, 1, 0, 0, 0, 0, 0],
+                [1, 0, 1, 0, 0, 0, 0],
+                [0, 1, 1, 0, 0, 0, 0],
+                [1, 1, 1, 0, 0, 0, 0],
+            ],
+            dtype=torch.float32,
+        ),
+        target_fingerprint=torch.rand(4, 16),
+        source_fingerprint=torch.rand(4, 16),
+        source_tanimoto=torch.tensor([0.7, 0.6, 0.5, float("nan")]),
+        temperature=0.07,
+        hard_negative_margin=0.2,
+    )
+
+    total = losses["source_similarity_mse"] + losses["source_aware_hard_negative"]
+    total.backward()
+
+    assert torch.isfinite(total)
+    assert logits.grad is not None
+    assert torch.isfinite(logits.grad).all()
 
 
 def test_benchmark_export_writes_condition_aligned_latents(tmp_path):

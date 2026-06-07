@@ -179,10 +179,11 @@ def edit_condition_loss(
         "similarity_ce": F.cross_entropy(output.similarity_bin_logits, similarity_bin),
     }
     losses.update(
-        _source_aware_fingerprint_losses(
-            output,
+        source_aware_fingerprint_losses(
+            output.target_fingerprint_logits,
             target_properties=target_properties,
             property_deltas=property_deltas,
+            active_mask=active_mask,
             target_fingerprint=target_fingerprint,
             source_fingerprint=source_fingerprint,
             source_tanimoto=source_tanimoto,
@@ -208,11 +209,12 @@ def symmetric_infonce(left: torch.Tensor, right: torch.Tensor, *, temperature: t
     return 0.5 * (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels))
 
 
-def _source_aware_fingerprint_losses(
-    output: EditConditionOutput,
+def source_aware_fingerprint_losses(
+    target_fingerprint_logits: torch.Tensor,
     *,
     target_properties: torch.Tensor,
     property_deltas: torch.Tensor,
+    active_mask: torch.Tensor | None = None,
     target_fingerprint: torch.Tensor,
     source_fingerprint: torch.Tensor | None,
     source_tanimoto: torch.Tensor | None,
@@ -227,7 +229,7 @@ def _source_aware_fingerprint_losses(
             f"{tuple(source_fingerprint.shape)} != {tuple(target_fingerprint.shape)}"
         )
 
-    pred_fingerprint = torch.sigmoid(output.target_fingerprint_logits[:, : target_fingerprint.shape[1]])
+    pred_fingerprint = torch.sigmoid(target_fingerprint_logits[:, : target_fingerprint.shape[1]])
     source_fingerprint = source_fingerprint.to(dtype=pred_fingerprint.dtype, device=pred_fingerprint.device)
     target_fingerprint = target_fingerprint.to(dtype=pred_fingerprint.dtype, device=pred_fingerprint.device)
 
@@ -255,7 +257,10 @@ def _source_aware_fingerprint_losses(
     logits = query @ target_bank.T / temp
     positives = torch.diag(logits)
 
-    descriptor = torch.cat([target_properties.detach(), property_deltas.detach()], dim=-1).to(
+    descriptor = _active_edit_descriptor(
+        target_properties,
+        property_deltas,
+        active_mask,
         device=pred_fingerprint.device,
         dtype=pred_fingerprint.dtype,
     )
@@ -272,6 +277,22 @@ def _source_aware_fingerprint_losses(
     hard_loss = F.relu(margin + hard_scores - positives) * hard_weights
     losses["source_aware_hard_negative"] = hard_loss.mean()
     return losses
+
+
+def _active_edit_descriptor(
+    target_properties: torch.Tensor,
+    property_deltas: torch.Tensor,
+    active_mask: torch.Tensor | None,
+    *,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    props = target_properties.detach().to(device=device, dtype=dtype)
+    deltas = property_deltas.detach().to(device=device, dtype=dtype)
+    if active_mask is None:
+        return torch.cat([props, deltas], dim=-1)
+    active = active_mask.detach().to(device=device, dtype=dtype)
+    return torch.cat([props * active, deltas * active, active], dim=-1)
 
 
 def _soft_tanimoto(left: torch.Tensor, right: torch.Tensor, *, eps: float = 1e-6) -> torch.Tensor:

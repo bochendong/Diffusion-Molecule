@@ -288,18 +288,23 @@ addition to the original target property, delta, active-property, direction,
 target fingerprint, and similarity-bin heads:
 
 ```text
-SMU3M_SOURCE_SIMILARITY_LOSS_WEIGHT=0.5
-SMU3M_HARD_NEGATIVE_LOSS_WEIGHT=0.25
+SMU3M_SOURCE_SIMILARITY_LOSS_WEIGHT=0.15
+SMU3M_HARD_NEGATIVE_LOSS_WEIGHT=0.05
 SMU3M_SOURCE_AWARE_TEMPERATURE=0.07
 SMU3M_HARD_NEGATIVE_MARGIN=0.2
+SMU3M_SOURCE_AWARE_SHARED_GRADIENT=0
 ```
 
 `source_similarity_mse` matches the predicted target fingerprint's soft
 Tanimoto to the source-target Tanimoto. `source_aware_hard_negative` mines
-in-batch targets that are property/delta-close but source-incompatible and
-pushes them below the true target. This is meant to test whether the connector
-can learn source-conditioned edits rather than improving property retrieval by
-itself.
+in-batch targets that are active-property/delta-close but source-incompatible
+and pushes them below the true target. By default these source-aware losses
+update only the fingerprint head from a detached pooled representation, so the
+shared connector trunk remains driven by target property, delta, active-property,
+direction, fingerprint, and similarity-bin supervision. Set
+`SMU3M_SOURCE_AWARE_SHARED_GRADIENT=1` only as an ablation; the stronger v1-style
+shared-gradient setup improved fingerprint cosine but hurt property/delta
+control.
 
 ## Diffusion Refine
 

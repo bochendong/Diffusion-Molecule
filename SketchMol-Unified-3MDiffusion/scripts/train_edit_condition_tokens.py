@@ -21,6 +21,7 @@ if str(PROJECT_DIR) not in sys.path:
 from sketchmol_unified_3m_diffusion.edit_condition_tokens import (  # noqa: E402
     EditConditionTokenConnector,
     edit_condition_loss,
+    source_aware_fingerprint_losses,
 )
 from sketchmol_unified_3m_diffusion.runtime import (  # noqa: E402
     checkpoint_dir,
@@ -107,10 +108,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-every", type=int, default=1)
     parser.add_argument("--resume-checkpoint", type=Path, default=None)
     parser.add_argument("--seed", type=int, default=11)
-    parser.add_argument("--source-similarity-loss-weight", type=float, default=0.5)
-    parser.add_argument("--hard-negative-loss-weight", type=float, default=0.25)
+    parser.add_argument("--source-similarity-loss-weight", type=float, default=0.15)
+    parser.add_argument("--hard-negative-loss-weight", type=float, default=0.05)
     parser.add_argument("--source-aware-temperature", type=float, default=0.07)
     parser.add_argument("--hard-negative-margin", type=float, default=0.2)
+    parser.add_argument(
+        "--source-aware-shared-gradient",
+        action="store_true",
+        help=(
+            "Allow source-aware fingerprint losses to update the shared connector trunk. "
+            "By default they update only the fingerprint head, protecting property/delta control."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -165,18 +174,39 @@ def main() -> None:
                 active_mask=batch["active_mask"],
                 direction_labels=batch["direction_labels"],
                 target_fingerprint=batch["target_fingerprint"],
-                source_fingerprint=batch["source_fingerprint"],
-                source_tanimoto=batch["source_tanimoto"],
                 similarity_bin=batch["similarity_bin"],
                 source_aware_temperature=args.source_aware_temperature,
                 hard_negative_margin=args.hard_negative_margin,
                 weights={
                     "fingerprint_bce": 0.5,
                     "direction_ce": 0.5,
-                    "source_similarity_mse": args.source_similarity_loss_weight,
-                    "source_aware_hard_negative": args.hard_negative_loss_weight,
                 },
             )
+            source_loss_weights = {
+                "source_similarity_mse": args.source_similarity_loss_weight,
+                "source_aware_hard_negative": args.hard_negative_loss_weight,
+            }
+            if any(float(weight) != 0.0 for weight in source_loss_weights.values()):
+                fingerprint_logits = (
+                    output.target_fingerprint_logits
+                    if args.source_aware_shared_gradient
+                    else model.fingerprint_head(output.pooled.detach())
+                )
+                source_losses = source_aware_fingerprint_losses(
+                    fingerprint_logits,
+                    target_properties=batch["target_properties"],
+                    property_deltas=batch["property_deltas"],
+                    active_mask=batch["active_mask"],
+                    target_fingerprint=batch["target_fingerprint"],
+                    source_fingerprint=batch["source_fingerprint"],
+                    source_tanimoto=batch["source_tanimoto"],
+                    temperature=args.source_aware_temperature,
+                    hard_negative_margin=args.hard_negative_margin,
+                )
+                source_loss = sum(float(source_loss_weights.get(name, 1.0)) * value for name, value in source_losses.items())
+                loss = loss + source_loss
+                logs.update({name: value.detach() for name, value in source_losses.items()})
+                logs["loss"] = loss.detach()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
@@ -226,6 +256,7 @@ def _config(args: argparse.Namespace, dataset: EditConditionDataset) -> dict[str
         "hard_negative_loss_weight": args.hard_negative_loss_weight,
         "source_aware_temperature": args.source_aware_temperature,
         "hard_negative_margin": args.hard_negative_margin,
+        "source_aware_shared_gradient": bool(args.source_aware_shared_gradient),
     }
 
 
