@@ -522,6 +522,10 @@ SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SMILES-DualStream-EditorAtomas/scripts/prepare_large_manifest.sh --overwrite-manifest
 ```
 
+最新 large run：job `15709935`（50 epoch，222753 pair_edit 行）。train
+reconstruction loss 从 0.922 降到 0.516，但 51507 eval 行上的 alignment 指标
+全程持平；详见 `SMILES-DualStream-EditorAtomas/README.md`。
+
 ## 本地检查
 
 本机不一定有 `torch` / `rdkit`，所以本地主要做语法和脚本检查：

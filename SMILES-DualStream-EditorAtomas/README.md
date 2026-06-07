@@ -171,3 +171,46 @@ server environment.
 ```
 
 No image paths are produced or consumed.
+
+## Latest Run Results
+
+Artifacts live under `outputs/runs/large/`.
+
+### Job `15709935` (Jun 6 2026, ~3.5 h)
+
+First large-scale pure-SMILES dual-stream run on the multiproperty edit manifest.
+Economy profile on `h100_2g.20gb:1`, 50 epochs, batch 256, embed/hidden 256/512,
+fp16 enabled. Log: `logs/sdea-large-15709935.out`.
+
+| Item | Value |
+| --- | --- |
+| Manifest rows | 222753 pair_edit (`171246` train / `51507` eval) |
+| Input CSV | `SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv` |
+| Mean edit distance | 15.42 |
+| Mean fragment Jaccard | 0.386 |
+| Final checkpoint | `outputs/runs/large/smiles_dual_stream.pt` |
+
+Training curve (50 epochs):
+
+| Metric | Epoch 1 | Epoch 50 |
+| --- | ---: | ---: |
+| `train_loss` | 1.355 | **0.683** |
+| `reconstruction_loss` | 0.922 | **0.516** |
+| `alignment_loss` | 1.441 | **0.557** |
+| `token_alignment_loss` | 0.066 | **0.034** |
+| `fragment_alignment_loss` | 0.114 | **0.051** |
+
+Eval metrics on the 2% holdout (`51507` rows) were flat across all 50 epochs
+(`eval_loss=2.179`, `eval_reconstruction_loss=0.903`,
+`eval_alignment_loss=4.252`). Edit reconstruction improved on train, but
+hierarchical alignment on held-out rows did not move yet; next runs should check
+eval refresh logic and/or tune `alignment_loss_weight`.
+
+Tracked metrics artifacts (checkpoints excluded):
+
+```text
+outputs/manifests/large_train.summary.json
+outputs/runs/large/run_config.json
+outputs/runs/large/train_log.jsonl
+outputs/runs/large/summary.json
+```

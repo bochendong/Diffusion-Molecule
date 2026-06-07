@@ -1,0 +1,12 @@
+{
+  "mean_edit_distance": 15.42484276306043,
+  "mean_fragment_jaccard": 0.3859724878562994,
+  "modes": {
+    "pair_edit": 222753
+  },
+  "rows": 222753,
+  "splits": {
+    "eval": 51507,
+    "train": 171246
+  }
+}
