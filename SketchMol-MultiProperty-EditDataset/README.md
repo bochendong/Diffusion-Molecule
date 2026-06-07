@@ -204,6 +204,65 @@ SMMED_RENDER_IMAGES=0
 图像时再显式设置 `SMMED_RENDER_IMAGES=1`。大 VLM workflow 可以直接从
 `source_smiles` 在内存中渲染分子图，不依赖预生成 PNG 文件。
 
+## Source-neighbor 数据集
+
+如果当前目标是训练真正的 source-conditioned edit，而不是 property retrieval，
+优先构建新的 source-neighbor 版本：
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+git pull origin main
+
+bash SketchMol-MultiProperty-EditDataset/scripts/submit_source_neighbor_dataset.sh
+```
+
+默认输出目录：
+
+```text
+SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1/
+```
+
+这个路径默认：
+
+```text
+SMMED_PAIRING_STRATEGY=source_neighbor
+SMMED_RENDER_IMAGES=0
+SMMED_SOURCE_NEIGHBOR_MIN_TANIMOTO=0.4
+SMMED_SOURCE_NEIGHBOR_MAX_TANIMOTO=0.95
+SMMED_MIN_SOURCE_NEIGHBORS_T04=2
+SMMED_CONDITION_CANDIDATE_DIAGNOSTICS=1
+SMMED_MIN_STRICT_CANDIDATES_T04=1
+SMMED_ORACLE_FILTER_SPLITS=eval
+```
+
+也就是说，pair 挖掘时优先选同 scaffold 且 `source_tanimoto>=0.4` 的
+source-local edit；`source_tanimoto>0.95` 的近 no-op pair 会被排除。主 CSV
+不存图片，只保留空的 `source_image` / `target_image` 兼容列。
+
+新增的 pair/condition 质量列包括：
+
+```text
+source_tanimoto
+source_similarity_bin
+source_scaffold / target_scaffold / same_scaffold / scaffold_relation
+pair_quality_tier
+same_scaffold_neighbor_count
+source_neighbor_count_t04 / t05 / t06
+target_neighbor_rank_by_tanimoto
+candidate_pool_size_t04 / t05 / t06
+strict_candidate_count_t04 / t05 / t06
+oracle_candidate_smiles_t04
+oracle_source_tanimoto_t04
+oracle_strict_success_t04
+source_identity_strict_success
+instruction_template_id / instruction_style / preservation_constraint
+property_constraints_json
+```
+
+`SMMED_ORACLE_FILTER_SPLITS=eval` 会过滤掉 eval 中没有 source-neighbor strict
+candidate 的 condition row，避免 benchmark 再测到“候选库没有可行答案”的假失败。
+train split 默认保留更多样本，因为真实 target 本身仍然是有效 edit 监督。
+
 ## 常用参数
 
 扩大数据集：

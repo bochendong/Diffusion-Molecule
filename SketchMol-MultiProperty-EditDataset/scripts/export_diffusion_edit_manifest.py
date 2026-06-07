@@ -41,6 +41,36 @@ BASE_FIELDNAMES = (
     "conditioning_mode",
 )
 
+QUALITY_FIELDNAMES = (
+    "source_scaffold",
+    "target_scaffold",
+    "same_scaffold",
+    "scaffold_relation",
+    "pair_quality_tier",
+    "selection_reason",
+    "same_scaffold_neighbor_count",
+    "source_neighbor_count_t04",
+    "source_neighbor_count_t05",
+    "source_neighbor_count_t06",
+    "target_neighbor_rank_by_tanimoto",
+    "candidate_pool_size_t04",
+    "candidate_pool_size_t05",
+    "candidate_pool_size_t06",
+    "strict_candidate_count_t04",
+    "strict_candidate_count_t05",
+    "strict_candidate_count_t06",
+    "oracle_candidate_smiles_t04",
+    "oracle_source_tanimoto_t04",
+    "oracle_strict_success_t04",
+    "oracle_property_error_t04",
+    "oracle_property_errors_json_t04",
+    "source_identity_strict_success",
+    "instruction_template_id",
+    "instruction_style",
+    "preservation_constraint",
+    "property_constraints_json",
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -137,6 +167,8 @@ def _manifest_row(row: dict[str, str], *, source_tanimoto: float) -> dict[str, o
         value_col, none_col = SKETCHMOL_SETTING_COLUMNS[prop]
         out[value_col] = row.get(value_col, "")
         out[none_col] = row.get(none_col, "")
+    for field in QUALITY_FIELDNAMES:
+        out[field] = row.get(field, "")
     return out
 
 
@@ -168,6 +200,7 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
 
 def _manifest_fieldnames() -> list[str]:
     fieldnames = list(BASE_FIELDNAMES)
+    fieldnames.extend(QUALITY_FIELDNAMES)
     for prop in PROPERTY_COLUMNS:
         fieldnames.extend(
             [

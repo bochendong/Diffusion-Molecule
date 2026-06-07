@@ -67,6 +67,8 @@ SKETCHMOL_SETTING_COLUMNS = {
     "RB": ("rotatable_setting", "rotatable_None"),
 }
 
+SOURCE_TANIMOTO_THRESHOLDS = (0.4, 0.5, 0.6)
+
 DISPLAY_NAMES = {
     "MW": "molecular weight",
     "LogP": "LogP",
@@ -141,6 +143,68 @@ def sketchmol_condition_columns(target_props: Mapping[str, float], selected_prop
     return out
 
 
+def source_similarity_bin(value: float) -> str:
+    """Bucket source-target Tanimoto for training/eval diagnostics."""
+
+    value = float(value)
+    if value >= 0.7:
+        return "high_similarity"
+    if value >= 0.5:
+        return "medium_similarity"
+    if value >= 0.4:
+        return "hard_similarity"
+    return "too_distant"
+
+
+def pair_quality_tier(value: float, *, same_scaffold: bool) -> str:
+    """Label whether an edit pair is useful for source-conditioned editing."""
+
+    value = float(value)
+    if same_scaffold and value >= 0.5:
+        return "same_scaffold_medium_plus"
+    if same_scaffold and value >= 0.4:
+        return "same_scaffold_hard"
+    if value >= 0.6:
+        return "cross_scaffold_high_similarity"
+    if value >= 0.5:
+        return "cross_scaffold_medium_similarity"
+    if value >= 0.4:
+        return "cross_scaffold_hard_similarity"
+    return "rejected_too_distant"
+
+
+def strict_property_success(
+    candidate_props: Mapping[str, float],
+    target_props: Mapping[str, float],
+    selected_props: list[str],
+) -> bool:
+    """Return whether a candidate satisfies SketchMol-style strict tolerances."""
+
+    for prop in selected_props:
+        if prop not in candidate_props or prop not in target_props:
+            return False
+        tolerance = SKETCHMOL_STRICT_TOLERANCE[prop]
+        if abs(float(candidate_props[prop]) - float(target_props[prop])) > tolerance:
+            return False
+    return True
+
+
+def normalized_property_error(
+    candidate_props: Mapping[str, float],
+    target_props: Mapping[str, float],
+    selected_props: list[str],
+) -> float:
+    """Score candidate-target property distance in strict-tolerance units."""
+
+    error = 0.0
+    for prop in selected_props:
+        if prop not in candidate_props or prop not in target_props:
+            return float("inf")
+        tolerance = SKETCHMOL_STRICT_TOLERANCE[prop]
+        error += abs(float(candidate_props[prop]) - float(target_props[prop])) / max(tolerance, 1e-8)
+    return error / max(len(selected_props), 1)
+
+
 def render_instruction(
     *,
     selected_props: list[str],
@@ -168,4 +232,7 @@ def render_instruction(
         objective_text = f"{clauses[0]} and {clauses[1]}"
     else:
         objective_text = f"{', '.join(clauses[:-1])}, and {clauses[-1]}"
-    return f"Preserve the core scaffold and edit the molecule to {objective_text}."
+    return (
+        "Starting from the source molecule, make a local edit that keeps the molecule "
+        f"structurally similar. Edit the molecule to {objective_text}."
+    )
