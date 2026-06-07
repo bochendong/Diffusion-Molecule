@@ -414,7 +414,7 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v1/
 ```bash
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/run_unified_materialized_benchmark.sh
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```
 
 结果目录：
@@ -426,9 +426,15 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_ma
   benchmark_decoded.csv
 ```
 
-默认主方法是 `edit_latent_source_similarity_rerank`：不要求骨架完全一致，而是在
+默认 benchmark profile 是 `primary_fast`，会把结果写到
+`benchmark_materialized_primary_fast/`，先跑 source-similarity 主线和必要
+baseline；最终全表再显式用 `SMU3M_BENCHMARK_PROFILE=full`。主方法是
+`edit_latent_source_similarity_rerank`：不要求骨架完全一致，而是在
 候选分子里按 edit latent、预测 fingerprint 和 source Tanimoto 一起 rerank。
-报告主表看 `strict@Tanimoto>=0.4/0.6/0.8`；scaffold match 只作为诊断。
+为了避免全局候选池对每个候选都算 RDKit Tanimoto，默认先按 edit latent 取
+top-256，再算 source Tanimoto rerank；需要精确旧行为时设
+`SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES=0`。报告主表看
+`strict@Tanimoto>=0.4/0.6/0.8`；scaffold match 只作为诊断。
 
 如果要继续修当前瓶颈，下一轮直接跑 joint connector + diffusion refine。默认会从
 latest checkpoint 额外训练 100 epoch，打开 connector fine-tune 和 prior loss，
@@ -440,6 +446,16 @@ SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
 ```
 
+`submit_unified_diffusion_refine.sh` 默认只做 diffusion refine + latent eval，
+不再把 materialized benchmark 塞进同一个 GPU job。训练 job 成功后，单独跑：
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
+```
+
 想看稳定性时，直接加长训练并扩到全量 9455 eval：
 
 ```bash
@@ -448,10 +464,20 @@ SMU3M_DIFFUSION_EXTRA_EPOCHS=200 \
 SMU3M_PRIOR_LOSS_WEIGHT=0.25 \
 SMU3M_EVAL_LIMIT=0 \
 SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=0 \
-SMMED_MAX_EVAL_PER_PROPERTY_COUNT=0 \
+SMU3M_RUN_MATERIALIZED_BENCHMARK=0 \
 SMU3M_SLURM_TIME=08:00:00 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
+```
+
+然后再提交独立 benchmark job；如果要全表：
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_BENCHMARK_PROFILE=full \
+SMU3M_BENCHMARK_SLURM_TIME=08:00:00 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```
 
 ### 5. 跑 SketchMol baseline / OCR benchmark

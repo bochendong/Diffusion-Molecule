@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Resume Stage 3 latent diffusion, re-evaluate, and optionally materialize benchmark.
+# Resume Stage 3 latent diffusion and re-evaluate latent metrics.
 # Skips dataset export, alignment, and connector training.
 
 set -euo pipefail
@@ -39,7 +39,7 @@ RESUME="${SMU3M_RESUME:-1}"
 REQUIRE_CUDA="${SMU3M_REQUIRE_CUDA:-1}"
 DEVICE="${SMU3M_DEVICE:-auto}"
 TRAIN_DIFFUSION_CONNECTOR="${SMU3M_TRAIN_DIFFUSION_CONNECTOR:-1}"
-RUN_MATERIALIZED_BENCHMARK="${SMU3M_RUN_MATERIALIZED_BENCHMARK:-1}"
+RUN_MATERIALIZED_BENCHMARK="${SMU3M_RUN_MATERIALIZED_BENCHMARK:-0}"
 
 if [ "$RESUME" = "1" ] && [ -z "$RESUME_DIFFUSION_CHECKPOINT" ]; then
   if [ -f "$DIFFUSION_DIR/checkpoints/latest.pt" ]; then

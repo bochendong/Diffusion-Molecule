@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+# Submit Unified 3M materialized benchmark as a separate Slurm job.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+REPO_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
+cd "$REPO_DIR"
+
+if ! command -v sbatch >/dev/null 2>&1; then
+  echo "ERROR: sbatch not found. Run this on a Slurm login node." >&2
+  exit 2
+fi
+
+export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2}"
+export SMU3M_PYTHON_BIN="${SMU3M_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
+export SMU3M_BENCHMARK_PROFILE="${SMU3M_BENCHMARK_PROFILE:-primary_fast}"
+export SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES="${SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES:-256}"
+export SMU3M_RESTRICT_BENCHMARK_TO_EDIT_LATENT_INDEX="${SMU3M_RESTRICT_BENCHMARK_TO_EDIT_LATENT_INDEX:-1}"
+export SMMED_MAX_EVAL_PER_PROPERTY_COUNT="${SMMED_MAX_EVAL_PER_PROPERTY_COUNT:-5000}"
+
+case "$SMU3M_BENCHMARK_PROFILE" in
+  primary_fast)
+    DEFAULT_BENCH_CPUS="4"
+    DEFAULT_BENCH_MEM="32G"
+    DEFAULT_BENCH_TIME="03:00:00"
+    ;;
+  scaffold)
+    DEFAULT_BENCH_CPUS="4"
+    DEFAULT_BENCH_MEM="32G"
+    DEFAULT_BENCH_TIME="03:00:00"
+    ;;
+  full)
+    DEFAULT_BENCH_CPUS="8"
+    DEFAULT_BENCH_MEM="64G"
+    DEFAULT_BENCH_TIME="08:00:00"
+    ;;
+  *)
+    echo "ERROR: unsupported SMU3M_BENCHMARK_PROFILE=$SMU3M_BENCHMARK_PROFILE" >&2
+    exit 2
+    ;;
+esac
+
+BENCH_ACCOUNT="${SMU3M_BENCHMARK_SLURM_ACCOUNT:-${SMU3M_SLURM_ACCOUNT:-def-hup-ab_gpu}}"
+BENCH_TIME="${SMU3M_BENCHMARK_SLURM_TIME:-${SMU3M_SLURM_TIME:-$DEFAULT_BENCH_TIME}}"
+BENCH_MEM="${SMU3M_BENCHMARK_SLURM_MEM:-${SMU3M_SLURM_MEM:-$DEFAULT_BENCH_MEM}}"
+BENCH_CPUS="${SMU3M_BENCHMARK_SLURM_CPUS:-${SMU3M_SLURM_CPUS:-$DEFAULT_BENCH_CPUS}}"
+BENCH_JOB_NAME="${SMU3M_BENCHMARK_SLURM_JOB_NAME:-smu3m-diff-bench}"
+BENCH_LOG_DIR="${SMU3M_LOG_DIR:-$PROJECT_DIR/logs}"
+BENCH_PARTITION="${SMU3M_BENCHMARK_SLURM_PARTITION:-${SMU3M_SLURM_PARTITION:-}}"
+
+if [[ ! -x "$SMU3M_PYTHON_BIN" ]]; then
+  echo "ERROR: SMU3M_PYTHON_BIN is not executable: $SMU3M_PYTHON_BIN" >&2
+  exit 2
+fi
+if [[ ! -f "$SMU3M_OUTPUT_DIR/eval_latent/generated_latents.npy" ]]; then
+  echo "ERROR: missing eval latents: $SMU3M_OUTPUT_DIR/eval_latent/generated_latents.npy" >&2
+  echo "Run submit_unified_diffusion_refine.sh first." >&2
+  exit 2
+fi
+
+mkdir -p "$BENCH_LOG_DIR"
+
+echo "Submitting Unified 3M materialized benchmark"
+echo "  output_dir=$SMU3M_OUTPUT_DIR"
+echo "  benchmark_profile=$SMU3M_BENCHMARK_PROFILE"
+echo "  source_similarity_rerank_candidates=$SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES"
+echo "  max_eval_per_property_count=$SMMED_MAX_EVAL_PER_PROPERTY_COUNT"
+echo "  python=$SMU3M_PYTHON_BIN"
+echo "  bench_cpus=$BENCH_CPUS"
+echo "  bench_mem=$BENCH_MEM"
+echo "  bench_time=$BENCH_TIME"
+
+BENCH_SBATCH_ARGS=(
+  --account="$BENCH_ACCOUNT"
+  --job-name="$BENCH_JOB_NAME"
+  --time="$BENCH_TIME"
+  --mem="$BENCH_MEM"
+  --cpus-per-task="$BENCH_CPUS"
+  --output="$BENCH_LOG_DIR/%x-%j.log"
+  --export=ALL
+)
+if [[ -n "$BENCH_PARTITION" ]]; then
+  BENCH_SBATCH_ARGS+=(--partition="$BENCH_PARTITION")
+fi
+
+bench_output="$(
+  sbatch "${BENCH_SBATCH_ARGS[@]}" \
+    --wrap="bash '$PROJECT_DIR/scripts/run_unified_materialized_benchmark.sh'"
+)"
+echo "$bench_output"
+bench_job_id="$(echo "$bench_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+
+if [[ -z "$bench_job_id" ]]; then
+  echo "ERROR: failed to parse benchmark job id." >&2
+  exit 1
+fi
+
+case "$SMU3M_BENCHMARK_PROFILE" in
+  full) default_report="$SMU3M_OUTPUT_DIR/benchmark_materialized/benchmark_report.md" ;;
+  *) default_report="$SMU3M_OUTPUT_DIR/benchmark_materialized_${SMU3M_BENCHMARK_PROFILE}/benchmark_report.md" ;;
+esac
+if [[ -n "${SMU3M_BENCHMARK_OUTPUT_DIR:-}" ]]; then
+  report_path="$SMU3M_BENCHMARK_OUTPUT_DIR/benchmark_report.md"
+else
+  report_path="$default_report"
+fi
+
+echo
+echo "Materialized benchmark submitted."
+echo "  job_id=$bench_job_id"
+echo "  log=$BENCH_LOG_DIR/${BENCH_JOB_NAME}-${bench_job_id}.log"
+echo "  benchmark_report=$report_path"

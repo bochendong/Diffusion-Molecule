@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import csv
 import hashlib
+import heapq
 import json
 import math
 import random
@@ -112,6 +113,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--edit-latent-direction-weight", type=float, default=0.10)
     parser.add_argument("--edit-latent-fingerprint-weight", type=float, default=0.0)
     parser.add_argument("--edit-latent-source-similarity-weight", type=float, default=0.25)
+    parser.add_argument(
+        "--edit-latent-source-similarity-rerank-candidates",
+        type=int,
+        default=0,
+        help=(
+            "When source-similarity reranking is enabled, first rank candidates "
+            "without source Tanimoto and compute RDKit source Tanimoto only for "
+            "the best K candidates. 0 keeps the exact legacy behavior."
+        ),
+    )
     parser.add_argument("--source-tanimoto-thresholds", default="0.4,0.6,0.8")
     parser.add_argument("--compute-tanimoto", action="store_true")
     parser.add_argument("--allow-eval-target-candidates", action="store_true")
@@ -201,6 +212,9 @@ def main() -> None:
                     edit_latent_direction_weight=args.edit_latent_direction_weight,
                     edit_latent_fingerprint_weight=args.edit_latent_fingerprint_weight,
                     edit_latent_source_similarity_weight=args.edit_latent_source_similarity_weight,
+                    edit_latent_source_similarity_rerank_candidates=(
+                        args.edit_latent_source_similarity_rerank_candidates
+                    ),
                     scaffold_fallback_mode=args.scaffold_fallback_mode,
                     compute_tanimoto=args.compute_tanimoto or bool(source_tanimoto_thresholds),
                     seed=args.seed,
@@ -234,6 +248,7 @@ def main() -> None:
         "edit_latent_direction_weight": args.edit_latent_direction_weight,
         "edit_latent_fingerprint_weight": args.edit_latent_fingerprint_weight,
         "edit_latent_source_similarity_weight": args.edit_latent_source_similarity_weight,
+        "edit_latent_source_similarity_rerank_candidates": args.edit_latent_source_similarity_rerank_candidates,
         "source_tanimoto_thresholds": source_tanimoto_thresholds,
         "scaffold_fallback_mode": args.scaffold_fallback_mode,
         "condition_features_dir": str(args.condition_features_dir) if args.condition_features_dir else None,
@@ -381,6 +396,7 @@ def _decode_row(
     edit_latent_direction_weight: float,
     edit_latent_fingerprint_weight: float,
     edit_latent_source_similarity_weight: float,
+    edit_latent_source_similarity_rerank_candidates: int,
     scaffold_fallback_mode: str,
     compute_tanimoto: bool,
     seed: int,
@@ -454,6 +470,7 @@ def _decode_row(
             direction_weight=edit_latent_direction_weight,
             fingerprint_weight=edit_latent_fingerprint_weight,
             source_similarity_weight=edit_latent_source_similarity_weight if use_source_similarity else 0.0,
+            source_similarity_rerank_candidates=edit_latent_source_similarity_rerank_candidates,
         )
         fallback = ",".join(item for item in (fallback, edit_fallback) if item)
         generated_smiles = str(candidate.get("smiles", ""))
@@ -817,6 +834,7 @@ def _best_edit_latent_candidate(
     direction_weight: float,
     fingerprint_weight: float,
     source_similarity_weight: float,
+    source_similarity_rerank_candidates: int,
 ) -> tuple[dict[str, object], str]:
     if not pool:
         return _empty_candidate(), "empty_edit_latent_pool"
@@ -835,6 +853,7 @@ def _best_edit_latent_candidate(
     fingerprint_dim = int(edit_latent_context.get("fingerprint_dim") or 0)
 
     scored = []
+    source_similarity_candidates: list[tuple[float, int, dict[str, object]]] = []
     for candidate in pool:
         props = candidate.get("props", {})
         if not isinstance(props, Mapping):
@@ -873,13 +892,26 @@ def _best_edit_latent_candidate(
                 score += float(fingerprint_weight) * (
                     1.0 - _cosine_similarity(np.asarray(predicted_fingerprint, dtype=np.float32), candidate_fingerprint)
                 )
+        entry = (score, len(scored), candidate)
+        scored.append(entry)
         if source_similarity_weight > 0:
-            similarity = _safe_morgan_tanimoto(row.get("source_smiles", ""), str(candidate.get("smiles", ""))) or 0.0
-            score += float(source_similarity_weight) * (1.0 - similarity)
-        scored.append((score, candidate))
+            source_similarity_candidates.append(entry)
     if not scored:
         return _empty_candidate(), "empty_edit_latent_scores"
-    return min(scored, key=lambda item: item[0])[1], ""
+    if source_similarity_weight <= 0:
+        return min(scored, key=lambda item: item[0])[2], ""
+    rerank_limit = int(source_similarity_rerank_candidates or 0)
+    if rerank_limit > 0 and len(source_similarity_candidates) > rerank_limit:
+        source_similarity_candidates = heapq.nsmallest(
+            rerank_limit,
+            source_similarity_candidates,
+            key=lambda item: item[0],
+        )
+    reranked = []
+    for score, row_index, candidate in source_similarity_candidates:
+        similarity = _safe_morgan_tanimoto(row.get("source_smiles", ""), str(candidate.get("smiles", ""))) or 0.0
+        reranked.append((score + float(source_similarity_weight) * (1.0 - similarity), row_index, candidate))
+    return min(reranked, key=lambda item: item[0])[2], ""
 
 
 def _unpack_edit_latent(latent: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -1103,7 +1135,8 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
                     f"delta={args.edit_latent_delta_weight}, "
                     f"direction={args.edit_latent_direction_weight}, "
                     f"fingerprint={args.edit_latent_fingerprint_weight}, "
-                    f"source_similarity={args.edit_latent_source_similarity_weight}"
+                    f"source_similarity={args.edit_latent_source_similarity_weight}, "
+                    f"source_similarity_rerank_candidates={args.edit_latent_source_similarity_rerank_candidates}"
                 ),
             ]
         )

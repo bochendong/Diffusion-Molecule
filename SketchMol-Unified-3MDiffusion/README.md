@@ -221,7 +221,7 @@ multi-property benchmark:
 ```bash
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/run_unified_materialized_benchmark.sh
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```
 
 The wrapper uses `eval_latent/generated_latents.npy` plus
@@ -234,14 +234,20 @@ eval_latent/edit_latent_fingerprints.npy    # Unified target fingerprint block
 eval_latent/index.csv                       # condition_id alignment for the benchmark
 ```
 
-It then runs `benchmark_multiproperty_retrieval.py` with the normal baselines
-and Unified edit-latent retrieval methods. The primary proposed row is
+It then runs `benchmark_multiproperty_retrieval.py`. The default benchmark
+profile is `primary_fast`, which writes to `benchmark_materialized_primary_fast/`
+and runs the source-similarity main line plus the essential baselines. Use
+`SMU3M_BENCHMARK_PROFILE=full` only when you need the full comparison table.
+The primary proposed row is
 `edit_latent_source_similarity_rerank`: it does not require scaffold identity,
 and instead ranks candidates by predicted edit latent plus source Tanimoto. By
 default `SMU3M_BENCHMARK_FINGERPRINT_WEIGHT=1.0` and
 `SMU3M_BENCHMARK_SOURCE_SIMILARITY_WEIGHT=1.0`, so candidate ranking uses
 predicted properties/deltas, the Unified fingerprint block, and source
-similarity. The report to read is:
+similarity. To avoid spending hours computing RDKit Tanimoto for every global
+candidate, `primary_fast` first keeps the top edit-latent candidates and then
+computes source Tanimoto for `SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES`
+(default `256`). Set it to `0` for exact legacy reranking. The report to read is:
 
 ```text
 SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized/
@@ -250,13 +256,19 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_ma
   benchmark_decoded.csv
 ```
 
+For the default fast profile, the directory is:
+
+```text
+SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized_primary_fast/
+```
+
 Those files contain the comparison-ready numbers: `strict@Tanimoto>=0.4/0.6/0.8`
 as the primary edit metric, plus 2p-7p strict success and scaffold diagnostics.
 
 ## Diffusion Refine
 
 After the residual Stage 3 runs, continue with joint connector + diffusion
-refine, eval, and materialized benchmark:
+refine and latent eval:
 
 ```bash
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
@@ -265,10 +277,11 @@ bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
 ```
 
 The default refine path now jointly fine-tunes the edit connector and diffusion
-from the latest checkpoint, then evaluates a balanced 2p-7p sample and runs the
-materialized benchmark. This avoids the frozen-prior bottleneck seen in job
-`15694324` and prints the SketchMol structured reference row in the benchmark
-report.
+from the latest checkpoint, then evaluates a balanced 2p-7p sample. It does not
+run the materialized benchmark inside the same GPU job; submit that separately
+after the latent eval artifacts are written. This avoids the frozen-prior
+bottleneck seen in job `15694324` without risking an 8-hour timeout during the
+CPU benchmark stage.
 
 Useful overrides:
 
@@ -278,7 +291,16 @@ SMU3M_DIFFUSION_LR=3e-4
 SMU3M_TRAIN_DIFFUSION_CONNECTOR=1
 SMU3M_PRIOR_LOSS_WEIGHT=0.25
 SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=250
-SMU3M_RUN_MATERIALIZED_BENCHMARK=1
+SMU3M_RUN_MATERIALIZED_BENCHMARK=0
+```
+
+Then run the materialized benchmark as a separate job:
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```
 
 For a longer stability run with the full eval set (9455 edit rows), disable the
@@ -290,14 +312,14 @@ SMU3M_DIFFUSION_EXTRA_EPOCHS=200 \
 SMU3M_PRIOR_LOSS_WEIGHT=0.25 \
 SMU3M_EVAL_LIMIT=0 \
 SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=0 \
-SMMED_MAX_EVAL_PER_PROPERTY_COUNT=0 \
+SMU3M_RUN_MATERIALIZED_BENCHMARK=0 \
 SMU3M_SLURM_TIME=08:00:00 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
 ```
 
 To sweep `prior_loss_weight` without overwriting the current best checkpoint,
-write each run to separate diffusion/eval/benchmark directories while resuming
+write each run to separate diffusion/eval directories while resuming
 from the base `latent_diffusion` checkpoint:
 
 ```bash
@@ -305,15 +327,25 @@ SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edi
 SMU3M_BASE_DIFFUSION_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/latent_diffusion \
 SMU3M_DIFFUSION_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/latent_diffusion_prior050 \
 SMU3M_EVAL_LATENT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/eval_latent_prior050_full \
-SMU3M_BENCHMARK_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized_prior050_full \
 SMU3M_DIFFUSION_EXTRA_EPOCHS=100 \
 SMU3M_PRIOR_LOSS_WEIGHT=0.5 \
 SMU3M_EVAL_LIMIT=0 \
 SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=0 \
-SMMED_MAX_EVAL_PER_PROPERTY_COUNT=0 \
+SMU3M_RUN_MATERIALIZED_BENCHMARK=0 \
 SMU3M_SLURM_TIME=08:00:00 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
+```
+
+After that sweep job writes `eval_latent_prior050_full`, benchmark it separately:
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_EVAL_LATENT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/eval_latent_prior050_full \
+SMU3M_BENCHMARK_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized_prior050_primary_fast \
+SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```
 
 ## Latest Run Results

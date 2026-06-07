@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Submit Stage 3 diffusion refine + eval (+ optional materialized benchmark).
+# Submit Stage 3 diffusion refine + latent eval.
 
 set -euo pipefail
 
@@ -32,7 +32,7 @@ export SMU3M_DIFFUSION_OBJECTIVE="${SMU3M_DIFFUSION_OBJECTIVE:-pred_x0}"
 export SMU3M_DIFFUSION_TARGET="${SMU3M_DIFFUSION_TARGET:-residual}"
 export SMU3M_PRIOR_LOSS_WEIGHT="${SMU3M_PRIOR_LOSS_WEIGHT:-0.25}"
 export SMU3M_TRAIN_DIFFUSION_CONNECTOR="${SMU3M_TRAIN_DIFFUSION_CONNECTOR:-1}"
-export SMU3M_RUN_MATERIALIZED_BENCHMARK="${SMU3M_RUN_MATERIALIZED_BENCHMARK:-1}"
+export SMU3M_RUN_MATERIALIZED_BENCHMARK="${SMU3M_RUN_MATERIALIZED_BENCHMARK:-0}"
 export SMU3M_RESUME="${SMU3M_RESUME:-1}"
 export SMU3M_REQUIRE_CUDA="${SMU3M_REQUIRE_CUDA:-1}"
 export SMU3M_CHECKPOINT_EVERY="${SMU3M_CHECKPOINT_EVERY:-1}"
@@ -146,4 +146,8 @@ echo "  job_id=$train_job_id"
 echo "  log=$TRAIN_LOG_DIR/${TRAIN_JOB_NAME}-${train_job_id}.log"
 echo "  diffusion_checkpoint=$SMU3M_OUTPUT_DIR/latent_diffusion/latent_diffusion_generation.pt"
 echo "  eval_metrics=$SMU3M_OUTPUT_DIR/eval_latent/metrics.json"
-echo "  benchmark_report=$SMU3M_OUTPUT_DIR/benchmark_materialized/benchmark_report.md"
+if [[ "$SMU3M_RUN_MATERIALIZED_BENCHMARK" == "1" ]]; then
+  echo "  benchmark_report=$SMU3M_OUTPUT_DIR/benchmark_materialized/benchmark_report.md"
+else
+  echo "  benchmark_next=bash $PROJECT_DIR/scripts/submit_unified_materialized_benchmark.sh"
+fi

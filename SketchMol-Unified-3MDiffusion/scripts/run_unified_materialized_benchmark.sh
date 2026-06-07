@@ -25,8 +25,33 @@ EVAL_METRICS="${SMU3M_EVAL_METRICS:-$EVAL_LATENT_DIR/metrics.json}"
 MULTIPROPERTY_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1}"
 CONDITION_ROWS="${SMMED_CONDITION_ROWS:-$MULTIPROPERTY_OUTPUT_DIR/condition_rows.csv}"
 MOLECULE_DB="${SMMED_MOLECULE_DB_CSV:-$MULTIPROPERTY_OUTPUT_DIR/molecule_database.csv}"
-BENCHMARK_OUTPUT_DIR="${SMU3M_BENCHMARK_OUTPUT_DIR:-$UNIFIED_OUTPUT_DIR/benchmark_materialized}"
-METHODS="${SMU3M_BENCHMARK_METHODS:-source_identity,scaffold_property_retrieval,edit_latent_global_retrieval,edit_latent_source_similarity_rerank,edit_latent_scaffold_retrieval,edit_latent_scaffold_source_rerank,target_oracle}"
+BENCHMARK_PROFILE="${SMU3M_BENCHMARK_PROFILE:-primary_fast}"
+case "$BENCHMARK_PROFILE" in
+  primary_fast)
+    DEFAULT_METHODS="source_identity,scaffold_property_retrieval,edit_latent_source_similarity_rerank,edit_latent_scaffold_source_rerank,target_oracle"
+    DEFAULT_MAX_EDIT_LATENT_CANDIDATES="5000"
+    DEFAULT_SOURCE_SIMILARITY_RERANK_CANDIDATES="256"
+    DEFAULT_BENCHMARK_OUTPUT_DIR="$UNIFIED_OUTPUT_DIR/benchmark_materialized_primary_fast"
+    ;;
+  scaffold)
+    DEFAULT_METHODS="source_identity,scaffold_property_retrieval,edit_latent_scaffold_retrieval,edit_latent_scaffold_source_rerank,target_oracle"
+    DEFAULT_MAX_EDIT_LATENT_CANDIDATES="20000"
+    DEFAULT_SOURCE_SIMILARITY_RERANK_CANDIDATES="256"
+    DEFAULT_BENCHMARK_OUTPUT_DIR="$UNIFIED_OUTPUT_DIR/benchmark_materialized_scaffold"
+    ;;
+  full)
+    DEFAULT_METHODS="source_identity,scaffold_property_retrieval,edit_latent_global_retrieval,edit_latent_source_similarity_rerank,edit_latent_scaffold_retrieval,edit_latent_scaffold_source_rerank,target_oracle"
+    DEFAULT_MAX_EDIT_LATENT_CANDIDATES="20000"
+    DEFAULT_SOURCE_SIMILARITY_RERANK_CANDIDATES="512"
+    DEFAULT_BENCHMARK_OUTPUT_DIR="$UNIFIED_OUTPUT_DIR/benchmark_materialized"
+    ;;
+  *)
+    echo "ERROR: unsupported SMU3M_BENCHMARK_PROFILE=$BENCHMARK_PROFILE" >&2
+    exit 2
+    ;;
+esac
+BENCHMARK_OUTPUT_DIR="${SMU3M_BENCHMARK_OUTPUT_DIR:-$DEFAULT_BENCHMARK_OUTPUT_DIR}"
+METHODS="${SMU3M_BENCHMARK_METHODS:-$DEFAULT_METHODS}"
 FINGERPRINT_WEIGHT="${SMU3M_BENCHMARK_FINGERPRINT_WEIGHT:-1.0}"
 PROPERTY_WEIGHT="${SMU3M_BENCHMARK_PROPERTY_WEIGHT:-1.0}"
 DELTA_WEIGHT="${SMU3M_BENCHMARK_DELTA_WEIGHT:-0.35}"
@@ -34,7 +59,8 @@ DIRECTION_WEIGHT="${SMU3M_BENCHMARK_DIRECTION_WEIGHT:-0.10}"
 SOURCE_SIMILARITY_WEIGHT="${SMU3M_BENCHMARK_SOURCE_SIMILARITY_WEIGHT:-1.0}"
 SOURCE_TANIMOTO_THRESHOLDS="${SMMED_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
 MAX_GLOBAL_CANDIDATES="${SMMED_MAX_GLOBAL_CANDIDATES:-20000}"
-MAX_EDIT_LATENT_CANDIDATES="${SMU3M_MAX_EDIT_LATENT_CANDIDATES:-20000}"
+MAX_EDIT_LATENT_CANDIDATES="${SMU3M_MAX_EDIT_LATENT_CANDIDATES:-$DEFAULT_MAX_EDIT_LATENT_CANDIDATES}"
+SOURCE_SIMILARITY_RERANK_CANDIDATES="${SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES:-$DEFAULT_SOURCE_SIMILARITY_RERANK_CANDIDATES}"
 MAX_EVAL_PER_PROPERTY_COUNT="${SMMED_MAX_EVAL_PER_PROPERTY_COUNT:-5000}"
 RESTRICT_TO_EDIT_LATENT_INDEX="${SMU3M_RESTRICT_BENCHMARK_TO_EDIT_LATENT_INDEX:-1}"
 SCAFFOLD_FALLBACK_MODE="${SMMED_SCAFFOLD_FALLBACK_MODE:-source_identity}"
@@ -53,8 +79,11 @@ echo "  eval_latent_dir=$EVAL_LATENT_DIR"
 echo "  condition_rows=$CONDITION_ROWS"
 echo "  molecule_db=$MOLECULE_DB"
 echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
+echo "  benchmark_profile=$BENCHMARK_PROFILE"
 echo "  methods=$METHODS"
 echo "  fingerprint_weight=$FINGERPRINT_WEIGHT"
+echo "  max_edit_latent_candidates=$MAX_EDIT_LATENT_CANDIDATES"
+echo "  source_similarity_rerank_candidates=$SOURCE_SIMILARITY_RERANK_CANDIDATES"
 echo "  source_tanimoto_thresholds=$SOURCE_TANIMOTO_THRESHOLDS"
 echo "  restrict_to_edit_latent_index=$RESTRICT_TO_EDIT_LATENT_INDEX"
 
@@ -110,6 +139,7 @@ fi
   --edit-latent-direction-weight "$DIRECTION_WEIGHT" \
   --edit-latent-fingerprint-weight "$FINGERPRINT_WEIGHT" \
   --edit-latent-source-similarity-weight "$SOURCE_SIMILARITY_WEIGHT" \
+  --edit-latent-source-similarity-rerank-candidates "$SOURCE_SIMILARITY_RERANK_CANDIDATES" \
   --max-global-candidates "$MAX_GLOBAL_CANDIDATES" \
   --max-edit-latent-candidates "$MAX_EDIT_LATENT_CANDIDATES" \
   --max-eval-per-property-count "$MAX_EVAL_PER_PROPERTY_COUNT" \
