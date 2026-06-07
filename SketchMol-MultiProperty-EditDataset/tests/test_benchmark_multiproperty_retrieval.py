@@ -255,3 +255,109 @@ def test_edit_latent_source_similarity_rerank_is_not_scaffold_limited():
 
     assert decoded["generated_smiles"] == "near_different_scaffold"
     assert decoded["generated_scaffold"] == "other_b"
+
+
+def test_source_tanimoto_property_oracle_filters_before_property_match():
+    original_tanimoto = benchmark._safe_morgan_tanimoto
+    try:
+        benchmark._safe_morgan_tanimoto = lambda source, smiles: {
+            "low_tanimoto_perfect_property": 0.2,
+            "high_tanimoto_close_property": 0.8,
+        }[smiles]
+        row = {
+            "condition_id": "cond_1",
+            "source_smiles": "source",
+            "target_smiles": "target",
+            "scaffold": "source_scaffold",
+            "condition_properties": "MW",
+            "property_count": "1",
+            "split": "eval",
+            "source_MW": "100",
+            "target_MW": "200",
+        }
+        decoded = benchmark._decode_row(
+            row,
+            method="source_tanimoto_property_oracle",
+            candidates=[
+                {"smiles": "low_tanimoto_perfect_property", "scaffold": "other_a", "props": {"MW": 200.0}},
+                {"smiles": "high_tanimoto_close_property", "scaffold": "other_b", "props": {"MW": 225.0}},
+            ],
+            by_scaffold={},
+            feature_context=None,
+            edit_latent_context=None,
+            max_global_candidates=10,
+            max_feature_candidates=10,
+            max_edit_latent_candidates=10,
+            rerank_candidates=10,
+            rerank_property_weight=0.0,
+            edit_latent_property_weight=1.0,
+            edit_latent_delta_weight=0.0,
+            edit_latent_direction_weight=0.0,
+            edit_latent_fingerprint_weight=0.0,
+            edit_latent_source_similarity_weight=0.0,
+            scaffold_fallback_mode="source_identity",
+            compute_tanimoto=False,
+            seed=7,
+            source_first_min_tanimoto=0.4,
+        )
+    finally:
+        benchmark._safe_morgan_tanimoto = original_tanimoto
+
+    assert decoded["generated_smiles"] == "high_tanimoto_close_property"
+
+
+def test_edit_latent_source_first_rerank_filters_before_latent_score():
+    prop_count = len(benchmark.PROPERTY_COLUMNS)
+    latent = np.zeros(prop_count * 4, dtype=np.float32)
+    mw_idx = benchmark.PROPERTY_COLUMNS.index("MW")
+    latent[mw_idx] = 200.0
+    latent[prop_count + mw_idx] = 100.0
+    latent[2 * prop_count + mw_idx] = 1.0
+    latent[3 * prop_count + mw_idx] = 1.0
+
+    original_tanimoto = benchmark._safe_morgan_tanimoto
+    try:
+        benchmark._safe_morgan_tanimoto = lambda source, smiles: {
+            "low_tanimoto_best_latent": 0.2,
+            "high_tanimoto_weaker_latent": 0.8,
+        }[smiles]
+        row = {
+            "condition_id": "cond_1",
+            "source_smiles": "source",
+            "target_smiles": "target",
+            "scaffold": "source_scaffold",
+            "condition_properties": "MW",
+            "property_count": "1",
+            "split": "eval",
+            "source_MW": "100",
+            "target_MW": "200",
+        }
+        decoded = benchmark._decode_row(
+            row,
+            method="edit_latent_source_first_rerank",
+            candidates=[
+                {"smiles": "low_tanimoto_best_latent", "scaffold": "other_a", "props": {"MW": 200.0}},
+                {"smiles": "high_tanimoto_weaker_latent", "scaffold": "other_b", "props": {"MW": 230.0}},
+            ],
+            by_scaffold={},
+            feature_context=None,
+            edit_latent_context={"predictions_by_condition_id": {"cond_1": latent}},
+            max_global_candidates=10,
+            max_feature_candidates=10,
+            max_edit_latent_candidates=10,
+            rerank_candidates=10,
+            rerank_property_weight=0.0,
+            edit_latent_property_weight=1.0,
+            edit_latent_delta_weight=0.0,
+            edit_latent_direction_weight=0.0,
+            edit_latent_fingerprint_weight=0.0,
+            edit_latent_source_similarity_weight=0.0,
+            scaffold_fallback_mode="source_identity",
+            compute_tanimoto=False,
+            seed=7,
+            source_first_min_tanimoto=0.4,
+        )
+    finally:
+        benchmark._safe_morgan_tanimoto = original_tanimoto
+
+    assert decoded["generated_smiles"] == "high_tanimoto_weaker_latent"

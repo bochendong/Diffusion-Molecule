@@ -43,7 +43,9 @@ METHODS = (
     "source_identity",
     "global_property_retrieval",
     "scaffold_property_retrieval",
+    "source_tanimoto_property_oracle",
     "edit_latent_global_retrieval",
+    "edit_latent_source_first_rerank",
     "edit_latent_source_similarity_rerank",
     "edit_latent_scaffold_retrieval",
     "edit_latent_scaffold_source_rerank",
@@ -64,6 +66,7 @@ PURE_FEATURE_METHODS = {"vlm_feature_retrieval", "vlm_scaffold_feature_retrieval
 HYBRID_RERANK_METHODS = {"global_property_vlm_rerank", "scaffold_property_vlm_rerank"}
 EDIT_LATENT_METHODS = {
     "edit_latent_global_retrieval",
+    "edit_latent_source_first_rerank",
     "edit_latent_source_similarity_rerank",
     "edit_latent_scaffold_retrieval",
     "edit_latent_scaffold_source_rerank",
@@ -124,6 +127,24 @@ def parse_args() -> argparse.Namespace:
         ),
     )
     parser.add_argument("--source-tanimoto-thresholds", default="0.4,0.6,0.8")
+    parser.add_argument(
+        "--source-first-min-tanimoto",
+        type=float,
+        default=0.4,
+        help=(
+            "Minimum source Tanimoto for source-first/oracle retrieval methods. "
+            "The candidate pool is still bounded by --max-global-candidates."
+        ),
+    )
+    parser.add_argument(
+        "--source-first-candidates",
+        type=int,
+        default=0,
+        help=(
+            "Keep only the top N source-similar candidates after the source "
+            "Tanimoto filter. 0 keeps every sampled candidate above the threshold."
+        ),
+    )
     parser.add_argument("--compute-tanimoto", action="store_true")
     parser.add_argument("--allow-eval-target-candidates", action="store_true")
     parser.add_argument("--eval-shard-count", type=int, default=1)
@@ -220,6 +241,8 @@ def main() -> None:
                     edit_latent_direction_weight=args.edit_latent_direction_weight,
                     edit_latent_fingerprint_weight=args.edit_latent_fingerprint_weight,
                     edit_latent_source_similarity_weight=args.edit_latent_source_similarity_weight,
+                    source_first_min_tanimoto=args.source_first_min_tanimoto,
+                    source_first_candidates=args.source_first_candidates,
                     edit_latent_source_similarity_rerank_candidates=(
                         args.edit_latent_source_similarity_rerank_candidates
                     ),
@@ -260,6 +283,8 @@ def main() -> None:
         "edit_latent_fingerprint_weight": args.edit_latent_fingerprint_weight,
         "edit_latent_source_similarity_weight": args.edit_latent_source_similarity_weight,
         "edit_latent_source_similarity_rerank_candidates": args.edit_latent_source_similarity_rerank_candidates,
+        "source_first_min_tanimoto": args.source_first_min_tanimoto,
+        "source_first_candidates": args.source_first_candidates,
         "source_tanimoto_thresholds": source_tanimoto_thresholds,
         "scaffold_fallback_mode": args.scaffold_fallback_mode,
         "condition_features_dir": str(args.condition_features_dir) if args.condition_features_dir else None,
@@ -426,6 +451,8 @@ def _decode_row(
     compute_tanimoto: bool,
     seed: int,
     edit_latent_source_similarity_rerank_candidates: int = 0,
+    source_first_min_tanimoto: float = 0.4,
+    source_first_candidates: int = 0,
 ) -> dict[str, object]:
     selected_props = _selected_props(row)
     source_props = _source_props(row)
@@ -462,10 +489,23 @@ def _decode_row(
         generated_scaffold = str(candidate.get("scaffold", ""))
         generated_props = dict(candidate.get("props", {}))
         fallback = ""
+    elif method == "source_tanimoto_property_oracle":
+        pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
+        pool, fallback = _source_tanimoto_filtered_pool(
+            row,
+            pool,
+            min_tanimoto=source_first_min_tanimoto,
+            max_candidates=source_first_candidates,
+        )
+        candidate = _best_candidate(pool, selected_props=selected_props, target_props=target_props)
+        generated_smiles = str(candidate.get("smiles", ""))
+        generated_scaffold = str(candidate.get("scaffold", ""))
+        generated_props = dict(candidate.get("props", {}))
     elif method in EDIT_LATENT_METHODS:
         if edit_latent_context is None:
             raise ValueError(f"{method} requires edit latent context")
         scaffold_only = method in {"edit_latent_scaffold_retrieval", "edit_latent_scaffold_source_rerank"}
+        source_first = method == "edit_latent_source_first_rerank"
         use_source_similarity = method in {
             "edit_latent_source_similarity_rerank",
             "edit_latent_scaffold_source_rerank",
@@ -484,6 +524,14 @@ def _decode_row(
         else:
             pool = _stable_sample(candidates, max_global_candidates, key=row.get("condition_id", ""), seed=seed)
             fallback = ""
+        if source_first:
+            pool, source_first_fallback = _source_tanimoto_filtered_pool(
+                row,
+                pool,
+                min_tanimoto=source_first_min_tanimoto,
+                max_candidates=source_first_candidates,
+            )
+            fallback = ",".join(item for item in (fallback, source_first_fallback) if item)
         pool = _stable_sample(pool, max_edit_latent_candidates, key=row.get("condition_id", ""), seed=seed)
         candidate, edit_fallback = _best_edit_latent_candidate(
             row,
@@ -705,6 +753,32 @@ def _top_property_candidates(
         key=lambda candidate: _property_score(candidate, selected_props=selected_props, target_props=target_props),
     )
     return ranked[: max(1, int(limit))]
+
+
+def _source_tanimoto_filtered_pool(
+    row: Mapping[str, str],
+    pool: list[dict[str, object]],
+    *,
+    min_tanimoto: float,
+    max_candidates: int,
+) -> tuple[list[dict[str, object]], str]:
+    if not pool:
+        return [], "empty_source_tanimoto_pool"
+    scored = []
+    source_smiles = row.get("source_smiles", "")
+    for row_index, candidate in enumerate(pool):
+        similarity = _safe_morgan_tanimoto(source_smiles, str(candidate.get("smiles", "")))
+        if similarity is None or similarity < float(min_tanimoto):
+            continue
+        scored.append((float(similarity), row_index, candidate))
+    if not scored:
+        return [], "empty_source_tanimoto_pool"
+    limit = int(max_candidates or 0)
+    if limit > 0 and len(scored) > limit:
+        scored = heapq.nlargest(limit, scored, key=lambda item: (item[0], -item[1]))
+    else:
+        scored.sort(key=lambda item: (-item[0], item[1]))
+    return [candidate for _similarity, _row_index, candidate in scored], ""
 
 
 def _build_feature_context(
@@ -1267,6 +1341,8 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "- `target_oracle` is an upper bound because it returns the known target molecule.",
             "- `scaffold_property_retrieval` is the main strong non-generative baseline: it retrieves a candidate with the same scaffold and closest active-property values from the configured candidate library.",
             "- `edit_latent_global_retrieval` ranks candidates using predicted target/delta properties from the learned source-conditioned edit latent.",
+            "- `source_tanimoto_property_oracle` is a candidate-library upper bound: it filters candidates by source Tanimoto first, then picks the closest active-property match.",
+            "- `edit_latent_source_first_rerank` filters candidates by source Tanimoto first, then applies the learned edit-latent scorer inside that source-similar pool.",
             "- `edit_latent_source_similarity_rerank` is the main proposed retrieval-style method: it uses the learned edit latent plus source Tanimoto reranking without requiring scaffold identity.",
             "- `edit_latent_scaffold_retrieval` applies that edit-latent scorer inside the same-scaffold candidate pool.",
             "- `edit_latent_scaffold_source_rerank` is a scaffold-restricted diagnostic version of source-similarity reranking.",

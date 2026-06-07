@@ -421,6 +421,31 @@ sampled generated latents and a prior-only materialization using
 `eval_latent/prior_latents.npy`. This directly tests whether the connector prior
 is stronger than the latent diffusion sample.
 
+To test whether the candidate library contains source-similar property matches,
+run a source-first/oracle benchmark. Start with a capped CPU run before full
+eval because it computes RDKit source Tanimoto against sampled candidates:
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_followup_v1/sharedtiny_full_s11 \
+SMU3M_BENCHMARK_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_followup_v1/sharedtiny_full_s11/benchmark_source_first_primary_fast_1k \
+SMU3M_BENCHMARK_METHODS=source_identity,source_tanimoto_property_oracle,edit_latent_source_first_rerank,edit_latent_source_similarity_rerank,target_oracle \
+SMMED_LIMIT_EVAL_ROWS=1000 \
+SMMED_MAX_GLOBAL_CANDIDATES=5000 \
+SMU3M_SOURCE_FIRST_MIN_TANIMOTO=0.4 \
+SMU3M_SOURCE_FIRST_CANDIDATES=0 \
+SMU3M_BENCHMARK_SHARDS=5 \
+SMU3M_BENCHMARK_SUBMIT_MODE=array \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
+```
+
+`source_tanimoto_property_oracle` is the candidate-library upper bound inside
+the sampled pool: filter by source Tanimoto first, then choose the closest
+property match. `edit_latent_source_first_rerank` applies the learned edit-latent
+scorer after that source-first filter. If the oracle is still weak, the
+candidate library/retrieval formulation is the bottleneck; if the oracle is
+strong but edit-latent source-first is weak, the learned scorer is the bottleneck.
+
 ## Diffusion Refine
 
 After the residual Stage 3 runs, continue with joint connector + diffusion
