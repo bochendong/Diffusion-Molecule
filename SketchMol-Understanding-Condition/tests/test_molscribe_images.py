@@ -3,6 +3,8 @@ from pathlib import Path
 
 import numpy as np
 
+from sketchmol_understanding_condition.molscribe_images import preprocess_image_for_molscribe
+
 
 def _load_run_molscribe_ocr_module():
     script = Path(__file__).resolve().parents[1] / "scripts" / "run_molscribe_ocr.py"
@@ -11,6 +13,26 @@ def _load_run_molscribe_ocr_module():
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
+
+
+def test_preprocess_image_for_molscribe_binarizes_soft_render():
+    soft = np.full((32, 32, 3), 250, dtype=np.uint8)
+    soft[8:24, 8:24] = 20
+    processed = preprocess_image_for_molscribe(soft)
+
+    assert processed.shape == (32, 32, 3)
+    unique = {tuple(px) for px in processed.reshape(-1, 3)}
+    assert unique.issubset({(0, 0, 0), (255, 255, 255)})
+
+
+def test_preprocess_image_for_molscribe_maps_colored_atoms_to_black():
+    colored = np.full((32, 32, 3), 255, dtype=np.uint8)
+    colored[10:14, 10:14] = (0, 0, 255)
+    colored[18:22, 18:22] = (255, 0, 0)
+    processed = preprocess_image_for_molscribe(colored)
+
+    assert np.any(processed == 0)
+    assert np.all(processed[processed != 0] == 255)
 
 
 def test_postprocess_smiles_sketchmol_filters_broken_and_keeps_low_score():
@@ -61,15 +83,3 @@ def test_select_smiles_returns_empty_when_both_paths_fail():
 
     assert smiles == ""
     assert source == "empty"
-
-
-def test_preprocess_image_for_molscribe_binarizes_soft_render():
-    module = _load_run_molscribe_ocr_module()
-
-    soft = np.full((32, 32, 3), 250, dtype=np.uint8)
-    soft[8:24, 8:24] = 20
-    processed = module.preprocess_image_for_molscribe(soft)
-
-    assert processed.shape == (32, 32, 3)
-    unique = {tuple(px) for px in processed.reshape(-1, 3)}
-    assert unique.issubset({(0, 0, 0), (255, 255, 255)})

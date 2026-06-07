@@ -35,6 +35,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=128)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--device", default="cuda")
+    parser.add_argument(
+        "--backend",
+        choices=("sketchmol", "custom"),
+        default="sketchmol",
+    )
+    parser.add_argument(
+        "--preprocess-images",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     parser.add_argument("--output-json", type=Path, default=None)
     return parser.parse_args()
 
@@ -83,15 +93,25 @@ def _evaluate_cohort(
     molscribe_module: Any,
     model: Any,
     batch_size: int,
+    backend: str,
+    preprocess_images: bool,
 ) -> dict[str, Any]:
     path_strings = [str(path) for path in paths]
-    smiles, scores, diagnostics = molscribe_module._predict(
-        model,
-        path_strings,
-        batch_size=batch_size,
-        preprocess_images=True,
-        raw_smiles_fallback=False,
-    )
+    if backend == "sketchmol":
+        smiles, scores, diagnostics = molscribe_module._predict_sketchmol(
+            model,
+            path_strings,
+            batch_size=batch_size,
+            preprocess_images=preprocess_images,
+        )
+    else:
+        smiles, scores, diagnostics = molscribe_module._predict(
+            model,
+            path_strings,
+            batch_size=batch_size,
+            preprocess_images=preprocess_images,
+            raw_smiles_fallback=False,
+        )
 
     graph_usable = 0
     raw_usable = 0
@@ -231,6 +251,8 @@ def main() -> None:
                 molscribe_module=molscribe_module,
                 model=model,
                 batch_size=args.batch_size,
+                backend=args.backend,
+                preprocess_images=args.preprocess_images,
             )
         )
 
@@ -238,6 +260,8 @@ def main() -> None:
         "run_dir": str(run_dir),
         "limit": args.limit,
         "device": str(device),
+        "backend": args.backend,
+        "preprocess_images": args.preprocess_images,
         "cohorts": results,
     }
     output_json = args.output_json or (
@@ -258,6 +282,8 @@ def _render_report(payload: dict[str, Any]) -> str:
         f"- run_dir: `{payload['run_dir']}`",
         f"- samples per cohort: `{payload['limit']}`",
         f"- device: `{payload['device']}`",
+        f"- backend: `{payload['backend']}`",
+        f"- preprocess_images: `{payload['preprocess_images']}`",
         "",
         "## Summary",
         "",

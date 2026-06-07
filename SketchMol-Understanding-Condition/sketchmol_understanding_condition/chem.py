@@ -99,16 +99,40 @@ def molecular_properties(smiles: str) -> Optional[dict[str, float]]:
     }
 
 
-def render_molecule_image(smiles: str, output_path: str | Path, image_size: int = 256) -> Optional[str]:
-    """Render a 2D molecule image and return the output path."""
+def render_molecule_image_pil(smiles: str, image_size: int = 256):
+    """Render a MolScribe-friendly black-on-white 2D molecule image."""
 
     Chem, _, _, _, _, Draw, *_ = _rdkit()
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
+    try:
+        import io
+
+        from PIL import Image
+        from rdkit.Chem.Draw import rdMolDraw2D
+
+        drawer = rdMolDraw2D.MolDraw2DCairo(int(image_size), int(image_size))
+        opts = drawer.drawOptions()
+        opts.clearBackground = True
+        if hasattr(opts, "useBWAtomPalette"):
+            opts.useBWAtomPalette = True
+        mol = rdMolDraw2D.PrepareMolForDrawing(mol)
+        drawer.DrawMolecule(mol)
+        drawer.FinishDrawing()
+        return Image.open(io.BytesIO(drawer.GetDrawingText())).convert("RGB")
+    except Exception:
+        return Draw.MolToImage(mol, size=(int(image_size), int(image_size)))
+
+
+def render_molecule_image(smiles: str, output_path: str | Path, image_size: int = 256) -> Optional[str]:
+    """Render a 2D molecule image and return the output path."""
+
+    image = render_molecule_image_pil(smiles, image_size=image_size)
+    if image is None:
+        return None
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    image = Draw.MolToImage(mol, size=(image_size, image_size))
     image.save(output_path)
     return str(output_path)
 

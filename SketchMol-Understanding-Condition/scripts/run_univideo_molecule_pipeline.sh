@@ -369,7 +369,8 @@ if [[ "$LATENT_BACKEND" != "fingerprint_property_vector" && "$DECODE_EVAL_IMAGES
             --image-csv "$IMAGE_CSV" \
             --batch-size "$MOLSCRIBE_BATCH_SIZE" \
             --device "$MOLSCRIBE_DEVICE" \
-            --backend "$MOLSCRIBE_BACKEND"
+            --backend "$MOLSCRIBE_BACKEND" \
+            --preprocess-images
           "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_univideo_image_benchmark.py" \
             --image-csv "$IMAGE_CSV" \
             --output-dir "$STRUCTURE_BENCHMARK_DIR" \

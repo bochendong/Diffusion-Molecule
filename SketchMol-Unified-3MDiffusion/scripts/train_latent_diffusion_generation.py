@@ -18,7 +18,10 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from sketchmol_unified_3m_diffusion.edit_condition_tokens import EditConditionTokenConnector  # noqa: E402
+from sketchmol_unified_3m_diffusion.edit_condition_tokens import (  # noqa: E402
+    EditConditionTokenConnector,
+    edit_condition_loss,
+)
 from sketchmol_unified_3m_diffusion.latent_diffusion_generation import (  # noqa: E402
     EditLatentDenoiser,
     GaussianLatentDiffusion,

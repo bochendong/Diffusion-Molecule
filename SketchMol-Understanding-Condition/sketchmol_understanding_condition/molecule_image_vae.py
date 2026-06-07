@@ -263,16 +263,12 @@ def _load_or_render_pil(*, image_path: str, smiles: str, image_size: int):
                 return image.convert("RGB")
     if smiles:
         try:
-            from rdkit import Chem
-            from rdkit.Chem import Draw
+            from sketchmol_understanding_condition.chem import render_molecule_image_pil
         except ImportError as exc:
             raise RuntimeError("RDKit is required to render SMILES when image_path is missing") from exc
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
+        image = render_molecule_image_pil(smiles, image_size=image_size)
+        if image is None:
             raise ValueError(f"Cannot render invalid SMILES: {smiles!r}")
-        image = Draw.MolToImage(mol, size=(image_size, image_size))
-        if not isinstance(image, Image.Image):
-            raise TypeError("RDKit Draw.MolToImage did not return a PIL image")
         return image.convert("RGB")
     raise ValueError("Either image_path or smiles must be provided")
 

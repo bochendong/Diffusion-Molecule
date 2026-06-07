@@ -1,18 +1,20 @@
 # UniVideo MolScribe OCR Diagnostic
 
-- run_dir: `/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink`
+- run_dir: `SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink`
 - samples per cohort: `128`
 - device: `cuda`
+- backend: `sketchmol`
+- preprocess_images: `True`
 
 ## Summary
 
 | cohort | n | graph usable | raw usable | final valid | exact match | mean Tanimoto | decode sources |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| rdkit_source | 128 | 0.000 | 0.086 | 1.000 | 0.000 |  | empty:128 |
-| rdkit_target | 128 | 0.000 | 0.070 | 1.000 | 0.000 |  | empty:128 |
-| source_oracle | 128 | 0.000 | 0.070 | 1.000 | 0.000 |  | empty:128 |
-| target_oracle | 128 | 0.000 | 0.094 | 1.000 | 0.000 |  | empty:128 |
-| generated | 128 | 0.000 | 0.203 | 1.000 | 0.000 |  | empty:128 |
+| rdkit_source | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
+| rdkit_target | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
+| source_oracle | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
+| target_oracle | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
+| generated | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
 
 ## Image Stats (mean)
 
@@ -26,75 +28,75 @@
 
 ### rdkit_source
 
-- idx=0 source=empty valid=True
+- idx=0 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-- idx=1 source=empty valid=True
+- idx=1 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-- idx=2 source=empty valid=True
+- idx=2 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
 
 ### rdkit_target
 
-- idx=0 source=empty valid=True
+- idx=0 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-- idx=1 source=empty valid=True
+- idx=1 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-- idx=2 source=empty valid=True
+- idx=2 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
 
 ### source_oracle
 
-- idx=0 source=empty valid=True
+- idx=0 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-- idx=1 source=empty valid=True
+- idx=1 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-- idx=2 source=empty valid=True
+- idx=2 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
 
 ### target_oracle
 
-- idx=0 source=empty valid=True
+- idx=0 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-- idx=1 source=empty valid=True
+- idx=1 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-- idx=2 source=empty valid=True
+- idx=2 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
 
 ### generated
 
-- idx=0 source=empty valid=True
+- idx=0 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-- idx=1 source=empty valid=True
+- idx=1 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-- idx=2 source=empty valid=True
+- idx=2 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``

@@ -16,6 +16,10 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
+from sketchmol_understanding_condition.molscribe_images import (  # noqa: E402
+    load_preprocessed_rgb_image,
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -37,7 +41,7 @@ def parse_args() -> argparse.Namespace:
         "--preprocess-images",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Custom backend only: binarize molecule images before MolScribe inference.",
+        help="Convert images to high-contrast black-on-white before MolScribe inference.",
     )
     parser.add_argument(
         "--raw-smiles-fallback",
@@ -72,6 +76,7 @@ def main() -> None:
             model,
             paths,
             batch_size=args.batch_size,
+            preprocess_images=args.preprocess_images,
         )
     else:
         smiles, scores, diagnostics = _predict(
@@ -126,8 +131,15 @@ def _predict_sketchmol(
     paths: list[str],
     *,
     batch_size: int,
+    preprocess_images: bool = True,
 ) -> tuple[list[str], list[float | None], list[dict[str, object]]]:
-    result = model.predict_images_from_csv(paths, batch_size)
+    input_images = [
+        load_preprocessed_rgb_image(path, preprocess=preprocess_images) for path in paths
+    ]
+    if hasattr(model, "predict_imagespredict_images_from_csv_helper"):
+        result = model.predict_imagespredict_images_from_csv_helper(input_images, batch_size)
+    else:
+        result = model.predict_images_from_csv(paths, batch_size)
     if isinstance(result, tuple) and len(result) >= 3:
         graph_smiles, _molblock, token_scores = result[:3]
     else:
@@ -212,18 +224,12 @@ def _predict_vendored(
     preprocess_images: bool,
     raw_smiles_fallback: bool,
 ) -> tuple[list[str], list[float | None], list[dict[str, object]]]:
-    import cv2
     import torch
     from molscribe.chemistry import convert_graph_to_smiles
 
     input_images = []
     for path in paths:
-        image = cv2.imread(path)
-        if image is None:
-            raise ValueError(f"Could not read image for MolScribe OCR: {path}")
-        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-        if preprocess_images:
-            image = preprocess_image_for_molscribe(image)
+        image = load_preprocessed_rgb_image(path, preprocess=preprocess_images)
         input_images.append(image)
 
     predictions = []
@@ -263,22 +269,6 @@ def _predict_vendored(
             }
         )
     return final_smiles, token_scores, diagnostics
-
-
-def preprocess_image_for_molscribe(image_rgb: np.ndarray) -> np.ndarray:
-    """Convert soft RGB molecule renders to high-contrast black-on-white PNG-like arrays."""
-
-    import cv2
-
-    if image_rgb.ndim != 3 or image_rgb.shape[2] != 3:
-        raise ValueError(f"Expected HWC RGB image, got shape {image_rgb.shape}")
-
-    gray = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2GRAY)
-    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
-    _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    if float(binary.mean()) < 127.0:
-        binary = 255 - binary
-    return cv2.cvtColor(binary, cv2.COLOR_GRAY2RGB)
 
 
 def _select_smiles(
