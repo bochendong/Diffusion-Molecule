@@ -54,6 +54,10 @@ class EditConditionDataset(Dataset):
         self.active_mask = np.stack([active_property_vector(sample) for sample in samples])
         self.direction_labels = np.stack([direction_label_vector(sample) for sample in samples])
         self.target_fingerprint = np.stack([molecule_feature(sample.target_smiles, fingerprint_dim) for sample in samples])
+        self.source_fingerprint = np.stack(
+            [molecule_feature(sample.source_smiles or sample.molecule_smiles, fingerprint_dim) for sample in samples]
+        )
+        self.source_tanimoto = np.asarray([_float_or_nan(sample.source_tanimoto) for sample in samples], dtype=np.float32)
         self.similarity_bin = np.asarray([similarity_bin_label(sample) for sample in samples], dtype=np.int64)
         self.index = samples
 
@@ -77,6 +81,8 @@ class EditConditionDataset(Dataset):
             "active_mask": torch.from_numpy(self.active_mask[idx]).float(),
             "direction_labels": torch.from_numpy(self.direction_labels[idx]).long(),
             "target_fingerprint": torch.from_numpy(self.target_fingerprint[idx]).float(),
+            "source_fingerprint": torch.from_numpy(self.source_fingerprint[idx]).float(),
+            "source_tanimoto": torch.tensor(self.source_tanimoto[idx], dtype=torch.float32),
             "similarity_bin": torch.tensor(self.similarity_bin[idx], dtype=torch.long),
         }
 
@@ -101,6 +107,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--checkpoint-every", type=int, default=1)
     parser.add_argument("--resume-checkpoint", type=Path, default=None)
     parser.add_argument("--seed", type=int, default=11)
+    parser.add_argument("--source-similarity-loss-weight", type=float, default=0.5)
+    parser.add_argument("--hard-negative-loss-weight", type=float, default=0.25)
+    parser.add_argument("--source-aware-temperature", type=float, default=0.07)
+    parser.add_argument("--hard-negative-margin", type=float, default=0.2)
     return parser.parse_args()
 
 
@@ -143,25 +153,39 @@ def main() -> None:
     for epoch in range(start_epoch, args.epochs):
         model.train()
         losses = []
+        loss_logs: dict[str, list[float]] = {}
         for batch in loader:
             batch = move_batch_to_device(batch, device)
             optimizer.zero_grad()
             output = model(batch["hidden"].float())
-            loss, _ = edit_condition_loss(
+            loss, logs = edit_condition_loss(
                 output,
                 target_properties=batch["target_properties"],
                 property_deltas=batch["property_deltas"],
                 active_mask=batch["active_mask"],
                 direction_labels=batch["direction_labels"],
                 target_fingerprint=batch["target_fingerprint"],
+                source_fingerprint=batch["source_fingerprint"],
+                source_tanimoto=batch["source_tanimoto"],
                 similarity_bin=batch["similarity_bin"],
-                weights={"fingerprint_bce": 0.5, "direction_ce": 0.5},
+                source_aware_temperature=args.source_aware_temperature,
+                hard_negative_margin=args.hard_negative_margin,
+                weights={
+                    "fingerprint_bce": 0.5,
+                    "direction_ce": 0.5,
+                    "source_similarity_mse": args.source_similarity_loss_weight,
+                    "source_aware_hard_negative": args.hard_negative_loss_weight,
+                },
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
             losses.append(float(loss.item()))
+            for name, value in logs.items():
+                loss_logs.setdefault(name, []).append(float(value.item()))
         record = {"epoch": epoch + 1, "train_loss": float(np.mean(losses))}
+        for name, values in sorted(loss_logs.items()):
+            record[f"train_{name}"] = float(np.mean(values))
         history.append(record)
         print(json.dumps(record, sort_keys=True))
         if args.checkpoint_every > 0 and (epoch + 1) % args.checkpoint_every == 0:
@@ -198,7 +222,18 @@ def _config(args: argparse.Namespace, dataset: EditConditionDataset) -> dict[str
         "batch_size": args.batch_size,
         "num_workers": args.num_workers,
         "pin_memory": bool(args.pin_memory),
+        "source_similarity_loss_weight": args.source_similarity_loss_weight,
+        "hard_negative_loss_weight": args.hard_negative_loss_weight,
+        "source_aware_temperature": args.source_aware_temperature,
+        "hard_negative_margin": args.hard_negative_margin,
     }
+
+
+def _float_or_nan(value: object) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 def _save_checkpoint(

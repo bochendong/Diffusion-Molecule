@@ -161,6 +161,10 @@ def edit_condition_loss(
     direction_labels: torch.Tensor,
     target_fingerprint: torch.Tensor,
     similarity_bin: torch.Tensor,
+    source_fingerprint: torch.Tensor | None = None,
+    source_tanimoto: torch.Tensor | None = None,
+    source_aware_temperature: float = 0.07,
+    hard_negative_margin: float = 0.2,
     weights: dict[str, float] | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Multi-task loss for edit-aware condition tokens."""
@@ -174,6 +178,18 @@ def edit_condition_loss(
         "fingerprint_bce": F.binary_cross_entropy_with_logits(output.target_fingerprint_logits, target_fingerprint),
         "similarity_ce": F.cross_entropy(output.similarity_bin_logits, similarity_bin),
     }
+    losses.update(
+        _source_aware_fingerprint_losses(
+            output,
+            target_properties=target_properties,
+            property_deltas=property_deltas,
+            target_fingerprint=target_fingerprint,
+            source_fingerprint=source_fingerprint,
+            source_tanimoto=source_tanimoto,
+            temperature=source_aware_temperature,
+            hard_negative_margin=hard_negative_margin,
+        )
+    )
     total = sum(float(weights.get(name, 1.0)) * loss for name, loss in losses.items())
     logs = {name: loss.detach() for name, loss in losses.items()}
     logs["loss"] = total.detach()
@@ -190,6 +206,80 @@ def symmetric_infonce(left: torch.Tensor, right: torch.Tensor, *, temperature: t
     logits = left @ right.T / temperature
     labels = torch.arange(left.shape[0], device=left.device)
     return 0.5 * (F.cross_entropy(logits, labels) + F.cross_entropy(logits.T, labels))
+
+
+def _source_aware_fingerprint_losses(
+    output: EditConditionOutput,
+    *,
+    target_properties: torch.Tensor,
+    property_deltas: torch.Tensor,
+    target_fingerprint: torch.Tensor,
+    source_fingerprint: torch.Tensor | None,
+    source_tanimoto: torch.Tensor | None,
+    temperature: float,
+    hard_negative_margin: float,
+) -> dict[str, torch.Tensor]:
+    if source_fingerprint is None:
+        return {}
+    if source_fingerprint.shape != target_fingerprint.shape:
+        raise ValueError(
+            "source_fingerprint and target_fingerprint shapes must match: "
+            f"{tuple(source_fingerprint.shape)} != {tuple(target_fingerprint.shape)}"
+        )
+
+    pred_fingerprint = torch.sigmoid(output.target_fingerprint_logits[:, : target_fingerprint.shape[1]])
+    source_fingerprint = source_fingerprint.to(dtype=pred_fingerprint.dtype, device=pred_fingerprint.device)
+    target_fingerprint = target_fingerprint.to(dtype=pred_fingerprint.dtype, device=pred_fingerprint.device)
+
+    target_source_similarity = _soft_tanimoto(target_fingerprint, source_fingerprint).detach()
+    if source_tanimoto is not None:
+        source_tanimoto = source_tanimoto.to(dtype=pred_fingerprint.dtype, device=pred_fingerprint.device).reshape(-1)
+        finite = torch.isfinite(source_tanimoto)
+        target_source_similarity = torch.where(
+            finite,
+            source_tanimoto.clamp(0.0, 1.0),
+            target_source_similarity,
+        )
+
+    pred_source_similarity = _soft_tanimoto(pred_fingerprint, source_fingerprint)
+    losses = {
+        "source_similarity_mse": F.mse_loss(pred_source_similarity, target_source_similarity),
+    }
+
+    if pred_fingerprint.shape[0] <= 1:
+        return losses
+
+    temp = max(float(temperature), 1e-3)
+    query = F.normalize(pred_fingerprint, dim=-1)
+    target_bank = F.normalize(target_fingerprint, dim=-1)
+    logits = query @ target_bank.T / temp
+    positives = torch.diag(logits)
+
+    descriptor = torch.cat([target_properties.detach(), property_deltas.detach()], dim=-1).to(
+        device=pred_fingerprint.device,
+        dtype=pred_fingerprint.dtype,
+    )
+    prop_distance = torch.cdist(descriptor, descriptor, p=1) / max(1, descriptor.shape[1])
+    source_to_target = _soft_tanimoto(source_fingerprint[:, None, :], target_fingerprint[None, :, :])
+    hard_weight = torch.exp(-prop_distance) * (1.0 - source_to_target).clamp_min(0.0)
+    eye = torch.eye(hard_weight.shape[0], dtype=torch.bool, device=hard_weight.device)
+    hard_rank_score = logits.detach() + torch.log(hard_weight.clamp_min(1e-6))
+    hard_rank_score = hard_rank_score.masked_fill(eye, -torch.inf)
+    hard_indices = torch.argmax(hard_rank_score, dim=1)
+    hard_scores = logits.gather(1, hard_indices[:, None]).squeeze(1)
+    hard_weights = hard_weight.gather(1, hard_indices[:, None]).squeeze(1).detach()
+    margin = torch.as_tensor(float(hard_negative_margin), dtype=pred_fingerprint.dtype, device=pred_fingerprint.device)
+    hard_loss = F.relu(margin + hard_scores - positives) * hard_weights
+    losses["source_aware_hard_negative"] = hard_loss.mean()
+    return losses
+
+
+def _soft_tanimoto(left: torch.Tensor, right: torch.Tensor, *, eps: float = 1e-6) -> torch.Tensor:
+    left = left.float()
+    right = right.float()
+    intersection = (left * right).sum(dim=-1)
+    union = (left + right - left * right).sum(dim=-1)
+    return intersection / union.clamp_min(eps)
 
 
 def _mlp(input_dim: int, hidden_dim: int, output_dim: int) -> nn.Sequential:

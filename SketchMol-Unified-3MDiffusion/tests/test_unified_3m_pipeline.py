@@ -107,10 +107,15 @@ def test_edit_condition_connector_and_diffusion_loss_shapes():
         active_mask=torch.rand(3, 7),
         direction_labels=torch.ones(3, 7, dtype=torch.long),
         target_fingerprint=torch.rand(3, 64),
+        source_fingerprint=torch.rand(3, 64),
+        source_tanimoto=torch.tensor([0.7, 0.5, float("nan")]),
         similarity_bin=torch.zeros(3, dtype=torch.long),
+        weights={"source_similarity_mse": 0.5, "source_aware_hard_negative": 0.25},
     )
     assert torch.isfinite(loss)
     assert "fingerprint_bce" in logs
+    assert "source_similarity_mse" in logs
+    assert "source_aware_hard_negative" in logs
 
     denoiser = EditLatentDenoiser(latent_dim=20, context_dim=16, hidden_dim=32, depth=2)
     diffusion = GaussianLatentDiffusion(denoiser, timesteps=8)

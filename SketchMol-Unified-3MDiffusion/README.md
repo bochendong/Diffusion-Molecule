@@ -281,6 +281,26 @@ instead of five separate `sbatch` calls.
 Those files contain the comparison-ready numbers: `strict@Tanimoto>=0.4/0.6/0.8`
 as the primary edit metric, plus 2p-7p strict success and scaffold diagnostics.
 
+## Source-Aware Connector Objective
+
+The edit-token connector now trains with two source-aware fingerprint losses in
+addition to the original target property, delta, active-property, direction,
+target fingerprint, and similarity-bin heads:
+
+```text
+SMU3M_SOURCE_SIMILARITY_LOSS_WEIGHT=0.5
+SMU3M_HARD_NEGATIVE_LOSS_WEIGHT=0.25
+SMU3M_SOURCE_AWARE_TEMPERATURE=0.07
+SMU3M_HARD_NEGATIVE_MARGIN=0.2
+```
+
+`source_similarity_mse` matches the predicted target fingerprint's soft
+Tanimoto to the source-target Tanimoto. `source_aware_hard_negative` mines
+in-batch targets that are property/delta-close but source-incompatible and
+pushes them below the true target. This is meant to test whether the connector
+can learn source-conditioned edits rather than improving property retrieval by
+itself.
+
 ## Diffusion Refine
 
 After the residual Stage 3 runs, continue with joint connector + diffusion

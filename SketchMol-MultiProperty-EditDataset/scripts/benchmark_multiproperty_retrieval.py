@@ -422,10 +422,10 @@ def _decode_row(
     edit_latent_direction_weight: float,
     edit_latent_fingerprint_weight: float,
     edit_latent_source_similarity_weight: float,
-    edit_latent_source_similarity_rerank_candidates: int,
     scaffold_fallback_mode: str,
     compute_tanimoto: bool,
     seed: int,
+    edit_latent_source_similarity_rerank_candidates: int = 0,
 ) -> dict[str, object]:
     selected_props = _selected_props(row)
     source_props = _source_props(row)
@@ -860,7 +860,7 @@ def _best_edit_latent_candidate(
     direction_weight: float,
     fingerprint_weight: float,
     source_similarity_weight: float,
-    source_similarity_rerank_candidates: int,
+    source_similarity_rerank_candidates: int = 0,
 ) -> tuple[dict[str, object], str]:
     if not pool:
         return _empty_candidate(), "empty_edit_latent_pool"

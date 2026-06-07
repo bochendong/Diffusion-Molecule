@@ -33,6 +33,10 @@ EDIT_HIDDEN_DIM="${SMU3M_EDIT_HIDDEN_DIM:-512}"
 DIFFUSION_HIDDEN_DIM="${SMU3M_DIFFUSION_HIDDEN_DIM:-512}"
 NUM_QUERIES="${SMU3M_NUM_QUERIES:-16}"
 DIFFUSION_DEPTH="${SMU3M_DIFFUSION_DEPTH:-4}"
+SOURCE_SIMILARITY_LOSS_WEIGHT="${SMU3M_SOURCE_SIMILARITY_LOSS_WEIGHT:-0.5}"
+HARD_NEGATIVE_LOSS_WEIGHT="${SMU3M_HARD_NEGATIVE_LOSS_WEIGHT:-0.25}"
+SOURCE_AWARE_TEMPERATURE="${SMU3M_SOURCE_AWARE_TEMPERATURE:-0.07}"
+HARD_NEGATIVE_MARGIN="${SMU3M_HARD_NEGATIVE_MARGIN:-0.2}"
 DEVICE="${SMU3M_DEVICE:-auto}"
 CHECKPOINT_EVERY="${SMU3M_CHECKPOINT_EVERY:-1}"
 RESUME="${SMU3M_RESUME:-1}"
@@ -59,6 +63,10 @@ echo "  edit_hidden_dim=$EDIT_HIDDEN_DIM"
 echo "  diffusion_hidden_dim=$DIFFUSION_HIDDEN_DIM"
 echo "  num_queries=$NUM_QUERIES"
 echo "  diffusion_depth=$DIFFUSION_DEPTH"
+echo "  source_similarity_loss_weight=$SOURCE_SIMILARITY_LOSS_WEIGHT"
+echo "  hard_negative_loss_weight=$HARD_NEGATIVE_LOSS_WEIGHT"
+echo "  source_aware_temperature=$SOURCE_AWARE_TEMPERATURE"
+echo "  hard_negative_margin=$HARD_NEGATIVE_MARGIN"
 echo "  include_pubchem=$INCLUDE_PUBCHEM"
 echo "  include_kv=$INCLUDE_KV"
 
@@ -142,6 +150,10 @@ EDIT_ARGS=(
   --limit "$TRAIN_LIMIT" \
   --hidden-dim "$EDIT_HIDDEN_DIM" \
   --num-queries "$NUM_QUERIES" \
+  --source-similarity-loss-weight "$SOURCE_SIMILARITY_LOSS_WEIGHT" \
+  --hard-negative-loss-weight "$HARD_NEGATIVE_LOSS_WEIGHT" \
+  --source-aware-temperature "$SOURCE_AWARE_TEMPERATURE" \
+  --hard-negative-margin "$HARD_NEGATIVE_MARGIN" \
   --device "$DEVICE" \
   --checkpoint-every "$CHECKPOINT_EVERY" \
   --export-features
