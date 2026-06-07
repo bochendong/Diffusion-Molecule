@@ -1,0 +1,130 @@
+{
+  "history": [
+    {
+      "epoch": 1,
+      "train_loss": 3.6707214951515197,
+      "train_active_bce": 0.6421360358595848,
+      "train_delta_mse": 0.533372126892209,
+      "train_direction_ce": 0.8084578089416027,
+      "train_fingerprint_bce": 0.32933349795639516,
+      "train_similarity_ce": 0.9916241124272347,
+      "train_source_aware_hard_negative": 0.3164745824411511,
+      "train_source_similarity_mse": 0.24058546368032693,
+      "train_target_property_mse": 0.7352821908891201
+    },
+    {
+      "epoch": 2,
+      "train_loss": 3.096617889404297,
+      "train_active_bce": 0.5865548759698868,
+      "train_delta_mse": 0.36816250532865524,
+      "train_direction_ce": 0.6848251886665822,
+      "train_fingerprint_bce": 0.26086430773139,
+      "train_similarity_ce": 0.9537849597632885,
+      "train_source_aware_hard_negative": 0.26651237178593873,
+      "train_source_similarity_mse": 0.21873948406428098,
+      "train_target_property_mse": 0.5392729725688696
+    },
+    {
+      "epoch": 3,
+      "train_loss": 2.802673617005348,
+      "train_active_bce": 0.5665050283074379,
+      "train_delta_mse": 0.31788138784468173,
+      "train_direction_ce": 0.6533357322216033,
+      "train_fingerprint_bce": 0.25532494485378265,
+      "train_similarity_ce": 0.929380913823843,
+      "train_source_aware_hard_negative": 0.23192649539560078,
+      "train_source_similarity_mse": 0.21287868078798056,
+      "train_target_property_mse": 0.37015497088432314
+    },
+    {
+      "epoch": 4,
+      "train_loss": 2.680356150865555,
+      "train_active_bce": 0.5546640805900097,
+      "train_delta_mse": 0.2976070333272219,
+      "train_direction_ce": 0.6347672022879124,
+      "train_fingerprint_bce": 0.2506709279492497,
+      "train_similarity_ce": 0.9131697453558445,
+      "train_source_aware_hard_negative": 0.21768794097006322,
+      "train_source_similarity_mse": 0.20703501477837563,
+      "train_target_property_mse": 0.3142567276954651
+    },
+    {
+      "epoch": 5,
+      "train_loss": 2.5914555937051773,
+      "train_active_bce": 0.5528492718935013,
+      "train_delta_mse": 0.2829269228503108,
+      "train_direction_ce": 0.6291811302304268,
+      "train_fingerprint_bce": 0.2464139608666301,
+      "train_similarity_ce": 0.9042421042919159,
+      "train_source_aware_hard_negative": 0.2108598079532385,
+      "train_source_similarity_mse": 0.2000573191791773,
+      "train_target_property_mse": 0.2608961366117001
+    }
+  ],
+  "config": {
+    "token_dim": 512,
+    "context_dim": 256,
+    "num_queries": 16,
+    "hidden_dim": 512,
+    "fingerprint_dim": 512,
+    "property_mean": [
+      [
+        380.37188720703125,
+        3.3850910663604736,
+        0.5734283924102783,
+        76.85115051269531,
+        1.4654088020324707,
+        4.850388526916504,
+        5.328375816345215
+      ]
+    ],
+    "property_std": [
+      [
+        92.54057312011719,
+        1.5156290531158447,
+        0.19167348742485046,
+        33.44403839111328,
+        1.21761155128479,
+        1.6826292276382446,
+        2.8697164058685303
+      ]
+    ],
+    "delta_mean": [
+      [
+        0.2141815572977066,
+        0.001111030811443925,
+        -0.00016171472088899463,
+        0.015510168857872486,
+        -0.003477617399767041,
+        0.0034036256838589907,
+        0.001405845396220684
+      ]
+    ],
+    "delta_std": [
+      [
+        54.65355682373047,
+        0.9295074343681335,
+        0.13416267931461334,
+        23.238704681396484,
+        0.8401129245758057,
+        1.1983991861343384,
+        1.8697692155838013
+      ]
+    ],
+    "device": "auto",
+    "batch_size": 512,
+    "num_workers": 0,
+    "pin_memory": true,
+    "source_similarity_loss_weight": 0.5,
+    "hard_negative_loss_weight": 0.25,
+    "source_aware_temperature": 0.07,
+    "hard_negative_margin": 0.2
+  },
+  "device": {
+    "device": "cuda",
+    "torch_version": "2.12.0",
+    "cuda_available": true,
+    "cuda_device_count": 1,
+    "cuda_device_name": "NVIDIA H100 80GB HBM3 MIG 2g.20gb"
+  }
+}
