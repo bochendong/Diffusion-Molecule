@@ -117,6 +117,15 @@ run_official_molscribe_predict_csv() {
     return 2
   fi
 
+  if [[ ! -f "$image_csv" ]]; then
+    echo "ERROR: MolScribe image CSV not found: $image_csv" >&2
+    return 2
+  fi
+  image_csv="$(cd "$(dirname "$image_csv")" && pwd)/$(basename "$image_csv")"
+  if [[ -f "$model_path" ]]; then
+    model_path="$(cd "$(dirname "$model_path")" && pwd)/$(basename "$model_path")"
+  fi
+
   local sketchmol_repo
   sketchmol_repo="$(cd "$eval_dir/.." && pwd)"
   local overlay_dir=""
@@ -126,6 +135,7 @@ run_official_molscribe_predict_csv() {
 
   echo "Running official SketchMol predict_csv.py"
   echo "  evaluate_dir=$eval_dir"
+  echo "  image_csv=$image_csv"
   echo "  batch_size=$batch_size"
 
   local pythonpath_prefix="$eval_dir:$sketchmol_repo"
