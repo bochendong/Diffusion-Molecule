@@ -109,6 +109,7 @@ done
 if [[ ! -f "$EVAL_LATENT_DIR/edit_latent_predictions.npy" \
   || ! -f "$EVAL_LATENT_DIR/edit_latent_fingerprints.npy" \
   || ! -f "$EVAL_LATENT_DIR/index.csv" ]]; then
+  mkdir -p "$EVAL_LATENT_DIR"
   EXPORT_ARGS=(
     --eval-jsonl "$UNIFIED_EVAL_JSONL"
     --latents-npy "$GENERATED_LATENTS"
@@ -151,43 +152,39 @@ if [[ ! -f "$EVAL_LATENT_DIR/edit_latent_predictions.npy" \
   fi
 fi
 
-LIMIT_ARGS=()
-if [[ -n "$LIMIT_EVAL_ROWS" ]]; then
-  LIMIT_ARGS=(--limit-eval-rows "$LIMIT_EVAL_ROWS")
-fi
-TARGET_POOL_ARGS=()
-if [[ "$ALLOW_EVAL_TARGET_CANDIDATES" == "1" ]]; then
-  TARGET_POOL_ARGS=(--allow-eval-target-candidates)
-fi
-RESTRICT_ARGS=()
+BENCHMARK_ARGS=(
+  --condition-rows-csv "$CONDITION_ROWS"
+  --output-dir "$BENCHMARK_OUTPUT_DIR"
+  --candidate-molecule-db-csv "$MOLECULE_DB"
+  --methods "$METHODS"
+  --edit-latent-dir "$EVAL_LATENT_DIR"
+  --edit-latent-property-weight "$PROPERTY_WEIGHT"
+  --edit-latent-delta-weight "$DELTA_WEIGHT"
+  --edit-latent-direction-weight "$DIRECTION_WEIGHT"
+  --edit-latent-fingerprint-weight "$FINGERPRINT_WEIGHT"
+  --edit-latent-source-similarity-weight "$SOURCE_SIMILARITY_WEIGHT"
+  --edit-latent-source-similarity-rerank-candidates "$SOURCE_SIMILARITY_RERANK_CANDIDATES"
+  --max-global-candidates "$MAX_GLOBAL_CANDIDATES"
+  --max-edit-latent-candidates "$MAX_EDIT_LATENT_CANDIDATES"
+  --max-eval-per-property-count "$MAX_EVAL_PER_PROPERTY_COUNT"
+  --eval-shard-count "$EVAL_SHARD_COUNT"
+  --eval-shard-index "$EVAL_SHARD_INDEX"
+  --scaffold-fallback-mode "$SCAFFOLD_FALLBACK_MODE"
+  --source-tanimoto-thresholds "$SOURCE_TANIMOTO_THRESHOLDS"
+  --compute-tanimoto
+  --seed "$SEED"
+)
 if [[ "$RESTRICT_TO_EDIT_LATENT_INDEX" == "1" ]]; then
-  RESTRICT_ARGS=(--restrict-eval-to-edit-latent-index)
+  BENCHMARK_ARGS+=(--restrict-eval-to-edit-latent-index)
+fi
+if [[ -n "$LIMIT_EVAL_ROWS" ]]; then
+  BENCHMARK_ARGS+=(--limit-eval-rows "$LIMIT_EVAL_ROWS")
+fi
+if [[ "$ALLOW_EVAL_TARGET_CANDIDATES" == "1" ]]; then
+  BENCHMARK_ARGS+=(--allow-eval-target-candidates)
 fi
 
-"$PYTHON_BIN" "$DATASET_PROJECT_DIR/scripts/benchmark_multiproperty_retrieval.py" \
-  --condition-rows-csv "$CONDITION_ROWS" \
-  --output-dir "$BENCHMARK_OUTPUT_DIR" \
-  --candidate-molecule-db-csv "$MOLECULE_DB" \
-  --methods "$METHODS" \
-  --edit-latent-dir "$EVAL_LATENT_DIR" \
-  "${RESTRICT_ARGS[@]}" \
-  --edit-latent-property-weight "$PROPERTY_WEIGHT" \
-  --edit-latent-delta-weight "$DELTA_WEIGHT" \
-  --edit-latent-direction-weight "$DIRECTION_WEIGHT" \
-  --edit-latent-fingerprint-weight "$FINGERPRINT_WEIGHT" \
-  --edit-latent-source-similarity-weight "$SOURCE_SIMILARITY_WEIGHT" \
-  --edit-latent-source-similarity-rerank-candidates "$SOURCE_SIMILARITY_RERANK_CANDIDATES" \
-  --max-global-candidates "$MAX_GLOBAL_CANDIDATES" \
-  --max-edit-latent-candidates "$MAX_EDIT_LATENT_CANDIDATES" \
-  --max-eval-per-property-count "$MAX_EVAL_PER_PROPERTY_COUNT" \
-  --eval-shard-count "$EVAL_SHARD_COUNT" \
-  --eval-shard-index "$EVAL_SHARD_INDEX" \
-  --scaffold-fallback-mode "$SCAFFOLD_FALLBACK_MODE" \
-  --source-tanimoto-thresholds "$SOURCE_TANIMOTO_THRESHOLDS" \
-  --compute-tanimoto \
-  --seed "$SEED" \
-  "${LIMIT_ARGS[@]}" \
-  "${TARGET_POOL_ARGS[@]}"
+"$PYTHON_BIN" "$DATASET_PROJECT_DIR/scripts/benchmark_multiproperty_retrieval.py" "${BENCHMARK_ARGS[@]}"
 
 echo
 echo "Unified materialized benchmark ready:"

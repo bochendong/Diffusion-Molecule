@@ -1,6 +1,8 @@
 import csv
 import importlib.util
 import json
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -251,6 +253,89 @@ def test_export_latent_benchmark_inputs_aligns_subset(tmp_path, monkeypatch):
     assert len(index) == 2
     assert index[0]["sample_id"] == "edit:multiproperty_edit:pair_1_cond_00_2p"
     assert index[1]["sample_id"] == "edit:multiproperty_edit:pair_0_cond_00_2p"
+
+
+def test_materialized_benchmark_runner_creates_prior_only_export_dir(tmp_path):
+    output_dir = tmp_path / "unified_run"
+    source_eval_dir = output_dir / "eval_latent"
+    prior_eval_dir = output_dir / "eval_latent_prior_only"
+    benchmark_dir = output_dir / "benchmark_materialized_prior_only_primary_fast"
+    source_eval_dir.mkdir(parents=True)
+
+    eval_jsonl = output_dir / "dataset" / "unified_condition_eval.jsonl"
+    eval_jsonl.parent.mkdir(parents=True)
+    eval_jsonl.write_text("{}\n", encoding="utf-8")
+    (source_eval_dir / "prior_latents.npy").write_bytes(b"fake")
+    (source_eval_dir / "metrics.json").write_text(json.dumps({"rows": 1}), encoding="utf-8")
+    (source_eval_dir / "predictions.csv").write_text("sample_id\nsample-1\n", encoding="utf-8")
+    condition_rows = tmp_path / "condition_rows.csv"
+    condition_rows.write_text("condition_id\ncondition-1\n", encoding="utf-8")
+    molecule_db = tmp_path / "molecule_database.csv"
+    molecule_db.write_text("canonical_smiles\nCCO\n", encoding="utf-8")
+
+    fake_python = tmp_path / "fake_python.py"
+    fake_python.write_text(
+        """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+
+def value(flag):
+    try:
+        return sys.argv[sys.argv.index(flag) + 1]
+    except ValueError:
+        raise SystemExit(f"missing {flag}")
+
+script = sys.argv[1]
+if script.endswith("export_latent_benchmark_inputs.py"):
+    out = Path(value("--output-dir"))
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "edit_latent_predictions.npy").write_bytes(b"fake")
+    (out / "edit_latent_fingerprints.npy").write_bytes(b"fake")
+    (out / "index.csv").write_text("condition_id,sample_id\\ncondition-1,sample-1\\n", encoding="utf-8")
+elif script.endswith("benchmark_multiproperty_retrieval.py"):
+    out = Path(value("--output-dir"))
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "benchmark_report.md").write_text("# report\\n", encoding="utf-8")
+    (out / "benchmark_summary.csv").write_text("method,n\\nfake,1\\n", encoding="utf-8")
+    (out / "benchmark_decoded.csv").write_text("condition_id\\ncondition-1\\n", encoding="utf-8")
+else:
+    raise SystemExit(f"unexpected script: {script}")
+""",
+        encoding="utf-8",
+    )
+    fake_python.chmod(0o755)
+
+    script = Path(__file__).resolve().parents[1] / "scripts" / "run_unified_materialized_benchmark.sh"
+    env = {
+        **os.environ,
+        "SMU3M_PYTHON_BIN": str(fake_python),
+        "SMU3M_OUTPUT_DIR": str(output_dir),
+        "SMU3M_EVAL_LATENT_DIR": str(prior_eval_dir),
+        "SMU3M_GENERATED_LATENTS": str(source_eval_dir / "prior_latents.npy"),
+        "SMU3M_EVAL_METRICS": str(source_eval_dir / "metrics.json"),
+        "SMU3M_EVAL_PREDICTIONS": str(source_eval_dir / "predictions.csv"),
+        "SMU3M_EVAL_JSONL": str(eval_jsonl),
+        "SMMED_CONDITION_ROWS": str(condition_rows),
+        "SMMED_MOLECULE_DB_CSV": str(molecule_db),
+        "SMU3M_BENCHMARK_OUTPUT_DIR": str(benchmark_dir),
+        "SMU3M_BENCHMARK_PROFILE": "primary_fast",
+        "SMMED_LIMIT_EVAL_ROWS": "1",
+    }
+
+    result = subprocess.run(
+        ["bash", str(script)],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+
+    assert "Waiting for benchmark export lock" not in result.stdout
+    assert (prior_eval_dir / "edit_latent_predictions.npy").exists()
+    assert (prior_eval_dir / "edit_latent_fingerprints.npy").exists()
+    assert (prior_eval_dir / "index.csv").exists()
+    assert (benchmark_dir / "benchmark_report.md").exists()
 
 
 def test_eval_sampling_keeps_multiple_property_counts():

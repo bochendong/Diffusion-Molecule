@@ -36,15 +36,32 @@ echo "  benchmark_submit_mode=$BENCHMARK_SUBMIT_MODE"
 echo "  benchmark_prior_only=$BENCHMARK_PRIOR_ONLY"
 echo "  python=$PYTHON_BIN"
 
+resolve_output_spec() {
+  local spec="$1"
+  if [[ "$spec" == *"="* ]]; then
+    RESOLVED_LABEL="${spec%%=*}"
+    RESOLVED_OUTPUT_DIR="${spec#*=}"
+  elif [[ "$spec" == */* ]]; then
+    RESOLVED_OUTPUT_DIR="$spec"
+    RESOLVED_LABEL="$(basename "$spec")"
+  else
+    RESOLVED_LABEL="$spec"
+    RESOLVED_OUTPUT_DIR="$SWEEP_OUTPUT_ROOT/$spec"
+  fi
+}
+
 submit_benchmark() {
-  local label="$1"
+  local spec="$1"
   local mode="$2"
-  local output_dir="$SWEEP_OUTPUT_ROOT/$label"
+  local label output_dir
+  resolve_output_spec "$spec"
+  label="$RESOLVED_LABEL"
+  output_dir="$RESOLVED_OUTPUT_DIR"
   local safe_label
   safe_label="$(printf '%s' "$label" | tr -c 'A-Za-z0-9_.-' '_')"
 
   if [[ ! -d "$output_dir" ]]; then
-    echo "ERROR: winner output dir not found: $output_dir" >&2
+    echo "ERROR: benchmark output dir not found for $label: $output_dir" >&2
     exit 2
   fi
 
@@ -76,6 +93,7 @@ submit_benchmark() {
 
   echo
   echo "Submitting $mode benchmark for $label"
+  echo "  output_dir=$output_dir"
   SMU3M_OUTPUT_DIR="$output_dir" \
   SMU3M_EVAL_LATENT_DIR="$eval_latent_dir" \
   SMU3M_GENERATED_LATENTS="$generated_latents" \

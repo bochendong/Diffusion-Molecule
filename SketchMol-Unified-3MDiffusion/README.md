@@ -392,6 +392,23 @@ SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_sourceaware_winner_benchmarks.sh
 ```
 
+`SMU3M_WINNER_LABELS` also accepts explicit output specs as
+`label=output_dir`, so follow-up outputs can be benchmarked with the same
+runner. Run this on the machine that still has each output directory's
+`eval_latent/generated_latents.npy` and `eval_latent/prior_latents.npy`. To add
+the current best full-eval follow-up:
+
+```bash
+SMU3M_SWEEP_OUTPUT_ROOT=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2 \
+SMU3M_WINNER_LABELS='hard002_head,balanced_005_001,sharedtiny_full_s11=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_followup_v1/sharedtiny_full_s11' \
+SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_BENCHMARK_SHARDS=5 \
+SMU3M_BENCHMARK_SUBMIT_MODE=array \
+SMU3M_BENCHMARK_PRIOR_ONLY=1 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_sourceaware_winner_benchmarks.sh
+```
+
 With `SMU3M_BENCHMARK_PRIOR_ONLY=1`, each winner gets two benchmark lines: the
 sampled generated latents and a prior-only materialization using
 `eval_latent/prior_latents.npy`. This directly tests whether the connector prior
