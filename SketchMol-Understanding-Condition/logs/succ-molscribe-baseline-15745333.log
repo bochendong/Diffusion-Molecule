@@ -1,0 +1,10 @@
+{
+  "report": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/molscribe_baseline_verify.md",
+  "json": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/molscribe_baseline_verify.json"
+}
+generated_preprocessed: nonempty=0 valid=0 smiles='' rc=0
+generated_raw: nonempty=0 valid=0 smiles='' rc=0
+rdkit_color256: nonempty=0 valid=0 smiles='' rc=0
+succ_bw256: nonempty=0 valid=0 smiles='' rc=0
+succ_bw256_preprocessed: nonempty=0 valid=0 smiles='' rc=0
+succ_bw384: nonempty=0 valid=0 smiles='' rc=0

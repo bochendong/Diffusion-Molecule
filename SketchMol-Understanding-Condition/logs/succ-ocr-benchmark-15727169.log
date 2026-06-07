@@ -1,0 +1,93 @@
+SUCC OCR benchmark rerun
+  python=/home/bdong/.venvs/molscribe_overlay/bin/python
+  run_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink
+  image_csv=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
+  benchmark_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark
+  molscribe_model=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth
+  molscribe_backend=sketchmol
+  molscribe_device=cuda
+  preprocess_images=1
+  raw_smiles_fallback=0
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:46: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+molscribe import ok
+Running MolScribe OCR
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:46: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/functional.py:505: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at /tmp/build_wheels_tmp.20690/python-3.11/torch/aten/src/ATen/native/TensorShape.cpp:4382.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+  0%|          | 0/10 [00:00<?, ?it/s]/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py:1298: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. Starting in PyTorch 2.9, calling checkpoint without use_reentrant will raise an exception. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
+  return fn(*args, **kwargs)
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/utils/checkpoint.py:238: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  check_backward_validity(args)
+ 10%|█         | 1/10 [00:05<00:50,  5.61s/it] 20%|██        | 2/10 [00:10<00:43,  5.39s/it] 30%|███       | 3/10 [00:16<00:37,  5.32s/it] 40%|████      | 4/10 [00:21<00:31,  5.28s/it] 50%|█████     | 5/10 [00:26<00:26,  5.28s/it] 60%|██████    | 6/10 [00:31<00:21,  5.30s/it] 70%|███████   | 7/10 [00:37<00:15,  5.31s/it] 80%|████████  | 8/10 [00:42<00:10,  5.32s/it] 90%|█████████ | 9/10 [00:47<00:05,  5.33s/it]100%|██████████| 10/10 [00:53<00:00,  5.34s/it]100%|██████████| 10/10 [00:53<00:00,  5.33s/it]
+SketchMol OCR postprocess: broken_rate=0.000 low_score_rate=1.000
+save to SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
+done
+Running MolScribe diagnostic
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:46: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/functional.py:505: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at /tmp/build_wheels_tmp.20690/python-3.11/torch/aten/src/ATen/native/TensorShape.cpp:4382.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+Evaluating cohort: rdkit_source (128 images)
+  0%|          | 0/2 [00:00<?, ?it/s]/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py:1298: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. Starting in PyTorch 2.9, calling checkpoint without use_reentrant will raise an exception. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
+  return fn(*args, **kwargs)
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/utils/checkpoint.py:238: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  check_backward_validity(args)
+ 50%|█████     | 1/2 [00:05<00:05,  5.64s/it]100%|██████████| 2/2 [00:08<00:00,  3.74s/it]100%|██████████| 2/2 [00:08<00:00,  4.03s/it]
+SketchMol OCR postprocess: broken_rate=0.000 low_score_rate=1.000
+Evaluating cohort: rdkit_target (128 images)
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:05<00:05,  5.34s/it]100%|██████████| 2/2 [00:07<00:00,  3.62s/it]100%|██████████| 2/2 [00:07<00:00,  3.88s/it]
+SketchMol OCR postprocess: broken_rate=0.000 low_score_rate=1.000
+Evaluating cohort: source_oracle (128 images)
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:05<00:05,  5.34s/it]100%|██████████| 2/2 [00:07<00:00,  3.61s/it]100%|██████████| 2/2 [00:07<00:00,  3.87s/it]
+SketchMol OCR postprocess: broken_rate=0.000 low_score_rate=1.000
+Evaluating cohort: target_oracle (128 images)
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:05<00:05,  5.34s/it]100%|██████████| 2/2 [00:07<00:00,  3.63s/it]100%|██████████| 2/2 [00:07<00:00,  3.88s/it]
+SketchMol OCR postprocess: broken_rate=0.000 low_score_rate=1.000
+Evaluating cohort: generated (128 images)
+  0%|          | 0/2 [00:00<?, ?it/s] 50%|█████     | 1/2 [00:05<00:05,  5.34s/it]100%|██████████| 2/2 [00:07<00:00,  3.62s/it]100%|██████████| 2/2 [00:07<00:00,  3.88s/it]
+SketchMol OCR postprocess: broken_rate=0.000 low_score_rate=1.000
+{
+  "report": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/molscribe_diagnostic.md",
+  "json": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/molscribe_diagnostic.json"
+}
+Running image-to-structure benchmark
+{
+  "decoded_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/benchmark_decoded.csv",
+  "image_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv",
+  "method": "univideo_image_vae",
+  "output_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark",
+  "report": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/benchmark_report.md",
+  "rows": 1000,
+  "source_tanimoto_thresholds": [
+    0.4,
+    0.6,
+    0.8
+  ],
+  "summary_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/benchmark_summary.csv"
+}
+
+SUCC OCR benchmark finished:
+  image_csv=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
+  diagnostic=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/molscribe_diagnostic.md
+  report=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/benchmark_report.md
+  summary=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/benchmark_summary.csv

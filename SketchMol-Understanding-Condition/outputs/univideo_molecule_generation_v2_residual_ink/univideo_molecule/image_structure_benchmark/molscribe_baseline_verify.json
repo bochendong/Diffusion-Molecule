@@ -1,0 +1,116 @@
+{
+  "model_path": "/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth",
+  "predict_csv": "/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/predict_csv.py",
+  "python": "/home/bdong/.venvs/molscribe_overlay/bin/python",
+  "results": [
+    {
+      "examples": [
+        {
+          "score": "0.034788492562559746",
+          "smiles": "",
+          "valid": false
+        }
+      ],
+      "expected_canonical": "CCO",
+      "image_path": "/tmp/molscribe_baseline_w02g2cks/generated_preprocessed.png",
+      "nonempty_smiles": 0,
+      "returncode": 0,
+      "rows": 1,
+      "stderr_tail": "onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.\n  @custom_fwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n\n  0%|          | 0/1 [00:00<?, ?it/s]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:03<00:00,  3.59s/it]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:03<00:00,  3.59s/it]",
+      "stdout_tail": "save to /tmp/molscribe_baseline_w02g2cks/generated_preprocessed.csv\ndone",
+      "valid_smiles": 0,
+      "variant": "generated_preprocessed"
+    },
+    {
+      "examples": [
+        {
+          "score": "0.09014000026509165",
+          "smiles": "",
+          "valid": false
+        }
+      ],
+      "expected_canonical": "CCO",
+      "image_path": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00000.png",
+      "nonempty_smiles": 0,
+      "returncode": 0,
+      "rows": 1,
+      "stderr_tail": "onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.\n  @custom_fwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n\n  0%|          | 0/1 [00:00<?, ?it/s]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:03<00:00,  3.53s/it]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:03<00:00,  3.53s/it]",
+      "stdout_tail": "save to /tmp/molscribe_baseline_w02g2cks/generated_raw.csv\ndone",
+      "valid_smiles": 0,
+      "variant": "generated_raw"
+    },
+    {
+      "examples": [
+        {
+          "score": "0.10116391591727733",
+          "smiles": "",
+          "valid": false
+        }
+      ],
+      "expected_canonical": "CCO",
+      "image_path": "/tmp/molscribe_baseline_w02g2cks/complex/complex_rdkit_color256.png",
+      "nonempty_smiles": 0,
+      "returncode": 0,
+      "rows": 1,
+      "stderr_tail": "onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.\n  @custom_fwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n\n  0%|          | 0/1 [00:00<?, ?it/s]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:02<00:00,  2.85s/it]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:02<00:00,  2.85s/it]",
+      "stdout_tail": "save to /tmp/molscribe_baseline_w02g2cks/rdkit_color256.csv\ndone",
+      "valid_smiles": 0,
+      "variant": "rdkit_color256"
+    },
+    {
+      "examples": [
+        {
+          "score": "0.10116391591727733",
+          "smiles": "",
+          "valid": false
+        }
+      ],
+      "expected_canonical": "CCO",
+      "image_path": "/tmp/molscribe_baseline_w02g2cks/complex/complex_succ_bw256.png",
+      "nonempty_smiles": 0,
+      "returncode": 0,
+      "rows": 1,
+      "stderr_tail": "onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.\n  @custom_fwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n\n  0%|          | 0/1 [00:00<?, ?it/s]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:04<00:00,  4.55s/it]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:04<00:00,  4.55s/it]",
+      "stdout_tail": "save to /tmp/molscribe_baseline_w02g2cks/succ_bw256.csv\ndone",
+      "valid_smiles": 0,
+      "variant": "succ_bw256"
+    },
+    {
+      "examples": [
+        {
+          "score": "0.11557972130055229",
+          "smiles": "",
+          "valid": false
+        }
+      ],
+      "expected_canonical": "CCO",
+      "image_path": "/tmp/molscribe_baseline_w02g2cks/complex/complex_succ_bw256_preprocessed.png",
+      "nonempty_smiles": 0,
+      "returncode": 0,
+      "rows": 1,
+      "stderr_tail": "onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.\n  @custom_fwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n\n  0%|          | 0/1 [00:00<?, ?it/s]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:03<00:00,  3.71s/it]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:03<00:00,  3.71s/it]",
+      "stdout_tail": "save to /tmp/molscribe_baseline_w02g2cks/succ_bw256_preprocessed.csv\ndone",
+      "valid_smiles": 0,
+      "variant": "succ_bw256_preprocessed"
+    },
+    {
+      "examples": [
+        {
+          "score": "0.10077523859217763",
+          "smiles": "",
+          "valid": false
+        }
+      ],
+      "expected_canonical": "CCO",
+      "image_path": "/tmp/molscribe_baseline_w02g2cks/complex/complex_succ_bw384.png",
+      "nonempty_smiles": 0,
+      "returncode": 0,
+      "rows": 1,
+      "stderr_tail": "onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.\n  @custom_fwd\n/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.\n  @custom_bwd\n\n  0%|          | 0/1 [00:00<?, ?it/s]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:03<00:00,  3.30s/it]\n100%|\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588\u2588| 1/1 [00:03<00:00,  3.30s/it]",
+      "stdout_tail": "save to /tmp/molscribe_baseline_w02g2cks/succ_bw384.csv\ndone",
+      "valid_smiles": 0,
+      "variant": "succ_bw384"
+    }
+  ],
+  "work_dir": "/tmp/molscribe_baseline_w02g2cks"
+}

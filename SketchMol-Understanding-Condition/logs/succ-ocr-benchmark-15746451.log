@@ -1,0 +1,96 @@
+SUCC OCR benchmark rerun
+  python=/home/bdong/.venvs/molscribe_overlay/bin/python
+  molscribe_workdir=Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate
+  onmt_overlay=/scratch/bdong/python_overlays/onmt220
+  run_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink
+  image_csv=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
+  benchmark_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark
+  molscribe_model=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth
+  molscribe_backend=sketchmol
+  molscribe_device=cuda
+  preprocess_images=0
+  raw_smiles_fallback=0
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_activations.py:47: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_activations.py:67: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_losses.py:12: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_losses.py:36: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+molscribe import ok (/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/__init__.py)
+onmt import ok (/scratch/bdong/python_overlays/onmt220/onmt/__init__.py)
+molscribe_workdir=Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate
+onmt_overlay=/scratch/bdong/python_overlays/onmt220
+Running MolScribe OCR
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_activations.py:47: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_activations.py:67: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_losses.py:12: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_losses.py:36: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+Using SketchMol MolScribe from Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/functional.py:505: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at /tmp/build_wheels_tmp.20690/python-3.11/torch/aten/src/ATen/native/TensorShape.cpp:4382.)
+  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
+  0%|          | 0/10 [00:00<?, ?it/s]/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py:1298: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. Starting in PyTorch 2.9, calling checkpoint without use_reentrant will raise an exception. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
+  return fn(*args, **kwargs)
+/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/utils/checkpoint.py:238: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
+  check_backward_validity(args)
+  0%|          | 0/10 [00:02<?, ?it/s]
+Traceback (most recent call last):
+  File "/home/bdong/scratch/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/scripts/run_molscribe_ocr.py", line 400, in <module>
+    main()
+  File "/home/bdong/scratch/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/scripts/run_molscribe_ocr.py", line 123, in main
+    smiles, scores, diagnostics = _predict_sketchmol(
+                                  ^^^^^^^^^^^^^^^^^^^
+  File "/home/bdong/scratch/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/scripts/run_molscribe_ocr.py", line 194, in _predict_sketchmol
+    result = model.predict_images_from_csv(paths, batch_size)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/interface.py", line 135, in predict_images_from_csv
+    return self.predict_imagespredict_images_from_csv_helper(input_images, batch_size)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/interface.py", line 117, in predict_imagespredict_images_from_csv_helper
+    batch_predictions = self.decoder.decode(features, hiddens)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/model.py", line 356, in decode
+    results[format_] = self.decoder[format_].decode(encoder_out, beam_size, n_best, max_length=max_len)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/model.py", line 196, in decode
+    dec_out, dec_attn, *_ = self.decoder(tgt_emb=tgt_emb, memory_bank=memory_bank,
+                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/transformer/decoder.py", line 503, in forward
+    output, attn, attn_align = layer(
+                               ^^^^^^
+  File "/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/transformer/decoder.py", line 130, in forward
+    output, attns = self._forward(*args, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/transformer/decoder.py", line 315, in _forward
+    mid, attns = call_multi_headed_attention(
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/transformer/decoder.py", line 27, in call_multi_headed_attention
+    return module(*args, **filtered_kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1778, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/nn/modules/module.py", line 1789, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/scratch/bdong/python_overlays/onmt220/onmt/modules/multi_headed_attn.py", line 199, in forward
+    scores = scores.masked_fill(mask, -1e18)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: The size of tensor a (100) must match the size of tensor b (8) at non-singleton dimension 1
