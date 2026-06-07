@@ -14,9 +14,9 @@ if ! command -v sbatch >/dev/null 2>&1; then
 fi
 
 ACCOUNT="${SUCC_SLURM_ACCOUNT:-def-hup-ab_gpu}"
-TIME="${SUCC_SLURM_TIME:-02:00:00}"
-MEM="${SUCC_SLURM_MEM:-32G}"
-CPUS="${SUCC_SLURM_CPUS:-4}"
+TIME="${SUCC_SLURM_TIME:-01:00:00}"
+MEM="${SUCC_SLURM_MEM:-8G}"
+CPUS="${SUCC_SLURM_CPUS:-1}"
 JOB_NAME="${SUCC_SLURM_JOB_NAME:-succ-ocr-benchmark}"
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 PARTITION="${SUCC_SLURM_PARTITION:-}"

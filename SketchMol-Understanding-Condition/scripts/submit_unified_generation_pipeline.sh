@@ -36,9 +36,9 @@ export SUCC_EVAL_SAMPLE_STEPS="${SUCC_EVAL_SAMPLE_STEPS:-20}"
 export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 
 BUILD_ACCOUNT="${SMMED_SLURM_ACCOUNT:-def-hup-ab_gpu}"
-BUILD_TIME="${SMMED_SLURM_TIME:-08:00:00}"
-BUILD_MEM="${SMMED_SLURM_MEM:-32G}"
-BUILD_CPUS="${SMMED_SLURM_CPUS:-4}"
+BUILD_TIME="${SMMED_SLURM_TIME:-02:00:00}"
+BUILD_MEM="${SMMED_SLURM_MEM:-8G}"
+BUILD_CPUS="${SMMED_SLURM_CPUS:-1}"
 BUILD_JOB_NAME="${SMMED_SLURM_JOB_NAME:-smmed-build}"
 BUILD_LOG_DIR="${SMMED_LOG_DIR:-$DATASET_PROJECT_DIR/logs}"
 
@@ -161,4 +161,3 @@ echo "  alignment_checkpoint=$UNIFIED_OUTPUT_DIR/alignment/alignment_model.pt"
 echo "  connector_checkpoint=$UNIFIED_OUTPUT_DIR/edit_condition_tokens/edit_condition_connector.pt"
 echo "  diffusion_checkpoint=$UNIFIED_OUTPUT_DIR/latent_diffusion/latent_diffusion_generation.pt"
 echo "  eval_metrics=$UNIFIED_OUTPUT_DIR/eval_latent/metrics.json"
-

@@ -283,6 +283,13 @@ bash SketchMol-Unified-3MDiffusion/scripts/merge_unified_materialized_benchmark_
 Set `SMU3M_BENCHMARK_SUBMIT_MODE=array` if you prefer one Slurm array job
 instead of five separate `sbatch` calls.
 
+The materialized benchmark is CPU-serial by default. The submit wrapper now
+requests 1 CPU and modest memory for all profiles (`8G` for `primary_fast` /
+`scaffold`, `16G` for `full`) so Slurm efficiency reports do not flag the run
+as a 4-core serial job. Override `SMU3M_BENCHMARK_SLURM_CPUS`,
+`SMU3M_BENCHMARK_SLURM_MEM`, or `SMU3M_BENCHMARK_SLURM_TIME` only when a larger
+shard actually needs it.
+
 Those files contain the comparison-ready numbers: `strict@Tanimoto>=0.4/0.6/0.8`
 as the primary edit metric, plus 2p-7p strict success and scaffold diagnostics.
 

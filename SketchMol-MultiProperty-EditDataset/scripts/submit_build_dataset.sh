@@ -14,9 +14,9 @@ if ! command -v sbatch >/dev/null 2>&1; then
 fi
 
 ACCOUNT="${SMMED_SLURM_ACCOUNT:-def-hup-ab_gpu}"
-TIME="${SMMED_SLURM_TIME:-08:00:00}"
-MEM="${SMMED_SLURM_MEM:-32G}"
-CPUS="${SMMED_SLURM_CPUS:-4}"
+TIME="${SMMED_SLURM_TIME:-02:00:00}"
+MEM="${SMMED_SLURM_MEM:-8G}"
+CPUS="${SMMED_SLURM_CPUS:-1}"
 JOB_NAME="${SMMED_SLURM_JOB_NAME:-smmed-build}"
 LOG_DIR="${SMMED_LOG_DIR:-$PROJECT_DIR/logs}"
 

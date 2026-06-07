@@ -286,8 +286,12 @@ Unified 3M (SMU3M_*)
   覆盖: SMU3M_SLURM_CPUS, SMU3M_SLURM_MEM, SMU3M_SLURM_TIME, SMU3M_GPU_PROFILE, SMU3M_RESOURCE_PROFILE
 
 Dataset build / smoke (SMMED_* / succ-smoke)
-  默认: 1-2 CPU, 8G RAM, 无 GPU 或短 GPU
+  默认: 1 CPU, 8G-12G RAM, 无 GPU 或短 GPU
   覆盖: SMMED_SLURM_CPUS, SMMED_SLURM_MEM, SUCC_SLURM_CPUS, SUCC_SLURM_MEM
+
+Materialized benchmark / OCR resume
+  默认: 1 CPU, 8G-16G RAM, 1-4h
+  覆盖: SMU3M_BENCHMARK_SLURM_CPUS, SMU3M_BENCHMARK_SLURM_MEM, SUCC_SLURM_CPUS, SKETCHMOL_SLURM_CPUS
 ```
 
 如果申请 40GB GPU，就应该用对应的 throughput profile，把 batch 和模型宽度调大；

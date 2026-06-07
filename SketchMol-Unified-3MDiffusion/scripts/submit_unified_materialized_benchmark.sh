@@ -25,19 +25,19 @@ export SMMED_EVAL_SHARD_COUNT="$SMU3M_BENCHMARK_SHARDS"
 
 case "$SMU3M_BENCHMARK_PROFILE" in
   primary_fast)
-    DEFAULT_BENCH_CPUS="4"
-    DEFAULT_BENCH_MEM="32G"
-    DEFAULT_BENCH_TIME="03:00:00"
+    DEFAULT_BENCH_CPUS="1"
+    DEFAULT_BENCH_MEM="8G"
+    DEFAULT_BENCH_TIME="01:00:00"
     ;;
   scaffold)
-    DEFAULT_BENCH_CPUS="4"
-    DEFAULT_BENCH_MEM="32G"
-    DEFAULT_BENCH_TIME="03:00:00"
+    DEFAULT_BENCH_CPUS="1"
+    DEFAULT_BENCH_MEM="8G"
+    DEFAULT_BENCH_TIME="01:00:00"
     ;;
   full)
-    DEFAULT_BENCH_CPUS="8"
-    DEFAULT_BENCH_MEM="64G"
-    DEFAULT_BENCH_TIME="08:00:00"
+    DEFAULT_BENCH_CPUS="1"
+    DEFAULT_BENCH_MEM="16G"
+    DEFAULT_BENCH_TIME="04:00:00"
     ;;
   *)
     echo "ERROR: unsupported SMU3M_BENCHMARK_PROFILE=$SMU3M_BENCHMARK_PROFILE" >&2
@@ -92,6 +92,7 @@ echo "  python=$SMU3M_PYTHON_BIN"
 echo "  bench_cpus=$BENCH_CPUS"
 echo "  bench_mem=$BENCH_MEM"
 echo "  bench_time=$BENCH_TIME"
+echo "  resource_note=serial benchmark defaults; override SMU3M_BENCHMARK_SLURM_CPUS/MEM/TIME for larger shards"
 
 BENCH_SBATCH_ARGS=(
   --account="$BENCH_ACCOUNT"
