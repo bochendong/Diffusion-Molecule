@@ -139,7 +139,7 @@ class SmilesDualStreamTests(unittest.TestCase):
         skipped = _optimizer_step(model, optimizer, scaler, grad_clip=1.0)
         after = next(model.parameters()).detach()
         self.assertEqual(skipped, 0)
-        self.assertFalse(torch.equal(before.to(after.dtype), after.cpu() if after.device.type != "cpu" else after))
+        self.assertFalse(torch.equal(before, after))
 
 
 if __name__ == "__main__":
