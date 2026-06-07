@@ -312,26 +312,36 @@ configuration. Pack them into one allocation with GLOST:
 ```bash
 SMU3M_SWEEP_OUTPUT_ROOT=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceaware_sweep_v2 \
 SMU3M_SWEEP_LAUNCHER=glost \
+SMU3M_SWEEP_PRESET=extended \
 SMU3M_SWEEP_CONCURRENCY=1 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_sourceaware_sweep.sh
 ```
 
-The default sweep runs these nine directions in one submitted job:
+The default `extended` sweep runs 31 short directions in one submitted job:
 
 ```text
 baseline
-sim005_head, sim015_head, sim030_head
-hard005_head, hard010_head
-balanced_head, strong_head
-shared_low
+sim002_head, sim005_head, sim010_head, sim015_head, sim020_head, sim030_head, sim045_head
+hard001_head, hard002_head, hard005_head, hard010_head, hard015_head
+balanced_005_001, balanced_005_002, balanced_010_002, balanced_015_003, balanced_015_005
+balanced_020_005, balanced_030_005, balanced_030_010
+temp_cool_015_005, temp_warm_015_005
+margin_low_015_005, margin_high_015_005
+shared_tiny, shared_low, shared_mid
+strong_045_015, strong_sim_cool, hard_cool
 ```
 
 Each task writes an isolated output directory under `SMU3M_SWEEP_OUTPUT_ROOT`.
 The runner creates `tasks/sourceaware_sweep.tasks` for `glost_launch` and writes
-`sweep_summary.md` / `sweep_summary.csv` after all tasks finish. Increase
-`SMU3M_SWEEP_CONCURRENCY` only when the subtasks are CPU-only or you are sure
-that concurrent subtasks can share the requested GPU safely.
+`sweep_summary.md` / `sweep_summary.csv` after all tasks finish. The summary
+includes fingerprint cosine, source-target fingerprint baseline, gain over that
+baseline, property MAE, delta MAE, and the corresponding prior deltas. Set
+`SMU3M_SWEEP_PRESET=compact` to run the original nine-direction sweep, or set
+`SMU3M_SWEEP_CONFIGS` directly with semicolon-separated
+`label:source_weight:hard_weight:shared_gradient:margin:temperature` entries.
+Increase `SMU3M_SWEEP_CONCURRENCY` only when the subtasks are CPU-only or you
+are sure that concurrent subtasks can share the requested GPU safely.
 
 ## Diffusion Refine
 
