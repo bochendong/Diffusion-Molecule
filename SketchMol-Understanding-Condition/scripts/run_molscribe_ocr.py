@@ -199,6 +199,7 @@ def _predict_sketchmol(
     batch_size: int,
     preprocess_images: bool = False,
 ) -> tuple[list[str], list[float | None], list[dict[str, object]]]:
+    _apply_onmt_attention_mask_patch_if_available()
     if preprocess_images:
         input_images = [
             load_preprocessed_rgb_image(path, preprocess=True) for path in paths
@@ -232,6 +233,23 @@ def _predict_sketchmol(
         flush=True,
     )
     return smiles, [float(score) for score in token_scores], diagnostics
+
+
+def _apply_onmt_attention_mask_patch_if_available() -> bool:
+    """Apply the onmt220 mask patch when vendored MolScribe is importable.
+
+    Local unit tests use fake MolScribe models without installing the vendored
+    package. In real OCR/diagnostic jobs, MolScribe should be importable before
+    this path runs, and non-MolScribe import failures should still surface.
+    """
+
+    try:
+        apply_onmt_attention_mask_patch()
+    except ModuleNotFoundError as exc:
+        if str(exc.name or "").startswith("molscribe"):
+            return False
+        raise
+    return True
 
 
 def _predict(

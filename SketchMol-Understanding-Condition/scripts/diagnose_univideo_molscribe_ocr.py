@@ -233,10 +233,15 @@ def main() -> None:
         ]
     )
 
+    molscribe_module = _load_molscribe_module()
+    evaluate_dir = molscribe_module._ensure_vendored_molscribe_path()
+    molscribe_module.apply_onmt_attention_mask_patch()
+
     import torch
     from molscribe import MolScribe
 
-    molscribe_module = _load_molscribe_module()
+    if evaluate_dir is not None:
+        print(f"Using SketchMol MolScribe from {evaluate_dir}", flush=True)
     device = torch.device(args.device if args.device == "cpu" or torch.cuda.is_available() else "cpu")
     model = MolScribe(str(args.model_path), device=device)
 

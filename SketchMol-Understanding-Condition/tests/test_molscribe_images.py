@@ -130,6 +130,27 @@ def test_predict_sketchmol_uses_path_reader_when_not_preprocessing():
     assert diagnostics[0]["molscribe_decode_source"] == "sketchmol_graph"
 
 
+def test_predict_sketchmol_applies_onmt_patch_before_path_reader():
+    module = _load_run_molscribe_ocr_module()
+    calls: list[str] = []
+
+    class FakeModel:
+        def predict_images_from_csv(self, paths, batch_size):
+            calls.append("from_csv")
+            return (["CCO"], ["molblock"], [0.9])
+
+    with patch.object(module, "apply_onmt_attention_mask_patch", lambda: calls.append("patch")):
+        smiles, _scores, _diagnostics = module._predict_sketchmol(
+            FakeModel(),
+            ["/tmp/fake.png"],
+            batch_size=1,
+            preprocess_images=False,
+        )
+
+    assert calls == ["patch", "from_csv"]
+    assert smiles == ["CCO"]
+
+
 def test_onmt220_attention_mask_broadcasts_for_batch_larger_than_heads():
     import torch
 
