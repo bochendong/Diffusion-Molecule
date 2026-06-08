@@ -502,12 +502,15 @@ sampled generated latents and a prior-only materialization using
 is stronger than the latent diffusion sample.
 
 For the current source-anchor winner (`blend095_guard050_p005`), submit the
-packed generated + prior-only materialized benchmark as one serial CPU job:
+packed generated + prior-only materialized benchmark as one serial CPU job.
+Source-anchor sweep task dirs only contain `eval_latent/` and `latent_diffusion/`,
+so point `SMU3M_EVAL_JSONL` at the base output dir's eval split:
 
 ```bash
 SMU3M_SOURCEANCHOR_SWEEP_OUTPUT_ROOT=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceanchor_sweep_v1 \
 SMU3M_SOURCEANCHOR_BENCHMARK_LABEL=blend095_guard050_p005 \
 SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_EVAL_JSONL=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_sourceguard_v1/dataset/unified_condition_eval.jsonl \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_sourceanchor_prior_benchmark.sh
 ```

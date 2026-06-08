@@ -43,6 +43,7 @@ SKETCHMOL_REFERENCE_MULTI_PROPERTY = {
     6: 0.678,
     7: 0.685,
 }
+GRAPH_DECODE_SOURCES = frozenset({"graph", "sketchmol_graph"})
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,10 +81,18 @@ def main() -> None:
     print(json.dumps(payload, indent=2, sort_keys=True))
 
 
+def _graph_decoded(row: Mapping[str, str]) -> bool:
+    source = str(row.get("molscribe_decode_source", "") or "").strip()
+    return source in GRAPH_DECODE_SOURCES
+
+
 def _decode_row(row: Mapping[str, str], *, method: str, smiles_column: str) -> dict[str, object]:
     raw_smiles = row.get(smiles_column) or row.get("generated_smiles") or ""
-    generated = _safe_canonical(raw_smiles) or ""
+    decode_source = str(row.get("molscribe_decode_source", "") or "")
+    graph_decoded = _graph_decoded(row)
+    generated = (_safe_canonical(raw_smiles) or "") if graph_decoded else ""
     valid = bool(generated)
+    raw_fallback_valid = bool(not graph_decoded and _safe_canonical(raw_smiles))
     selected_props = _selected_props(row)
     generated_props = _normalized_properties(generated) if valid else {}
     source_smiles = row.get("source_smiles", "")
@@ -130,6 +139,9 @@ def _decode_row(row: Mapping[str, str], *, method: str, smiles_column: str) -> d
             "exact_target_match": exact_target_match,
             "source_identity": source_identity,
             "image_path_exists": bool(row.get("image_path") and Path(row.get("image_path", "")).exists()),
+            "molscribe_decode_source": decode_source,
+            "graph_decoded": graph_decoded,
+            "raw_fallback_valid": raw_fallback_valid,
             "ocr_smiles_present": valid,
         }
     )
@@ -181,6 +193,7 @@ def _summary_row(method: str, rows: list[dict[str, object]], property_count: int
         "n": len(rows),
         "image_path_exists_fraction": _fraction(_to_bool(row.get("image_path_exists")) for row in rows),
         "ocr_smiles_present_rate": _fraction(_to_bool(row.get("ocr_smiles_present")) for row in rows),
+        "raw_fallback_valid_rate": _fraction(_to_bool(row.get("raw_fallback_valid")) for row in rows),
         "validity": len(valid_rows) / len(rows) if rows else 0.0,
         "strict_success_rate": strict_count / len(rows) if rows else 0.0,
         "success_rate_strict_in_valid_mols": valid_strict_count / len(valid_rows) if valid_rows else 0.0,

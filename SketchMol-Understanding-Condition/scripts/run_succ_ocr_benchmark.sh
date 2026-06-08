@@ -44,10 +44,15 @@ fi
 
 MOLSCRIBE_BATCH_SIZE="${SUCC_MOLSCRIBE_BATCH_SIZE:-16}"
 MOLSCRIBE_DEVICE="${SUCC_MOLSCRIBE_DEVICE:-cuda}"
-MOLSCRIBE_BACKEND="${SUCC_MOLSCRIBE_BACKEND:-custom}"
-MOLSCRIBE_RUNNER="${SUCC_MOLSCRIBE_RUNNER:-wrapper}"
+MOLSCRIBE_BACKEND="${SUCC_MOLSCRIBE_BACKEND:-sketchmol}"
+MOLSCRIBE_RUNNER="${SUCC_MOLSCRIBE_RUNNER:-official}"
 PREPROCESS_IMAGES="${SUCC_PREPROCESS_IMAGES:-0}"
-RAW_SMILES_FALLBACK="${SUCC_RAW_SMILES_FALLBACK:-1}"
+RAW_SMILES_FALLBACK="${SUCC_RAW_SMILES_FALLBACK:-0}"
+OCR_PREFLIGHT="${SUCC_OCR_PREFLIGHT:-1}"
+OCR_PREFLIGHT_MODE="${SUCC_OCR_PREFLIGHT_MODE:-warn}"
+OCR_PREFLIGHT_COHORT="${SUCC_OCR_PREFLIGHT_COHORT:-rdkit_source}"
+OCR_PREFLIGHT_MIN_GRAPH_USABLE="${SUCC_OCR_PREFLIGHT_MIN_GRAPH_USABLE:-0.9}"
+OCR_PREFLIGHT_LIMIT="${SUCC_OCR_PREFLIGHT_LIMIT:-32}"
 SOURCE_TANIMOTO_THRESHOLDS="${SUCC_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
 DIAG_LIMIT="${SUCC_MOLSCRIBE_DIAG_LIMIT:-128}"
 RUN_DIAGNOSTIC="${SUCC_RUN_MOLSCRIBE_DIAGNOSTIC:-1}"
@@ -104,9 +109,45 @@ echo "  molscribe_batch_size=$MOLSCRIBE_BATCH_SIZE"
 echo "  molscribe_device=$MOLSCRIBE_DEVICE"
 echo "  preprocess_images=$PREPROCESS_IMAGES"
 echo "  raw_smiles_fallback=$RAW_SMILES_FALLBACK"
+echo "  ocr_preflight=$OCR_PREFLIGHT"
+echo "  ocr_preflight_mode=$OCR_PREFLIGHT_MODE"
+echo "  ocr_preflight_cohort=$OCR_PREFLIGHT_COHORT"
+echo "  ocr_preflight_min_graph_usable=$OCR_PREFLIGHT_MIN_GRAPH_USABLE"
 
 prepend_molscribe_pythonpath
 check_molscribe_import
+
+if [[ "$OCR_PREFLIGHT" == "1" ]]; then
+  echo "Running MolScribe OCR preflight ($OCR_PREFLIGHT_COHORT, limit=$OCR_PREFLIGHT_LIMIT)"
+  set +e
+  PREFLIGHT_JSON="$STRUCTURE_BENCHMARK_DIR/molscribe_preflight_${OCR_PREFLIGHT_COHORT}.json"
+  PREFLIGHT_OUTPUT="$(
+    "$PYTHON_BIN" "$PROJECT_DIR/scripts/diagnose_univideo_molscribe_ocr.py" \
+      --run-dir "$UNIFIED_OUTPUT_DIR" \
+      --model-path "$MOLSCRIBE_MODEL" \
+      --limit "$OCR_PREFLIGHT_LIMIT" \
+      --batch-size "$MOLSCRIBE_BATCH_SIZE" \
+      --device "$MOLSCRIBE_DEVICE" \
+      --backend "$MOLSCRIBE_BACKEND" \
+      --only-cohort "$OCR_PREFLIGHT_COHORT" \
+      --preflight-min-graph-usable "$OCR_PREFLIGHT_MIN_GRAPH_USABLE" \
+      --output-json "$PREFLIGHT_JSON" \
+      $([[ "$PREPROCESS_IMAGES" == "1" ]] && echo --preprocess-images || echo --no-preprocess-images) \
+      $([[ "$MOLSCRIBE_BACKEND" == "custom" && "$RAW_SMILES_FALLBACK" == "1" ]] && echo --raw-smiles-fallback || echo --no-raw-smiles-fallback)
+  )"
+  PREFLIGHT_STATUS=$?
+  set -e
+  echo "$PREFLIGHT_OUTPUT"
+  if [[ "$PREFLIGHT_STATUS" -ne 0 ]]; then
+    if [[ "$OCR_PREFLIGHT_MODE" == "fail" ]]; then
+      echo "ERROR: MolScribe OCR preflight failed for cohort=$OCR_PREFLIGHT_COHORT." >&2
+      echo "       graph_usable_rate must be >= $OCR_PREFLIGHT_MIN_GRAPH_USABLE on RDKit oracle images." >&2
+      echo "       Fix rendering/preprocess or set SUCC_OCR_PREFLIGHT_MODE=warn to continue anyway." >&2
+      exit "$PREFLIGHT_STATUS"
+    fi
+    echo "WARNING: MolScribe OCR preflight below threshold; continuing because SUCC_OCR_PREFLIGHT_MODE=warn." >&2
+  fi
+fi
 
 echo "Running MolScribe OCR"
 if [[ "$MOLSCRIBE_RUNNER" == "official" && "$PREPROCESS_IMAGES" == "0" ]]; then

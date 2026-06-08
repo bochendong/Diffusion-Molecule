@@ -1,0 +1,10 @@
+{
+  "decoded_csv": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceanchor_sweep_v1/blend095_guard050_p005/benchmark_materialized_prior_only_primary_fast/benchmark_decoded.csv",
+  "output_dir": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceanchor_sweep_v1/blend095_guard050_p005/benchmark_materialized_prior_only_primary_fast",
+  "report": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceanchor_sweep_v1/blend095_guard050_p005/benchmark_materialized_prior_only_primary_fast/benchmark_report.md",
+  "shard_count": 5,
+  "shards_dir": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceanchor_sweep_v1/blend095_guard050_p005/benchmark_materialized_prior_only_primary_fast/shards",
+  "source_tanimoto_thresholds": "0.4,0.6,0.8",
+  "summary_csv": "SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceanchor_sweep_v1/blend095_guard050_p005/benchmark_materialized_prior_only_primary_fast/benchmark_summary.csv",
+  "total_decoded_rows": 5725
+}

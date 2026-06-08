@@ -52,6 +52,17 @@ def parse_args() -> argparse.Namespace:
         help="Custom backend only: accept valid decoder-token SMILES when graph conversion fails.",
     )
     parser.add_argument("--output-json", type=Path, default=None)
+    parser.add_argument(
+        "--only-cohort",
+        default=None,
+        help="Evaluate only this cohort (e.g. rdkit_source for OCR preflight).",
+    )
+    parser.add_argument(
+        "--preflight-min-graph-usable",
+        type=float,
+        default=None,
+        help="Exit with code 2 when graph_usable_rate is below this threshold.",
+    )
     return parser.parse_args()
 
 
@@ -239,6 +250,10 @@ def main() -> None:
             ("generated", generated_paths, source_expected),
         ]
     )
+    if args.only_cohort:
+        cohorts = [entry for entry in cohorts if entry[0] == args.only_cohort]
+        if not cohorts:
+            raise ValueError(f"Unknown or empty cohort for --only-cohort={args.only_cohort!r}")
 
     molscribe_module = _load_molscribe_module()
     evaluate_dir = molscribe_module._ensure_vendored_molscribe_path()
@@ -284,9 +299,35 @@ def main() -> None:
     output_json.parent.mkdir(parents=True, exist_ok=True)
     output_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
-    report_path = output_json.with_suffix(".md")
-    report_path.write_text(_render_report(payload), encoding="utf-8")
-    print(json.dumps({"report": str(report_path), "json": str(output_json)}, indent=2))
+    if args.only_cohort is None:
+        report_path = output_json.with_suffix(".md")
+        report_path.write_text(_render_report(payload), encoding="utf-8")
+        print(json.dumps({"report": str(report_path), "json": str(output_json)}, indent=2))
+    else:
+        print(json.dumps({"cohorts": results, "json": str(output_json)}, indent=2))
+
+    if args.preflight_min_graph_usable is not None:
+        if not results:
+            print("PREFLIGHT FAILED: no cohort results produced.", file=sys.stderr)
+            sys.exit(2)
+        for row in results:
+            rate = float(row["graph_usable_rate"])
+            if rate < args.preflight_min_graph_usable:
+                print(
+                    "PREFLIGHT FAILED: "
+                    f"cohort={row['name']} graph_usable_rate={rate:.3f} "
+                    f"< required {args.preflight_min_graph_usable:.3f}",
+                    file=sys.stderr,
+                )
+                sys.exit(2)
+        print(
+            "PREFLIGHT OK: "
+            + ", ".join(
+                f"{row['name']} graph_usable_rate={float(row['graph_usable_rate']):.3f}"
+                for row in results
+            ),
+            flush=True,
+        )
 
 
 def _render_report(payload: dict[str, Any]) -> str:

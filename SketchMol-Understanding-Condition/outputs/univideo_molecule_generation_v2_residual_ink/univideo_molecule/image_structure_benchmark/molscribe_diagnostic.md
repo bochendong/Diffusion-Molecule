@@ -3,19 +3,19 @@
 - run_dir: `SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink`
 - samples per cohort: `128`
 - device: `cuda`
-- backend: `custom`
+- backend: `sketchmol`
 - preprocess_images: `False`
-- raw_smiles_fallback: `True`
+- raw_smiles_fallback: `False`
 
 ## Summary
 
 | cohort | n | graph usable | raw usable | final valid | exact match | mean Tanimoto | decode sources |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
-| rdkit_source | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | empty:128 |
-| rdkit_target | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | empty:128 |
-| source_oracle | 128 | 0.000 | 0.047 | 0.047 | 0.000 | 0.024 | empty:122, raw_token_fallback:6 |
-| target_oracle | 128 | 0.000 | 0.031 | 0.031 | 0.000 | 0.024 | empty:124, raw_token_fallback:4 |
-| generated | 128 | 0.000 | 0.125 | 0.125 | 0.000 | 0.021 | empty:112, raw_token_fallback:16 |
+| rdkit_source | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
+| rdkit_target | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
+| source_oracle | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
+| target_oracle | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
+| generated | 128 | 0.000 | 0.000 | 0.000 | 0.000 |  | sketchmol_graph:128 |
 
 ## Image Stats (mean)
 
@@ -29,90 +29,90 @@
 
 ### rdkit_source
 
-- idx=0 source=empty valid=False
+- idx=0 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
-- idx=1 source=empty valid=False
+  raw: ``
+- idx=1 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
-- idx=2 source=empty valid=False
+  raw: ``
+- idx=2 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
+  raw: ``
 
 ### rdkit_target
 
-- idx=0 source=empty valid=False
+- idx=0 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
-- idx=1 source=empty valid=False
+  raw: ``
+- idx=1 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
-- idx=2 source=empty valid=False
+  raw: ``
+- idx=2 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
+  raw: ``
 
 ### source_oracle
 
-- idx=0 source=empty valid=False
+- idx=0 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
-- idx=1 source=empty valid=False
+  raw: ``
+- idx=1 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
-- idx=2 source=empty valid=False
+  raw: ``
+- idx=2 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
+  raw: ``
 
 ### target_oracle
 
-- idx=0 source=empty valid=False
+- idx=0 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-  raw: `C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)`
-- idx=1 source=empty valid=False
+  raw: ``
+- idx=1 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-  raw: `C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)`
-- idx=2 source=empty valid=False
+  raw: ``
+- idx=2 source=sketchmol_graph valid=False
   expected: `COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1`
   final: ``
   graph: ``
-  raw: `C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)C]1)`
+  raw: ``
 
 ### generated
 
-- idx=0 source=empty valid=False
+- idx=0 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
-- idx=1 source=empty valid=False
+  raw: ``
+- idx=1 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-  raw: `C][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][][]`
-- idx=2 source=empty valid=False
+  raw: ``
+- idx=2 source=sketchmol_graph valid=False
   expected: `O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1`
   final: ``
   graph: ``
-  raw: `C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)C)`
+  raw: ``

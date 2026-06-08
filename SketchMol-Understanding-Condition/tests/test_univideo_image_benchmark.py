@@ -83,6 +83,43 @@ def test_prepare_univideo_molscribe_csv_smoke(tmp_path):
     assert rows[0]["target_QED"] == "0.5"
 
 
+def test_decode_row_ignores_raw_token_fallback_for_validity():
+    module = _load_script("evaluate_univideo_image_benchmark.py")
+    row = {
+        "SMILES": "CCO",
+        "molscribe_decode_source": "raw_token_fallback",
+        "source_smiles": "CCN",
+        "target_smiles": "CCO",
+        "condition_properties": "MW",
+        "property_count": "1",
+        "target_MW": "46",
+        "MW_active": "True",
+    }
+    decoded = module._decode_row(row, method="m", smiles_column="SMILES")
+    assert decoded["valid"] is False
+    assert decoded["ocr_smiles_present"] is False
+    assert decoded["raw_fallback_valid"] is True
+    assert decoded["graph_decoded"] is False
+
+
+def test_decode_row_accepts_sketchmol_graph_decode():
+    module = _load_script("evaluate_univideo_image_benchmark.py")
+    row = {
+        "SMILES": "CCO",
+        "molscribe_decode_source": "sketchmol_graph",
+        "source_smiles": "CCN",
+        "target_smiles": "CCO",
+        "condition_properties": "MW",
+        "property_count": "1",
+        "target_MW": "46",
+        "MW_active": "True",
+    }
+    decoded = module._decode_row(row, method="m", smiles_column="SMILES")
+    assert decoded["valid"] is True
+    assert decoded["ocr_smiles_present"] is True
+    assert decoded["graph_decoded"] is True
+
+
 def test_image_benchmark_summary_counts_invalid_as_strict_failure():
     module = _load_script("evaluate_univideo_image_benchmark.py")
     rows = [
