@@ -1,0 +1,29 @@
+SUCC OCR benchmark rerun
+  python=/home/bdong/.venvs/molscribe_overlay/bin/python
+  molscribe_workdir=Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate
+  onmt_overlay=/scratch/bdong/python_overlays/onmt220
+  run_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink
+  image_csv=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
+  benchmark_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark
+  molscribe_model=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth
+  molscribe_backend=sketchmol
+  molscribe_runner=official
+  molscribe_batch_size=16
+  molscribe_device=cuda
+  preprocess_images=0
+  raw_smiles_fallback=0
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_activations.py:47: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_activations.py:67: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_losses.py:12: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
+  @custom_fwd
+/scratch/bdong/python_overlays/onmt220/onmt/modules/sparse_losses.py:36: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
+  @custom_bwd
+molscribe import ok (/scratch/bdong/projects/Diffusion-Molecule/Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate/molscribe/__init__.py)
+onmt import ok (/scratch/bdong/python_overlays/onmt220/onmt/__init__.py)
+molscribe_workdir=Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate
+onmt_overlay=/scratch/bdong/python_overlays/onmt220
+Running MolScribe OCR
+Running SketchMol predict_csv.py (onmt220 mask patch)
+/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/scripts/molscribe_env.sh: line 139: wrapper_script: unbound variable
