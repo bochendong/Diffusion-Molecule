@@ -59,7 +59,7 @@ From the repository root:
 
 ```bash
 SMU3M_3M_ROOT="Research/Molecule Generation/3M-Diffusion" \
-SMU3M_EDIT_MANIFEST="SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv" \
+SMU3M_EDIT_MANIFEST="SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1/diffusion_edit_manifest.csv" \
 bash SketchMol-Unified-3MDiffusion/scripts/run_unified_generation_smoke.sh
 ```
 
@@ -90,6 +90,9 @@ SMU3M_CHECKPOINT_EVERY
 SMU3M_RESUME
 SMU3M_INCLUDE_PUBCHEM
 SMU3M_INCLUDE_KV
+SMU3M_MIN_EDIT_SOURCE_TANIMOTO
+SMU3M_REQUIRE_EDIT_QUALITY_COLUMNS
+SMU3M_REQUIRE_EVAL_ORACLE_STRICT
 ```
 
 Default output:
@@ -117,6 +120,23 @@ On a Slurm login node:
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_generation_pipeline.sh
 ```
+
+By default this pipeline now builds and trains on the source-neighbor edit
+dataset:
+
+```text
+SMMED_OUTPUT_DIR=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1
+SMMED_PAIRING_STRATEGY=source_neighbor
+SMU3M_EDIT_MANIFEST=.../multiproperty_source_neighbor_v1/diffusion_edit_manifest.csv
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_v1
+SMU3M_MIN_EDIT_SOURCE_TANIMOTO=0.4
+SMU3M_REQUIRE_EDIT_QUALITY_COLUMNS=1
+SMU3M_REQUIRE_EVAL_ORACLE_STRICT=1
+```
+
+Set `SMMED_OUTPUT_DIR`, `SMU3M_EDIT_MANIFEST`, and
+`SMU3M_REQUIRE_EDIT_QUALITY_COLUMNS=0` explicitly only when rerunning older
+`multiproperty_100k_v1` experiments.
 
 The submit script defaults to an economical server run. It does not request a
 40GB GPU unless you ask for that profile.
@@ -452,7 +472,7 @@ After the residual Stage 3 runs, continue with joint connector + diffusion
 refine and latent eval:
 
 ```bash
-SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_v1 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
 ```

@@ -21,6 +21,7 @@ from sketchmol_unified_3m_diffusion.latent_diffusion_generation import (
 )
 from sketchmol_unified_3m_diffusion.unified_condition_dataset import (
     EDIT_GENERATION,
+    EDIT_QUALITY_METADATA_FIELDS,
     UnifiedConditionSample,
     read_3m_description_samples,
     read_edit_generation_samples,
@@ -48,6 +49,7 @@ def test_unified_dataset_reads_description_and_edit_rows(tmp_path):
                 "property_count",
                 "source_tanimoto",
                 "source_similarity_bin",
+                *EDIT_QUALITY_METADATA_FIELDS,
                 "target_QED",
                 "delta_QED",
                 "QED_active",
@@ -65,6 +67,10 @@ def test_unified_dataset_reads_description_and_edit_rows(tmp_path):
                 "property_count": "1",
                 "source_tanimoto": "0.5",
                 "source_similarity_bin": "medium_similarity",
+                "pair_quality_tier": "same_scaffold_medium_plus",
+                "strict_candidate_count_t04": "2",
+                "oracle_strict_success_t04": "True",
+                "preservation_constraint": "keep_same_scaffold_or_source_tanimoto_ge_0_4",
                 "target_QED": "0.6",
                 "delta_QED": "0.1",
                 "QED_active": "1",
@@ -74,7 +80,14 @@ def test_unified_dataset_reads_description_and_edit_rows(tmp_path):
 
     samples = []
     samples.extend(read_3m_description_samples(description_tsv, split="train", dataset_name="toy"))
-    samples.extend(read_edit_generation_samples(edit_csv))
+    samples.extend(
+        read_edit_generation_samples(
+            edit_csv,
+            min_source_tanimoto=0.4,
+            require_quality_columns=True,
+            require_eval_oracle_strict=True,
+        )
+    )
     summary = split_samples(
         samples,
         train_output=tmp_path / "train.jsonl",
@@ -87,6 +100,9 @@ def test_unified_dataset_reads_description_and_edit_rows(tmp_path):
     row = json.loads((tmp_path / "train.jsonl").read_text(encoding="utf-8").splitlines()[1])
     assert row["target_properties"]["QED"] == 0.6
     assert row["active_properties"]["QED"] is True
+    assert row["metadata"]["pair_quality_tier"] == "same_scaffold_medium_plus"
+    assert summary["pair_quality_tiers"]["same_scaffold_medium_plus"] == 1
+    assert summary["edit_source_tanimoto"]["min"] == 0.5
 
 
 def test_edit_condition_connector_and_diffusion_loss_shapes():
@@ -188,6 +204,7 @@ def test_benchmark_export_writes_condition_aligned_latents(tmp_path):
     assert exported.shape == (1, 28)
     assert fingerprints.tolist() == [[1.0, 0.0, 1.0, 0.0]]
     assert index[0]["condition_id"] == "pair_1_cond_00_2p"
+    assert "oracle_strict_success_t04" in index[0]
     assert exported[0, 0] == 0.0
     assert exported[0, 7] == -3.0
     assert exported[0, 21] == -1.0
@@ -364,3 +381,76 @@ def test_eval_sampling_keeps_multiple_property_counts():
         by_count[sample.property_count] = by_count.get(sample.property_count, 0) + 1
 
     assert by_count == {"2": 2, "3": 2, "4": 2}
+
+
+def test_preflight_rejects_low_source_tanimoto_and_eval_oracle_failures(tmp_path):
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "preflight_unified_3m.py"
+    spec = importlib.util.spec_from_file_location("preflight_unified_3m", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    manifest = tmp_path / "manifest.csv"
+    fieldnames = [
+        "split",
+        "source_smiles",
+        "target_smiles",
+        "source_tanimoto",
+        "source_similarity_bin",
+        *EDIT_QUALITY_METADATA_FIELDS,
+    ]
+    with manifest.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "split": "eval",
+                "source_smiles": "CCO",
+                "target_smiles": "CCN",
+                "source_tanimoto": "0.5",
+                "source_similarity_bin": "medium_similarity",
+                "pair_quality_tier": "same_scaffold_medium_plus",
+                "strict_candidate_count_t04": "1",
+                "oracle_strict_success_t04": "True",
+                "preservation_constraint": "keep_same_scaffold_or_source_tanimoto_ge_0_4",
+            }
+        )
+
+    summary = module._check_edit_manifest(
+        manifest,
+        min_source_tanimoto=0.4,
+        require_quality_columns=True,
+        require_eval_oracle_strict=True,
+    )
+    assert summary["usable_rows"] == 1
+    assert summary["min_source_tanimoto"] == 0.5
+
+    bad_manifest = tmp_path / "bad_manifest.csv"
+    with bad_manifest.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerow(
+            {
+                "split": "eval",
+                "source_smiles": "CCO",
+                "target_smiles": "CCCCCCCC",
+                "source_tanimoto": "0.2",
+                "source_similarity_bin": "exploratory_low_similarity",
+                "pair_quality_tier": "rejected_too_distant",
+                "strict_candidate_count_t04": "0",
+                "oracle_strict_success_t04": "False",
+                "preservation_constraint": "keep_source_tanimoto_ge_0_4",
+            }
+        )
+
+    try:
+        module._check_edit_manifest(
+            bad_manifest,
+            min_source_tanimoto=0.4,
+            require_quality_columns=True,
+            require_eval_oracle_strict=True,
+        )
+    except SystemExit as exc:
+        assert "source-neighbor floor" in str(exc)
+    else:
+        raise AssertionError("Expected low-source-tanimoto manifest to fail preflight")

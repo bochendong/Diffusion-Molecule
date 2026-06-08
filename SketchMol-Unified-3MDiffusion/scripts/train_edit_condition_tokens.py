@@ -308,7 +308,23 @@ def export_features(
     np.save(output_dir / "query_tokens.npy", np.concatenate(tokens, axis=0).astype(np.float32))
     np.save(output_dir / "pooled.npy", np.concatenate(pooled, axis=0).astype(np.float32))
     with (output_dir / "index.csv").open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=["variant_id", "sample_id", "condition_id", "split", "source_smiles", "target_smiles"])
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "variant_id",
+                "sample_id",
+                "condition_id",
+                "split",
+                "source_smiles",
+                "target_smiles",
+                "source_tanimoto",
+                "source_similarity_bin",
+                "pair_quality_tier",
+                "strict_candidate_count_t04",
+                "oracle_strict_success_t04",
+                "preservation_constraint",
+            ],
+        )
         writer.writeheader()
         for sample in dataset.index:
             writer.writerow(
@@ -319,6 +335,12 @@ def export_features(
                     "split": sample.split,
                     "source_smiles": sample.source_smiles,
                     "target_smiles": sample.target_smiles,
+                    "source_tanimoto": sample.source_tanimoto,
+                    "source_similarity_bin": sample.source_similarity_bin,
+                    "pair_quality_tier": sample.metadata.get("pair_quality_tier", ""),
+                    "strict_candidate_count_t04": sample.metadata.get("strict_candidate_count_t04", ""),
+                    "oracle_strict_success_t04": sample.metadata.get("oracle_strict_success_t04", ""),
+                    "preservation_constraint": sample.metadata.get("preservation_constraint", ""),
                 }
             )
 

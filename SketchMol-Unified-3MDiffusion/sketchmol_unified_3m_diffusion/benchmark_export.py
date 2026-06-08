@@ -77,6 +77,10 @@ def write_edit_latent_benchmark_inputs(
                 "property_count": sample.property_count,
                 "source_tanimoto": sample.source_tanimoto,
                 "source_similarity_bin": sample.source_similarity_bin,
+                "pair_quality_tier": sample.metadata.get("pair_quality_tier", "") if sample.metadata else "",
+                "strict_candidate_count_t04": sample.metadata.get("strict_candidate_count_t04", "") if sample.metadata else "",
+                "oracle_strict_success_t04": sample.metadata.get("oracle_strict_success_t04", "") if sample.metadata else "",
+                "preservation_constraint": sample.metadata.get("preservation_constraint", "") if sample.metadata else "",
             }
         )
     with (output_dir / "index.csv").open("w", newline="", encoding="utf-8") as handle:

@@ -13,6 +13,35 @@ from typing import Iterable, Mapping
 PROPERTY_COLUMNS = ("MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB")
 DESCRIPTION_PRETRAIN = "description_pretrain"
 EDIT_GENERATION = "edit_generation"
+EDIT_QUALITY_METADATA_FIELDS = (
+    "source_scaffold",
+    "target_scaffold",
+    "same_scaffold",
+    "scaffold_relation",
+    "pair_quality_tier",
+    "selection_reason",
+    "same_scaffold_neighbor_count",
+    "source_neighbor_count_t04",
+    "source_neighbor_count_t05",
+    "source_neighbor_count_t06",
+    "target_neighbor_rank_by_tanimoto",
+    "candidate_pool_size_t04",
+    "candidate_pool_size_t05",
+    "candidate_pool_size_t06",
+    "strict_candidate_count_t04",
+    "strict_candidate_count_t05",
+    "strict_candidate_count_t06",
+    "oracle_candidate_smiles_t04",
+    "oracle_source_tanimoto_t04",
+    "oracle_strict_success_t04",
+    "oracle_property_error_t04",
+    "oracle_property_errors_json_t04",
+    "source_identity_strict_success",
+    "instruction_template_id",
+    "instruction_style",
+    "preservation_constraint",
+    "property_constraints_json",
+)
 
 
 @dataclass
@@ -156,19 +185,42 @@ def read_edit_generation_samples(
     *,
     dataset_name: str = "multiproperty_edit",
     limit: int | None = None,
+    min_source_tanimoto: float | None = None,
+    require_quality_columns: bool = False,
+    require_eval_oracle_strict: bool = False,
 ) -> list[UnifiedConditionSample]:
     """Read diffusion edit manifest rows as source-conditioned edit samples."""
 
     samples = []
     with Path(path).open(newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
+        if require_quality_columns:
+            missing = set(EDIT_QUALITY_METADATA_FIELDS) - set(reader.fieldnames or [])
+            if missing:
+                raise ValueError(f"Edit manifest missing quality columns: {sorted(missing)}")
         for idx, row in enumerate(reader):
             source_smiles = (row.get("source_smiles") or "").strip()
             target_smiles = (row.get("target_smiles") or "").strip()
             instruction = (row.get("instruction") or row.get("prompt") or "").strip()
             if not source_smiles or not target_smiles or not instruction:
                 continue
+            source_tanimoto = _to_float(row.get("source_tanimoto", ""))
+            if min_source_tanimoto is not None and (
+                math.isnan(source_tanimoto) or source_tanimoto < float(min_source_tanimoto)
+            ):
+                continue
+            if (
+                require_eval_oracle_strict
+                and (row.get("split", "") or "train") in {"eval", "valid", "validation", "test"}
+                and row.get("oracle_strict_success_t04", "").strip().lower() not in {"1", "true", "yes", "y"}
+            ):
+                raise ValueError(
+                    "Eval edit row is not source-neighbor oracle-feasible: "
+                    f"{row.get('condition_id') or row.get('sample_id') or idx}"
+                )
             sample_id = row.get("sample_id") or row.get("condition_id") or f"edit:{idx}"
+            metadata = {"dataset": dataset_name, "condition_id": row.get("condition_id", "")}
+            metadata.update({field: row.get(field, "") for field in EDIT_QUALITY_METADATA_FIELDS if field in row})
             samples.append(
                 UnifiedConditionSample(
                     sample_id=f"edit:{dataset_name}:{sample_id}",
@@ -190,7 +242,7 @@ def read_edit_generation_samples(
                     property_deltas=_properties_from_prefix(row, "delta"),
                     active_properties={prop: _truthy(row.get(f"{prop}_active", "")) for prop in PROPERTY_COLUMNS},
                     directions={prop: row.get(f"{prop}_direction", "") for prop in PROPERTY_COLUMNS},
-                    metadata={"dataset": dataset_name, "condition_id": row.get("condition_id", "")},
+                    metadata=metadata,
                 )
             )
             if limit is not None and len(samples) >= limit:
@@ -229,6 +281,10 @@ def summarize_samples(
     by_task: dict[str, int] = {}
     by_split: dict[str, int] = {}
     by_property_count: dict[str, int] = {}
+    by_source_similarity_bin: dict[str, int] = {}
+    by_pair_quality_tier: dict[str, int] = {}
+    edit_source_tanimoto_values = []
+    edit_eval_oracle_strict_false = 0
     unique_targets = set()
     unique_sources = set()
     for sample in samples:
@@ -236,6 +292,21 @@ def summarize_samples(
         by_split[sample.split] = by_split.get(sample.split, 0) + 1
         if sample.property_count:
             by_property_count[str(sample.property_count)] = by_property_count.get(str(sample.property_count), 0) + 1
+        if sample.source_similarity_bin:
+            by_source_similarity_bin[str(sample.source_similarity_bin)] = (
+                by_source_similarity_bin.get(str(sample.source_similarity_bin), 0) + 1
+            )
+        pair_quality = sample.metadata.get("pair_quality_tier", "")
+        if pair_quality:
+            by_pair_quality_tier[pair_quality] = by_pair_quality_tier.get(pair_quality, 0) + 1
+        if sample.task_type == EDIT_GENERATION:
+            source_tanimoto = _to_float(sample.source_tanimoto)
+            if not math.isnan(source_tanimoto):
+                edit_source_tanimoto_values.append(source_tanimoto)
+            if sample.split in {"eval", "valid", "validation", "test"} and sample.metadata.get(
+                "oracle_strict_success_t04", ""
+            ).lower() in {"0", "false", "no", "n"}:
+                edit_eval_oracle_strict_false += 1
         if sample.target_smiles:
             unique_targets.add(sample.target_smiles)
         if sample.source_smiles:
@@ -247,7 +318,16 @@ def summarize_samples(
         "unique_target_smiles": len(unique_targets),
         "unique_source_smiles": len(unique_sources),
         "property_counts": by_property_count,
+        "source_similarity_bins": by_source_similarity_bin,
+        "pair_quality_tiers": by_pair_quality_tier,
+        "edit_eval_oracle_strict_false": edit_eval_oracle_strict_false,
     }
+    if edit_source_tanimoto_values:
+        summary["edit_source_tanimoto"] = {
+            "min": min(edit_source_tanimoto_values),
+            "mean": sum(edit_source_tanimoto_values) / len(edit_source_tanimoto_values),
+            "max": max(edit_source_tanimoto_values),
+        }
     if train_rows is not None:
         summary["train_rows"] = train_rows
     if eval_rows is not None:

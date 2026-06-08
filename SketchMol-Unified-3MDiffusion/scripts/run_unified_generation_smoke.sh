@@ -7,7 +7,7 @@ PYTHON_BIN="${SMU3M_PYTHON_BIN:-python3}"
 THREE_M_ROOT="${SMU3M_3M_ROOT:-Research/Molecule Generation/3M-Diffusion}"
 THREE_M_GIT_URL="${SMU3M_3M_GIT_URL:-https://github.com/huaishengzhu/3MDiffusion}"
 AUTO_CLONE_3M="${SMU3M_AUTO_CLONE_3M:-1}"
-EDIT_MANIFEST="${SMU3M_EDIT_MANIFEST:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv}"
+EDIT_MANIFEST="${SMU3M_EDIT_MANIFEST:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1/diffusion_edit_manifest.csv}"
 OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_smoke}"
 
 DESCRIPTION_LIMIT="${SMU3M_DESCRIPTION_LIMIT:-200}"
@@ -49,6 +49,9 @@ RESUME="${SMU3M_RESUME:-1}"
 REQUIRE_CUDA="${SMU3M_REQUIRE_CUDA:-0}"
 INCLUDE_PUBCHEM="${SMU3M_INCLUDE_PUBCHEM:-0}"
 INCLUDE_KV="${SMU3M_INCLUDE_KV:-0}"
+MIN_EDIT_SOURCE_TANIMOTO="${SMU3M_MIN_EDIT_SOURCE_TANIMOTO:-0.4}"
+REQUIRE_EDIT_QUALITY_COLUMNS="${SMU3M_REQUIRE_EDIT_QUALITY_COLUMNS:-1}"
+REQUIRE_EVAL_ORACLE_STRICT="${SMU3M_REQUIRE_EVAL_ORACLE_STRICT:-1}"
 
 echo "Running unified 3M Understanding + latent diffusion pipeline"
 echo "  python=$PYTHON_BIN"
@@ -83,6 +86,9 @@ echo "  hard_negative_margin=$HARD_NEGATIVE_MARGIN"
 echo "  source_aware_shared_gradient=$SOURCE_AWARE_SHARED_GRADIENT"
 echo "  include_pubchem=$INCLUDE_PUBCHEM"
 echo "  include_kv=$INCLUDE_KV"
+echo "  min_edit_source_tanimoto=$MIN_EDIT_SOURCE_TANIMOTO"
+echo "  require_edit_quality_columns=$REQUIRE_EDIT_QUALITY_COLUMNS"
+echo "  require_eval_oracle_strict=$REQUIRE_EVAL_ORACLE_STRICT"
 
 if [ ! -d "$THREE_M_ROOT/data" ]; then
   if [ "$AUTO_CLONE_3M" = "1" ] && command -v git >/dev/null 2>&1; then
@@ -109,9 +115,16 @@ mkdir -p "$OUTPUT_DIR"
 PREFLIGHT_ARGS=(
   --three-m-root "$THREE_M_ROOT"
   --edit-manifest "$EDIT_MANIFEST"
+  --min-edit-source-tanimoto "$MIN_EDIT_SOURCE_TANIMOTO"
 )
 if [ "$REQUIRE_CUDA" = "1" ]; then
   PREFLIGHT_ARGS+=(--require-cuda)
+fi
+if [ "$REQUIRE_EDIT_QUALITY_COLUMNS" = "1" ]; then
+  PREFLIGHT_ARGS+=(--require-edit-quality-columns)
+fi
+if [ "$REQUIRE_EVAL_ORACLE_STRICT" = "1" ]; then
+  PREFLIGHT_ARGS+=(--require-eval-oracle-strict)
 fi
 if [ "$INCLUDE_PUBCHEM" = "1" ]; then
   PREFLIGHT_ARGS+=(--include-pubchem)
@@ -126,8 +139,15 @@ EXPORT_ARGS=(
   --edit-manifest "$EDIT_MANIFEST" \
   --description-limit-per-split "$DESCRIPTION_LIMIT" \
   --edit-limit "$EDIT_LIMIT" \
+  --min-edit-source-tanimoto "$MIN_EDIT_SOURCE_TANIMOTO" \
   --output-dir "$OUTPUT_DIR/dataset"
 )
+if [ "$REQUIRE_EDIT_QUALITY_COLUMNS" = "1" ]; then
+  EXPORT_ARGS+=(--require-edit-quality-columns)
+fi
+if [ "$REQUIRE_EVAL_ORACLE_STRICT" = "1" ]; then
+  EXPORT_ARGS+=(--require-eval-oracle-strict)
+fi
 if [ "$INCLUDE_PUBCHEM" = "1" ]; then
   EXPORT_ARGS+=(--include-pubchem)
 fi

@@ -13,7 +13,7 @@ if ! command -v sbatch >/dev/null 2>&1; then
   exit 2
 fi
 
-export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2}"
+export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_v1}"
 export SMU3M_PYTHON_BIN="${SMU3M_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 export SMU3M_GPU_PROFILE="${SMU3M_GPU_PROFILE:-h100_40gb_mig}"
 export SMU3M_RESOURCE_PROFILE="${SMU3M_RESOURCE_PROFILE:-throughput_40gb}"

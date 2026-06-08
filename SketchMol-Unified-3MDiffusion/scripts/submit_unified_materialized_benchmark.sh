@@ -13,7 +13,8 @@ if ! command -v sbatch >/dev/null 2>&1; then
   exit 2
 fi
 
-export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2}"
+export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_v1}"
+export SMMED_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1}"
 export SMU3M_PYTHON_BIN="${SMU3M_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 export SMU3M_BENCHMARK_PROFILE="${SMU3M_BENCHMARK_PROFILE:-primary_fast}"
 export SMU3M_BENCHMARK_SHARDS="${SMU3M_BENCHMARK_SHARDS:-1}"
@@ -82,6 +83,7 @@ mkdir -p "$BENCH_LOG_DIR"
 
 echo "Submitting Unified 3M materialized benchmark"
 echo "  output_dir=$SMU3M_OUTPUT_DIR"
+echo "  multiproperty_output_dir=$SMMED_OUTPUT_DIR"
 echo "  generated_latents=$GENERATED_LATENTS"
 echo "  benchmark_profile=$SMU3M_BENCHMARK_PROFILE"
 echo "  benchmark_shards=$SMU3M_BENCHMARK_SHARDS"

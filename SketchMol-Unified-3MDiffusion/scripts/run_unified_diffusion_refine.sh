@@ -7,7 +7,7 @@ set -euo pipefail
 PROJECT_DIR="SketchMol-Unified-3MDiffusion"
 REPO_DIR="$(pwd)"
 PYTHON_BIN="${SMU3M_PYTHON_BIN:-python3}"
-OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2}"
+OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_v1}"
 TRAIN_JSONL="${SMU3M_TRAIN_JSONL:-$OUTPUT_DIR/dataset/unified_condition_train.jsonl}"
 EVAL_JSONL="${SMU3M_EVAL_JSONL:-$OUTPUT_DIR/dataset/unified_condition_eval.jsonl}"
 CONNECTOR="${SMU3M_CONDITION_CONNECTOR:-$OUTPUT_DIR/edit_condition_tokens/edit_condition_connector.pt}"
