@@ -7,3 +7,9 @@ outputs/
 */outputs/
 */logs/
 Research/Molecule Generation/3M-Diffusion/
+
+# Local external checkouts / generated presentation assets.
+Research/Molecule Generation/Atomas/
+Research/Molecule Generation/smi-editor/
+Research/Molecule Generation/*.png
+generated_slides/

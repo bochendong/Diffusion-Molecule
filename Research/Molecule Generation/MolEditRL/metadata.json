@@ -1,0 +1,44 @@
+{
+  "name": "MolEditRL",
+  "paper_title": "MolEditRL: Structure-Preserving Molecular Editing via Discrete Diffusion and Reinforcement Learning",
+  "arxiv_id": "2505.20131",
+  "arxiv_url": "https://arxiv.org/abs/2505.20131",
+  "openreview_url": "https://openreview.net/forum?id=40QphlZ9fY",
+  "venue": "ICLR 2026 Poster",
+  "authors": [
+    "Yuanxin Zhuang",
+    "Dazhong Shen",
+    "Ying Sun"
+  ],
+  "public_code_status": "No public official code repository found on arXiv, OpenReview, CatalyzeX, Hugging Face, or GitHub search as of 2026-06-08.",
+  "official_dataset": {
+    "name": "FanSiLeC/MolEdit-Instruct",
+    "url": "https://huggingface.co/datasets/FanSiLeC/MolEdit-Instruct",
+    "file": "MolEdit-Instruct_3034459.txt",
+    "rows": 3034459,
+    "size_bytes": 768104010,
+    "sha": "13ea3250443e72d018d4241696c72fe050e84f2a"
+  },
+  "benchmark_relevance": {
+    "task": "Source-conditioned molecular editing from natural language instructions",
+    "main_fields": [
+      "example_id",
+      "instruction",
+      "source_smiles",
+      "target_smiles"
+    ],
+    "known_limitations": [
+      "The public Hugging Face txt file exposes instruction/source/target fields, but not the structured task label used by the paper to select RL reward oracles.",
+      "Property-success evaluation must infer tasks from instruction templates or recompute property deltas from source and target molecules."
+    ],
+    "suggested_metrics": [
+      "validity",
+      "property_success",
+      "source_tanimoto",
+      "strict_success_at_tanimoto_0.4",
+      "strict_success_at_tanimoto_0.6",
+      "strict_success_at_tanimoto_0.8",
+      "fcd"
+    ]
+  }
+}

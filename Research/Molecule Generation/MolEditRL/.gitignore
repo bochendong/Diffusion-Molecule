@@ -1,0 +1,8 @@
+data/raw/*
+data/processed/*
+paper/*
+__pycache__/
+scripts/__pycache__/
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!paper/.gitkeep
