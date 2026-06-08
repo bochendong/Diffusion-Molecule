@@ -30,7 +30,7 @@ Research/Molecule Generation/SketchMol/SketchMol-v1-main
   官方 SketchMol vendored repo，只作为 benchmark 外部依赖保留。
 
 Research/Molecule Generation/MolEditRL
-  MolEditRL / MolEdit-Instruct benchmark 资产登记；当前公开数据集可用，官方代码仓库未公开。
+  MolEditRL / MolEdit-Instruct benchmark 资产登记；cluster 上 raw + enhanced_v1 已构建，详见 MolEditRL/README.md 与 datasets/README.md。
 
 datasets
   线上数据集布置说明；本地只提交 README，不提交大数据。

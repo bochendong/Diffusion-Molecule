@@ -125,6 +125,78 @@ bash "Research/Molecule Generation/MolEditRL/scripts/prepare_moledit_enhancement
 
 The generated `splits/train.csv`, `splits/eval_balanced.csv`, and `splits/eval_hard.csv` are the intended benchmark manifests. Prefer these over the plain `moledit_instruct.csv` once the enhanced build is available.
 
+## Online cluster status (2026-06-08)
+
+On `/scratch/bdong/datasets/Diffusion-Molecule`, the full enhancement build is complete:
+
+| Artifact | Path | Rows / size |
+| --- | --- | --- |
+| Raw txt | `$DM_DATA_ROOT/raw/moledit-instruct/MolEdit-Instruct_3034459.txt` | 3,034,459 / 733 MB |
+| Plain manifests | `$DM_DATA_ROOT/processed/moledit-instruct/moledit_instruct.{csv,jsonl}` | 3,034,459 |
+| Enhanced splits | `$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/` | see below |
+| Build summary | `.../enhanced_v1/splits/summary.json` | machine-readable counts |
+
+Split counts from `summary.json`:
+
+```text
+train.csv:           2,984,459 rows (~2.4 GB)
+eval_balanced.csv:      50,000 rows (~41 MB)
+smoke_1000.jsonl:        1,000 rows
+eval_hard.csv:               0 rows (header only in current build)
+invalid_or_missing:          2 pairs
+```
+
+Repo symlink for scripts that expect repo-relative paths:
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+mkdir -p "Research/Molecule Generation/MolEditRL/data/processed"
+ln -sfn "$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1" \
+  "Research/Molecule Generation/MolEditRL/data/processed/enhanced_v1"
+```
+
+Recommended Python on the cluster:
+
+```bash
+export MOLEDIT_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
+```
+
+## Which split to use
+
+| Split | Use when |
+| --- | --- |
+| `smoke_1000.jsonl` | Fast pipeline / metric sanity checks |
+| `eval_balanced.csv` | Primary MolEdit-style benchmark eval (bucket-balanced over difficulty + inferred task tags) |
+| `train.csv` | Full precomputed feature table; only load when you need all enhanced columns at scale |
+| `enhanced_pairs/enhanced_pairs_shard_*` | Resumable shard cache; prefer splits for benchmark entry points |
+| `moledit_instruct.csv` / `.jsonl` | Raw four-field manifests before RDKit enhancement |
+
+Do not use `eval_hard.csv` in the current build; finalize did not populate it. Revisit the hard-bucket selector in `enhance_moledit_instruct.py` if a hard eval split is needed.
+
+## Enhanced split schema
+
+`splits/*.csv` and `smoke_1000.jsonl` reuse the enhanced pair columns written by `enhance_moledit_instruct.py`. Minimum fields for benchmark IO:
+
+```text
+example_id, instruction, source_smiles, target_smiles
+```
+
+Additional precomputed columns useful for filtering and metric alignment:
+
+```text
+source_valid, target_valid
+source_canonical_smiles, target_canonical_smiles
+source_scaffold_smiles, target_scaffold_smiles, scaffold_match
+source_target_tanimoto, difficulty_bucket, pair_quality
+instruction_tasks, instruction_task_properties, instruction_task_directions
+computed_active_properties, computed_active_count
+source_<PROP>, target_<PROP>, delta_<PROP>, <PROP>_active, <PROP>_direction
+```
+
+`<PROP>` is one of `MW`, `LogP`, `QED`, `TPSA`, `HBD`, `HBA`, `RB`.
+
+`instruction_tasks` is JSON inferred from instruction text when possible (for example JNK3 / GSK3B / DRD2 / QED direction hints). Property-success metrics should prefer these inferred tasks, then fall back to recomputing deltas from source/target in the same RDKit/TDC environment as the rest of this repo.
+
 ## Benchmark integration notes
 
 Suggested minimal comparison surface:
