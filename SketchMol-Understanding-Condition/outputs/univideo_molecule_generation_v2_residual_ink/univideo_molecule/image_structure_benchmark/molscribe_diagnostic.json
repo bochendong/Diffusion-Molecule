@@ -12,9 +12,9 @@
           "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_source/rdkit_source_00000.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_source/rdkit_source_00000.png",
           "index": 0,
-          "molscribe_score": 0.11557967867702246,
+          "molscribe_score": 0.10116387692590555,
           "raw_smiles": "",
           "valid": false
         },
@@ -23,9 +23,9 @@
           "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_source/rdkit_source_00001.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_source/rdkit_source_00001.png",
           "index": 1,
-          "molscribe_score": 0.034639644987570745,
+          "molscribe_score": 0.10175059791654348,
           "raw_smiles": "",
           "valid": false
         },
@@ -34,9 +34,9 @@
           "expected_smiles": "O=C(c1cccc(Cl)c1)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_source/rdkit_source_00002.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_source/rdkit_source_00002.png",
           "index": 2,
-          "molscribe_score": 0.03471278992947191,
+          "molscribe_score": 0.10240205060690641,
           "raw_smiles": "",
           "valid": false
         },
@@ -45,9 +45,9 @@
           "expected_smiles": "O=C(c1ccccc1C(F)(F)F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_source/rdkit_source_00003.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_source/rdkit_source_00003.png",
           "index": 3,
-          "molscribe_score": 0.11639995770528913,
+          "molscribe_score": 0.09883287732178966,
           "raw_smiles": "",
           "valid": false
         },
@@ -56,9 +56,9 @@
           "expected_smiles": "O=C(c1ccccc1C(F)(F)F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_source/rdkit_source_00004.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_source/rdkit_source_00004.png",
           "index": 4,
-          "molscribe_score": 0.11652714569742481,
+          "molscribe_score": 0.09897161899134517,
           "raw_smiles": "",
           "valid": false
         }
@@ -89,9 +89,9 @@
           "expected_smiles": "COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_target/rdkit_target_00000.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_target/rdkit_target_00000.png",
           "index": 0,
-          "molscribe_score": 0.13159771617501975,
+          "molscribe_score": 0.10479235155507922,
           "raw_smiles": "",
           "valid": false
         },
@@ -100,9 +100,9 @@
           "expected_smiles": "COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_target/rdkit_target_00001.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_target/rdkit_target_00001.png",
           "index": 1,
-          "molscribe_score": 0.13192367653052012,
+          "molscribe_score": 0.1053284216982623,
           "raw_smiles": "",
           "valid": false
         },
@@ -111,9 +111,9 @@
           "expected_smiles": "COc1cccc(C(=O)N2C[C@H](CN3CCC(c4ccccc4)CC3)[C@@H](c3ccccc3)C2)c1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_target/rdkit_target_00002.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_target/rdkit_target_00002.png",
           "index": 2,
-          "molscribe_score": 0.13250043966496985,
+          "molscribe_score": 0.10605746582150459,
           "raw_smiles": "",
           "valid": false
         },
@@ -122,9 +122,9 @@
           "expected_smiles": "O=C(c1ccccc1F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_target/rdkit_target_00003.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_target/rdkit_target_00003.png",
           "index": 3,
-          "molscribe_score": 0.14661028881867727,
+          "molscribe_score": 0.10383926214029392,
           "raw_smiles": "",
           "valid": false
         },
@@ -133,9 +133,9 @@
           "expected_smiles": "O=C(c1ccccc1F)N1C[C@H](CN2CCC(c3ccccc3)CC2)[C@@H](c2ccccc2)C1",
           "final_smiles": "",
           "graph_smiles": "",
-          "image_path": "/tmp/univideo_molscribe_diag_wh5naspm/rdkit_target/rdkit_target_00004.png",
+          "image_path": "/tmp/univideo_molscribe_diag_unzyqfm3/rdkit_target/rdkit_target_00004.png",
           "index": 4,
-          "molscribe_score": 0.14674343510220447,
+          "molscribe_score": 0.10395781835541129,
           "raw_smiles": "",
           "valid": false
         }
@@ -168,7 +168,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00000.png",
           "index": 0,
-          "molscribe_score": 0.11799822223062316,
+          "molscribe_score": 0.08888884652405978,
           "raw_smiles": "",
           "valid": false
         },
@@ -179,7 +179,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00001.png",
           "index": 1,
-          "molscribe_score": 0.0349856603735437,
+          "molscribe_score": 0.08923972121750315,
           "raw_smiles": "",
           "valid": false
         },
@@ -190,7 +190,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00002.png",
           "index": 2,
-          "molscribe_score": 0.03506493064730118,
+          "molscribe_score": 0.08969406494870782,
           "raw_smiles": "",
           "valid": false
         },
@@ -201,7 +201,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00003.png",
           "index": 3,
-          "molscribe_score": 0.11556965382769704,
+          "molscribe_score": 0.08501097960397601,
           "raw_smiles": "",
           "valid": false
         },
@@ -212,7 +212,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/source_oracle_images/decoded_00004.png",
           "index": 4,
-          "molscribe_score": 0.11573835288484892,
+          "molscribe_score": 0.0851472808048129,
           "raw_smiles": "",
           "valid": false
         }
@@ -245,7 +245,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00000.png",
           "index": 0,
-          "molscribe_score": 0.1293742242269218,
+          "molscribe_score": 0.09336801866690318,
           "raw_smiles": "",
           "valid": false
         },
@@ -256,7 +256,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00001.png",
           "index": 1,
-          "molscribe_score": 0.12967417488495508,
+          "molscribe_score": 0.09366756556555629,
           "raw_smiles": "",
           "valid": false
         },
@@ -267,7 +267,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00002.png",
           "index": 2,
-          "molscribe_score": 0.13024436989799143,
+          "molscribe_score": 0.09396373977263768,
           "raw_smiles": "",
           "valid": false
         },
@@ -278,7 +278,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00003.png",
           "index": 3,
-          "molscribe_score": 0.1390845138579607,
+          "molscribe_score": 0.08556874034305413,
           "raw_smiles": "",
           "valid": false
         },
@@ -289,7 +289,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/target_oracle_images/decoded_00004.png",
           "index": 4,
-          "molscribe_score": 0.13921756685401002,
+          "molscribe_score": 0.0856136935763061,
           "raw_smiles": "",
           "valid": false
         }
@@ -322,7 +322,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00000.png",
           "index": 0,
-          "molscribe_score": 0.03478848512750119,
+          "molscribe_score": 0.0901400058530271,
           "raw_smiles": "",
           "valid": false
         },
@@ -333,7 +333,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00001.png",
           "index": 1,
-          "molscribe_score": 0.03851113779625545,
+          "molscribe_score": 0.3726430334150791,
           "raw_smiles": "",
           "valid": false
         },
@@ -344,7 +344,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00002.png",
           "index": 2,
-          "molscribe_score": 0.03602172361376385,
+          "molscribe_score": 0.09132366034512719,
           "raw_smiles": "",
           "valid": false
         },
@@ -355,7 +355,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00003.png",
           "index": 3,
-          "molscribe_score": 0.10248917859668533,
+          "molscribe_score": 0.03768116812376927,
           "raw_smiles": "",
           "valid": false
         },
@@ -366,7 +366,7 @@
           "graph_smiles": "",
           "image_path": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images/generated_00004.png",
           "index": 4,
-          "molscribe_score": 0.11448502956579129,
+          "molscribe_score": 0.0942890719200174,
           "raw_smiles": "",
           "valid": false
         }
@@ -389,6 +389,6 @@
   ],
   "device": "cuda",
   "limit": 128,
-  "preprocess_images": true,
+  "preprocess_images": false,
   "run_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink"
 }

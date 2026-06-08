@@ -4,7 +4,7 @@
 - samples per cohort: `128`
 - device: `cuda`
 - backend: `sketchmol`
-- preprocess_images: `True`
+- preprocess_images: `False`
 
 ## Summary
 
