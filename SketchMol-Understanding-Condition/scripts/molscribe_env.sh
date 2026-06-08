@@ -104,6 +104,8 @@ run_official_molscribe_predict_csv() {
   local model_path="$2"
   local image_csv="$3"
   local batch_size="$4"
+  local project_dir
+  project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
   local eval_dir
   if ! eval_dir="$(resolve_molscribe_eval_dir)"; then
@@ -133,15 +135,22 @@ run_official_molscribe_predict_csv() {
     overlay_dir="$(cd "$ONMT_OVERLAY" && pwd)"
   fi
 
-  echo "Running official SketchMol predict_csv.py"
-  echo "  evaluate_dir=$eval_dir"
-  echo "  image_csv=$image_csv"
-  echo "  batch_size=$batch_size"
-
   local pythonpath_prefix="$eval_dir:$sketchmol_repo"
   if [[ -n "$overlay_dir" ]]; then
     pythonpath_prefix="$overlay_dir:$pythonpath_prefix"
   fi
+
+  local wrapper_script="$project_dir/scripts/molscribe_official_predict_csv.py"
+  if [[ ! -f "$wrapper_script" ]]; then
+    echo "ERROR: molscribe_official_predict_csv.py wrapper not found: $wrapper_script" >&2
+    return 2
+  fi
+
+  echo "Running SketchMol predict_csv.py (onmt220 mask patch)"
+  echo "  wrapper=$wrapper_script"
+  echo "  evaluate_dir=$eval_dir"
+  echo "  image_csv=$image_csv"
+  echo "  batch_size=$batch_size"
 
   local had_errexit=0
   case "$-" in
@@ -150,8 +159,8 @@ run_official_molscribe_predict_csv() {
 
   pushd "$eval_dir" >/dev/null
   set +e
-  PYTHONPATH="$pythonpath_prefix${PYTHONPATH:+:$PYTHONPATH}" \
-    "$python_bin" predict_csv.py \
+  PYTHONPATH="$pythonpath_prefix:$project_dir${PYTHONPATH:+:$PYTHONPATH}" \
+    "$python_bin" "$wrapper_script" \
       --model_path "$model_path" \
       --image_path "$image_csv" \
       -n "$batch_size"

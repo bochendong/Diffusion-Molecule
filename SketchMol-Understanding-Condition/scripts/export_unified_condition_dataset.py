@@ -32,6 +32,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--description-limit-per-split", type=int, default=None)
     parser.add_argument("--edit-limit", type=int, default=None)
+    parser.add_argument("--min-edit-source-tanimoto", type=float, default=None)
+    parser.add_argument("--require-edit-quality-columns", action="store_true")
+    parser.add_argument("--require-eval-oracle-strict", action="store_true")
     parser.add_argument("--include-pubchem", action="store_true")
     parser.add_argument("--include-kv", action="store_true")
     return parser.parse_args()
@@ -47,7 +50,15 @@ def main() -> None:
         samples.extend(_read_description_bundle(args.three_m_root / "data/kv_data", "kv_data", args.description_limit_per_split))
 
     if args.edit_manifest is not None and args.edit_manifest.exists():
-        samples.extend(read_edit_generation_samples(args.edit_manifest, limit=args.edit_limit))
+        samples.extend(
+            read_edit_generation_samples(
+                args.edit_manifest,
+                limit=args.edit_limit,
+                min_source_tanimoto=args.min_edit_source_tanimoto,
+                require_quality_columns=args.require_edit_quality_columns,
+                require_eval_oracle_strict=args.require_eval_oracle_strict,
+            )
+        )
     elif args.edit_manifest is not None:
         raise FileNotFoundError(f"edit manifest not found: {args.edit_manifest}")
 
@@ -59,6 +70,9 @@ def main() -> None:
         {
             "three_m_root": str(args.three_m_root),
             "edit_manifest": str(args.edit_manifest) if args.edit_manifest else None,
+            "min_edit_source_tanimoto": args.min_edit_source_tanimoto,
+            "require_edit_quality_columns": bool(args.require_edit_quality_columns),
+            "require_eval_oracle_strict": bool(args.require_eval_oracle_strict),
             "train_jsonl": str(train_path),
             "eval_jsonl": str(eval_path),
         }

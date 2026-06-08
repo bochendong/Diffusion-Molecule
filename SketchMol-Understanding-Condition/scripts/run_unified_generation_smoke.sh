@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-PROJECT_DIR="SketchMol-Understanding-Condition"
-REPO_DIR="$(pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=./multiproperty_dataset_defaults.sh
+source "$SCRIPT_DIR/multiproperty_dataset_defaults.sh"
+export_smmed_source_neighbor_defaults
+export_succ_edit_quality_defaults
+
 PYTHON_BIN="${SUCC_PYTHON_BIN:-python3}"
-THREE_M_ROOT="${SUCC_3M_ROOT:-Research/Molecule Generation/3M-Diffusion}"
-THREE_M_GIT_URL="${SUCC_3M_GIT_URL:-https://github.com/huaishengzhu/3MDiffusion}"
-AUTO_CLONE_3M="${SUCC_AUTO_CLONE_3M:-1}"
-EDIT_MANIFEST="${SUCC_EDIT_MANIFEST:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/diffusion_edit_manifest.csv}"
-OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/unified_generation_smoke}"
+EDIT_MANIFEST="${SUCC_EDIT_MANIFEST:-$SMMED_DEFAULT_EDIT_MANIFEST}"
+OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-$SUCC_DEFAULT_UNIFIED_OUTPUT_DIR}"
 
 DESCRIPTION_LIMIT="${SUCC_DESCRIPTION_LIMIT:-200}"
 EDIT_LIMIT="${SUCC_EDIT_LIMIT:-500}"
@@ -19,11 +20,20 @@ EVAL_LIMIT="${SUCC_EVAL_LIMIT:-1000}"
 EVAL_BATCH_SIZE="${SUCC_EVAL_BATCH_SIZE:-64}"
 EVAL_SAMPLE_STEPS="${SUCC_EVAL_SAMPLE_STEPS:-20}"
 
+PROJECT_DIR="SketchMol-Understanding-Condition"
+REPO_DIR="$(pwd)"
+THREE_M_ROOT="${SUCC_3M_ROOT:-Research/Molecule Generation/3M-Diffusion}"
+THREE_M_GIT_URL="${SUCC_3M_GIT_URL:-https://github.com/huaishengzhu/3MDiffusion}"
+AUTO_CLONE_3M="${SUCC_AUTO_CLONE_3M:-1}"
+
 echo "Running unified Understanding + latent diffusion smoke"
 echo "  python=$PYTHON_BIN"
 echo "  3m_root=$THREE_M_ROOT"
 echo "  edit_manifest=$EDIT_MANIFEST"
 echo "  output_dir=$OUTPUT_DIR"
+echo "  min_edit_source_tanimoto=$SUCC_MIN_EDIT_SOURCE_TANIMOTO"
+echo "  require_edit_quality_columns=$SUCC_REQUIRE_EDIT_QUALITY_COLUMNS"
+echo "  require_eval_oracle_strict=$SUCC_REQUIRE_EVAL_ORACLE_STRICT"
 
 if [ ! -d "$THREE_M_ROOT/data" ]; then
   if [ "$AUTO_CLONE_3M" = "1" ] && command -v git >/dev/null 2>&1; then
@@ -52,6 +62,9 @@ mkdir -p "$OUTPUT_DIR"
   --edit-manifest "$EDIT_MANIFEST" \
   --description-limit-per-split "$DESCRIPTION_LIMIT" \
   --edit-limit "$EDIT_LIMIT" \
+  --min-edit-source-tanimoto "$SUCC_MIN_EDIT_SOURCE_TANIMOTO" \
+  $( [[ "$SUCC_REQUIRE_EDIT_QUALITY_COLUMNS" == "1" ]] && echo --require-edit-quality-columns ) \
+  $( [[ "$SUCC_REQUIRE_EVAL_ORACLE_STRICT" == "1" ]] && echo --require-eval-oracle-strict ) \
   --output-dir "$OUTPUT_DIR/dataset"
 
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_alignment_pretraining.py" \

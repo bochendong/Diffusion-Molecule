@@ -175,7 +175,7 @@ def main() -> int:
     args = parse_args()
     python_bin = sys.executable
     sketchmol_eval = REPO_DIR / "Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate"
-    predict_csv = sketchmol_eval / "predict_csv.py"
+    predict_csv = PROJECT_DIR / "scripts/molscribe_official_predict_csv.py"
     onmt_overlay = Path(
         __import__("os").environ.get(
             "SUCC_ONMT_OVERLAY",

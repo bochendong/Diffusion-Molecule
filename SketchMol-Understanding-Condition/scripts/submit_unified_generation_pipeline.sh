@@ -9,20 +9,39 @@ REPO_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
 DATASET_PROJECT_DIR="$REPO_DIR/SketchMol-MultiProperty-EditDataset"
 cd "$REPO_DIR"
 
+# shellcheck source=../SketchMol-Understanding-Condition/scripts/multiproperty_dataset_defaults.sh
+source "$REPO_DIR/SketchMol-Understanding-Condition/scripts/multiproperty_dataset_defaults.sh"
+export_smmed_source_neighbor_defaults
+export_succ_edit_quality_defaults
+
 if ! command -v sbatch >/dev/null 2>&1; then
   echo "ERROR: sbatch not found. Run this on a Slurm login node." >&2
   exit 2
 fi
 
-DATASET_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1}"
-EDIT_MANIFEST="${SUCC_EDIT_MANIFEST:-$DATASET_OUTPUT_DIR/diffusion_edit_manifest.csv}"
-UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/unified_generation_3m_edit_v1}"
-SUBMIT_DATASET_BUILD="${SMMED_SUBMIT_DATASET_BUILD:-1}"
+DATASET_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-$SMMED_DEFAULT_OUTPUT_DIR}"
+EDIT_MANIFEST="${SUCC_EDIT_MANIFEST:-$SMMED_DEFAULT_EDIT_MANIFEST}"
+UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-$SUCC_DEFAULT_UNIFIED_OUTPUT_DIR}"
+SUBMIT_DATASET_BUILD="${SMMED_SUBMIT_DATASET_BUILD:-0}"
 
 export SMMED_RENDER_IMAGES="${SMMED_RENDER_IMAGES:-0}"
 export SMMED_OUTPUT_DIR="$DATASET_OUTPUT_DIR"
+export SMMED_PAIRING_STRATEGY="${SMMED_PAIRING_STRATEGY:-source_neighbor}"
+export SMMED_SOURCE_NEIGHBOR_MIN_TANIMOTO="${SMMED_SOURCE_NEIGHBOR_MIN_TANIMOTO:-0.4}"
+export SMMED_SOURCE_NEIGHBOR_MAX_TANIMOTO="${SMMED_SOURCE_NEIGHBOR_MAX_TANIMOTO:-0.95}"
+export SMMED_MIN_SOURCE_NEIGHBORS_T04="${SMMED_MIN_SOURCE_NEIGHBORS_T04:-2}"
+export SMMED_MIN_SIMILARITY="${SMMED_MIN_SIMILARITY:-0.4}"
+export SMMED_MAX_SIMILARITY="${SMMED_MAX_SIMILARITY:-0.95}"
+export SMMED_CONDITION_CANDIDATE_DIAGNOSTICS="${SMMED_CONDITION_CANDIDATE_DIAGNOSTICS:-1}"
+export SMMED_MIN_STRICT_CANDIDATES_T04="${SMMED_MIN_STRICT_CANDIDATES_T04:-1}"
+export SMMED_ORACLE_FILTER_SPLITS="${SMMED_ORACLE_FILTER_SPLITS:-eval}"
+export SMMED_DIFFUSION_MIN_SOURCE_TANIMOTO="${SMMED_DIFFUSION_MIN_SOURCE_TANIMOTO:-0.4}"
+export SMMED_DIFFUSION_MAX_SOURCE_TANIMOTO="${SMMED_DIFFUSION_MAX_SOURCE_TANIMOTO:-0.95}"
 export SUCC_EDIT_MANIFEST="$EDIT_MANIFEST"
 export SUCC_UNIFIED_OUTPUT_DIR="$UNIFIED_OUTPUT_DIR"
+export SUCC_MIN_EDIT_SOURCE_TANIMOTO="${SUCC_MIN_EDIT_SOURCE_TANIMOTO:-0.4}"
+export SUCC_REQUIRE_EDIT_QUALITY_COLUMNS="${SUCC_REQUIRE_EDIT_QUALITY_COLUMNS:-1}"
+export SUCC_REQUIRE_EVAL_ORACLE_STRICT="${SUCC_REQUIRE_EVAL_ORACLE_STRICT:-1}"
 export SUCC_3M_ROOT="${SUCC_3M_ROOT:-Research/Molecule Generation/3M-Diffusion}"
 export SUCC_AUTO_CLONE_3M="${SUCC_AUTO_CLONE_3M:-1}"
 export SUCC_DESCRIPTION_LIMIT="${SUCC_DESCRIPTION_LIMIT:-5000}"
@@ -103,7 +122,7 @@ if [[ "$SUBMIT_DATASET_BUILD" == "1" ]]; then
       --cpus-per-task="$BUILD_CPUS" \
       --output="$BUILD_LOG_DIR/%x-%j.log" \
       --export=ALL \
-      --wrap="bash '$DATASET_PROJECT_DIR/scripts/run_build_dataset.sh'"
+      --wrap="bash '$DATASET_PROJECT_DIR/scripts/run_build_source_neighbor_dataset.sh'"
   )"
   echo "$build_output"
   build_job_id="$(echo "$build_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"

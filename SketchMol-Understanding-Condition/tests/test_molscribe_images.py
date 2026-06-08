@@ -130,6 +130,41 @@ def test_predict_sketchmol_uses_path_reader_when_not_preprocessing():
     assert diagnostics[0]["molscribe_decode_source"] == "sketchmol_graph"
 
 
+def test_onmt220_attention_mask_broadcasts_for_batch_larger_than_heads():
+    import torch
+
+    from sketchmol_understanding_condition.molscribe_onmt_compat import (
+        format_attention_mask_onmt220,
+    )
+
+    class FakeAttention:
+        def forward(self, key, value, query, mask=None, layer_cache=None, attn_type=None):
+            return None
+
+    module = FakeAttention()
+    batch_size = 16
+    heads = 8
+    src_len = 144
+    src_pad_mask = torch.zeros(batch_size, 1, src_len, dtype=torch.bool)
+    formatted = format_attention_mask_onmt220(module, src_pad_mask)
+    assert formatted.shape == (batch_size, 1, src_len)
+
+    scores = torch.zeros(batch_size, heads, 1, src_len)
+    broadcast_mask = formatted.unsqueeze(1)
+    torch.testing.assert_close(
+        scores.masked_fill(broadcast_mask, -1e18),
+        scores,
+    )
+
+    broken = src_pad_mask.squeeze(1).unsqueeze(1)
+    try:
+        scores.masked_fill(broken, -1e18)
+        raised = False
+    except RuntimeError:
+        raised = True
+    assert raised
+
+
 def test_predict_sketchmol_uses_helper_when_preprocessing():
     module = _load_run_molscribe_ocr_module()
     calls: list[str] = []

@@ -19,6 +19,7 @@ if str(PROJECT_DIR) not in sys.path:
 from sketchmol_understanding_condition.chem import morgan_tanimoto  # noqa: E402
 from sketchmol_understanding_condition.unified_condition_dataset import (  # noqa: E402
     EDIT_GENERATION,
+    EDIT_QUALITY_METADATA_FIELDS,
     PROPERTY_COLUMNS,
     UnifiedConditionSample,
     summarize_samples,
@@ -46,6 +47,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--include-splits", default="train,eval,valid,validation,test")
     parser.add_argument("--variants", default="full")
     parser.add_argument("--dataset-name", default="univideo_edit")
+    parser.add_argument("--min-source-tanimoto", type=float, default=None)
+    parser.add_argument("--require-edit-quality-columns", action="store_true")
+    parser.add_argument("--require-eval-oracle-strict", action="store_true")
     return parser.parse_args()
 
 
@@ -58,17 +62,39 @@ def main() -> None:
         raise ValueError(f"Unsupported variants: {invalid}")
 
     condition_rows = []
-    for row in _read_rows(args.condition_rows_csv):
-        split = row.get("split", "train") or "train"
-        if include_splits and split not in include_splits:
-            continue
-        if not row.get("source_smiles") or not row.get("target_smiles"):
-            continue
-        if not (row.get("instruction") or row.get("prompt")):
-            continue
-        condition_rows.append(row)
-        if args.limit is not None and len(condition_rows) >= args.limit:
-            break
+    fieldnames: set[str] = set()
+    with args.condition_rows_csv.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        fieldnames = set(reader.fieldnames or [])
+        if args.require_edit_quality_columns:
+            missing = set(EDIT_QUALITY_METADATA_FIELDS) - fieldnames
+            if missing:
+                raise ValueError(f"Condition rows missing quality columns: {sorted(missing)}")
+        for row in reader:
+            split = row.get("split", "train") or "train"
+            if include_splits and split not in include_splits:
+                continue
+            if not row.get("source_smiles") or not row.get("target_smiles"):
+                continue
+            if not (row.get("instruction") or row.get("prompt")):
+                continue
+            source_tanimoto = _source_tanimoto(row)
+            if args.min_source_tanimoto is not None and (
+                math.isnan(source_tanimoto) or source_tanimoto < float(args.min_source_tanimoto)
+            ):
+                continue
+            if (
+                args.require_eval_oracle_strict
+                and split in {"eval", "valid", "validation", "test"}
+                and row.get("oracle_strict_success_t04", "").strip().lower() not in {"1", "true", "yes", "y"}
+            ):
+                raise ValueError(
+                    "Eval condition row is not source-neighbor oracle-feasible: "
+                    f"{row.get('condition_id') or row.get('sample_id')}"
+                )
+            condition_rows.append(row)
+            if args.limit is not None and len(condition_rows) >= args.limit:
+                break
 
     samples = [_sample_from_condition_row(row, dataset_name=args.dataset_name, idx=idx) for idx, row in enumerate(condition_rows)]
     train = [sample for sample in samples if sample.split not in {"eval", "valid", "validation", "test"}]
@@ -133,6 +159,7 @@ def _sample_from_condition_row(row: Mapping[str, str], *, dataset_name: str, idx
             "dataset": dataset_name,
             "condition_id": condition_id,
             "pair_id": row.get("pair_id", ""),
+            **{field: row.get(field, "") for field in EDIT_QUALITY_METADATA_FIELDS if field in row},
         },
     )
 

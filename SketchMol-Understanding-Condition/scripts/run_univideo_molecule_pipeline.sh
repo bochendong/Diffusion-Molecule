@@ -23,10 +23,14 @@ fi
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 export PYTHONPATH="$PROJECT_DIR${PYTHONPATH:+:$PYTHONPATH}"
 
+# shellcheck source=./multiproperty_dataset_defaults.sh
+source "$SCRIPT_DIR/multiproperty_dataset_defaults.sh"
+export_smmed_source_neighbor_defaults
+export_succ_edit_quality_defaults
+
 UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1}"
-FEATURES_DIR="${SUCC_CONDITION_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm}"
-DEFAULT_CONDITION_ROWS="SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv"
-CONDITION_ROWS="${SUCC_CONDITION_ROWS:-$DEFAULT_CONDITION_ROWS}"
+FEATURES_DIR="${SUCC_CONDITION_FEATURES_DIR:-$SUCC_DEFAULT_FEATURES_DIR}"
+CONDITION_ROWS="${SUCC_CONDITION_ROWS:-$SMMED_DEFAULT_CONDITION_ROWS}"
 DATASET_DIR="${SUCC_UNIVIDEO_DATASET_DIR:-$UNIFIED_OUTPUT_DIR/dataset}"
 BASELINE_CSV="${SUCC_BASELINE_CSV:-$DATASET_DIR/baseline_variants.csv}"
 
@@ -121,6 +125,9 @@ fi
 echo "Running UniVideo-style molecular generation pipeline"
 echo "  python=$PYTHON_BIN"
 echo "  condition_rows=$CONDITION_ROWS"
+echo "  min_edit_source_tanimoto=$SUCC_MIN_EDIT_SOURCE_TANIMOTO"
+echo "  require_edit_quality_columns=$SUCC_REQUIRE_EDIT_QUALITY_COLUMNS"
+echo "  require_eval_oracle_strict=$SUCC_REQUIRE_EVAL_ORACLE_STRICT"
 echo "  baseline_csv=$BASELINE_CSV"
 echo "  condition_features_dir=$FEATURES_DIR"
 echo "  unified_output_dir=$UNIFIED_OUTPUT_DIR"
@@ -164,7 +171,10 @@ if [[ "$RUN_DATASET_EXPORT" == "1" || ! -f "$DATASET_DIR/univideo_edit_train.jso
     --condition-rows-csv "$CONDITION_ROWS" \
     --output-dir "$DATASET_DIR" \
     --limit "$EDIT_LIMIT" \
-    --variants full
+    --variants full \
+    --min-source-tanimoto "$SUCC_MIN_EDIT_SOURCE_TANIMOTO" \
+    $( [[ "$SUCC_REQUIRE_EDIT_QUALITY_COLUMNS" == "1" ]] && echo --require-edit-quality-columns ) \
+    $( [[ "$SUCC_REQUIRE_EVAL_ORACLE_STRICT" == "1" ]] && echo --require-eval-oracle-strict )
 fi
 
 if [[ "$RUN_FEATURE_EXPORT" == "1" || ( "$RUN_FEATURE_EXPORT" == "auto" && ! -f "$FEATURES_DIR/query_tokens.npy" ) ]]; then

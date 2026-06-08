@@ -21,6 +21,9 @@ if str(PROJECT_DIR) not in sys.path:
 from sketchmol_understanding_condition.molscribe_images import (  # noqa: E402
     load_preprocessed_rgb_image,
 )
+from sketchmol_understanding_condition.molscribe_onmt_compat import (  # noqa: E402
+    apply_onmt_attention_mask_patch,
+)
 
 
 def _prepend_sys_path_ordered(entries: list[Path]) -> None:
@@ -124,6 +127,7 @@ def main() -> None:
     import torch
 
     evaluate_dir = _ensure_vendored_molscribe_path()
+    apply_onmt_attention_mask_patch()
     from molscribe import MolScribe
 
     if evaluate_dir is not None:
