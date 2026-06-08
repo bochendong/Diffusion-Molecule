@@ -346,7 +346,7 @@ control.
 
 Source-neighbor edits are intentionally close to the source, so latent diffusion
 must beat the source baseline instead of simply moving every row. Stage 3 now
-has two source-guard losses:
+has source-guard losses plus a source-anchored fingerprint prior:
 
 ```text
 SMU3M_SOURCE_REGRET_LOSS_WEIGHT=0.35
@@ -354,6 +354,9 @@ SMU3M_SOURCE_REGRET_MARGIN=0.0
 SMU3M_SOURCE_RADIUS_LOSS_WEIGHT=0.10
 SMU3M_SOURCE_RADIUS_MARGIN=0.05
 SMU3M_SOURCE_SIMILARITY_WEIGHT_FLOOR=0.25
+SMU3M_SOURCE_FINGERPRINT_PRIOR_BLEND=0.85
+SMU3M_FINGERPRINT_GUARD_LOSS_WEIGHT=0.50
+SMU3M_FINGERPRINT_GUARD_MARGIN=0.02
 ```
 
 `source_property_regret` penalizes generated property error when it is worse
@@ -361,6 +364,11 @@ than using the source molecule directly. `source_radius_regret` penalizes
 latents that move farther from the source than the true target-source edit
 radius. Both are weighted more strongly for high source Tanimoto rows, so
 easy/medium edits learn to stay conservative while hard edits can still move.
+`source_fingerprint_prior_blend` blends the connector fingerprint prior toward
+the source fingerprint with the same source-similarity weighting. The
+`source_fingerprint_regret` guard penalizes generated fingerprints whose target
+cosine falls below the raw source-target cosine, which is the failure mode seen
+after the prior/property-only refine.
 
 Latent evaluation now reports `property_mae_gain_vs_source`,
 `property_mae_beats_source`, `fingerprint_cosine_gain_vs_source`, and
@@ -403,6 +411,29 @@ baseline, property MAE, delta MAE, and the corresponding prior deltas. Set
 `label:source_weight:hard_weight:shared_gradient:margin:temperature` entries.
 Increase `SMU3M_SWEEP_CONCURRENCY` only when the subtasks are CPU-only or you
 are sure that concurrent subtasks can share the requested GPU safely.
+
+After job `15763086`, property MAE beat the source baseline but target
+fingerprint cosine still stayed far below the source-target fingerprint
+baseline. Run the source-anchor sweep to warm-start from the sourceguard
+checkpoint and vary fingerprint prior/guard strength without overwriting the
+sourceguard result:
+
+```bash
+SMU3M_BASE_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_sourceguard_v1 \
+SMU3M_SOURCEANCHOR_SWEEP_OUTPUT_ROOT=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceanchor_sweep_v1 \
+SMU3M_SOURCEANCHOR_SWEEP_LAUNCHER=glost \
+SMU3M_SOURCEANCHOR_SWEEP_CONCURRENCY=1 \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_sourceanchor_sweep.sh
+```
+
+The source-anchor submitter requests one CPU by default and packs all configs
+into one Slurm allocation. Each task loads model weights from
+`SMU3M_BASE_OUTPUT_DIR/latent_diffusion/checkpoints/latest.pt`, skips the old
+optimizer state when the objective changes, and writes isolated outputs under
+`SMU3M_SOURCEANCHOR_SWEEP_OUTPUT_ROOT`. When all tasks finish, the runner writes
+`sourceanchor_sweep_summary.md` and `sourceanchor_sweep_summary.csv` for quick
+pull-result triage.
 
 After job `15729225`, the short sweep found two Pareto-improving configurations
 over the in-job baseline: `hard002_head` and `balanced_005_001`. To follow up,

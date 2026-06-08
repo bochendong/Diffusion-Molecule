@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import numpy as np
 import torch
@@ -157,9 +158,14 @@ def test_source_guard_losses_penalize_over_editing():
     latent_dim = fingerprint_dim + 80
     target = torch.zeros(2, latent_dim)
     source = torch.zeros(2, latent_dim)
+    target[:, :fingerprint_dim] = torch.tensor([1.0, 0.0, 1.0, 0.0])
+    source[:, :fingerprint_dim] = torch.tensor([1.0, 0.0, 1.0, 0.0])
     source[:, fingerprint_dim : fingerprint_dim + 7] = 0.2
     pred = target.clone()
+    pred[:, :fingerprint_dim] = torch.tensor([0.0, 1.0, 0.0, 1.0])
     pred[:, fingerprint_dim : fingerprint_dim + 7] = 0.8
+    latent_mean = torch.zeros(1, latent_dim)
+    latent_std = torch.ones(1, latent_dim)
 
     losses = module.source_guard_losses(
         pred,
@@ -170,11 +176,59 @@ def test_source_guard_losses_penalize_over_editing():
         source_regret_margin=0.0,
         source_radius_margin=0.0,
         source_similarity_weight_floor=0.25,
+        fingerprint_guard_margin=0.0,
+        latent_mean=latent_mean,
+        latent_std=latent_std,
     )
 
     assert losses["source_property_regret"] > 0
     assert losses["source_radius_regret"] > 0
     assert losses["source_property_worse_rate"].item() == 1.0
+    assert losses["source_fingerprint_regret"] > 0
+    assert losses["source_fingerprint_worse_rate"].item() == 1.0
+
+
+def test_condition_prior_latent_can_source_anchor_fingerprint():
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "train_latent_diffusion_generation.py"
+    spec = importlib.util.spec_from_file_location("train_latent_diffusion_generation", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    fingerprint_dim = 4
+    latent_dim = fingerprint_dim + 80
+    num_props = 7
+    condition = SimpleNamespace(
+        target_fingerprint_logits=torch.zeros(1, fingerprint_dim),
+        target_properties=torch.zeros(1, num_props),
+        property_deltas=torch.zeros(1, num_props),
+        active_logits=torch.zeros(1, num_props),
+    )
+    connector_config = {
+        "property_mean": [[0.0] * num_props],
+        "property_std": [[1.0] * num_props],
+        "delta_mean": [[0.0] * num_props],
+        "delta_std": [[1.0] * num_props],
+    }
+    latent_mean = torch.zeros(1, latent_dim)
+    latent_std = torch.ones(1, latent_dim)
+    source_latent = torch.zeros(1, latent_dim)
+    source_latent[:, :fingerprint_dim] = torch.tensor([1.0, 0.0, 1.0, 0.0])
+
+    prior = module.condition_prior_latent(
+        condition,
+        connector_config=connector_config,
+        latent_mean=latent_mean,
+        latent_std=latent_std,
+        fingerprint_dim=fingerprint_dim,
+        latent_dim=latent_dim,
+        source_latent=source_latent,
+        source_tanimoto=torch.tensor([0.95]),
+        source_fingerprint_prior_blend=1.0,
+        source_similarity_weight_floor=1.0,
+    )
+
+    assert torch.equal(prior[:, :fingerprint_dim], source_latent[:, :fingerprint_dim])
 
 
 def test_source_aware_fingerprint_losses_backprop_to_logits():

@@ -39,10 +39,14 @@ SOURCE_REGRET_MARGIN="${SMU3M_SOURCE_REGRET_MARGIN:-0.0}"
 SOURCE_RADIUS_LOSS_WEIGHT="${SMU3M_SOURCE_RADIUS_LOSS_WEIGHT:-0.10}"
 SOURCE_RADIUS_MARGIN="${SMU3M_SOURCE_RADIUS_MARGIN:-0.05}"
 SOURCE_SIMILARITY_WEIGHT_FLOOR="${SMU3M_SOURCE_SIMILARITY_WEIGHT_FLOOR:-0.25}"
+SOURCE_FINGERPRINT_PRIOR_BLEND="${SMU3M_SOURCE_FINGERPRINT_PRIOR_BLEND:-0.85}"
+FINGERPRINT_GUARD_LOSS_WEIGHT="${SMU3M_FINGERPRINT_GUARD_LOSS_WEIGHT:-0.50}"
+FINGERPRINT_GUARD_MARGIN="${SMU3M_FINGERPRINT_GUARD_MARGIN:-0.02}"
 DIFFUSION_HIDDEN_DIM="${SMU3M_DIFFUSION_HIDDEN_DIM:-512}"
 DIFFUSION_DEPTH="${SMU3M_DIFFUSION_DEPTH:-4}"
 CHECKPOINT_EVERY="${SMU3M_CHECKPOINT_EVERY:-1}"
 RESUME="${SMU3M_RESUME:-1}"
+ALLOW_INCOMPATIBLE_RESUME_WEIGHTS="${SMU3M_ALLOW_INCOMPATIBLE_RESUME_WEIGHTS:-0}"
 REQUIRE_CUDA="${SMU3M_REQUIRE_CUDA:-1}"
 DEVICE="${SMU3M_DEVICE:-auto}"
 TRAIN_DIFFUSION_CONNECTOR="${SMU3M_TRAIN_DIFFUSION_CONNECTOR:-1}"
@@ -58,7 +62,7 @@ fi
 
 if [ -z "$DIFFUSION_EPOCHS" ]; then
   RESUME_EPOCH_CHECKPOINT="${RESUME_DIFFUSION_CHECKPOINT:-__none__}"
-  DIFFUSION_EPOCHS="$("$PYTHON_BIN" - "$RESUME_EPOCH_CHECKPOINT" "$DIFFUSION_EXTRA_EPOCHS" "$DIFFUSION_OBJECTIVE" "$DIFFUSION_TARGET" "$PRIOR_LOSS_WEIGHT" "$SOURCE_REGRET_LOSS_WEIGHT" "$SOURCE_REGRET_MARGIN" "$SOURCE_RADIUS_LOSS_WEIGHT" "$SOURCE_RADIUS_MARGIN" "$SOURCE_SIMILARITY_WEIGHT_FLOOR" "$TRAIN_DIFFUSION_CONNECTOR" <<'PY'
+  DIFFUSION_EPOCHS="$("$PYTHON_BIN" - "$RESUME_EPOCH_CHECKPOINT" "$DIFFUSION_EXTRA_EPOCHS" "$DIFFUSION_OBJECTIVE" "$DIFFUSION_TARGET" "$PRIOR_LOSS_WEIGHT" "$SOURCE_REGRET_LOSS_WEIGHT" "$SOURCE_REGRET_MARGIN" "$SOURCE_RADIUS_LOSS_WEIGHT" "$SOURCE_RADIUS_MARGIN" "$SOURCE_SIMILARITY_WEIGHT_FLOOR" "$SOURCE_FINGERPRINT_PRIOR_BLEND" "$FINGERPRINT_GUARD_LOSS_WEIGHT" "$FINGERPRINT_GUARD_MARGIN" "$TRAIN_DIFFUSION_CONNECTOR" <<'PY'
 import sys
 import warnings
 from pathlib import Path
@@ -76,7 +80,10 @@ source_regret_margin = float(sys.argv[7])
 source_radius_weight = float(sys.argv[8])
 source_radius_margin = float(sys.argv[9])
 source_similarity_weight_floor = float(sys.argv[10])
-train_connector = sys.argv[11] == "1"
+source_fingerprint_prior_blend = float(sys.argv[11])
+fingerprint_guard_weight = float(sys.argv[12])
+fingerprint_guard_margin = float(sys.argv[13])
+train_connector = sys.argv[14] == "1"
 checkpoint = Path(checkpoint_arg)
 if checkpoint_arg != "__none__" and checkpoint.exists():
     payload = torch.load(checkpoint, map_location="cpu")
@@ -91,6 +98,9 @@ if checkpoint_arg != "__none__" and checkpoint.exists():
         and abs(float(config.get("source_radius_loss_weight", 0.0)) - source_radius_weight) <= 1e-12
         and abs(float(config.get("source_radius_margin", 0.05)) - source_radius_margin) <= 1e-12
         and abs(float(config.get("source_similarity_weight_floor", 0.25)) - source_similarity_weight_floor) <= 1e-12
+        and abs(float(config.get("source_fingerprint_prior_blend", 0.0)) - source_fingerprint_prior_blend) <= 1e-12
+        and abs(float(config.get("fingerprint_guard_loss_weight", 0.0)) - fingerprint_guard_weight) <= 1e-12
+        and abs(float(config.get("fingerprint_guard_margin", 0.02)) - fingerprint_guard_margin) <= 1e-12
         and bool(config.get("train_connector", False)) == train_connector
     )
     start_epoch = int(payload.get("epoch", 0)) if compatible else 0
@@ -118,7 +128,11 @@ echo "  source_regret_margin=$SOURCE_REGRET_MARGIN"
 echo "  source_radius_loss_weight=$SOURCE_RADIUS_LOSS_WEIGHT"
 echo "  source_radius_margin=$SOURCE_RADIUS_MARGIN"
 echo "  source_similarity_weight_floor=$SOURCE_SIMILARITY_WEIGHT_FLOOR"
+echo "  source_fingerprint_prior_blend=$SOURCE_FINGERPRINT_PRIOR_BLEND"
+echo "  fingerprint_guard_loss_weight=$FINGERPRINT_GUARD_LOSS_WEIGHT"
+echo "  fingerprint_guard_margin=$FINGERPRINT_GUARD_MARGIN"
 echo "  train_diffusion_connector=$TRAIN_DIFFUSION_CONNECTOR"
+echo "  allow_incompatible_resume_weights=$ALLOW_INCOMPATIBLE_RESUME_WEIGHTS"
 echo "  eval_limit=$EVAL_LIMIT"
 echo "  max_eval_per_property_count=$MAX_EVAL_PER_PROPERTY_COUNT"
 echo "  run_materialized_benchmark=$RUN_MATERIALIZED_BENCHMARK"
@@ -158,6 +172,9 @@ DIFFUSION_ARGS=(
   --source-radius-loss-weight "$SOURCE_RADIUS_LOSS_WEIGHT"
   --source-radius-margin "$SOURCE_RADIUS_MARGIN"
   --source-similarity-weight-floor "$SOURCE_SIMILARITY_WEIGHT_FLOOR"
+  --source-fingerprint-prior-blend "$SOURCE_FINGERPRINT_PRIOR_BLEND"
+  --fingerprint-guard-loss-weight "$FINGERPRINT_GUARD_LOSS_WEIGHT"
+  --fingerprint-guard-margin "$FINGERPRINT_GUARD_MARGIN"
   --lr "$DIFFUSION_LR"
   --hidden-dim "$DIFFUSION_HIDDEN_DIM"
   --depth "$DIFFUSION_DEPTH"
@@ -168,11 +185,14 @@ DIFFUSION_ARGS=(
 if [ "$TRAIN_DIFFUSION_CONNECTOR" = "1" ]; then
   DIFFUSION_ARGS+=(--train-connector)
 fi
+if [ "$ALLOW_INCOMPATIBLE_RESUME_WEIGHTS" = "1" ]; then
+  DIFFUSION_ARGS+=(--allow-incompatible-resume-weights)
+fi
 if [ "$PIN_MEMORY" = "1" ]; then
   DIFFUSION_ARGS+=(--pin-memory)
 fi
 if [ "$RESUME" = "1" ] && [ -n "$RESUME_DIFFUSION_CHECKPOINT" ] && [ -f "$RESUME_DIFFUSION_CHECKPOINT" ]; then
-  if "$PYTHON_BIN" - "$RESUME_DIFFUSION_CHECKPOINT" "$DIFFUSION_OBJECTIVE" "$DIFFUSION_TARGET" "$PRIOR_LOSS_WEIGHT" "$SOURCE_REGRET_LOSS_WEIGHT" "$SOURCE_REGRET_MARGIN" "$SOURCE_RADIUS_LOSS_WEIGHT" "$SOURCE_RADIUS_MARGIN" "$SOURCE_SIMILARITY_WEIGHT_FLOOR" "$TRAIN_DIFFUSION_CONNECTOR" <<'PY'
+  if "$PYTHON_BIN" - "$RESUME_DIFFUSION_CHECKPOINT" "$DIFFUSION_OBJECTIVE" "$DIFFUSION_TARGET" "$PRIOR_LOSS_WEIGHT" "$SOURCE_REGRET_LOSS_WEIGHT" "$SOURCE_REGRET_MARGIN" "$SOURCE_RADIUS_LOSS_WEIGHT" "$SOURCE_RADIUS_MARGIN" "$SOURCE_SIMILARITY_WEIGHT_FLOOR" "$SOURCE_FINGERPRINT_PRIOR_BLEND" "$FINGERPRINT_GUARD_LOSS_WEIGHT" "$FINGERPRINT_GUARD_MARGIN" "$TRAIN_DIFFUSION_CONNECTOR" <<'PY'
 import sys
 import warnings
 from pathlib import Path
@@ -189,7 +209,10 @@ source_regret_margin = float(sys.argv[6])
 source_radius_weight = float(sys.argv[7])
 source_radius_margin = float(sys.argv[8])
 source_similarity_weight_floor = float(sys.argv[9])
-train_connector = sys.argv[10] == "1"
+source_fingerprint_prior_blend = float(sys.argv[10])
+fingerprint_guard_weight = float(sys.argv[11])
+fingerprint_guard_margin = float(sys.argv[12])
+train_connector = sys.argv[13] == "1"
 payload = torch.load(checkpoint, map_location="cpu")
 config = payload.get("config", {})
 ok = (
@@ -202,11 +225,17 @@ ok = (
     and abs(float(config.get("source_radius_loss_weight", 0.0)) - source_radius_weight) <= 1e-12
     and abs(float(config.get("source_radius_margin", 0.05)) - source_radius_margin) <= 1e-12
     and abs(float(config.get("source_similarity_weight_floor", 0.25)) - source_similarity_weight_floor) <= 1e-12
+    and abs(float(config.get("source_fingerprint_prior_blend", 0.0)) - source_fingerprint_prior_blend) <= 1e-12
+    and abs(float(config.get("fingerprint_guard_loss_weight", 0.0)) - fingerprint_guard_weight) <= 1e-12
+    and abs(float(config.get("fingerprint_guard_margin", 0.02)) - fingerprint_guard_margin) <= 1e-12
     and bool(config.get("train_connector", False)) == train_connector
 )
 sys.exit(0 if ok else 1)
 PY
   then
+    DIFFUSION_ARGS+=(--resume-checkpoint "$RESUME_DIFFUSION_CHECKPOINT")
+  elif [ "$ALLOW_INCOMPATIBLE_RESUME_WEIGHTS" = "1" ]; then
+    echo "Resume checkpoint predates current diffusion/source-guard settings; warm-starting model weights only."
     DIFFUSION_ARGS+=(--resume-checkpoint "$RESUME_DIFFUSION_CHECKPOINT")
   else
     echo "Resume checkpoint predates current diffusion/source-guard settings; retraining latent diffusion."

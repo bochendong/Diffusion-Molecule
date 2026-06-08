@@ -90,6 +90,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-radius-loss-weight", type=float, default=0.0)
     parser.add_argument("--source-radius-margin", type=float, default=0.05)
     parser.add_argument("--source-similarity-weight-floor", type=float, default=0.25)
+    parser.add_argument("--source-fingerprint-prior-blend", type=float, default=0.0)
+    parser.add_argument("--fingerprint-guard-loss-weight", type=float, default=0.0)
+    parser.add_argument("--fingerprint-guard-margin", type=float, default=0.02)
     parser.add_argument("--hidden-dim", type=int, default=512)
     parser.add_argument("--depth", type=int, default=4)
     parser.add_argument("--limit", type=int, default=None)
@@ -97,6 +100,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--checkpoint-every", type=int, default=1)
     parser.add_argument("--resume-checkpoint", type=Path, default=None)
+    parser.add_argument("--allow-incompatible-resume-weights", action="store_true")
     parser.add_argument("--seed", type=int, default=13)
     return parser.parse_args()
 
@@ -157,16 +161,43 @@ def main() -> None:
         payload = torch.load(args.resume_checkpoint, map_location=device)
         resume_config = payload.get("config", {})
         if not _resume_config_compatible(resume_config, config):
-            print(
-                json.dumps(
-                    {
-                        "event": "resume_checkpoint_skipped",
-                        "reason": "training objective changed",
-                        "checkpoint": str(args.resume_checkpoint),
-                    },
-                    sort_keys=True,
+            if args.allow_incompatible_resume_weights:
+                try:
+                    diffusion.load_state_dict(payload["diffusion_state"])
+                    connector.load_state_dict(payload["connector_state"])
+                except RuntimeError as exc:
+                    print(
+                        json.dumps(
+                            {
+                                "event": "resume_checkpoint_skipped",
+                                "reason": f"incompatible weights: {exc}",
+                                "checkpoint": str(args.resume_checkpoint),
+                            },
+                            sort_keys=True,
+                        )
+                    )
+                else:
+                    print(
+                        json.dumps(
+                            {
+                                "event": "warm_started_incompatible_resume_weights",
+                                "reason": "training objective changed",
+                                "checkpoint": str(args.resume_checkpoint),
+                            },
+                            sort_keys=True,
+                        )
+                    )
+            else:
+                print(
+                    json.dumps(
+                        {
+                            "event": "resume_checkpoint_skipped",
+                            "reason": "training objective changed",
+                            "checkpoint": str(args.resume_checkpoint),
+                        },
+                        sort_keys=True,
+                    )
                 )
-            )
         else:
             diffusion.load_state_dict(payload["diffusion_state"])
             connector.load_state_dict(payload["connector_state"])
@@ -209,7 +240,10 @@ def main() -> None:
         prior_losses = []
         source_regret_losses = []
         source_radius_losses = []
+        source_fingerprint_losses = []
         source_worse_rates = []
+        source_fingerprint_worse_rates = []
+        source_fingerprint_gains = []
         train_target_mae = []
         for batch in loader:
             batch = move_batch_to_device(batch, device)
@@ -226,6 +260,10 @@ def main() -> None:
                 latent_std=latent_std,
                 fingerprint_dim=args.fingerprint_dim,
                 latent_dim=latent_dim,
+                source_latent=batch["source_latent"].float(),
+                source_tanimoto=batch["source_tanimoto"].float(),
+                source_fingerprint_prior_blend=args.source_fingerprint_prior_blend,
+                source_similarity_weight_floor=args.source_similarity_weight_floor,
             )
             if not args.train_connector:
                 prior_latent = prior_latent.detach()
@@ -242,12 +280,16 @@ def main() -> None:
                 source_regret_margin=args.source_regret_margin,
                 source_radius_margin=args.source_radius_margin,
                 source_similarity_weight_floor=args.source_similarity_weight_floor,
+                fingerprint_guard_margin=args.fingerprint_guard_margin,
+                latent_mean=latent_mean,
+                latent_std=latent_std,
             )
             loss = (
                 diffusion_loss
                 + float(args.prior_loss_weight) * prior_loss
                 + float(args.source_regret_loss_weight) * source_losses["source_property_regret"]
                 + float(args.source_radius_loss_weight) * source_losses["source_radius_regret"]
+                + float(args.fingerprint_guard_loss_weight) * source_losses["source_fingerprint_regret"]
             )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(params, 1.0)
@@ -257,7 +299,10 @@ def main() -> None:
             prior_losses.append(float(prior_loss.item()))
             source_regret_losses.append(float(source_losses["source_property_regret"].item()))
             source_radius_losses.append(float(source_losses["source_radius_regret"].item()))
+            source_fingerprint_losses.append(float(source_losses["source_fingerprint_regret"].item()))
             source_worse_rates.append(float(source_losses["source_property_worse_rate"].item()))
+            source_fingerprint_worse_rates.append(float(source_losses["source_fingerprint_worse_rate"].item()))
+            source_fingerprint_gains.append(float(source_losses["source_fingerprint_cosine_gain"].item()))
             train_target_mae.append(float(torch.mean(torch.abs(diffusion_target)).item()))
         record = {
             "epoch": epoch + 1,
@@ -266,7 +311,10 @@ def main() -> None:
             "prior_mse": float(np.mean(prior_losses)),
             "source_property_regret": float(np.mean(source_regret_losses)),
             "source_radius_regret": float(np.mean(source_radius_losses)),
+            "source_fingerprint_regret": float(np.mean(source_fingerprint_losses)),
             "source_property_worse_rate": float(np.mean(source_worse_rates)),
+            "source_fingerprint_worse_rate": float(np.mean(source_fingerprint_worse_rates)),
+            "source_fingerprint_cosine_gain": float(np.mean(source_fingerprint_gains)),
             "diffusion_target_mae": float(np.mean(train_target_mae)),
         }
         history.append(record)
@@ -315,6 +363,9 @@ def _config(
         "source_radius_loss_weight": args.source_radius_loss_weight,
         "source_radius_margin": args.source_radius_margin,
         "source_similarity_weight_floor": args.source_similarity_weight_floor,
+        "source_fingerprint_prior_blend": args.source_fingerprint_prior_blend,
+        "fingerprint_guard_loss_weight": args.fingerprint_guard_loss_weight,
+        "fingerprint_guard_margin": args.fingerprint_guard_margin,
         "hidden_dim": args.hidden_dim,
         "depth": args.depth,
         "connector_config": connector_config,
@@ -339,6 +390,9 @@ def source_guard_losses(
     source_regret_margin: float,
     source_radius_margin: float,
     source_similarity_weight_floor: float,
+    fingerprint_guard_margin: float,
+    latent_mean: torch.Tensor,
+    latent_std: torch.Tensor,
 ) -> dict[str, torch.Tensor]:
     num_props = len(PROPERTY_COLUMNS)
     prop_slice = slice(fingerprint_dim, fingerprint_dim + num_props)
@@ -355,10 +409,21 @@ def source_guard_losses(
     pred_source_radius = torch.mean(torch.abs(pred_latent - source_latent), dim=1)
     target_source_radius = torch.mean(torch.abs(target_latent - source_latent), dim=1)
     radius_regret = torch.relu(pred_source_radius - target_source_radius - float(source_radius_margin))
+
+    fp_slice = slice(0, fingerprint_dim)
+    pred_fp = _unnormalized_block(pred_latent, latent_mean, latent_std, fp_slice)
+    target_fp = _unnormalized_block(target_latent, latent_mean, latent_std, fp_slice)
+    source_fp = _unnormalized_block(source_latent, latent_mean, latent_std, fp_slice)
+    pred_target_cosine = F.cosine_similarity(pred_fp, target_fp, dim=1, eps=1e-8)
+    source_target_cosine = F.cosine_similarity(source_fp, target_fp, dim=1, eps=1e-8)
+    fingerprint_regret = torch.relu(source_target_cosine - pred_target_cosine - float(fingerprint_guard_margin))
     return {
         "source_property_regret": torch.mean(weights * regret.pow(2)),
         "source_radius_regret": torch.mean(weights * radius_regret.pow(2)),
         "source_property_worse_rate": torch.mean((pred_prop_error > source_prop_error).to(dtype=pred_latent.dtype)),
+        "source_fingerprint_regret": torch.mean(weights * fingerprint_regret.pow(2)),
+        "source_fingerprint_worse_rate": torch.mean((pred_target_cosine < source_target_cosine).to(dtype=pred_latent.dtype)),
+        "source_fingerprint_cosine_gain": torch.mean(pred_target_cosine - source_target_cosine),
     }
 
 
@@ -396,6 +461,9 @@ def _resume_config_compatible(resume_config: object, current_config: dict[str, o
         "source_radius_loss_weight",
         "source_radius_margin",
         "source_similarity_weight_floor",
+        "source_fingerprint_prior_blend",
+        "fingerprint_guard_loss_weight",
+        "fingerprint_guard_margin",
         "train_connector",
     ]
     for key in keys:
@@ -412,6 +480,10 @@ def condition_prior_latent(
     latent_std: torch.Tensor,
     fingerprint_dim: int,
     latent_dim: int,
+    source_latent: torch.Tensor | None = None,
+    source_tanimoto: torch.Tensor | None = None,
+    source_fingerprint_prior_blend: float = 0.0,
+    source_similarity_weight_floor: float = 0.25,
 ) -> torch.Tensor:
     """Build a normalized latent prior from edit connector prediction heads."""
 
@@ -421,6 +493,22 @@ def condition_prior_latent(
     num_props = len(PROPERTY_COLUMNS)
 
     fingerprint = torch.sigmoid(condition.target_fingerprint_logits[:, :fingerprint_dim])
+    if source_latent is not None and float(source_fingerprint_prior_blend) > 0.0:
+        source_fingerprint = _unnormalized_block(
+            source_latent.to(device=device, dtype=dtype),
+            latent_mean.to(dtype=dtype),
+            latent_std.to(dtype=dtype),
+            slice(0, fingerprint_dim),
+        )
+        blend = _source_fingerprint_blend(
+            source_tanimoto,
+            batch=batch,
+            max_blend=source_fingerprint_prior_blend,
+            source_similarity_weight_floor=source_similarity_weight_floor,
+            device=device,
+            dtype=dtype,
+        )
+        fingerprint = blend * source_fingerprint + (1.0 - blend) * fingerprint
     prop_mean = _config_tensor(connector_config, "property_mean", device=device, dtype=dtype)
     prop_std = _config_tensor(connector_config, "property_std", device=device, dtype=dtype)
     delta_mean = _config_tensor(connector_config, "delta_mean", device=device, dtype=dtype)
@@ -442,6 +530,36 @@ def condition_prior_latent(
 
 def _config_tensor(config: dict[str, object], key: str, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     return torch.as_tensor(config[key], dtype=dtype, device=device)
+
+
+def _unnormalized_block(
+    latent: torch.Tensor,
+    latent_mean: torch.Tensor,
+    latent_std: torch.Tensor,
+    block: slice,
+) -> torch.Tensor:
+    return latent[:, block] * latent_std[:, block].clamp_min(1e-6) + latent_mean[:, block]
+
+
+def _source_fingerprint_blend(
+    source_tanimoto: torch.Tensor | None,
+    *,
+    batch: int,
+    max_blend: float,
+    source_similarity_weight_floor: float,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    max_value = min(max(float(max_blend), 0.0), 1.0)
+    if source_tanimoto is None:
+        return torch.full((batch, 1), max_value, device=device, dtype=dtype)
+    weights = _source_similarity_weights(
+        source_tanimoto,
+        floor=source_similarity_weight_floor,
+        device=device,
+        dtype=dtype,
+    )
+    return (max_value * weights).reshape(batch, 1)
 
 
 def _save_checkpoint(

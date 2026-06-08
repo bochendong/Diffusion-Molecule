@@ -100,6 +100,8 @@ def main() -> None:
     latent_mean = torch.tensor(diffusion_config["latent_mean"], dtype=torch.float32, device=device)
     latent_std = torch.tensor(diffusion_config["latent_std"], dtype=torch.float32, device=device)
     diffusion_target = str(diffusion_config.get("diffusion_target", "target"))
+    source_fingerprint_prior_blend = float(diffusion_config.get("source_fingerprint_prior_blend", 0.0))
+    source_similarity_weight_floor = float(diffusion_config.get("source_similarity_weight_floor", 0.25))
 
     rows = []
     generated_raw = []
@@ -116,6 +118,16 @@ def main() -> None:
                 ]
             ).astype(np.float32)
             hidden_tensor = torch.from_numpy(hidden).to(device)
+            source_raw = np.stack([source_latent_vector(sample, fingerprint_dim=fingerprint_dim) for sample in batch]).astype(
+                np.float32
+            )
+            source_tensor = torch.from_numpy(source_raw).to(device)
+            source_norm = (source_tensor - latent_mean) / latent_std.clamp_min(1e-6)
+            source_tanimoto = torch.tensor(
+                [_float_or_nan(sample.source_tanimoto) for sample in batch],
+                dtype=torch.float32,
+                device=device,
+            )
             condition = connector(hidden_tensor)
             sampled_norm = diffusion.sample(
                 condition.tokens,
@@ -130,6 +142,10 @@ def main() -> None:
                 latent_std=latent_std,
                 fingerprint_dim=fingerprint_dim,
                 latent_dim=int(diffusion_config["latent_dim"]),
+                source_latent=source_norm,
+                source_tanimoto=source_tanimoto,
+                source_fingerprint_prior_blend=source_fingerprint_prior_blend,
+                source_similarity_weight_floor=source_similarity_weight_floor,
             )
             if diffusion_target == "residual":
                 sampled_norm = sampled_norm + prior_norm
@@ -142,11 +158,7 @@ def main() -> None:
                     np.float32
                 )
             )
-            source_latents.append(
-                np.stack([source_latent_vector(sample, fingerprint_dim=fingerprint_dim) for sample in batch]).astype(
-                    np.float32
-                )
-            )
+            source_latents.append(source_raw)
 
     gen = np.concatenate(generated_raw, axis=0)
     target = np.concatenate(target_raw, axis=0)
@@ -177,6 +189,8 @@ def main() -> None:
             "seed": int(args.seed),
             "diffusion_objective": str(diffusion_config.get("diffusion_objective", "pred_noise")),
             "diffusion_target": diffusion_target,
+            "source_fingerprint_prior_blend": source_fingerprint_prior_blend,
+            "source_similarity_weight_floor": source_similarity_weight_floor,
             "fingerprint_dim": fingerprint_dim,
             "connector_source": connector_source,
             "max_eval_per_property_count": args.max_eval_per_property_count,
@@ -235,12 +249,32 @@ def condition_prior_latent(
     latent_std: torch.Tensor,
     fingerprint_dim: int,
     latent_dim: int,
+    source_latent: torch.Tensor | None = None,
+    source_tanimoto: torch.Tensor | None = None,
+    source_fingerprint_prior_blend: float = 0.0,
+    source_similarity_weight_floor: float = 0.25,
 ) -> torch.Tensor:
     batch = condition.target_fingerprint_logits.shape[0]
     device = condition.target_fingerprint_logits.device
     dtype = condition.target_fingerprint_logits.dtype
     num_props = len(PROPERTY_COLUMNS)
     fingerprint = torch.sigmoid(condition.target_fingerprint_logits[:, :fingerprint_dim])
+    if source_latent is not None and float(source_fingerprint_prior_blend) > 0.0:
+        source_fingerprint = _unnormalized_block(
+            source_latent.to(device=device, dtype=dtype),
+            latent_mean.to(dtype=dtype),
+            latent_std.to(dtype=dtype),
+            slice(0, fingerprint_dim),
+        )
+        blend = _source_fingerprint_blend(
+            source_tanimoto,
+            batch=batch,
+            max_blend=source_fingerprint_prior_blend,
+            source_similarity_weight_floor=source_similarity_weight_floor,
+            device=device,
+            dtype=dtype,
+        )
+        fingerprint = blend * source_fingerprint + (1.0 - blend) * fingerprint
     prop_mean = _config_tensor(connector_config, "property_mean", device=device, dtype=dtype)
     prop_std = _config_tensor(connector_config, "property_std", device=device, dtype=dtype)
     delta_mean = _config_tensor(connector_config, "delta_mean", device=device, dtype=dtype)
@@ -258,6 +292,58 @@ def condition_prior_latent(
 
 def _config_tensor(config: dict[str, object], key: str, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:
     return torch.as_tensor(config[key], dtype=dtype, device=device)
+
+
+def _unnormalized_block(
+    latent: torch.Tensor,
+    latent_mean: torch.Tensor,
+    latent_std: torch.Tensor,
+    block: slice,
+) -> torch.Tensor:
+    return latent[:, block] * latent_std[:, block].clamp_min(1e-6) + latent_mean[:, block]
+
+
+def _source_fingerprint_blend(
+    source_tanimoto: torch.Tensor | None,
+    *,
+    batch: int,
+    max_blend: float,
+    source_similarity_weight_floor: float,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    max_value = min(max(float(max_blend), 0.0), 1.0)
+    if source_tanimoto is None:
+        return torch.full((batch, 1), max_value, device=device, dtype=dtype)
+    weights = _source_similarity_weights(
+        source_tanimoto,
+        floor=source_similarity_weight_floor,
+        device=device,
+        dtype=dtype,
+    )
+    return (max_value * weights).reshape(batch, 1)
+
+
+def _source_similarity_weights(
+    source_tanimoto: torch.Tensor,
+    *,
+    floor: float,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    values = source_tanimoto.to(device=device, dtype=dtype).reshape(-1)
+    finite = torch.isfinite(values)
+    scaled = ((values - 0.4) / 0.55).clamp(0.0, 1.0)
+    scaled = torch.where(finite, scaled, torch.full_like(scaled, 0.5))
+    floor_value = min(max(float(floor), 0.0), 1.0)
+    return floor_value + (1.0 - floor_value) * scaled
+
+
+def _float_or_nan(value: object) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
 
 
 def _per_row_metrics(
