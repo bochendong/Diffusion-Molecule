@@ -501,6 +501,24 @@ sampled generated latents and a prior-only materialization using
 `eval_latent/prior_latents.npy`. This directly tests whether the connector prior
 is stronger than the latent diffusion sample.
 
+For the current source-anchor winner (`blend095_guard050_p005`), submit the
+packed generated + prior-only materialized benchmark as one serial CPU job:
+
+```bash
+SMU3M_SOURCEANCHOR_SWEEP_OUTPUT_ROOT=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_sourceanchor_sweep_v1 \
+SMU3M_SOURCEANCHOR_BENCHMARK_LABEL=blend095_guard050_p005 \
+SMU3M_BENCHMARK_PROFILE=primary_fast \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_sourceanchor_prior_benchmark.sh
+```
+
+The submitter requests one CPU and 4G RAM by default, then runs the sampled
+generated materialization and the prior-only materialization inside the same
+allocation. Reports are written to
+`benchmark_materialized_primary_fast/benchmark_report.md` and
+`benchmark_materialized_prior_only_primary_fast/benchmark_report.md` under the
+source-anchor output directory.
+
 To test whether the candidate library contains source-similar property matches,
 run a source-first/oracle benchmark. Start with a capped CPU run before full
 eval because it computes RDKit source Tanimoto against sampled candidates:
