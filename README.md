@@ -166,7 +166,8 @@ SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_au
 bash SketchMolBenchmark/scripts/resume_real_sketchmol_ocr.sh
 ```
 
-UniVideo 的 OCR rerun：
+UniVideo 的 OCR rerun 默认走 wrapper/custom/raw-token fallback；这是 `15763087`
+之后的 SUCC 路线，因为 official graph-only runner 会在这些图上全空：
 
 ```bash
 SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
@@ -573,6 +574,9 @@ Understanding-Condition 已有 UniVideo 图的 OCR rerun：
 
 ```bash
 SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+SUCC_MOLSCRIBE_RUNNER=wrapper \
+SUCC_MOLSCRIBE_BACKEND=custom \
+SUCC_RAW_SMILES_FALLBACK=1 \
 bash SketchMol-Understanding-Condition/scripts/submit_succ_ocr_benchmark.sh
 ```
 

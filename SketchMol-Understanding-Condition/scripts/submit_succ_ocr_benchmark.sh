@@ -28,11 +28,12 @@ export SUCC_MOLSCRIBE_MODEL="${SUCC_MOLSCRIBE_MODEL:-/scratch/bdong/checkpoints/
 export SUCC_MOLSCRIBE_WORKDIR="${SUCC_MOLSCRIBE_WORKDIR:-Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate}"
 export SUCC_ONMT_OVERLAY="${SUCC_ONMT_OVERLAY:-/scratch/bdong/python_overlays/onmt220}"
 export SKETCHMOL_ONMT_OVERLAY="${SKETCHMOL_ONMT_OVERLAY:-$SUCC_ONMT_OVERLAY}"
-export SUCC_MOLSCRIBE_BACKEND="${SUCC_MOLSCRIBE_BACKEND:-sketchmol}"
-export SUCC_MOLSCRIBE_RUNNER="${SUCC_MOLSCRIBE_RUNNER:-official}"
+export SUCC_MOLSCRIBE_BACKEND="${SUCC_MOLSCRIBE_BACKEND:-custom}"
+export SUCC_MOLSCRIBE_RUNNER="${SUCC_MOLSCRIBE_RUNNER:-wrapper}"
 export SUCC_MOLSCRIBE_BATCH_SIZE="${SUCC_MOLSCRIBE_BATCH_SIZE:-16}"
 export SUCC_MOLSCRIBE_DEVICE="${SUCC_MOLSCRIBE_DEVICE:-cuda}"
 export SUCC_PREPROCESS_IMAGES="${SUCC_PREPROCESS_IMAGES:-0}"
+export SUCC_RAW_SMILES_FALLBACK="${SUCC_RAW_SMILES_FALLBACK:-1}"
 export SUCC_RUN_MOLSCRIBE_DIAGNOSTIC="${SUCC_RUN_MOLSCRIBE_DIAGNOSTIC:-1}"
 
 if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
@@ -62,8 +63,10 @@ echo "  run_dir=$SUCC_UNIFIED_OUTPUT_DIR"
 echo "  molscribe_workdir=${SUCC_MOLSCRIBE_WORKDIR}"
 echo "  onmt_overlay=${SUCC_ONMT_OVERLAY}"
 echo "  molscribe_runner=${SUCC_MOLSCRIBE_RUNNER}"
+echo "  molscribe_backend=${SUCC_MOLSCRIBE_BACKEND}"
 echo "  molscribe_batch_size=${SUCC_MOLSCRIBE_BATCH_SIZE}"
 echo "  preprocess_images=${SUCC_PREPROCESS_IMAGES}"
+echo "  raw_smiles_fallback=${SUCC_RAW_SMILES_FALLBACK}"
 
 SBATCH_ARGS=(
   --account="$ACCOUNT"

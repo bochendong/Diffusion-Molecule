@@ -45,6 +45,12 @@ def parse_args() -> argparse.Namespace:
         action=argparse.BooleanOptionalAction,
         default=False,
     )
+    parser.add_argument(
+        "--raw-smiles-fallback",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Custom backend only: accept valid decoder-token SMILES when graph conversion fails.",
+    )
     parser.add_argument("--output-json", type=Path, default=None)
     return parser.parse_args()
 
@@ -95,6 +101,7 @@ def _evaluate_cohort(
     batch_size: int,
     backend: str,
     preprocess_images: bool,
+    raw_smiles_fallback: bool,
 ) -> dict[str, Any]:
     path_strings = [str(path) for path in paths]
     if backend == "sketchmol":
@@ -110,7 +117,7 @@ def _evaluate_cohort(
             path_strings,
             batch_size=batch_size,
             preprocess_images=preprocess_images,
-            raw_smiles_fallback=False,
+            raw_smiles_fallback=raw_smiles_fallback,
         )
 
     graph_usable = 0
@@ -258,6 +265,7 @@ def main() -> None:
                 batch_size=args.batch_size,
                 backend=args.backend,
                 preprocess_images=args.preprocess_images,
+                raw_smiles_fallback=args.raw_smiles_fallback,
             )
         )
 
@@ -267,6 +275,7 @@ def main() -> None:
         "device": str(device),
         "backend": args.backend,
         "preprocess_images": args.preprocess_images,
+        "raw_smiles_fallback": args.raw_smiles_fallback,
         "cohorts": results,
     }
     output_json = args.output_json or (
@@ -289,6 +298,7 @@ def _render_report(payload: dict[str, Any]) -> str:
         f"- device: `{payload['device']}`",
         f"- backend: `{payload['backend']}`",
         f"- preprocess_images: `{payload['preprocess_images']}`",
+        f"- raw_smiles_fallback: `{payload.get('raw_smiles_fallback', False)}`",
         "",
         "## Summary",
         "",
@@ -322,6 +332,7 @@ def _render_report(payload: dict[str, Any]) -> str:
             lines.append(f"  expected: `{str(example['expected_smiles'])[:80]}`")
             lines.append(f"  final: `{str(example['final_smiles'])[:80]}`")
             lines.append(f"  graph: `{str(example['graph_smiles'])[:80]}`")
+            lines.append(f"  raw: `{str(example['raw_smiles'])[:80]}`")
         lines.append("")
 
     return "\n".join(lines)

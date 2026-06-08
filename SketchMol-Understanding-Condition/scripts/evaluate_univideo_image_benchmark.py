@@ -8,6 +8,7 @@ import csv
 import json
 import math
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Iterable, Mapping
 
@@ -170,6 +171,7 @@ def _summary_row(method: str, rows: list[dict[str, object]], property_count: int
     target_tanimotos = [_to_float(row.get("target_tanimoto")) for row in rows if row.get("target_tanimoto") != ""]
     target_tanimotos = [value for value in target_tanimotos if not math.isnan(value)]
     reference = SKETCHMOL_REFERENCE_MULTI_PROPERTY.get(property_count, "") if isinstance(property_count, int) else ""
+    decode_sources = Counter(str(row.get("molscribe_decode_source", "") or "unknown") for row in rows)
     summary: dict[str, object] = {
         "family": "univideo_image_to_structure",
         "method": method,
@@ -194,6 +196,9 @@ def _summary_row(method: str, rows: list[dict[str, object]], property_count: int
         "uniqueness_in_valid_mols": len(unique_generated) / len(generated) if generated else "",
         "exact_target_match_rate": _fraction(_to_bool(row.get("exact_target_match")) for row in rows),
         "source_identity_rate": _fraction(_to_bool(row.get("source_identity")) for row in rows),
+        "molscribe_decode_source_counts": ";".join(
+            f"{key}:{value}" for key, value in sorted(decode_sources.items())
+        ),
         "sketchmol_reference_strict": reference,
         "strict_margin_vs_sketchmol": (
             (strict_count / len(rows)) - float(reference)
@@ -275,8 +280,8 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "",
             "## Diagnostics",
             "",
-            "| method | OCR present | valid | source scaffold | unique valid | exact target | source identity |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| method | OCR present | valid | source scaffold | unique valid | exact target | source identity | decode source |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
     )
     for method in methods:
@@ -290,7 +295,8 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             f"{_fmt(all_row.get('source_scaffold_match_rate'))} | "
             f"{_fmt(all_row.get('uniqueness_in_valid_mols'))} | "
             f"{_fmt(all_row.get('exact_target_match_rate'))} | "
-            f"{_fmt(all_row.get('source_identity_rate'))} |"
+            f"{_fmt(all_row.get('source_identity_rate'))} | "
+            f"{all_row.get('molscribe_decode_source_counts', '')} |"
         )
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 

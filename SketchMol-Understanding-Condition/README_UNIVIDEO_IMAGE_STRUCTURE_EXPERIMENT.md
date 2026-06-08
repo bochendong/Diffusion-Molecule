@@ -379,12 +379,13 @@ and MolScribe-readable rendering.
 
 Follow-up code fix after this run:
 
-- SUCC OCR now follows the confirmed-good SketchMolBenchmark route by default:
-  `evaluate/predict_csv.py`, `onmt220` prepended, batch size 16, and no image
-  preprocessing. The local `run_molscribe_ocr.py` wrapper remains available for
-  diagnostics/fallback and validates SMILES with RDKit before accepting raw-token fallback.
-  Raw fallback is **off by default** so garbage token strings like `C)C)C)...`
-  no longer inflate validity.
+- SUCC OCR now uses the local `run_molscribe_ocr.py` wrapper by default:
+  `custom` backend, `onmt220` prepended, batch size 16, no image preprocessing,
+  and RDKit-validated raw-token fallback. This is the path to use after
+  `15763087`, where the official SketchMol graph-only runner completed but
+  returned empty SMILES even for RDKit-rendered source/target diagnostics.
+  The official `evaluate/predict_csv.py` route remains available as an explicit
+  `SUCC_MOLSCRIBE_RUNNER=official SUCC_MOLSCRIBE_BACKEND=sketchmol` ablation.
 - `evaluate_univideo_image_benchmark.py` sets `ocr_smiles_present` from RDKit-valid
   SMILES only.
 - Diagnostic script: `scripts/diagnose_univideo_molscribe_ocr.py`.
@@ -401,7 +402,9 @@ OCR-only rerun on the existing `15697119` generated images:
 IMAGE_CSV=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
 
 SUCC_IMAGE_CSV="$IMAGE_CSV" \
-SUCC_MOLSCRIBE_RUNNER=official \
+SUCC_MOLSCRIBE_RUNNER=wrapper \
+SUCC_MOLSCRIBE_BACKEND=custom \
+SUCC_RAW_SMILES_FALLBACK=1 \
 SUCC_MOLSCRIBE_BATCH_SIZE=16 \
 SUCC_PREPROCESS_IMAGES=0 \
 SUCC_RUN_MOLSCRIBE_DIAGNOSTIC=1 \
