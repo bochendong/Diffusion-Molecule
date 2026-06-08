@@ -34,7 +34,11 @@ from sketchmol_unified_3m_diffusion.runtime import (  # noqa: E402
     resolve_device,
 )
 from sketchmol_unified_3m_diffusion.unified_condition_dataset import EDIT_GENERATION, PROPERTY_COLUMNS, read_jsonl  # noqa: E402
-from sketchmol_unified_3m_diffusion.unified_featurization import hidden_sequence_for_sample, target_latent_vector  # noqa: E402
+from sketchmol_unified_3m_diffusion.unified_featurization import (  # noqa: E402
+    hidden_sequence_for_sample,
+    source_latent_vector,
+    target_latent_vector,
+)
 
 
 class LatentDiffusionDataset(Dataset):
@@ -46,10 +50,13 @@ class LatentDiffusionDataset(Dataset):
             raise ValueError(f"No edit_generation rows found in {jsonl}")
         self.hidden = np.stack([hidden_sequence_for_sample(sample, token_dim=token_dim) for sample in samples])
         self.latents = np.stack([target_latent_vector(sample, fingerprint_dim=fingerprint_dim) for sample in samples])
+        self.source_latents = np.stack([source_latent_vector(sample, fingerprint_dim=fingerprint_dim) for sample in samples])
+        self.source_tanimoto = np.asarray([_float_or_nan(sample.source_tanimoto) for sample in samples], dtype=np.float32)
         self.latent_mean = self.latents.mean(axis=0, keepdims=True)
         self.latent_std = self.latents.std(axis=0, keepdims=True)
         self.latent_std = np.where(self.latent_std < 1e-6, 1.0, self.latent_std)
         self.latents = (self.latents - self.latent_mean) / self.latent_std
+        self.source_latents = (self.source_latents - self.latent_mean) / self.latent_std
 
     def __len__(self) -> int:
         return int(self.hidden.shape[0])
@@ -58,6 +65,8 @@ class LatentDiffusionDataset(Dataset):
         return {
             "hidden": torch.from_numpy(self.hidden[idx]).float(),
             "latent": torch.from_numpy(self.latents[idx]).float(),
+            "source_latent": torch.from_numpy(self.source_latents[idx]).float(),
+            "source_tanimoto": torch.tensor(self.source_tanimoto[idx], dtype=torch.float32),
         }
 
 
@@ -76,6 +85,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--diffusion-objective", choices=["pred_noise", "pred_x0"], default="pred_x0")
     parser.add_argument("--diffusion-target", choices=["target", "residual"], default="residual")
     parser.add_argument("--prior-loss-weight", type=float, default=0.0)
+    parser.add_argument("--source-regret-loss-weight", type=float, default=0.0)
+    parser.add_argument("--source-regret-margin", type=float, default=0.0)
+    parser.add_argument("--source-radius-loss-weight", type=float, default=0.0)
+    parser.add_argument("--source-radius-margin", type=float, default=0.05)
+    parser.add_argument("--source-similarity-weight-floor", type=float, default=0.25)
     parser.add_argument("--hidden-dim", type=int, default=512)
     parser.add_argument("--depth", type=int, default=4)
     parser.add_argument("--limit", type=int, default=None)
@@ -141,46 +155,61 @@ def main() -> None:
     start_epoch = 0
     if args.resume_checkpoint is not None:
         payload = torch.load(args.resume_checkpoint, map_location=device)
-        diffusion.load_state_dict(payload["diffusion_state"])
-        connector.load_state_dict(payload["connector_state"])
         resume_config = payload.get("config", {})
-        resume_train_connector = bool(resume_config.get("train_connector", False)) if isinstance(resume_config, dict) else False
-        if resume_train_connector == bool(args.train_connector):
-            try:
-                optimizer.load_state_dict(payload["optimizer_state"])
-            except ValueError as exc:
-                print(
-                    json.dumps(
-                        {
-                            "event": "optimizer_state_skipped",
-                            "reason": str(exc),
-                            "checkpoint": str(args.resume_checkpoint),
-                        },
-                        sort_keys=True,
-                    )
-                )
-        else:
+        if not _resume_config_compatible(resume_config, config):
             print(
                 json.dumps(
                     {
-                        "event": "optimizer_state_skipped",
-                        "reason": "train_connector setting changed",
-                        "checkpoint_train_connector": resume_train_connector,
-                        "current_train_connector": bool(args.train_connector),
+                        "event": "resume_checkpoint_skipped",
+                        "reason": "training objective changed",
                         "checkpoint": str(args.resume_checkpoint),
                     },
                     sort_keys=True,
                 )
             )
-        history = list(payload.get("history", []))
-        start_epoch = int(payload.get("epoch", 0))
-        print(json.dumps({"event": "resumed", "checkpoint": str(args.resume_checkpoint), "start_epoch": start_epoch}, sort_keys=True))
+        else:
+            diffusion.load_state_dict(payload["diffusion_state"])
+            connector.load_state_dict(payload["connector_state"])
+            resume_train_connector = bool(resume_config.get("train_connector", False)) if isinstance(resume_config, dict) else False
+            if resume_train_connector == bool(args.train_connector):
+                try:
+                    optimizer.load_state_dict(payload["optimizer_state"])
+                except ValueError as exc:
+                    print(
+                        json.dumps(
+                            {
+                                "event": "optimizer_state_skipped",
+                                "reason": str(exc),
+                                "checkpoint": str(args.resume_checkpoint),
+                            },
+                            sort_keys=True,
+                        )
+                    )
+            else:
+                print(
+                    json.dumps(
+                        {
+                            "event": "optimizer_state_skipped",
+                            "reason": "train_connector setting changed",
+                            "checkpoint_train_connector": resume_train_connector,
+                            "current_train_connector": bool(args.train_connector),
+                            "checkpoint": str(args.resume_checkpoint),
+                        },
+                        sort_keys=True,
+                    )
+                )
+            history = list(payload.get("history", []))
+            start_epoch = int(payload.get("epoch", 0))
+            print(json.dumps({"event": "resumed", "checkpoint": str(args.resume_checkpoint), "start_epoch": start_epoch}, sort_keys=True))
 
     for epoch in range(start_epoch, args.epochs):
         diffusion.train()
         losses = []
         diffusion_losses = []
         prior_losses = []
+        source_regret_losses = []
+        source_radius_losses = []
+        source_worse_rates = []
         train_target_mae = []
         for batch in loader:
             batch = move_batch_to_device(batch, device)
@@ -201,21 +230,43 @@ def main() -> None:
             if not args.train_connector:
                 prior_latent = prior_latent.detach()
             diffusion_target = target_latent - prior_latent if args.diffusion_target == "residual" else target_latent
-            diffusion_loss = diffusion.loss(diffusion_target, tokens, mask)
+            diffusion_loss, pred_diffusion_target = diffusion.loss_and_pred_x0(diffusion_target, tokens, mask)
             prior_loss = F.mse_loss(prior_latent, target_latent)
-            loss = diffusion_loss + float(args.prior_loss_weight) * prior_loss
+            pred_final_latent = pred_diffusion_target + prior_latent if args.diffusion_target == "residual" else pred_diffusion_target
+            source_losses = source_guard_losses(
+                pred_final_latent,
+                target_latent,
+                batch["source_latent"].float(),
+                batch["source_tanimoto"].float(),
+                fingerprint_dim=args.fingerprint_dim,
+                source_regret_margin=args.source_regret_margin,
+                source_radius_margin=args.source_radius_margin,
+                source_similarity_weight_floor=args.source_similarity_weight_floor,
+            )
+            loss = (
+                diffusion_loss
+                + float(args.prior_loss_weight) * prior_loss
+                + float(args.source_regret_loss_weight) * source_losses["source_property_regret"]
+                + float(args.source_radius_loss_weight) * source_losses["source_radius_regret"]
+            )
             loss.backward()
             torch.nn.utils.clip_grad_norm_(params, 1.0)
             optimizer.step()
             losses.append(float(loss.item()))
             diffusion_losses.append(float(diffusion_loss.item()))
             prior_losses.append(float(prior_loss.item()))
+            source_regret_losses.append(float(source_losses["source_property_regret"].item()))
+            source_radius_losses.append(float(source_losses["source_radius_regret"].item()))
+            source_worse_rates.append(float(source_losses["source_property_worse_rate"].item()))
             train_target_mae.append(float(torch.mean(torch.abs(diffusion_target)).item()))
         record = {
             "epoch": epoch + 1,
             "train_loss": float(np.mean(losses)),
             "diffusion_loss": float(np.mean(diffusion_losses)),
             "prior_mse": float(np.mean(prior_losses)),
+            "source_property_regret": float(np.mean(source_regret_losses)),
+            "source_radius_regret": float(np.mean(source_radius_losses)),
+            "source_property_worse_rate": float(np.mean(source_worse_rates)),
             "diffusion_target_mae": float(np.mean(train_target_mae)),
         }
         history.append(record)
@@ -259,6 +310,11 @@ def _config(
         "diffusion_objective": args.diffusion_objective,
         "diffusion_target": args.diffusion_target,
         "prior_loss_weight": args.prior_loss_weight,
+        "source_regret_loss_weight": args.source_regret_loss_weight,
+        "source_regret_margin": args.source_regret_margin,
+        "source_radius_loss_weight": args.source_radius_loss_weight,
+        "source_radius_margin": args.source_radius_margin,
+        "source_similarity_weight_floor": args.source_similarity_weight_floor,
         "hidden_dim": args.hidden_dim,
         "depth": args.depth,
         "connector_config": connector_config,
@@ -271,6 +327,81 @@ def _config(
         "pin_memory": bool(args.pin_memory),
         "seed": args.seed,
     }
+
+
+def source_guard_losses(
+    pred_latent: torch.Tensor,
+    target_latent: torch.Tensor,
+    source_latent: torch.Tensor,
+    source_tanimoto: torch.Tensor,
+    *,
+    fingerprint_dim: int,
+    source_regret_margin: float,
+    source_radius_margin: float,
+    source_similarity_weight_floor: float,
+) -> dict[str, torch.Tensor]:
+    num_props = len(PROPERTY_COLUMNS)
+    prop_slice = slice(fingerprint_dim, fingerprint_dim + num_props)
+    pred_prop_error = torch.mean(torch.abs(pred_latent[:, prop_slice] - target_latent[:, prop_slice]), dim=1)
+    source_prop_error = torch.mean(torch.abs(source_latent[:, prop_slice] - target_latent[:, prop_slice]), dim=1)
+    weights = _source_similarity_weights(
+        source_tanimoto,
+        floor=source_similarity_weight_floor,
+        device=pred_latent.device,
+        dtype=pred_latent.dtype,
+    )
+
+    regret = torch.relu(pred_prop_error - source_prop_error - float(source_regret_margin))
+    pred_source_radius = torch.mean(torch.abs(pred_latent - source_latent), dim=1)
+    target_source_radius = torch.mean(torch.abs(target_latent - source_latent), dim=1)
+    radius_regret = torch.relu(pred_source_radius - target_source_radius - float(source_radius_margin))
+    return {
+        "source_property_regret": torch.mean(weights * regret.pow(2)),
+        "source_radius_regret": torch.mean(weights * radius_regret.pow(2)),
+        "source_property_worse_rate": torch.mean((pred_prop_error > source_prop_error).to(dtype=pred_latent.dtype)),
+    }
+
+
+def _source_similarity_weights(
+    source_tanimoto: torch.Tensor,
+    *,
+    floor: float,
+    device: torch.device,
+    dtype: torch.dtype,
+) -> torch.Tensor:
+    values = source_tanimoto.to(device=device, dtype=dtype).reshape(-1)
+    finite = torch.isfinite(values)
+    scaled = ((values - 0.4) / 0.55).clamp(0.0, 1.0)
+    scaled = torch.where(finite, scaled, torch.full_like(scaled, 0.5))
+    floor_value = min(max(float(floor), 0.0), 1.0)
+    return floor_value + (1.0 - floor_value) * scaled
+
+
+def _float_or_nan(value: object) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return float("nan")
+
+
+def _resume_config_compatible(resume_config: object, current_config: dict[str, object]) -> bool:
+    if not isinstance(resume_config, dict):
+        return False
+    keys = [
+        "diffusion_objective",
+        "diffusion_target",
+        "prior_loss_weight",
+        "source_regret_loss_weight",
+        "source_regret_margin",
+        "source_radius_loss_weight",
+        "source_radius_margin",
+        "source_similarity_weight_floor",
+        "train_connector",
+    ]
+    for key in keys:
+        if resume_config.get(key) != current_config.get(key):
+            return False
+    return True
 
 
 def condition_prior_latent(

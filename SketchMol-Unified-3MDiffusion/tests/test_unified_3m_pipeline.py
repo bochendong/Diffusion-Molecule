@@ -139,8 +139,42 @@ def test_edit_condition_connector_and_diffusion_loss_shapes():
     denoiser = EditLatentDenoiser(latent_dim=20, context_dim=16, hidden_dim=32, depth=2)
     diffusion = GaussianLatentDiffusion(denoiser, timesteps=8)
     diffusion_loss = diffusion.loss(torch.randn(3, 20), output.tokens, output.attention_mask)
+    diffusion_loss_with_pred, pred_x0 = diffusion.loss_and_pred_x0(torch.randn(3, 20), output.tokens, output.attention_mask)
 
     assert torch.isfinite(diffusion_loss)
+    assert torch.isfinite(diffusion_loss_with_pred)
+    assert pred_x0.shape == (3, 20)
+
+
+def test_source_guard_losses_penalize_over_editing():
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "train_latent_diffusion_generation.py"
+    spec = importlib.util.spec_from_file_location("train_latent_diffusion_generation", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    fingerprint_dim = 4
+    latent_dim = fingerprint_dim + 80
+    target = torch.zeros(2, latent_dim)
+    source = torch.zeros(2, latent_dim)
+    source[:, fingerprint_dim : fingerprint_dim + 7] = 0.2
+    pred = target.clone()
+    pred[:, fingerprint_dim : fingerprint_dim + 7] = 0.8
+
+    losses = module.source_guard_losses(
+        pred,
+        target,
+        source,
+        torch.tensor([0.8, 0.5]),
+        fingerprint_dim=fingerprint_dim,
+        source_regret_margin=0.0,
+        source_radius_margin=0.0,
+        source_similarity_weight_floor=0.25,
+    )
+
+    assert losses["source_property_regret"] > 0
+    assert losses["source_radius_regret"] > 0
+    assert losses["source_property_worse_rate"].item() == 1.0
 
 
 def test_source_aware_fingerprint_losses_backprop_to_logits():

@@ -128,10 +128,14 @@ dataset:
 SMMED_OUTPUT_DIR=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1
 SMMED_PAIRING_STRATEGY=source_neighbor
 SMU3M_EDIT_MANIFEST=.../multiproperty_source_neighbor_v1/diffusion_edit_manifest.csv
-SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_v1
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_sourceguard_v1
 SMU3M_MIN_EDIT_SOURCE_TANIMOTO=0.4
 SMU3M_REQUIRE_EDIT_QUALITY_COLUMNS=1
 SMU3M_REQUIRE_EVAL_ORACLE_STRICT=1
+SMU3M_TRAIN_DIFFUSION_CONNECTOR=1
+SMU3M_PRIOR_LOSS_WEIGHT=0.05
+SMU3M_SOURCE_REGRET_LOSS_WEIGHT=0.35
+SMU3M_SOURCE_RADIUS_LOSS_WEIGHT=0.10
 ```
 
 Set `SMMED_OUTPUT_DIR`, `SMU3M_EDIT_MANIFEST`, and
@@ -338,6 +342,31 @@ direction, fingerprint, and similarity-bin supervision. Set
 shared-gradient setup improved fingerprint cosine but hurt property/delta
 control.
 
+## Source-Guarded Diffusion Objective
+
+Source-neighbor edits are intentionally close to the source, so latent diffusion
+must beat the source baseline instead of simply moving every row. Stage 3 now
+has two source-guard losses:
+
+```text
+SMU3M_SOURCE_REGRET_LOSS_WEIGHT=0.35
+SMU3M_SOURCE_REGRET_MARGIN=0.0
+SMU3M_SOURCE_RADIUS_LOSS_WEIGHT=0.10
+SMU3M_SOURCE_RADIUS_MARGIN=0.05
+SMU3M_SOURCE_SIMILARITY_WEIGHT_FLOOR=0.25
+```
+
+`source_property_regret` penalizes generated property error when it is worse
+than using the source molecule directly. `source_radius_regret` penalizes
+latents that move farther from the source than the true target-source edit
+radius. Both are weighted more strongly for high source Tanimoto rows, so
+easy/medium edits learn to stay conservative while hard edits can still move.
+
+Latent evaluation now reports `property_mae_gain_vs_source`,
+`property_mae_beats_source`, `fingerprint_cosine_gain_vs_source`, and
+`fingerprint_beats_source`. Positive gains and beat rates above 0.5 mean the
+generated latent is outperforming the source baseline instead of over-editing.
+
 For short source-aware direction sweeps, do not submit one Slurm job per
 configuration. Pack them into one allocation with GLOST:
 
@@ -472,7 +501,7 @@ After the residual Stage 3 runs, continue with joint connector + diffusion
 refine and latent eval:
 
 ```bash
-SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_v1 \
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_sourceguard_v1 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
 ```
@@ -491,6 +520,8 @@ SMU3M_DIFFUSION_EXTRA_EPOCHS=100
 SMU3M_DIFFUSION_LR=3e-4
 SMU3M_TRAIN_DIFFUSION_CONNECTOR=1
 SMU3M_PRIOR_LOSS_WEIGHT=0.25
+SMU3M_SOURCE_REGRET_LOSS_WEIGHT=0.35
+SMU3M_SOURCE_RADIUS_LOSS_WEIGHT=0.10
 SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=250
 SMU3M_RUN_MATERIALIZED_BENCHMARK=0
 ```

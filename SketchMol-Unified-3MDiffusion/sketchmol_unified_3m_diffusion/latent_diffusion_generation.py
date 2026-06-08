@@ -128,6 +128,15 @@ class GaussianLatentDiffusion(nn.Module):
         condition_tokens: torch.Tensor,
         condition_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
+        loss, _ = self.loss_and_pred_x0(target_latent, condition_tokens, condition_mask)
+        return loss
+
+    def loss_and_pred_x0(
+        self,
+        target_latent: torch.Tensor,
+        condition_tokens: torch.Tensor,
+        condition_mask: torch.Tensor | None = None,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
         batch = target_latent.shape[0]
         timesteps = torch.randint(0, self.timesteps, (batch,), device=target_latent.device)
         noise = torch.randn_like(target_latent)
@@ -135,7 +144,7 @@ class GaussianLatentDiffusion(nn.Module):
         predictions = self.model_predictions(xt, timesteps, condition_tokens, condition_mask)
         target = noise if self.objective == "pred_noise" else target_latent
         pred = predictions.pred_noise if self.objective == "pred_noise" else predictions.pred_x0
-        return F.mse_loss(pred, target)
+        return F.mse_loss(pred, target), predictions.pred_x0
 
     @torch.no_grad()
     def sample(

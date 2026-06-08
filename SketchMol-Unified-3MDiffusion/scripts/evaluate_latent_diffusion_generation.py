@@ -27,8 +27,8 @@ from sketchmol_unified_3m_diffusion.runtime import device_report, resolve_device
 from sketchmol_unified_3m_diffusion.unified_condition_dataset import EDIT_GENERATION, PROPERTY_COLUMNS, read_jsonl  # noqa: E402
 from sketchmol_unified_3m_diffusion.unified_featurization import (  # noqa: E402
     hidden_sequence_for_sample,
-    molecule_feature,
     property_delta_vector,
+    source_latent_vector,
     target_latent_vector,
     target_property_vector,
 )
@@ -143,7 +143,7 @@ def main() -> None:
                 )
             )
             source_latents.append(
-                np.stack([_source_latent_vector(sample, fingerprint_dim=fingerprint_dim) for sample in batch]).astype(
+                np.stack([source_latent_vector(sample, fingerprint_dim=fingerprint_dim) for sample in batch]).astype(
                     np.float32
                 )
             )
@@ -227,14 +227,6 @@ def _property_count_sort_key(value: str) -> tuple[int, str]:
         return (1, value)
 
 
-def _source_latent_vector(sample, *, fingerprint_dim: int) -> np.ndarray:
-    fp = molecule_feature(sample.source_smiles or sample.molecule_smiles, fingerprint_dim)
-    props = _resize(np.asarray([sample.source_properties.get(prop, 0.0) for prop in PROPERTY_COLUMNS], dtype=np.float32), 32)
-    deltas = _resize(property_delta_vector(sample), 32)
-    active = _resize(np.asarray([1.0 if sample.active_properties.get(prop, False) else 0.0 for prop in PROPERTY_COLUMNS], dtype=np.float32), 16)
-    return np.concatenate([fp, props, deltas, active]).astype(np.float32)
-
-
 def condition_prior_latent(
     condition,
     *,
@@ -286,8 +278,13 @@ def _per_row_metrics(
     for idx, sample in enumerate(samples):
         gen_props = gen[idx, prop_start : prop_start + len(PROPERTY_COLUMNS)]
         target_props = target_property_vector(sample)
+        source_props = source[idx, prop_start : prop_start + len(PROPERTY_COLUMNS)]
         gen_deltas = gen[idx, delta_start : delta_start + len(PROPERTY_COLUMNS)]
         target_deltas = property_delta_vector(sample)
+        target_fingerprint_cosine = _cosine(gen_fp[idx], target_fp[idx])
+        source_target_fingerprint_cosine = _cosine(source_fp[idx], target_fp[idx])
+        target_property_mae = _mae(gen_props, target_props)
+        source_target_property_mae = _mae(source_props, target_props)
         row = {
             "sample_id": sample.sample_id,
             "property_count": sample.property_count,
@@ -295,25 +292,33 @@ def _per_row_metrics(
             "source_similarity_bin": sample.source_similarity_bin,
             "latent_mse": _mse(gen[idx], target[idx]),
             "latent_mae": _mae(gen[idx], target[idx]),
-            "target_fingerprint_cosine": _cosine(gen_fp[idx], target_fp[idx]),
+            "target_fingerprint_cosine": target_fingerprint_cosine,
             "source_fingerprint_cosine": _cosine(gen_fp[idx], source_fp[idx]),
-            "source_target_fingerprint_cosine": _cosine(source_fp[idx], target_fp[idx]),
-            "target_property_mae": _mae(gen_props, target_props),
-            "source_target_property_mae": _mae(
-                source[idx, prop_start : prop_start + len(PROPERTY_COLUMNS)],
-                target_props,
-            ),
+            "source_target_fingerprint_cosine": source_target_fingerprint_cosine,
+            "fingerprint_cosine_gain_vs_source": target_fingerprint_cosine - source_target_fingerprint_cosine,
+            "fingerprint_beats_source": float(target_fingerprint_cosine > source_target_fingerprint_cosine),
+            "target_property_mae": target_property_mae,
+            "source_target_property_mae": source_target_property_mae,
+            "property_mae_gain_vs_source": source_target_property_mae - target_property_mae,
+            "property_mae_regret_vs_source": max(target_property_mae - source_target_property_mae, 0.0),
+            "property_mae_beats_source": float(target_property_mae < source_target_property_mae),
             "delta_mae": _mae(gen_deltas, target_deltas),
         }
         if prior is not None:
             prior_fp = prior[idx, :fingerprint_dim]
             prior_props = prior[idx, prop_start : prop_start + len(PROPERTY_COLUMNS)]
             prior_deltas = prior[idx, delta_start : delta_start + len(PROPERTY_COLUMNS)]
+            prior_target_fingerprint_cosine = _cosine(prior_fp, target_fp[idx])
+            prior_target_property_mae = _mae(prior_props, target_props)
             row.update(
                 {
                     "prior_latent_mae": _mae(prior[idx], target[idx]),
-                    "prior_target_fingerprint_cosine": _cosine(prior_fp, target_fp[idx]),
-                    "prior_target_property_mae": _mae(prior_props, target_props),
+                    "prior_target_fingerprint_cosine": prior_target_fingerprint_cosine,
+                    "fingerprint_cosine_gain_vs_prior": target_fingerprint_cosine - prior_target_fingerprint_cosine,
+                    "fingerprint_beats_prior": float(target_fingerprint_cosine > prior_target_fingerprint_cosine),
+                    "prior_target_property_mae": prior_target_property_mae,
+                    "property_mae_gain_vs_prior": prior_target_property_mae - target_property_mae,
+                    "property_mae_beats_prior": float(target_property_mae < prior_target_property_mae),
                     "prior_delta_mae": _mae(prior_deltas, target_deltas),
                     "generated_minus_prior_latent_mae": _mae(gen[idx], prior[idx]),
                 }
@@ -329,12 +334,21 @@ def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
         "target_fingerprint_cosine",
         "source_fingerprint_cosine",
         "source_target_fingerprint_cosine",
+        "fingerprint_cosine_gain_vs_source",
+        "fingerprint_beats_source",
         "target_property_mae",
         "source_target_property_mae",
+        "property_mae_gain_vs_source",
+        "property_mae_regret_vs_source",
+        "property_mae_beats_source",
         "delta_mae",
         "prior_latent_mae",
         "prior_target_fingerprint_cosine",
+        "fingerprint_cosine_gain_vs_prior",
+        "fingerprint_beats_prior",
         "prior_target_property_mae",
+        "property_mae_gain_vs_prior",
+        "property_mae_beats_prior",
         "prior_delta_mae",
         "generated_minus_prior_latent_mae",
     ]
@@ -393,17 +407,6 @@ def _write_rows(path: Path, rows: list[dict[str, object]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=list(rows[0].keys()))
         writer.writeheader()
         writer.writerows(rows)
-
-
-def _resize(vec: np.ndarray, dim: int) -> np.ndarray:
-    vec = np.asarray(vec, dtype=np.float32).reshape(-1)
-    if vec.shape[0] == dim:
-        return vec
-    if vec.shape[0] > dim:
-        return vec[:dim]
-    out = np.zeros(dim, dtype=np.float32)
-    out[: vec.shape[0]] = vec
-    return out
 
 
 def _mse(left: np.ndarray, right: np.ndarray) -> float:

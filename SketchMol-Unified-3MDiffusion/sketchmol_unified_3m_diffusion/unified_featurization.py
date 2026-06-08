@@ -121,6 +121,18 @@ def target_latent_vector(sample: UnifiedConditionSample, *, fingerprint_dim: int
     return np.concatenate([fp, props, deltas, active]).astype(np.float32)
 
 
+def source_latent_vector(sample: UnifiedConditionSample, *, fingerprint_dim: int = 512) -> np.ndarray:
+    source_smiles = sample.source_smiles or sample.molecule_smiles or sample.target_smiles
+    fp = molecule_feature(source_smiles, fingerprint_dim)
+    props = _resize(
+        np.asarray([sample.source_properties.get(prop, 0.0) for prop in PROPERTY_COLUMNS], dtype=np.float32),
+        32,
+    )
+    deltas = _resize(property_delta_vector(sample), 32)
+    active = _resize(active_property_vector(sample), 16)
+    return np.concatenate([fp, props, deltas, active]).astype(np.float32)
+
+
 def _resize(vec: np.ndarray, dim: int) -> np.ndarray:
     vec = np.asarray(vec, dtype=np.float32).reshape(-1)
     if vec.shape[0] == dim:
