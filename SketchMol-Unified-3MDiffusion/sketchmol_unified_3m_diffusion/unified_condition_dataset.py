@@ -11,6 +11,23 @@ from typing import Iterable, Mapping
 
 
 PROPERTY_COLUMNS = ("MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB")
+TABLE1_TASK_SPECS = {
+    frozenset({("GSK3B", "increase")}): "GSK3B:increase",
+    frozenset({("RB", "decrease")}): "RB:decrease",
+    frozenset({("MW", "increase")}): "MW:increase",
+    frozenset({("SA", "decrease")}): "SA:decrease",
+    frozenset({("HBA", "decrease"), ("SA", "decrease")}): "HBA:decrease+SA:decrease",
+    frozenset({("QED", "increase"), ("SA", "decrease")}): "QED:increase+SA:decrease",
+    frozenset({("HBA", "decrease"), ("LogP", "increase")}): "HBA:decrease+LogP:increase",
+    frozenset({("HBA", "decrease"), ("MW", "decrease")}): "HBA:decrease+MW:decrease",
+    frozenset({("DRD2", "decrease"), ("MW", "decrease"), ("SA", "decrease")}): (
+        "DRD2:decrease+MW:decrease+SA:decrease"
+    ),
+    frozenset({("HBA", "increase"), ("MW", "increase"), ("QED", "decrease")}): (
+        "HBA:increase+MW:increase+QED:decrease"
+    ),
+}
+TABLE1_TASK_KEYS = set(TABLE1_TASK_SPECS.values())
 DESCRIPTION_PRETRAIN = "description_pretrain"
 EDIT_GENERATION = "edit_generation"
 EDIT_QUALITY_METADATA_FIELDS = (
@@ -250,6 +267,102 @@ def read_edit_generation_samples(
     return samples
 
 
+def read_moledit_generation_samples(
+    path: str | Path,
+    *,
+    split: str,
+    dataset_name: str = "moledit_instruct",
+    limit: int | None = None,
+    min_source_tanimoto: float | None = None,
+    table1_tasks_only: bool = False,
+) -> list[UnifiedConditionSample]:
+    """Read enhanced MolEdit-Instruct split rows as source-conditioned edits."""
+
+    samples = []
+    with Path(path).open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        required = {"example_id", "instruction", "source_smiles", "target_smiles"}
+        missing = required - set(reader.fieldnames or [])
+        if missing:
+            raise ValueError(f"MolEdit split missing columns: {sorted(missing)}")
+        for idx, row in enumerate(reader):
+            source_smiles = (row.get("source_smiles") or "").strip()
+            target_smiles = (row.get("target_smiles") or "").strip()
+            instruction = (row.get("instruction") or "").strip()
+            if not source_smiles or not target_smiles or not instruction:
+                continue
+            source_tanimoto = _to_float(row.get("source_target_tanimoto", ""))
+            if min_source_tanimoto is not None and (
+                math.isnan(source_tanimoto) or source_tanimoto < float(min_source_tanimoto)
+            ):
+                continue
+
+            instruction_tasks = _parse_instruction_tasks(row.get("instruction_tasks", ""))
+            task_specs = _task_specs_from_instruction(row, instruction_tasks)
+            task_key = _task_key(task_specs)
+            if table1_tasks_only and task_key not in TABLE1_TASK_KEYS:
+                continue
+
+            source_props = _properties_from_prefix(row, "source")
+            target_props = _properties_from_prefix(row, "target")
+            deltas = _properties_from_prefix(row, "delta")
+            active_props = _active_props_from_moledit(row, task_specs, deltas)
+            directions = _directions_from_moledit(row, task_specs, deltas)
+            condition_props = [prop for prop in (spec.get("property", "") for spec in task_specs) if prop]
+            model_props = [prop for prop in condition_props if prop in PROPERTY_COLUMNS]
+            if not model_props:
+                model_props = [prop for prop in PROPERTY_COLUMNS if active_props.get(prop, False)]
+
+            example_id = row.get("example_id") or row.get("pair_hash") or str(idx)
+            metadata = {
+                "dataset": dataset_name,
+                "condition_id": example_id,
+                "example_id": example_id,
+                "pair_hash": row.get("pair_hash", ""),
+                "moledit_task_key": task_key,
+                "moledit_tasks": json.dumps(task_specs, ensure_ascii=True, sort_keys=True, separators=(",", ":")),
+                "instruction_task_properties": row.get("instruction_task_properties", ""),
+                "instruction_task_directions": row.get("instruction_task_directions", ""),
+                "computed_active_properties": row.get("computed_active_properties", ""),
+                "computed_active_count": row.get("computed_active_count", ""),
+                "pair_quality_tier": row.get("pair_quality", ""),
+                "difficulty_bucket": row.get("difficulty_bucket", ""),
+                "source_valid": row.get("source_valid", ""),
+                "target_valid": row.get("target_valid", ""),
+                "source_canonical_smiles": row.get("source_canonical_smiles", ""),
+                "target_canonical_smiles": row.get("target_canonical_smiles", ""),
+                "source_scaffold": row.get("source_scaffold_smiles", ""),
+                "target_scaffold": row.get("target_scaffold_smiles", ""),
+                "same_scaffold": row.get("scaffold_match", ""),
+                "preservation_constraint": "source_tanimoto",
+            }
+            samples.append(
+                UnifiedConditionSample(
+                    sample_id=f"edit:{dataset_name}:{example_id}",
+                    task_type=EDIT_GENERATION,
+                    split=split,
+                    prompt=instruction,
+                    target_smiles=target_smiles,
+                    source_smiles=source_smiles,
+                    molecule_smiles=source_smiles,
+                    instruction=instruction,
+                    condition_properties=",".join(model_props),
+                    property_count=str(len(model_props)),
+                    source_tanimoto=row.get("source_target_tanimoto", ""),
+                    source_similarity_bin=row.get("difficulty_bucket", ""),
+                    source_properties=source_props,
+                    target_properties=target_props,
+                    property_deltas=deltas,
+                    active_properties=active_props,
+                    directions=directions,
+                    metadata=metadata,
+                )
+            )
+            if limit is not None and len(samples) >= limit:
+                break
+    return samples
+
+
 def split_samples(
     samples: Iterable[UnifiedConditionSample],
     *,
@@ -341,6 +454,100 @@ def _properties_from_prefix(row: Mapping[str, str], prefix: str) -> dict[str, fl
         value = _to_float(row.get(f"{prefix}_{prop}", ""))
         if not math.isnan(value):
             out[prop] = value
+    return out
+
+
+def _parse_instruction_tasks(value: object) -> list[dict[str, str]]:
+    try:
+        parsed = json.loads(str(value or "[]"))
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(parsed, list):
+        return []
+    out = []
+    for item in parsed:
+        if not isinstance(item, Mapping):
+            continue
+        prop = str(item.get("property", "")).strip()
+        direction = str(item.get("direction", "")).strip().lower()
+        if prop:
+            out.append({"property": prop, "direction": direction or "unknown"})
+    return out
+
+
+def _task_specs_from_instruction(
+    row: Mapping[str, str],
+    instruction_tasks: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    if instruction_tasks:
+        return instruction_tasks
+    specs = []
+    raw_props = row.get("instruction_task_properties", "") or row.get("computed_active_properties", "")
+    directions = _parse_json_mapping(row.get("instruction_task_directions", ""))
+    for prop in [item for item in re_split_props(raw_props) if item]:
+        direction = str(directions.get(prop, "") or row.get(f"{prop}_direction", "") or "unknown").lower()
+        specs.append({"property": prop, "direction": direction})
+    return specs
+
+
+def re_split_props(value: object) -> list[str]:
+    text = str(value or "").replace(",", "|")
+    return [part.strip() for part in text.split("|") if part.strip()]
+
+
+def _parse_json_mapping(value: object) -> dict[str, object]:
+    try:
+        parsed = json.loads(str(value or "{}"))
+    except json.JSONDecodeError:
+        return {}
+    return dict(parsed) if isinstance(parsed, Mapping) else {}
+
+
+def _task_key(task_specs: list[dict[str, str]]) -> str:
+    pairs = [
+        (spec.get("property", ""), str(spec.get("direction", "") or "unknown").lower())
+        for spec in task_specs
+        if spec.get("property")
+    ]
+    canonical = TABLE1_TASK_SPECS.get(frozenset(pairs))
+    if canonical:
+        return canonical
+    return "+".join(f"{prop}:{direction}" for prop, direction in sorted(pairs))
+
+
+def _active_props_from_moledit(
+    row: Mapping[str, str],
+    task_specs: list[dict[str, str]],
+    deltas: Mapping[str, float],
+) -> dict[str, bool]:
+    task_props = {spec.get("property", "") for spec in task_specs}
+    active = {}
+    for prop in PROPERTY_COLUMNS:
+        value = row.get(f"{prop}_active", "")
+        if value != "":
+            active[prop] = _truthy(value)
+        elif prop in task_props:
+            active[prop] = True
+        else:
+            active[prop] = prop in deltas and abs(float(deltas[prop])) > 1e-8
+    return active
+
+
+def _directions_from_moledit(
+    row: Mapping[str, str],
+    task_specs: list[dict[str, str]],
+    deltas: Mapping[str, float],
+) -> dict[str, str]:
+    task_directions = {
+        spec.get("property", ""): str(spec.get("direction", "") or "").lower()
+        for spec in task_specs
+    }
+    out = {}
+    for prop in PROPERTY_COLUMNS:
+        direction = task_directions.get(prop) or row.get(f"{prop}_direction", "")
+        if not direction and prop in deltas:
+            direction = "increase" if float(deltas[prop]) >= 0 else "decrease"
+        out[prop] = direction
     return out
 
 

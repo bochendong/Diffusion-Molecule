@@ -8,10 +8,16 @@ THREE_M_ROOT="${SMU3M_3M_ROOT:-Research/Molecule Generation/3M-Diffusion}"
 THREE_M_GIT_URL="${SMU3M_3M_GIT_URL:-https://github.com/huaishengzhu/3MDiffusion}"
 AUTO_CLONE_3M="${SMU3M_AUTO_CLONE_3M:-1}"
 EDIT_MANIFEST="${SMU3M_EDIT_MANIFEST:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1/diffusion_edit_manifest.csv}"
+DATASET_MODE="${SMU3M_DATASET_MODE:-multiproperty}"
+DM_DATA_ROOT="${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}"
+MOLEDIT_TRAIN_SPLIT="${SMU3M_MOLEDIT_TRAIN_SPLIT:-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/train.csv}"
+MOLEDIT_EVAL_SPLIT="${SMU3M_MOLEDIT_EVAL_SPLIT:-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv}"
 OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_smoke}"
 
 DESCRIPTION_LIMIT="${SMU3M_DESCRIPTION_LIMIT:-200}"
 EDIT_LIMIT="${SMU3M_EDIT_LIMIT:-500}"
+MOLEDIT_TRAIN_LIMIT="${SMU3M_MOLEDIT_TRAIN_LIMIT:-$EDIT_LIMIT}"
+MOLEDIT_EVAL_LIMIT="${SMU3M_MOLEDIT_EVAL_LIMIT:-}"
 TRAIN_LIMIT="${SMU3M_TRAIN_LIMIT:-500}"
 BATCH_SIZE="${SMU3M_BATCH_SIZE:-32}"
 NUM_WORKERS="${SMU3M_NUM_WORKERS:-0}"
@@ -57,14 +63,24 @@ RESUME="${SMU3M_RESUME:-1}"
 REQUIRE_CUDA="${SMU3M_REQUIRE_CUDA:-0}"
 INCLUDE_PUBCHEM="${SMU3M_INCLUDE_PUBCHEM:-0}"
 INCLUDE_KV="${SMU3M_INCLUDE_KV:-0}"
-MIN_EDIT_SOURCE_TANIMOTO="${SMU3M_MIN_EDIT_SOURCE_TANIMOTO:-0.4}"
-REQUIRE_EDIT_QUALITY_COLUMNS="${SMU3M_REQUIRE_EDIT_QUALITY_COLUMNS:-1}"
-REQUIRE_EVAL_ORACLE_STRICT="${SMU3M_REQUIRE_EVAL_ORACLE_STRICT:-1}"
+if [ "$DATASET_MODE" = "moledit" ]; then
+  MIN_EDIT_SOURCE_TANIMOTO="${SMU3M_MIN_EDIT_SOURCE_TANIMOTO:-0.0}"
+  REQUIRE_EDIT_QUALITY_COLUMNS="${SMU3M_REQUIRE_EDIT_QUALITY_COLUMNS:-0}"
+  REQUIRE_EVAL_ORACLE_STRICT="${SMU3M_REQUIRE_EVAL_ORACLE_STRICT:-0}"
+else
+  MIN_EDIT_SOURCE_TANIMOTO="${SMU3M_MIN_EDIT_SOURCE_TANIMOTO:-0.4}"
+  REQUIRE_EDIT_QUALITY_COLUMNS="${SMU3M_REQUIRE_EDIT_QUALITY_COLUMNS:-1}"
+  REQUIRE_EVAL_ORACLE_STRICT="${SMU3M_REQUIRE_EVAL_ORACLE_STRICT:-1}"
+fi
+MOLEDIT_TABLE1_TASKS_ONLY="${SMU3M_MOLEDIT_TABLE1_TASKS_ONLY:-0}"
 
 echo "Running unified 3M Understanding + latent diffusion pipeline"
 echo "  python=$PYTHON_BIN"
 echo "  3m_root=$THREE_M_ROOT"
+echo "  dataset_mode=$DATASET_MODE"
 echo "  edit_manifest=$EDIT_MANIFEST"
+echo "  moledit_train_split=$MOLEDIT_TRAIN_SPLIT"
+echo "  moledit_eval_split=$MOLEDIT_EVAL_SPLIT"
 echo "  output_dir=$OUTPUT_DIR"
 echo "  device=$DEVICE"
 echo "  require_cuda=$REQUIRE_CUDA"
@@ -107,6 +123,10 @@ echo "  include_kv=$INCLUDE_KV"
 echo "  min_edit_source_tanimoto=$MIN_EDIT_SOURCE_TANIMOTO"
 echo "  require_edit_quality_columns=$REQUIRE_EDIT_QUALITY_COLUMNS"
 echo "  require_eval_oracle_strict=$REQUIRE_EVAL_ORACLE_STRICT"
+echo "  edit_limit=$EDIT_LIMIT"
+echo "  moledit_train_limit=${MOLEDIT_TRAIN_LIMIT:-none}"
+echo "  moledit_eval_limit=${MOLEDIT_EVAL_LIMIT:-none}"
+echo "  moledit_table1_tasks_only=$MOLEDIT_TABLE1_TASKS_ONLY"
 
 if [ ! -d "$THREE_M_ROOT/data" ]; then
   if [ "$AUTO_CLONE_3M" = "1" ] && command -v git >/dev/null 2>&1; then
@@ -122,7 +142,16 @@ if [ ! -d "$THREE_M_ROOT/data" ]; then
   fi
 fi
 
-if [ ! -f "$EDIT_MANIFEST" ]; then
+if [ "$DATASET_MODE" = "moledit" ]; then
+  if [ ! -f "$MOLEDIT_TRAIN_SPLIT" ]; then
+    echo "Missing MolEdit train split: $MOLEDIT_TRAIN_SPLIT" >&2
+    exit 2
+  fi
+  if [ ! -f "$MOLEDIT_EVAL_SPLIT" ]; then
+    echo "Missing MolEdit eval split: $MOLEDIT_EVAL_SPLIT" >&2
+    exit 2
+  fi
+elif [ ! -f "$EDIT_MANIFEST" ]; then
   echo "Missing edit manifest: $EDIT_MANIFEST" >&2
   echo "Build the multiproperty dataset first, then rerun this script." >&2
   exit 2
@@ -132,9 +161,13 @@ mkdir -p "$OUTPUT_DIR"
 
 PREFLIGHT_ARGS=(
   --three-m-root "$THREE_M_ROOT"
-  --edit-manifest "$EDIT_MANIFEST"
   --min-edit-source-tanimoto "$MIN_EDIT_SOURCE_TANIMOTO"
 )
+if [ "$DATASET_MODE" = "moledit" ]; then
+  PREFLIGHT_ARGS+=(--moledit-train-split "$MOLEDIT_TRAIN_SPLIT" --moledit-eval-split "$MOLEDIT_EVAL_SPLIT")
+else
+  PREFLIGHT_ARGS+=(--edit-manifest "$EDIT_MANIFEST")
+fi
 if [ "$REQUIRE_CUDA" = "1" ]; then
   PREFLIGHT_ARGS+=(--require-cuda)
 fi
@@ -154,12 +187,24 @@ fi
 
 EXPORT_ARGS=(
   --three-m-root "$THREE_M_ROOT" \
-  --edit-manifest "$EDIT_MANIFEST" \
   --description-limit-per-split "$DESCRIPTION_LIMIT" \
-  --edit-limit "$EDIT_LIMIT" \
   --min-edit-source-tanimoto "$MIN_EDIT_SOURCE_TANIMOTO" \
   --output-dir "$OUTPUT_DIR/dataset"
 )
+if [ "$DATASET_MODE" = "moledit" ]; then
+  EXPORT_ARGS+=(--moledit-train-split "$MOLEDIT_TRAIN_SPLIT" --moledit-eval-split "$MOLEDIT_EVAL_SPLIT")
+  if [[ -n "$MOLEDIT_TRAIN_LIMIT" ]]; then
+    EXPORT_ARGS+=(--moledit-train-limit "$MOLEDIT_TRAIN_LIMIT")
+  fi
+  if [[ -n "$MOLEDIT_EVAL_LIMIT" ]]; then
+    EXPORT_ARGS+=(--moledit-eval-limit "$MOLEDIT_EVAL_LIMIT")
+  fi
+  if [ "$MOLEDIT_TABLE1_TASKS_ONLY" = "1" ]; then
+    EXPORT_ARGS+=(--moledit-table1-tasks-only)
+  fi
+else
+  EXPORT_ARGS+=(--edit-manifest "$EDIT_MANIFEST" --edit-limit "$EDIT_LIMIT")
+fi
 if [ "$REQUIRE_EDIT_QUALITY_COLUMNS" = "1" ]; then
   EXPORT_ARGS+=(--require-edit-quality-columns)
 fi

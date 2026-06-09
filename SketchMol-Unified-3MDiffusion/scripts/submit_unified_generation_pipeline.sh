@@ -16,8 +16,16 @@ fi
 
 DATASET_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1}"
 EDIT_MANIFEST="${SMU3M_EDIT_MANIFEST:-$DATASET_OUTPUT_DIR/diffusion_edit_manifest.csv}"
-UNIFIED_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_sourceanchor_v1}"
-SUBMIT_DATASET_BUILD="${SMMED_SUBMIT_DATASET_BUILD:-1}"
+DATASET_MODE="${SMU3M_DATASET_MODE:-multiproperty}"
+if [[ "$DATASET_MODE" == "moledit" ]]; then
+  DEFAULT_UNIFIED_OUTPUT_DIR="SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1"
+  DEFAULT_SUBMIT_DATASET_BUILD="0"
+else
+  DEFAULT_UNIFIED_OUTPUT_DIR="SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_sourceanchor_v1"
+  DEFAULT_SUBMIT_DATASET_BUILD="1"
+fi
+UNIFIED_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-$DEFAULT_UNIFIED_OUTPUT_DIR}"
+SUBMIT_DATASET_BUILD="${SMMED_SUBMIT_DATASET_BUILD:-$DEFAULT_SUBMIT_DATASET_BUILD}"
 
 export SMMED_RENDER_IMAGES="${SMMED_RENDER_IMAGES:-0}"
 export SMMED_OUTPUT_DIR="$DATASET_OUTPUT_DIR"
@@ -33,6 +41,7 @@ export SMMED_ORACLE_FILTER_SPLITS="${SMMED_ORACLE_FILTER_SPLITS:-eval}"
 export SMMED_DIFFUSION_MIN_SOURCE_TANIMOTO="${SMMED_DIFFUSION_MIN_SOURCE_TANIMOTO:-0.4}"
 export SMMED_DIFFUSION_MAX_SOURCE_TANIMOTO="${SMMED_DIFFUSION_MAX_SOURCE_TANIMOTO:-0.95}"
 export SMU3M_EDIT_MANIFEST="$EDIT_MANIFEST"
+export SMU3M_DATASET_MODE="$DATASET_MODE"
 export SMU3M_OUTPUT_DIR="$UNIFIED_OUTPUT_DIR"
 export SMU3M_3M_ROOT="${SMU3M_3M_ROOT:-Research/Molecule Generation/3M-Diffusion}"
 export SMU3M_AUTO_CLONE_3M="${SMU3M_AUTO_CLONE_3M:-1}"
@@ -158,6 +167,7 @@ else
 fi
 
 echo "Submitting unified Understanding + latent diffusion pipeline"
+echo "  dataset_mode=$SMU3M_DATASET_MODE"
 echo "  dataset_output_dir=$DATASET_OUTPUT_DIR"
 echo "  edit_manifest=$EDIT_MANIFEST"
 echo "  unified_output_dir=$UNIFIED_OUTPUT_DIR"

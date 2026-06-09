@@ -142,6 +142,44 @@ Set `SMMED_OUTPUT_DIR`, `SMU3M_EDIT_MANIFEST`, and
 `SMU3M_REQUIRE_EDIT_QUALITY_COLUMNS=0` explicitly only when rerunning older
 `multiproperty_100k_v1` experiments.
 
+## MolEdit-Instruct Training
+
+The pipeline can now train directly from the enhanced MolEdit-Instruct splits
+built under `$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/`. This is the
+path to use when aligning with MolEditRL-style text/SMILES editing tasks rather
+than the older SketchMol multi-property manifest:
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_pipeline.sh
+```
+
+For a small interactive run:
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/run_unified_moledit_smoke.sh
+```
+
+These wrappers set:
+
+```text
+SMU3M_DATASET_MODE=moledit
+SMU3M_MOLEDIT_TRAIN_SPLIT=$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/train.csv
+SMU3M_MOLEDIT_EVAL_SPLIT=$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv
+SMU3M_MIN_EDIT_SOURCE_TANIMOTO=0.0
+SMMED_SUBMIT_DATASET_BUILD=0
+```
+
+The MolEdit adapter maps enhanced split columns into the same
+`unified_condition_train.jsonl` / `unified_condition_eval.jsonl` schema used by
+the existing connector and latent-diffusion stages. RDKit properties
+(`MW`, `LogP`, `QED`, `TPSA`, `HBD`, `HBA`, `RB`) feed the numeric heads, while
+non-RDKit task tags such as `GSK3B`, `DRD2`, and `SA` are preserved in metadata
+for table-style evaluation.
+
 The submit script defaults to an economical server run. It does not request a
 40GB GPU unless you ask for that profile.
 
@@ -316,6 +354,33 @@ shard actually needs it.
 
 Those files contain the comparison-ready numbers: `strict@Tanimoto>=0.4/0.6/0.8`
 as the primary edit metric, plus 2p-7p strict success and scaffold diagnostics.
+
+## MolEditRL Table Metrics
+
+The MolEditRL paper table reports per-task `Validity`, `Acc_all(0.65)`,
+`Acc_valid(0.65)`, `Acc_all(0.15)`, `Acc_valid(0.15)`, and `FCD`. Use the
+MolEdit table metric script on any prediction CSV with `example_id` or
+`condition_id` plus `predicted_smiles` or `generated_smiles`. It also accepts the
+existing materialized benchmark `benchmark_decoded.csv` format with `method`.
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1
+python SketchMol-Unified-3MDiffusion/scripts/evaluate_moledit_table_metrics.py \
+  --reference "$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv" \
+  --predictions "$SMU3M_OUTPUT_DIR/benchmark_materialized_primary_fast/benchmark_decoded.csv" \
+  --method edit_latent_source_similarity_rerank \
+  --output-dir "$SMU3M_OUTPUT_DIR/moledit_table_metrics"
+```
+
+`MW`, `LogP`, `QED`, `HBA`, and rotatable-bond tasks are scored with RDKit.
+`GSK3B`, `DRD2`, and `SA` use `tdc.Oracle` when available; install TDC in the
+cluster environment for full Table 1 coverage. The script writes:
+
+```text
+moledit_table_summary.csv
+moledit_table_summary.json
+moledit_table_summary.md
+```
 
 ## Source-Aware Connector Objective
 

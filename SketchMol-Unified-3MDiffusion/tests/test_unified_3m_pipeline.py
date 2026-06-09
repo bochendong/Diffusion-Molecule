@@ -26,6 +26,7 @@ from sketchmol_unified_3m_diffusion.unified_condition_dataset import (
     UnifiedConditionSample,
     read_3m_description_samples,
     read_edit_generation_samples,
+    read_moledit_generation_samples,
     split_samples,
 )
 
@@ -104,6 +105,94 @@ def test_unified_dataset_reads_description_and_edit_rows(tmp_path):
     assert row["metadata"]["pair_quality_tier"] == "same_scaffold_medium_plus"
     assert summary["pair_quality_tiers"]["same_scaffold_medium_plus"] == 1
     assert summary["edit_source_tanimoto"]["min"] == 0.5
+
+
+def test_unified_dataset_reads_moledit_enhanced_rows(tmp_path):
+    moledit_csv = tmp_path / "eval_balanced.csv"
+    with moledit_csv.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "example_id",
+                "instruction",
+                "source_smiles",
+                "target_smiles",
+                "pair_hash",
+                "instruction_tasks",
+                "instruction_task_properties",
+                "instruction_task_directions",
+                "source_target_tanimoto",
+                "difficulty_bucket",
+                "pair_quality",
+                "computed_active_properties",
+                "computed_active_count",
+                "source_MW",
+                "target_MW",
+                "delta_MW",
+                "MW_active",
+                "MW_direction",
+                "source_QED",
+                "target_QED",
+                "delta_QED",
+                "QED_active",
+                "QED_direction",
+                "source_HBA",
+                "target_HBA",
+                "delta_HBA",
+                "HBA_active",
+                "HBA_direction",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "example_id": "m1",
+                "instruction": "Increase hydrogen bond acceptors and molecular weight, decrease QED.",
+                "source_smiles": "CCO",
+                "target_smiles": "CCN",
+                "pair_hash": "abc",
+                "instruction_tasks": json.dumps(
+                    [
+                        {"property": "MW", "direction": "increase"},
+                        {"property": "HBA", "direction": "increase"},
+                        {"property": "QED", "direction": "decrease"},
+                    ]
+                ),
+                "instruction_task_properties": "HBA|MW|QED",
+                "instruction_task_directions": '{"HBA":"increase","MW":"increase","QED":"decrease"}',
+                "source_target_tanimoto": "0.55",
+                "difficulty_bucket": "medium_similarity",
+                "pair_quality": "cross_scaffold_medium_similarity",
+                "computed_active_properties": "MW|QED|HBA",
+                "computed_active_count": "3",
+                "source_MW": "46.0",
+                "target_MW": "45.0",
+                "delta_MW": "-1.0",
+                "MW_active": "1",
+                "MW_direction": "increase",
+                "source_QED": "0.5",
+                "target_QED": "0.4",
+                "delta_QED": "-0.1",
+                "QED_active": "1",
+                "QED_direction": "decrease",
+                "source_HBA": "1",
+                "target_HBA": "2",
+                "delta_HBA": "1",
+                "HBA_active": "1",
+                "HBA_direction": "increase",
+            }
+        )
+
+    samples = read_moledit_generation_samples(moledit_csv, split="eval", table1_tasks_only=True)
+
+    assert len(samples) == 1
+    sample = samples[0]
+    assert sample.sample_id == "edit:moledit_instruct:m1"
+    assert sample.split == "eval"
+    assert sample.condition_properties == "MW,HBA,QED"
+    assert sample.property_count == "3"
+    assert sample.source_tanimoto == "0.55"
+    assert sample.metadata["moledit_task_key"] == "HBA:increase+MW:increase+QED:decrease"
 
 
 def test_edit_condition_connector_and_diffusion_loss_shapes():

@@ -17,6 +17,7 @@ if str(PROJECT_DIR) not in sys.path:
 from sketchmol_unified_3m_diffusion.unified_condition_dataset import (  # noqa: E402
     read_3m_description_samples,
     read_edit_generation_samples,
+    read_moledit_generation_samples,
     split_samples,
 )
 
@@ -29,10 +30,15 @@ def parse_args() -> argparse.Namespace:
         default=REPO_DIR / "Research/Molecule Generation/3M-Diffusion",
     )
     parser.add_argument("--edit-manifest", type=Path, default=None)
+    parser.add_argument("--moledit-train-split", type=Path, default=None)
+    parser.add_argument("--moledit-eval-split", type=Path, default=None)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--description-limit-per-split", type=int, default=None)
     parser.add_argument("--edit-limit", type=int, default=None)
+    parser.add_argument("--moledit-train-limit", type=int, default=None)
+    parser.add_argument("--moledit-eval-limit", type=int, default=None)
     parser.add_argument("--min-edit-source-tanimoto", type=float, default=None)
+    parser.add_argument("--moledit-table1-tasks-only", action="store_true")
     parser.add_argument("--require-edit-quality-columns", action="store_true")
     parser.add_argument("--require-eval-oracle-strict", action="store_true")
     parser.add_argument("--include-pubchem", action="store_true")
@@ -62,6 +68,31 @@ def main() -> None:
     elif args.edit_manifest is not None:
         raise FileNotFoundError(f"edit manifest not found: {args.edit_manifest}")
 
+    if args.moledit_train_split is not None:
+        if not args.moledit_train_split.exists():
+            raise FileNotFoundError(f"MolEdit train split not found: {args.moledit_train_split}")
+        samples.extend(
+            read_moledit_generation_samples(
+                args.moledit_train_split,
+                split="train",
+                limit=args.moledit_train_limit if args.moledit_train_limit is not None else args.edit_limit,
+                min_source_tanimoto=args.min_edit_source_tanimoto,
+                table1_tasks_only=args.moledit_table1_tasks_only,
+            )
+        )
+    if args.moledit_eval_split is not None:
+        if not args.moledit_eval_split.exists():
+            raise FileNotFoundError(f"MolEdit eval split not found: {args.moledit_eval_split}")
+        samples.extend(
+            read_moledit_generation_samples(
+                args.moledit_eval_split,
+                split="eval",
+                limit=args.moledit_eval_limit,
+                min_source_tanimoto=args.min_edit_source_tanimoto,
+                table1_tasks_only=args.moledit_table1_tasks_only,
+            )
+        )
+
     args.output_dir.mkdir(parents=True, exist_ok=True)
     train_path = args.output_dir / "unified_condition_train.jsonl"
     eval_path = args.output_dir / "unified_condition_eval.jsonl"
@@ -70,6 +101,9 @@ def main() -> None:
         {
             "three_m_root": str(args.three_m_root),
             "edit_manifest": str(args.edit_manifest) if args.edit_manifest else None,
+            "moledit_train_split": str(args.moledit_train_split) if args.moledit_train_split else None,
+            "moledit_eval_split": str(args.moledit_eval_split) if args.moledit_eval_split else None,
+            "moledit_table1_tasks_only": bool(args.moledit_table1_tasks_only),
             "min_edit_source_tanimoto": args.min_edit_source_tanimoto,
             "require_edit_quality_columns": bool(args.require_edit_quality_columns),
             "require_eval_oracle_strict": bool(args.require_eval_oracle_strict),
