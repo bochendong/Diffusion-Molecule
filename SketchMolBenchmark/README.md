@@ -133,7 +133,11 @@ SKETCHMOL_MOLSCRIBE_WORKDIR="Research/Molecule Generation/SketchMol/SketchMol-v1
 SKETCHMOL_ONMT_OVERLAY=/scratch/bdong/python_overlays/onmt220 \
 SKETCHMOL_CKPT=/scratch/bdong/checkpoints/sketchmol/model_weights.ckpt \
 SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
-bash SketchMolBenchmark/scripts/submit_paper_repro.sh
+Legacy paper-repro wrapper (archived):
+
+```bash
+bash SketchMolBenchmark/scripts/archive/legacy/submit_paper_repro.sh
+```
 ```
 
 The `/home/bdong/.venvs/molscribe_overlay` interpreter reuses the `phystabmol` torch

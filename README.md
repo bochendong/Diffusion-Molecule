@@ -132,7 +132,7 @@ MolScribe 类来自 vendored SketchMol checkout，不在 venv 里 pip install。
 还会继承 `phystabmol` 自带的旧版 OpenNMT；**如果不额外 prepend onmt220 overlay，graph→SMILES
 会全部返回空字符串**（OCR present = 0%）。
 
-仓库里唯一确认成功的 OCR run 是 Slurm job **15544986**，输出目录
+仓库里唯一确认成功的 OCR run 输出目录
 `SketchMolBenchmark/outputs/paper_repro_mw400_real_official_ocr`（OCR present 100%，validity 90%）。
 它使用的组合是：
 
@@ -172,13 +172,8 @@ SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_au
 bash SketchMolBenchmark/scripts/resume_real_sketchmol_ocr.sh
 ```
 
-UniVideo 的 OCR rerun 默认走 wrapper/custom/raw-token fallback；这是 `15763087`
-之后的 SUCC 路线，因为 official graph-only runner 会在这些图上全空：
-
-```bash
-SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Understanding-Condition/scripts/submit_succ_ocr_benchmark.sh
-```
+UniVideo 的 OCR rerun 默认走 wrapper/custom/raw-token fallback；详见
+`SketchMol-Understanding-Condition/README_UNIVIDEO_IMAGE_STRUCTURE_EXPERIMENT.md`。
 
 ### 5. 快速自检
 
@@ -337,229 +332,106 @@ bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_generation_pipeline.sh
 
 ## 常用 Pipeline
 
-### 1. 只构建 multi-property edit dataset
+主线已切换到 **MolEdit-Instruct**（text/SMILES source-conditioned editing）。
+Image / multi-property pipeline 仍保留作并行对照。数据布局见 `datasets/README.md`。
 
-默认输入表：
+### 1. MolEdit-Instruct：Unified 3M 训练 + 表格指标（默认）
+
+数据已在 cluster 上构建：
 
 ```text
-SketchMol-MultiProperty-EditDataset/data/train_table.csv
+$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/train.csv
+$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv
 ```
 
-大规模构建时不要渲染海量 pair PNG，避免 inode / quota 爆掉：
+本地 smoke：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/run_unified_moledit_smoke.sh
+```
+
+集群训练：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_pipeline.sh
+```
+
+默认输出：
+
+```text
+SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1/
+```
+
+训练后跑 MolEditRL 表格指标：
+
+```bash
+python SketchMol-Unified-3MDiffusion/scripts/evaluate_moledit_table_metrics.py \
+  --reference "$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv" \
+  --predictions SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1/benchmark_materialized_primary_fast/benchmark_decoded.csv \
+  --method edit_latent_source_similarity_rerank \
+  --output-dir SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1/moledit_table_metrics
+```
+
+详见 `SketchMol-Unified-3MDiffusion/README.md` 与 `Research/Molecule Generation/MolEditRL/README.md`。
+
+### 2. UniVideo image pipeline + OCR-free materialized benchmark
+
+完整运行手册：
+`SketchMol-Understanding-Condition/README_UNIVIDEO_IMAGE_STRUCTURE_EXPERIMENT.md`
+
+Canonical 输出：
+
+```text
+SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/
+```
+
+OCR 跑不通时：
+
+```bash
+SUCC_UNIFIED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink \
+SUCC_MATERIALIZED_BENCHMARK_PROFILE=primary_fast \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_materialized_benchmark.sh
+```
+
+### 3. Legacy：multi-property dataset + HF VLM + 旧 Unified 3M
+
+Multi-property 数据集（image / VLM 仍依赖）：
 
 ```bash
 SMMED_RENDER_IMAGES=0 \
 bash SketchMol-MultiProperty-EditDataset/scripts/submit_build_dataset.sh
 ```
 
-如果只是当前 shell 里直接跑：
-
-```bash
-SMMED_RENDER_IMAGES=0 \
-bash SketchMol-MultiProperty-EditDataset/scripts/run_build_dataset.sh
-```
-
-换外部数据源：
-
-```bash
-SMMED_INPUT_CSV=/path/to/train_table.csv \
-SMMED_RENDER_IMAGES=0 \
-bash SketchMol-MultiProperty-EditDataset/scripts/submit_build_dataset.sh
-```
-
-### 2. 跑主线 HF VLM understanding pipeline
-
-这个 pipeline 会构建数据集、导出 `diffusion_edit_manifest.csv`、跑 HF VLM features、
-训练 edit connector，并输出 SketchMol-style report。
+HF VLM understanding pipeline：
 
 ```bash
 SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
 bash SketchMol-Understanding-Condition/scripts/submit_hf_vlm_multiproperty_pipeline.sh
 ```
 
-关键输出：
-
-```text
-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm/benchmark_report.md
-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_hf_vlm_edit_connector/benchmark_report.md
-```
-
-### 3. 跑 UniVideo-style generation stream
-
-如果已经有 condition rows / VLM features，可以提交 source-conditioned molecule generation：
-
-```bash
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/models/Qwen2.5-VL-7B-Instruct \
-SUCC_CONDITION_ROWS=SketchMol-Understanding-Condition/outputs/multiproperty_100k_v1/condition_rows.csv \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
-```
-
-如果 VLM features 已经导出过：
-
-```bash
-SUCC_RUN_FEATURE_EXPORT=0 \
-SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm \
-SUCC_CONDITION_ROWS=SketchMol-Understanding-Condition/outputs/multiproperty_100k_v1/condition_rows.csv \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
-```
-
-如果前面的训练和图片生成已经完成，只需要续跑 MolScribe OCR / image benchmark，
-直接跑 OCR 和评估脚本，不要重提整条 pipeline（否则会重新训练 UniVideo）：
-
-```bash
-export SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
-export SUCC_MOLSCRIBE_WORKDIR="Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate"
-IMAGE_CSV=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark/image_path.csv
-
-PYTHONPATH="$SUCC_MOLSCRIBE_WORKDIR${PYTHONPATH:+:$PYTHONPATH}" \
-  $SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/run_molscribe_ocr.py \
-  --model-path /scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
-  --image-csv "$IMAGE_CSV" \
-  --batch-size 16 \
-  --device cuda
-
-$SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/evaluate_univideo_image_benchmark.py \
-  --image-csv "$IMAGE_CSV" \
-  --output-dir SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/image_structure_benchmark \
-  --method univideo_image_vae \
-  --source-tanimoto-thresholds 0.4,0.6,0.8
-```
-
-### 4. 跑 unified 3M training
-
-这是独立的 3M-style unified 路线。默认会做 preflight、要求 CUDA、按 epoch 保存
-checkpoint，并在重新运行时自动 resume。默认 resource profile 是 `economy`，也就是
-20GB MIG + 大 batch，而不是浪费 40GB GPU。
+旧 Unified 3M multi-property 训练：
 
 ```bash
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_generation_pipeline.sh
 ```
 
-如果明确要用 40GB GPU，就用 throughput profile：
+Materialized benchmark（multi-property eval）：
 
 ```bash
-SMU3M_GPU_PROFILE=h100_40gb_mig \
-SMU3M_RESOURCE_PROFILE=throughput_40gb \
-SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_generation_pipeline.sh
-```
-
-如果服务器上没有 `PubChem324k` 数据：
-
-```bash
-SMU3M_INCLUDE_PUBCHEM=0 \
-SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_generation_pipeline.sh
-```
-
-默认输出：
-
-```text
-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v1/
-  dataset/summary.json
-  alignment/alignment_model.pt
-  alignment/checkpoints/latest.pt
-  edit_condition_tokens/edit_condition_connector.pt
-  edit_condition_tokens/checkpoints/latest.pt
-  latent_diffusion/latent_diffusion_generation.pt
-  latent_diffusion/checkpoints/latest.pt
-  eval_latent/metrics.json
-```
-
-如果 Unified 3M 已经跑完，要把 latent 结果落到可和论文表对齐的分子 benchmark，
-跑 materialized benchmark。它会从 `generated_latents.npy` 自动补导出
-`edit_latent_predictions.npy` / `edit_latent_fingerprints.npy`，再输出
-2p-7p strict success、source Tanimoto 和 strict@Tanimoto 阈值：
-
-```bash
-SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```
 
-结果目录：
+### 4. SketchMol baseline / OCR
 
-```text
-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2/benchmark_materialized/
-  benchmark_report.md
-  benchmark_summary.csv
-  benchmark_decoded.csv
-```
-
-默认 benchmark profile 是 `primary_fast`，会把结果写到
-`benchmark_materialized_primary_fast/`，先跑 source-similarity 主线和必要
-baseline；最终全表再显式用 `SMU3M_BENCHMARK_PROFILE=full`。主方法是
-`edit_latent_source_similarity_rerank`：不要求骨架完全一致，而是在
-候选分子里按 edit latent、预测 fingerprint 和 source Tanimoto 一起 rerank。
-为了避免全局候选池对每个候选都算 RDKit Tanimoto，默认先按 edit latent 取
-top-256，再算 source Tanimoto rerank；需要精确旧行为时设
-`SMU3M_SOURCE_SIMILARITY_RERANK_CANDIDATES=0`。报告主表看
-`strict@Tanimoto>=0.4/0.6/0.8`；scaffold match 只作为诊断。
-
-如果要继续修当前瓶颈，下一轮直接跑 joint connector + diffusion refine。默认会从
-latest checkpoint 额外训练 100 epoch，打开 connector fine-tune 和 prior loss，
-并用 balanced 2p-7p eval 一起输出 SketchMol reference 对照：
-
-```bash
-SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
-SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
-```
-
-`submit_unified_diffusion_refine.sh` 默认只做 diffusion refine + latent eval，
-不再把 materialized benchmark 塞进同一个 GPU job。训练 job 成功后，单独跑：
-
-```bash
-SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
-SMU3M_BENCHMARK_PROFILE=primary_fast \
-SMU3M_BENCHMARK_SHARDS=5 \
-SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
-```
-
-5-way shard 默认会循环调用 5 次 `sbatch`，每个 job 拿一个独立 job id，
-各自写到
-`benchmark_materialized_primary_fast/shards/shard_<i>_of_5/`。五个 shard 都完成后合并：
-
-```bash
-SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
-SMU3M_BENCHMARK_PROFILE=primary_fast \
-SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/merge_unified_materialized_benchmark_shards.sh
-```
-
-如果想改回 Slurm array，用 `SMU3M_BENCHMARK_SUBMIT_MODE=array`。
-
-想看稳定性时，直接加长训练并扩到全量 9455 eval：
-
-```bash
-SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
-SMU3M_DIFFUSION_EXTRA_EPOCHS=200 \
-SMU3M_PRIOR_LOSS_WEIGHT=0.25 \
-SMU3M_EVAL_LIMIT=0 \
-SMU3M_MAX_EVAL_PER_PROPERTY_COUNT=0 \
-SMU3M_RUN_MATERIALIZED_BENCHMARK=0 \
-SMU3M_SLURM_TIME=08:00:00 \
-SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_diffusion_refine.sh
-```
-
-然后再提交独立 benchmark job；如果要全表：
-
-```bash
-SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2 \
-SMU3M_BENCHMARK_PROFILE=full \
-SMU3M_BENCHMARK_SHARDS=5 \
-SMU3M_BENCHMARK_SLURM_TIME=08:00:00 \
-SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
-```
-
-### 5. 跑 SketchMol baseline / OCR benchmark
-
-真实 SketchMol baseline 依赖 vendored SketchMol repo、**onmt220 overlay** 和
-`molscribe_overlay` venv。提交前确认 checkpoint 路径不是占位符。
+真实 SketchMol baseline 依赖 vendored SketchMol、**onmt220 overlay** 和
+`molscribe_overlay` venv：
 
 ```bash
 SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
@@ -567,16 +439,7 @@ SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_au
 bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
 ```
 
-如果 diffusion 已经生成了 `image_path.csv`，只需要继续 OCR / materialization：
-
-```bash
-SKETCHMOL_BENCHMARK_SOURCE_CSV=/path/to/image_path.csv \
-SKETCHMOL_MOLSCRIBE_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
-bash SketchMolBenchmark/scripts/resume_real_sketchmol_ocr.sh
-```
-
-Understanding-Condition 已有 UniVideo 图的 OCR rerun：
+UniVideo OCR rerun（wrapper/custom）：
 
 ```bash
 SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
@@ -586,63 +449,12 @@ SUCC_RAW_SMILES_FALLBACK=1 \
 bash SketchMol-Understanding-Condition/scripts/submit_succ_ocr_benchmark.sh
 ```
 
-### 6. 汇总或复用已有结果
-
-Multi-property dataset 自带 full benchmark wrapper：
-
-```bash
-bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
-```
-
-Understanding-condition 结果导出到 SketchMolBenchmark：
-
-```bash
-SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-SUCC_VARIANT=full \
-bash SketchMol-Understanding-Condition/scripts/run_benchmark_export.sh
-```
-
-### 7. 跑 pure-SMILES Editor-Atomas large training
-
-这是独立纯 SMILES 路线，不读取或生成 molecule image。默认会先准备
-`large_train.jsonl`，再训练 edit reconstruction + molecule/token/fragment
-hierarchical alignment model；按 epoch 写 `latest_checkpoint.pt`，重新运行时可
-resume。
-
-先 dry-run 看配置、输入和资源：
-
-```bash
-SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-SDEA_DRY_RUN=1 \
-bash SMILES-DualStream-EditorAtomas/scripts/submit_large_train.sh
-```
-
-默认 economy profile 用 20GB H100 MIG：
+### 5. Pure-SMILES Editor-Atomas
 
 ```bash
 SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SMILES-DualStream-EditorAtomas/scripts/submit_large_train.sh
 ```
-
-如果明确要用 40GB，就用 throughput profile；脚本会同步放大 batch / hidden：
-
-```bash
-SDEA_RESOURCE_PROFILE=throughput_40gb \
-SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SMILES-DualStream-EditorAtomas/scripts/submit_large_train.sh
-```
-
-只准备 manifest，不提交训练：
-
-```bash
-SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SMILES-DualStream-EditorAtomas/scripts/prepare_large_manifest.sh --overwrite-manifest
-```
-
-最新 large run：job `15709935`（50 epoch，222753 pair_edit 行）。该 job
-只验证了大规模 pipeline 能跑通；checkpoint 对比显示权重从初始化后未再更新，
-flat eval 是固定 eval batch + 固定初始权重的确定性结果，不能当作有效评估。
-详见 `SMILES-DualStream-EditorAtomas/README.md`。
 
 ## 本地检查
 

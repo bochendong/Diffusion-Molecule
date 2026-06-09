@@ -1,5 +1,9 @@
 # SketchMol Multi-Property Edit Dataset
 
+> **Legacy image dataset.** MolEdit-Instruct enhanced splits 是 Unified 3M 与
+> MolEditRL 对齐的主线数据（见 `datasets/README.md`）。本目录仍服务
+> image / VLM / UniVideo pipeline，但不再是默认 benchmark 数据源。
+
 这个文件夹专门放 Understanding-Condition 后续大实验需要的数据集构建、
 数据产物和 benchmark 脚本。它和模型实验文件夹分开，避免把数据工程、
 Slurm 入口、SketchMol 风格评估混在一起。
@@ -113,7 +117,7 @@ strict success 用来和 SketchMol 的多性质控制表对齐；`strict@Tanimot
 cd /scratch/bdong/projects/Diffusion-Molecule
 git pull origin main
 
-bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
+bash SketchMol-MultiProperty-EditDataset/scripts/archive/legacy/submit_full_benchmark.sh
 ```
 
 这个命令会提交 Slurm job，在 compute node 上完成：
@@ -296,7 +300,7 @@ SMMED_MAX_PAIRS_PER_SCAFFOLD=50 \
 SMMED_CONDITIONS_PER_PAIR=2 \
 SMMED_MAX_EVAL_PER_PROPERTY_COUNT=500 \
 SMMED_OUTPUT_DIR=SketchMol-MultiProperty-EditDataset/outputs/dry_run_10k \
-bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
+bash SketchMol-MultiProperty-EditDataset/scripts/archive/legacy/submit_full_benchmark.sh
 ```
 
 如果要额外跑 global retrieval baseline：
@@ -305,7 +309,7 @@ bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
 SMMED_BENCHMARK_METHODS=source_identity,global_property_retrieval,scaffold_property_retrieval,target_oracle \
 SMMED_MAX_GLOBAL_CANDIDATES=5000 \
 SMMED_MAX_EVAL_PER_PROPERTY_COUNT=1000 \
-bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
+bash SketchMol-MultiProperty-EditDataset/scripts/archive/legacy/submit_full_benchmark.sh
 ```
 
 如果要看 scaffold fallback 对结论的影响，可以同时跑两组：
@@ -313,11 +317,11 @@ bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
 ```bash
 SMMED_SCAFFOLD_FALLBACK_MODE=source_identity \
 SMMED_BENCHMARK_OUTPUT_DIR=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_scaffold_honest \
-bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
+bash SketchMol-MultiProperty-EditDataset/scripts/archive/legacy/submit_full_benchmark.sh
 
 SMMED_SCAFFOLD_FALLBACK_MODE=global \
 SMMED_BENCHMARK_OUTPUT_DIR=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/benchmark_scaffold_global_fallback \
-bash SketchMol-MultiProperty-EditDataset/scripts/submit_full_benchmark.sh
+bash SketchMol-MultiProperty-EditDataset/scripts/archive/legacy/submit_full_benchmark.sh
 ```
 
 ## 当前建议

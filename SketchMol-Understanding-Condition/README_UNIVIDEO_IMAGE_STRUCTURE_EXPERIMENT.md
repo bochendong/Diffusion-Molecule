@@ -224,7 +224,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline
 输出：
 
 ```text
-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/
+SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/
   univideo_molecule/image_structure_benchmark/image_path.csv
 ```
 
@@ -383,191 +383,19 @@ Diagnostics:
 说明 VAE 还在白图坍缩；如果 target oracle 有结构但 generated 仍接近 0，问题转向
 UniVideo diffusion；只有 generated images 有明显非白像素后，OCR success 才有解释意义。
 
-## Latest Run Results
+## 当前状态（精简）
 
-Artifacts live under `outputs/univideo_molecule_generation_v2_residual_ink/` (current)
-and `outputs/univideo_molecule_generation_v1/` (previous ablation).
+Canonical 输出目录：
 
-### Current best: job `15697119` (Jun 6 2026, ~2 h)
-
-Residual edit latent (`SUCC_LATENT_TARGET_MODE=residual`), ink-aware VAE
-(`foreground_weight=8.0`, `ink_loss_weight=4.0`, `ink_fraction_weight=2.0`),
-`pred_x0` diffusion, full pipeline through MolScribe OCR benchmark.
-Log: `logs/succ-univideo-mol-15697119.log`.
-
-| Stage | Status |
-| --- | --- |
-| Image VAE retrain (10 ep) | eval loss 0.053 → **0.031**; ink L1 tracked |
-| Stage1 connector | aux loss 1.63 → **1.47** |
-| Stage2 diffusion | diffusion loss 1.54 → **0.94** |
-| Stage3 multitask | diffusion loss **0.85** |
-
-Latent eval on 1000 samples (`univideo_molecule/eval_latent/metrics.json`):
-
-| Metric | `15692057` (absolute) | `15697119` (residual) |
-| --- | ---: | ---: |
-| `source_latent_cosine` | 0.620 | **0.980** |
-| `target_latent_cosine` | 0.620 | **0.384** |
-| `source_target_latent_cosine` | 0.463 | 0.389 |
-| `latent_mae` / `latent_mse` | 0.528 / 1.057 | 0.752 / 2.135 |
-
-Decoded image quality:
-
-| | generated | target oracle |
-| --- | ---: | ---: |
-| `nonwhite_fraction` | **0.043** | 0.042 |
-| `mean_intensity` | **0.976** | 0.976 |
-| `dark_fraction` | **0.032** | 0.031 |
-
-All 1000 decoded PNGs now contain visible molecular structure (median ~11 KB each;
-v1 median ~802 bytes). Blank-image collapse is fixed. Residual mode keeps generated
-latents near source (`source_latent_cosine` 0.98) but not near target (0.38 ≈
-source-target baseline), so the model mostly copies source rather than performing
-property edits.
-
-Image-to-structure benchmark (`image_structure_benchmark/benchmark_report.md`):
-
-| Metric | `15692057` | `15697119` |
-| --- | ---: | ---: |
-| OCR SMILES present | 0 / 1000 | 0 / 1000 |
-| validity all | 0.0 | 0.0 |
-| strict success (2p–7p) | 0.0 | 0.0 |
-| MolScribe confidence (mean / max) | 0.075 / 0.45 | 0.073 / 0.47 |
-
-Decode quality is solved; next bottlenecks are edit signal (raise `target_latent_cosine`)
-and MolScribe-readable rendering.
-
-Follow-up code fix after this run:
-
-- SUCC OCR now uses the local `run_molscribe_ocr.py` wrapper by default:
-  `custom` backend, `onmt220` prepended, batch size 16, no image preprocessing,
-  and RDKit-validated raw-token fallback. This is the path to use after
-  `15763087`, where the official SketchMol graph-only runner completed but
-  returned empty SMILES even for RDKit-rendered source/target diagnostics.
-  The official `evaluate/predict_csv.py` route remains available as an explicit
-  `SUCC_MOLSCRIBE_RUNNER=official SUCC_MOLSCRIBE_BACKEND=sketchmol` ablation.
-- `evaluate_univideo_image_benchmark.py` sets `ocr_smiles_present` from RDKit-valid
-  SMILES only.
-- Diagnostic script: `scripts/diagnose_univideo_molscribe_ocr.py`.
-- Residual generation now trains the connector latent auxiliary head against the
-  same edit residual used by diffusion (`target_latent - source_latent`) instead
-  of the absolute target latent. This removes the previous auxiliary/diffusion
-  mismatch that encouraged source-copy behavior.
-- New sampling knobs: `SUCC_RESIDUAL_SAMPLE_SCALE` and
-  `SUCC_CONNECTOR_LATENT_BLEND`.
-
-OCR-only rerun on the existing `15697119` generated images:
-
-```bash
-IMAGE_CSV=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
-
-SUCC_IMAGE_CSV="$IMAGE_CSV" \
-SUCC_MOLSCRIBE_RUNNER=wrapper \
-SUCC_MOLSCRIBE_BACKEND=custom \
-SUCC_RAW_SMILES_FALLBACK=1 \
-SUCC_MOLSCRIBE_BATCH_SIZE=16 \
-SUCC_PREPROCESS_IMAGES=0 \
-SUCC_RUN_MOLSCRIBE_DIAGNOSTIC=1 \
-bash SketchMol-Understanding-Condition/scripts/run_succ_ocr_benchmark.sh
+```text
+SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/
 ```
 
-Next training run for the residual auxiliary fix:
+历史 job 对比表已从本 README 移除。跑分看
+`univideo_molecule/image_structure_benchmark/benchmark_report.md` 或
+`univideo_molecule/benchmark_materialized_primary_fast/benchmark_report.md`。
 
-```bash
-SUCC_UNIFIED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v3_residual_aux \
-SUCC_RUN_IMAGE_VAE_TRAIN=0 \
-SUCC_IMAGE_VAE_CHECKPOINT=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/molecule_image_vae/molecule_image_vae.pt \
-SUCC_RUN_FEATURE_EXPORT=0 \
-SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm \
-SUCC_LATENT_TARGET_MODE=residual \
-SUCC_RESIDUAL_SAMPLE_SCALE=1.25 \
-SUCC_CONNECTOR_LATENT_BLEND=0.1 \
-SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=1 \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
-```
-
-### Residual-ink ablation: job `15692057` (Jun 6 2026, ~2 h)
-
-Foreground-aware VAE retrain (`foreground_weight=8.0`), absolute target latent,
-`pred_x0` diffusion, full pipeline through MolScribe OCR benchmark.
-Log: `logs/succ-univideo-mol-15692057.log`.
-Output: `outputs/univideo_molecule_generation_v1/`.
-
-| Stage | Status |
-| --- | --- |
-| Image VAE retrain (10 ep) | eval loss 0.017 → **0.011**; foreground L1 0.104 → **0.066** |
-| Stage1 connector | aux loss 1.60 → **1.44** |
-| Stage2 diffusion | diffusion loss 0.74 → **0.23** |
-| Stage3 multitask | diffusion loss **0.21** |
-
-Latent eval on 1000 samples (`univideo_molecule/eval_latent/metrics.json`):
-
-| Metric | `15688319` | `15692057` |
-| --- | ---: | ---: |
-| `source_latent_cosine` | 0.003 | **0.620** |
-| `target_latent_cosine` | 0.003 | **0.620** |
-| `latent_mae` / `latent_mse` | 0.393 / 0.375 | 0.528 / 1.057 |
-
-Decoded image quality:
-
-| | generated | target oracle |
-| --- | ---: | ---: |
-| `nonwhite_fraction` | 0.004 | 0.042 |
-| `mean_intensity` | 0.999 | 0.976 |
-| `dark_fraction` | 0.0015 | 0.031 |
-
-~85% of decoded PNGs are still near-blank (~774–802 bytes). 151 images have
->1% nonwhite pixels; 5 exceed 5% and show recognizable molecular skeletons.
-MolScribe OCR ran successfully but produced no SMILES.
-
-Image-to-structure benchmark (`image_structure_benchmark/benchmark_report.md`):
-
-| Metric | Result |
-| --- | ---: |
-| OCR SMILES present | 0 / 1000 |
-| validity all | 0.0 |
-| strict success (2p–7p) | 0.0 |
-| SketchMol reference strict (2p–7p) | 0.68–0.80 |
-| MolScribe confidence (mean / max) | 0.075 / 0.45 |
-
-Latent alignment improved dramatically, but VAE decode still collapses to white
-for most samples. End-to-end strict success remains 0; bottleneck is now decode
-quality rather than latent conditioning or OCR infrastructure.
-
-### Upstream training (`15688319`, `succ-univideo-mol`)
-
-Completed dataset export, image VAE, and 3-stage UniVideo training. Latent eval on
-1000 samples (`univideo_molecule/eval_latent/metrics.json`):
-
-| Metric | Value |
-| --- | ---: |
-| `source_latent_cosine` | 0.002 |
-| `target_latent_cosine` | 0.003 |
-| `latent_mae` / `latent_mse` | 0.393 / 0.375 |
-
-Image VAE reconstruction loss stayed near 0.047; diffusion loss stayed near 1.0.
-All 1000 decoded images are blank white 256×256 PNGs (~758 bytes each).
-
-MolScribe OCR failed in this job (`ModuleNotFoundError: No module named 'molscribe'`)
-because `SUCC_MOLSCRIBE_WORKDIR` was not set.
-
-### OCR retry (`15690165`, `succ-univideo-mol-ocr-retry`)
-
-MolScribe infrastructure fix verified: import OK, 1000 images OCR'd in ~3 min.
-Log: `logs/succ-univideo-mol-ocr-retry-15690165.log`.
-
-Benchmark report (`image_structure_benchmark/benchmark_report.md`):
-
-| Metric | Result |
-| --- | ---: |
-| OCR SMILES present | 0 / 1000 |
-| validity all | 0.0 |
-| strict success (2p–7p) | 0.0 |
-| SketchMol reference strict (2p–7p) | 0.68–0.80 |
-
-OCR pipeline works, but benchmark is all zeros because upstream images are blank.
-MolScribe confidence scores are ~0.076 with empty SMILES. Root cause is upstream
-diffusion/VAE collapse, not OCR.
+OCR 相关修复仍适用：默认用 wrapper/custom OCR + `onmt220` overlay。
 
 ## 8. 查看 Slurm 状态
 
@@ -673,3 +501,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline
 ```
 
 快速检查只用来确认 pipeline，不用于报告主结果。
+

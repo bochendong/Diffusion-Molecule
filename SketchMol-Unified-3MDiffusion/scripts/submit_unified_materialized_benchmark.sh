@@ -13,7 +13,7 @@ if ! command -v sbatch >/dev/null 2>&1; then
   exit 2
 fi
 
-export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_source_neighbor_sourceguard_v1}"
+export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1}"
 export SMMED_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1}"
 export SMU3M_PYTHON_BIN="${SMU3M_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 export SMU3M_BENCHMARK_PROFILE="${SMU3M_BENCHMARK_PROFILE:-primary_fast}"
@@ -75,7 +75,7 @@ fi
 GENERATED_LATENTS="${SMU3M_GENERATED_LATENTS:-$SMU3M_OUTPUT_DIR/eval_latent/generated_latents.npy}"
 if [[ ! -f "$GENERATED_LATENTS" ]]; then
   echo "ERROR: missing eval latents: $GENERATED_LATENTS" >&2
-  echo "Run submit_unified_diffusion_refine.sh first." >&2
+  echo "Run submit_unified_moledit_pipeline.sh or submit_unified_generation_pipeline.sh first." >&2
   exit 2
 fi
 

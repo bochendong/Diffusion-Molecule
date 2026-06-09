@@ -55,12 +55,10 @@ $DM_DATA_ROOT/
 
 | Dataset | Current local source | Online canonical path | Status |
 | --- | --- | --- | --- |
-| Multi-property edit table | `SketchMol-MultiProperty-EditDataset/data/train_table.csv` | `$DM_DATA_ROOT/raw/multiproperty/train_table.csv` | Present locally, about 95k rows / 37 MB |
-| 3M-Diffusion text datasets | `Research/Molecule Generation/3M-Diffusion/data/` | `$DM_DATA_ROOT/raw/3m-diffusion/` | Present locally through the ignored external checkout; ChEBI-20, PubChem324k, kv_data |
-| MolEdit-Instruct raw | `Research/Molecule Generation/MolEditRL/data/raw/` (symlink) | `$DM_DATA_ROOT/raw/moledit-instruct/MolEdit-Instruct_3034459.txt` | Downloaded on cluster (2026-06-08); 3,034,459 rows / 733 MB |
-| MolEdit-Instruct manifests | n/a (outside git) | `$DM_DATA_ROOT/processed/moledit-instruct/moledit_instruct.{csv,jsonl}` | Converted from raw txt; 736 MB + 953 MB |
-| MolEdit-Instruct enhanced | `Research/Molecule Generation/MolEditRL/data/processed/enhanced_v1/` (symlink) | `$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/` | Built on cluster (2026-06-08); train 2,984,459 / eval_balanced 50,000 / smoke 1,000 |
-| Multi-property edit table | `SketchMol-MultiProperty-EditDataset/data/train_table.csv` (symlink) | `$DM_DATA_ROOT/raw/multiproperty/train_table.csv` | Symlink present; canonical file still missing on cluster |
+| **MolEdit-Instruct enhanced** | `Research/Molecule Generation/MolEditRL/data/processed/enhanced_v1/` (symlink) | `$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/` | **Primary** text/SMILES benchmark; built on cluster |
+| MolEdit-Instruct raw | `Research/Molecule Generation/MolEditRL/data/raw/` (symlink) | `$DM_DATA_ROOT/raw/moledit-instruct/MolEdit-Instruct_3034459.txt` | 3,034,459 rows / 733 MB |
+| Multi-property edit table | `SketchMol-MultiProperty-EditDataset/data/train_table.csv` (symlink) | `$DM_DATA_ROOT/raw/multiproperty/train_table.csv` | Legacy image / VLM pipeline |
+| 3M-Diffusion text datasets | `Research/Molecule Generation/3M-Diffusion/data/` | `$DM_DATA_ROOT/raw/3m-diffusion/` | Description pretraining for Unified 3M |
 | Unified condition train/eval JSONL | pipeline `outputs/.../dataset/` | `$DM_DATA_ROOT/derived/unified_generation_3m_edit_v2/` | Derived; regenerate or copy from a completed run |
 | SMILES-DualStream large manifest | `SMILES-DualStream-EditorAtomas/outputs/manifests/` | `$DM_DATA_ROOT/derived/smiles_dualstream/` | Derived; regenerate from multi-property table |
 
@@ -183,9 +181,7 @@ invalid_or_missing:        2
 summary:           splits/summary.json
 ```
 
-Prefer `splits/eval_balanced.csv` or `splits/smoke_1000.jsonl` for benchmark runs. Use `splits/train.csv` only when you explicitly need the full precomputed feature table; it is large.
-
-Slurm job chain used for the full build: normalize `15803639` -> cache `15803641` -> pair-features `15803642` -> finalize `15803643`.
+Prefer `splits/eval_balanced.csv` or `splits/smoke_1000.jsonl` for benchmark runs.
 
 ## Build order on the online machine
 

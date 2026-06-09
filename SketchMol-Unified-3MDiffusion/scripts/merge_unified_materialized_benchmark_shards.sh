@@ -10,7 +10,7 @@ DATASET_PROJECT_DIR="$REPO_DIR/SketchMol-MultiProperty-EditDataset"
 cd "$REPO_DIR"
 
 PYTHON_BIN="${SMU3M_PYTHON_BIN:-${SMMED_PYTHON_BIN:-${PYTHON_BIN:-python}}}"
-UNIFIED_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v2}"
+UNIFIED_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1}"
 BENCHMARK_PROFILE="${SMU3M_BENCHMARK_PROFILE:-primary_fast}"
 case "$BENCHMARK_PROFILE" in
   full) DEFAULT_BENCHMARK_OUTPUT_DIR="$UNIFIED_OUTPUT_DIR/benchmark_materialized" ;;

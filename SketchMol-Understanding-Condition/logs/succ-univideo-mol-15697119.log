@@ -1,298 +1,0 @@
-Running UniVideo-style molecular generation pipeline
-  python=/home/bdong/.venvs/molscribe_overlay/bin/python
-  condition_rows=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv
-  baseline_csv=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset/baseline_variants.csv
-  condition_features_dir=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm
-  unified_output_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink
-  dataset_dir=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset
-  run_dataset_export=1
-  run_feature_export=auto
-  latent_backend=image_vae
-  diffusion_objective=pred_x0
-  latent_target_mode=residual
-  sample_eta=0.0
-  max_decode_images=1000
-  run_image_structure_benchmark=1
-  run_molscribe_ocr=auto
-  molscribe_model=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth
-  molscribe_workdir=Research/Molecule Generation/SketchMol/SketchMol-v1-main/evaluate
-  image_vae_checkpoint=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/molecule_image_vae/molecule_image_vae.pt
-  run_image_vae_train=1
-  image_vae_foreground_weight=8.0
-  image_vae_ink_loss_weight=4.0
-  image_vae_ink_fraction_weight=2.0
-  image_vae_sample_latent=0
-{
-  "baseline_variants_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset/baseline_variants.csv",
-  "condition_rows_csv": "SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv",
-  "eval_jsonl": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset/univideo_edit_eval.jsonl",
-  "eval_rows": 9360,
-  "output_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset",
-  "property_counts": {
-    "2": 20926,
-    "3": 13131,
-    "4": 8267,
-    "5": 4940,
-    "6": 2167,
-    "7": 569
-  },
-  "rows": 50000,
-  "splits": {
-    "eval": 9360,
-    "train": 40640
-  },
-  "tasks": {
-    "edit_generation": 50000
-  },
-  "train_jsonl": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset/univideo_edit_train.jsonl",
-  "train_rows": 40640,
-  "unique_source_smiles": 2824,
-  "unique_target_smiles": 2825,
-  "variants": [
-    "full"
-  ]
-}
-Training molecule-image VAE for SketchMol-style 4x32x32 latents
-{"epoch": 1, "eval_background_l1": 0.0014194057512213476, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.11411273991689086, "eval_ink_fraction_l1": 0.0005522494866454508, "eval_ink_l1": 0.008323039568495005, "eval_kl": 1.7550683990120888, "eval_loss": 0.05277898255735636, "eval_reconstruction_ink_fraction": 0.040901124477386475, "eval_reconstruction_l1": 0.018380570341832936, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.003497684165965766, "train_blank_canvas_l1": 0.046757806433439256, "train_foreground_l1": 0.18181037059545516, "train_ink_fraction_l1": 0.0019272346588224173, "train_ink_l1": 0.013987914842516184, "train_kl": 2.629726954674721, "train_loss": 0.0908435503923893, "train_reconstruction_ink_fraction": 0.042995431518554686, "train_reconstruction_l1": 0.03103479210436344, "train_target_ink_fraction": 0.03838901336669922}
-{"epoch": 2, "eval_background_l1": 0.0010362274406361394, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.09992374991998076, "eval_ink_fraction_l1": 0.00028524803565233015, "eval_ink_l1": 0.007342561613768339, "eval_kl": 1.323525682091713, "eval_loss": 0.04584452649578452, "eval_reconstruction_ink_fraction": 0.04002714157104492, "eval_reconstruction_l1": 0.015902461018413305, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.0008726005021482706, "train_blank_canvas_l1": 0.04675780651211739, "train_foreground_l1": 0.09143735474348068, "train_ink_fraction_l1": 0.0004095824528299272, "train_ink_l1": 0.006595584791749716, "train_kl": 1.5319800352096558, "train_loss": 0.04165357406795025, "train_reconstruction_ink_fraction": 0.039673737487792966, "train_reconstruction_l1": 0.014450537976324559, "train_target_ink_fraction": 0.03838901336669922}
-{"epoch": 3, "eval_background_l1": 0.0008897508487279993, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.0948419589549303, "eval_ink_fraction_l1": 0.0002720496959227603, "eval_ink_l1": 0.007092338928487152, "eval_kl": 1.1364173889160156, "eval_loss": 0.044029079959727824, "eval_reconstruction_ink_fraction": 0.039744019508361816, "eval_reconstruction_l1": 0.015114488371182233, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.0005733224685862661, "train_blank_canvas_l1": 0.04675780656576157, "train_foreground_l1": 0.07112005167603493, "train_ink_fraction_l1": 0.0002702659034915268, "train_ink_l1": 0.005088355844989419, "train_kl": 1.1940807872390746, "train_loss": 0.03207926294207573, "train_reconstruction_ink_fraction": 0.039098975524902345, "train_reconstruction_l1": 0.01118411366775632, "train_target_ink_fraction": 0.03838901336669922}
-{"epoch": 4, "eval_background_l1": 0.0007616334696649574, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.07828348758630455, "eval_ink_fraction_l1": 0.0003474931108939927, "eval_ink_l1": 0.005737846397096291, "eval_kl": 1.007728174328804, "eval_loss": 0.035990675911307335, "eval_reconstruction_ink_fraction": 0.0396193265914917, "eval_reconstruction_l1": 0.012343296257313341, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00044676567130722103, "train_blank_canvas_l1": 0.0467578065276146, "train_foreground_l1": 0.05986867406010628, "train_ink_fraction_l1": 0.00020881828928366304, "train_ink_l1": 0.00428308156684041, "train_kl": 1.045555410270691, "train_loss": 0.026979491189718246, "train_reconstruction_ink_fraction": 0.038867401733398435, "train_reconstruction_l1": 0.00942848274677992, "train_target_ink_fraction": 0.03838901336669922}
-{"epoch": 5, "eval_background_l1": 0.000712011220457498, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.07692504115402699, "eval_ink_fraction_l1": 0.0004093719835509546, "eval_ink_l1": 0.005642461619572714, "eval_kl": 0.897357415407896, "eval_loss": 0.03548809594940394, "eval_reconstruction_ink_fraction": 0.0395471453666687, "eval_reconstruction_l1": 0.01209860818926245, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00037171534785069524, "train_blank_canvas_l1": 0.0467578064596653, "train_foreground_l1": 0.05252602848529816, "train_ink_fraction_l1": 0.0001745660656131804, "train_ink_l1": 0.0037550571811944245, "train_kl": 0.9626882132911682, "train_loss": 0.023643397889733315, "train_reconstruction_ink_fraction": 0.038739588012695315, "train_reconstruction_l1": 0.00827307437121868, "train_target_ink_fraction": 0.03838901336669922}
-{"epoch": 6, "eval_background_l1": 0.0005942906263953773, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.07734981668181717, "eval_ink_fraction_l1": 4.258278931956738e-05, "eval_ink_l1": 0.0058099749439861625, "eval_kl": 0.8959010541439056, "eval_loss": 0.03559471049811691, "eval_reconstruction_ink_fraction": 0.03890681266784668, "eval_reconstruction_l1": 0.012268748949281871, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00032084953306242824, "train_blank_canvas_l1": 0.04675780650138855, "train_foreground_l1": 0.04748836946725846, "train_ink_fraction_l1": 0.00015316857669502498, "train_ink_l1": 0.003396870075389743, "train_kl": 0.9087420303726196, "train_loss": 0.02137862629175186, "train_reconstruction_ink_fraction": 0.038649318237304685, "train_reconstruction_l1": 0.007483900105208158, "train_target_ink_fraction": 0.03838901336669922}
-{"epoch": 7, "eval_background_l1": 0.0005906959195272066, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.07849771832115948, "eval_ink_fraction_l1": 0.00011967918180744164, "eval_ink_l1": 0.005964159296127036, "eval_kl": 0.8570643849670887, "eval_loss": 0.03657098475378007, "eval_reconstruction_ink_fraction": 0.039095938205718994, "eval_reconstruction_l1": 0.012474132352508605, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00028446455851662906, "train_blank_canvas_l1": 0.0467578064763546, "train_foreground_l1": 0.04367654693484306, "train_ink_fraction_l1": 0.0001352417149581015, "train_ink_l1": 0.003121036127284169, "train_kl": 0.8734704899787903, "train_loss": 0.01963889346063137, "train_reconstruction_ink_fraction": 0.03857841613769531, "train_reconstruction_l1": 0.006883392074853182, "train_target_ink_fraction": 0.03838901336669922}
-{"epoch": 8, "eval_background_l1": 0.0005210260824242141, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.07345051015727222, "eval_ink_fraction_l1": 4.0335406083613634e-05, "eval_ink_l1": 0.005536598095204681, "eval_kl": 0.8345591984689236, "eval_loss": 0.03383054968435317, "eval_reconstruction_ink_fraction": 0.038856565952301025, "eval_reconstruction_l1": 0.011602652433793992, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00025529072252102194, "train_blank_canvas_l1": 0.046757806636095044, "train_foreground_l1": 0.0402134086894989, "train_ink_fraction_l1": 0.00011885622043162585, "train_ink_l1": 0.0028652767684310674, "train_kl": 0.850836365814209, "train_loss": 0.01803590834200382, "train_reconstruction_ink_fraction": 0.03852266784667969, "train_reconstruction_l1": 0.006336237995773554, "train_target_ink_fraction": 0.03838901336669922}
-{"epoch": 9, "eval_background_l1": 0.0005206470668781549, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.07183878403156996, "eval_ink_fraction_l1": 8.883149712346494e-05, "eval_ink_l1": 0.005419730150606483, "eval_kl": 0.80195227637887, "eval_loss": 0.03328618675004691, "eval_reconstruction_ink_fraction": 0.038907527923583984, "eval_reconstruction_l1": 0.01142880175029859, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00023538275422994048, "train_blank_canvas_l1": 0.04675780649662018, "train_foreground_l1": 0.03765564084112644, "train_ink_fraction_l1": 0.00011850174374878406, "train_ink_l1": 0.002677953124754131, "train_kl": 0.8322210916900635, "train_loss": 0.016882839856147767, "train_reconstruction_ink_fraction": 0.03848897705078125, "train_reconstruction_l1": 0.005933191620856523, "train_target_ink_fraction": 0.03838901336669922}
-{"epoch": 10, "eval_background_l1": 0.0005006784358556615, "eval_blank_canvas_l1": 0.04721699794754386, "eval_foreground_l1": 0.0674791750498116, "eval_ink_fraction_l1": 4.552005702862516e-05, "eval_ink_l1": 0.005081351206172258, "eval_kl": 0.815879613161087, "eval_loss": 0.031116450671106577, "eval_reconstruction_ink_fraction": 0.03886371850967407, "eval_reconstruction_l1": 0.01069919008295983, "eval_target_ink_fraction": 0.03873741626739502, "train_background_l1": 0.00021864319490268825, "train_blank_canvas_l1": 0.04675780651211739, "train_foreground_l1": 0.035775600432157516, "train_ink_fraction_l1": 0.00010591379549354315, "train_ink_l1": 0.002543141113892198, "train_kl": 0.8226377605438232, "train_loss": 0.01602459367841482, "train_reconstruction_ink_fraction": 0.03845450988769531, "train_reconstruction_l1": 0.005639379020929336, "train_target_ink_fraction": 0.03838901336669922}
-{"aux_loss": 1.6341689845708411, "diffusion_loss": 0.0, "epoch": 1, "latent_target_mode": "residual", "loss": 1.6341689845708411, "stage": "stage1_connector_alignment"}
-{"aux_loss": 1.4725864755825733, "diffusion_loss": 0.0, "epoch": 2, "latent_target_mode": "residual", "loss": 1.4725864755825733, "stage": "stage1_connector_alignment"}
-{"aux_loss": 1.3770335112969707, "diffusion_loss": 1.5366135017139706, "epoch": 1, "latent_target_mode": "residual", "loss": 1.8808718816501888, "stage": "stage2_diffusion_finetune"}
-{"aux_loss": 1.3006913179487694, "diffusion_loss": 1.3093094177133455, "epoch": 2, "latent_target_mode": "residual", "loss": 1.6344822495002447, "stage": "stage2_diffusion_finetune"}
-{"aux_loss": 1.2519978542966166, "diffusion_loss": 1.1182698452566553, "epoch": 3, "latent_target_mode": "residual", "loss": 1.4312693100275955, "stage": "stage2_diffusion_finetune"}
-{"aux_loss": 1.21468998785094, "diffusion_loss": 1.0115265872534804, "epoch": 4, "latent_target_mode": "residual", "loss": 1.3151990826674334, "stage": "stage2_diffusion_finetune"}
-{"aux_loss": 1.18427780716438, "diffusion_loss": 0.9394911325822665, "epoch": 5, "latent_target_mode": "residual", "loss": 1.2355605844437607, "stage": "stage2_diffusion_finetune"}
-{"aux_loss": 1.1697589203128664, "diffusion_loss": 0.8914648630487637, "epoch": 1, "latent_target_mode": "residual", "loss": 1.1839045938544386, "stage": "stage3_multitask_dropout"}
-{"aux_loss": 1.1467754244804382, "diffusion_loss": 0.8545144255705706, "epoch": 2, "latent_target_mode": "residual", "loss": 1.1412082803530956, "stage": "stage3_multitask_dropout"}
-{
-  "eval": {
-    "by_property_count": {
-      "2": {
-        "latent_mae": 0.7509951615445549,
-        "latent_mse": 2.1478942795996874,
-        "rows": 479.0,
-        "source_latent_cosine": 0.9796433022605462,
-        "source_target_latent_cosine": 0.38585354954511014,
-        "target_latent_cosine": 0.3809437374485865
-      },
-      "3": {
-        "latent_mae": 0.7542702251471075,
-        "latent_mse": 2.1294033959283865,
-        "rows": 266.0,
-        "source_latent_cosine": 0.9801291219605744,
-        "source_target_latent_cosine": 0.3935329609027258,
-        "target_latent_cosine": 0.3884277079406614
-      },
-      "4": {
-        "latent_mae": 0.7476626766700272,
-        "latent_mse": 2.1154111486377447,
-        "rows": 141.0,
-        "source_latent_cosine": 0.9825785887517524,
-        "source_target_latent_cosine": 0.39016089228271705,
-        "target_latent_cosine": 0.3849884235160867
-      },
-      "5": {
-        "latent_mae": 0.7376395133825449,
-        "latent_mse": 2.0617841445482696,
-        "rows": 65.0,
-        "source_latent_cosine": 0.9783148811339978,
-        "source_target_latent_cosine": 0.4071381533536262,
-        "target_latent_cosine": 0.4018594040076028
-      },
-      "6": {
-        "latent_mae": 0.8012453223529615,
-        "latent_mse": 2.252788882506521,
-        "rows": 38.0,
-        "source_latent_cosine": 0.9836662652847913,
-        "source_target_latent_cosine": 0.3555175064763296,
-        "target_latent_cosine": 0.3527748672264962
-      },
-      "7": {
-        "latent_mae": 0.69807875698263,
-        "latent_mse": 1.9546051242134788,
-        "rows": 11.0,
-        "source_latent_cosine": 0.9924149371818768,
-        "source_target_latent_cosine": 0.40318261471311484,
-        "target_latent_cosine": 0.40168272742229016
-      }
-    },
-    "decoded_image_quality": {
-      "generated": {
-        "dark_fraction": 0.03154470825195312,
-        "images": 1000.0,
-        "mean_intensity": 0.9761024366021156,
-        "nonwhite_fraction": 0.04282293701171875,
-        "std_intensity": 0.13265616328269242
-      },
-      "source_oracle": {
-        "dark_fraction": 0.030814290046691895,
-        "images": 128.0,
-        "mean_intensity": 0.9763975003734231,
-        "nonwhite_fraction": 0.04156136512756348,
-        "std_intensity": 0.1327866068459116
-      },
-      "target_oracle": {
-        "dark_fraction": 0.030780911445617676,
-        "images": 128.0,
-        "mean_intensity": 0.9764205031096935,
-        "nonwhite_fraction": 0.04151606559753418,
-        "std_intensity": 0.13270970608573407
-      }
-    },
-    "latent_target_mode": "residual",
-    "output_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent",
-    "overall": {
-      "latent_mae": 0.7518557566255331,
-      "latent_mse": 2.1346582385003567,
-      "rows": 1000.0,
-      "source_latent_cosine": 0.9803934189018442,
-      "source_target_latent_cosine": 0.38892495762002643,
-      "target_latent_cosine": 0.38402200448260326
-    },
-    "rows": 1000,
-    "sample_eta": 0.0,
-    "sample_steps": 20
-  },
-  "history": [
-    {
-      "aux_loss": 1.6341689845708411,
-      "diffusion_loss": 0.0,
-      "epoch": 1,
-      "latent_target_mode": "residual",
-      "loss": 1.6341689845708411,
-      "stage": "stage1_connector_alignment"
-    },
-    {
-      "aux_loss": 1.4725864755825733,
-      "diffusion_loss": 0.0,
-      "epoch": 2,
-      "latent_target_mode": "residual",
-      "loss": 1.4725864755825733,
-      "stage": "stage1_connector_alignment"
-    },
-    {
-      "aux_loss": 1.3770335112969707,
-      "diffusion_loss": 1.5366135017139706,
-      "epoch": 1,
-      "latent_target_mode": "residual",
-      "loss": 1.8808718816501888,
-      "stage": "stage2_diffusion_finetune"
-    },
-    {
-      "aux_loss": 1.3006913179487694,
-      "diffusion_loss": 1.3093094177133455,
-      "epoch": 2,
-      "latent_target_mode": "residual",
-      "loss": 1.6344822495002447,
-      "stage": "stage2_diffusion_finetune"
-    },
-    {
-      "aux_loss": 1.2519978542966166,
-      "diffusion_loss": 1.1182698452566553,
-      "epoch": 3,
-      "latent_target_mode": "residual",
-      "loss": 1.4312693100275955,
-      "stage": "stage2_diffusion_finetune"
-    },
-    {
-      "aux_loss": 1.21468998785094,
-      "diffusion_loss": 1.0115265872534804,
-      "epoch": 4,
-      "latent_target_mode": "residual",
-      "loss": 1.3151990826674334,
-      "stage": "stage2_diffusion_finetune"
-    },
-    {
-      "aux_loss": 1.18427780716438,
-      "diffusion_loss": 0.9394911325822665,
-      "epoch": 5,
-      "latent_target_mode": "residual",
-      "loss": 1.2355605844437607,
-      "stage": "stage2_diffusion_finetune"
-    },
-    {
-      "aux_loss": 1.1697589203128664,
-      "diffusion_loss": 0.8914648630487637,
-      "epoch": 1,
-      "latent_target_mode": "residual",
-      "loss": 1.1839045938544386,
-      "stage": "stage3_multitask_dropout"
-    },
-    {
-      "aux_loss": 1.1467754244804382,
-      "diffusion_loss": 0.8545144255705706,
-      "epoch": 2,
-      "latent_target_mode": "residual",
-      "loss": 1.1412082803530956,
-      "stage": "stage3_multitask_dropout"
-    }
-  ]
-}
-Preparing MolScribe image CSV for image-to-structure benchmark
-{
-  "eval_jsonl": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset/univideo_edit_eval.jsonl",
-  "generated_images_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images",
-  "method": "univideo_image_vae",
-  "missing_images": 0,
-  "output_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv",
-  "predictions_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/predictions.csv",
-  "rows": 1000
-}
-Running MolScribe OCR and image-to-structure benchmark
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:46: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
-  @custom_fwd
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
-  @custom_bwd
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
-  @custom_fwd
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
-  @custom_bwd
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:46: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
-  @custom_fwd
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sparse_activations.py:66: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
-  @custom_bwd
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:395: FutureWarning: `torch.cuda.amp.custom_fwd(args...)` is deprecated. Please use `torch.amp.custom_fwd(args..., device_type='cuda')` instead.
-  @custom_fwd
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/onmt/modules/sru.py:444: FutureWarning: `torch.cuda.amp.custom_bwd(args...)` is deprecated. Please use `torch.amp.custom_bwd(args..., device_type='cuda')` instead.
-  @custom_bwd
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/functional.py:505: UserWarning: torch.meshgrid: in an upcoming release, it will be required to pass the indexing argument. (Triggered internally at /tmp/build_wheels_tmp.20690/python-3.11/torch/aten/src/ATen/native/TensorShape.cpp:4382.)
-  return _VF.meshgrid(tensors, **kwargs)  # type: ignore[attr-defined]
-  0%|          | 0/63 [00:00<?, ?it/s]/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/_dynamo/eval_frame.py:1298: UserWarning: torch.utils.checkpoint: the use_reentrant parameter should be passed explicitly. Starting in PyTorch 2.9, calling checkpoint without use_reentrant will raise an exception. use_reentrant=False is recommended, but if you need to preserve the current default behavior, you can pass use_reentrant=True. Refer to docs for more details on the differences between the two variants.
-  return fn(*args, **kwargs)
-/scratch/bdong/venvs/phystabmol/lib/python3.11/site-packages/torch/utils/checkpoint.py:238: UserWarning: None of the inputs have requires_grad=True. Gradients will be None
-  check_backward_validity(args)
-  2%|▏         | 1/63 [00:03<03:13,  3.12s/it]  3%|▎         | 2/63 [00:04<02:25,  2.38s/it]  5%|▍         | 3/63 [00:06<02:09,  2.16s/it]  6%|▋         | 4/63 [00:08<02:00,  2.05s/it]  8%|▊         | 5/63 [00:10<01:54,  1.98s/it] 10%|▉         | 6/63 [00:12<01:50,  1.94s/it] 11%|█         | 7/63 [00:14<01:47,  1.92s/it] 13%|█▎        | 8/63 [00:16<01:44,  1.90s/it] 14%|█▍        | 9/63 [00:18<01:42,  1.89s/it] 16%|█▌        | 10/63 [00:19<01:40,  1.89s/it] 17%|█▋        | 11/63 [00:21<01:37,  1.88s/it] 19%|█▉        | 12/63 [00:23<01:35,  1.88s/it] 21%|██        | 13/63 [00:25<01:33,  1.87s/it] 22%|██▏       | 14/63 [00:27<01:31,  1.88s/it] 24%|██▍       | 15/63 [00:29<01:30,  1.88s/it] 25%|██▌       | 16/63 [00:31<01:28,  1.88s/it] 27%|██▋       | 17/63 [00:33<01:26,  1.88s/it] 29%|██▊       | 18/63 [00:34<01:24,  1.88s/it] 30%|███       | 19/63 [00:36<01:22,  1.88s/it] 32%|███▏      | 20/63 [00:38<01:20,  1.88s/it] 33%|███▎      | 21/63 [00:40<01:18,  1.87s/it] 35%|███▍      | 22/63 [00:42<01:16,  1.87s/it] 37%|███▋      | 23/63 [00:44<01:14,  1.87s/it] 38%|███▊      | 24/63 [00:46<01:13,  1.87s/it] 40%|███▉      | 25/63 [00:48<01:11,  1.87s/it] 41%|████▏     | 26/63 [00:49<01:09,  1.87s/it] 43%|████▎     | 27/63 [00:51<01:07,  1.87s/it] 44%|████▍     | 28/63 [00:53<01:05,  1.88s/it] 46%|████▌     | 29/63 [00:55<01:03,  1.88s/it] 48%|████▊     | 30/63 [00:57<01:02,  1.88s/it] 49%|████▉     | 31/63 [00:59<01:00,  1.88s/it] 51%|█████     | 32/63 [01:01<00:58,  1.88s/it] 52%|█████▏    | 33/63 [01:03<00:56,  1.88s/it] 54%|█████▍    | 34/63 [01:04<00:54,  1.88s/it] 56%|█████▌    | 35/63 [01:06<00:52,  1.88s/it] 57%|█████▋    | 36/63 [01:08<00:50,  1.88s/it] 59%|█████▊    | 37/63 [01:10<00:48,  1.88s/it] 60%|██████    | 38/63 [01:12<00:46,  1.88s/it] 62%|██████▏   | 39/63 [01:14<00:45,  1.88s/it] 63%|██████▎   | 40/63 [01:16<00:43,  1.88s/it] 65%|██████▌   | 41/63 [01:18<00:41,  1.88s/it] 67%|██████▋   | 42/63 [01:20<00:39,  1.88s/it] 68%|██████▊   | 43/63 [01:21<00:37,  1.88s/it] 70%|██████▉   | 44/63 [01:23<00:35,  1.88s/it] 71%|███████▏  | 45/63 [01:25<00:33,  1.88s/it] 73%|███████▎  | 46/63 [01:27<00:31,  1.88s/it] 75%|███████▍  | 47/63 [01:29<00:29,  1.87s/it] 76%|███████▌  | 48/63 [01:31<00:28,  1.88s/it] 78%|███████▊  | 49/63 [01:33<00:26,  1.87s/it] 79%|███████▉  | 50/63 [01:35<00:24,  1.87s/it] 81%|████████  | 51/63 [01:36<00:22,  1.87s/it] 83%|████████▎ | 52/63 [01:38<00:20,  1.87s/it] 84%|████████▍ | 53/63 [01:40<00:18,  1.87s/it] 86%|████████▌ | 54/63 [01:42<00:16,  1.88s/it] 87%|████████▋ | 55/63 [01:44<00:15,  1.88s/it] 89%|████████▉ | 56/63 [01:46<00:13,  1.87s/it] 90%|█████████ | 57/63 [01:48<00:11,  1.87s/it] 92%|█████████▏| 58/63 [01:49<00:09,  1.87s/it] 94%|█████████▎| 59/63 [01:51<00:07,  1.87s/it] 95%|█████████▌| 60/63 [01:53<00:05,  1.87s/it] 97%|█████████▋| 61/63 [01:55<00:03,  1.87s/it] 98%|█████████▊| 62/63 [01:57<00:01,  1.88s/it]100%|██████████| 63/63 [01:59<00:00,  1.83s/it]100%|██████████| 63/63 [01:59<00:00,  1.89s/it]
-save to SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
-done
-{
-  "decoded_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/benchmark_decoded.csv",
-  "image_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv",
-  "method": "univideo_image_vae",
-  "output_dir": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark",
-  "report": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/benchmark_report.md",
-  "rows": 1000,
-  "source_tanimoto_thresholds": [
-    0.4,
-    0.6,
-    0.8
-  ],
-  "summary_csv": "SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/benchmark_summary.csv"
-}
-UniVideo-style molecular pipeline finished:
-  dataset=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/dataset/summary.json
-  image_vae=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/molecule_image_vae/molecule_image_vae.pt
-  generated_images=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/generated_images
-  checkpoint=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/univideo_molecule_generation.pt
-  metrics=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/metrics.json
-  eval=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/eval_latent/metrics.json
-  condition_tokens=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/condition_tokens_train/query_tokens.npy
-  image_structure_csv=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/image_path.csv
-  image_structure_report=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/univideo_molecule/image_structure_benchmark/benchmark_report.md
