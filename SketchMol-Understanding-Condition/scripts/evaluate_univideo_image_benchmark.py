@@ -52,6 +52,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--method", default="univideo_image_diffusion")
     parser.add_argument("--smiles-column", default="SMILES")
+    parser.add_argument(
+        "--accept-direct-smiles",
+        action="store_true",
+        help="Trust --smiles-column as machine-readable generated SMILES instead of requiring MolScribe graph decode.",
+    )
     parser.add_argument("--source-tanimoto-thresholds", default="0.4,0.6,0.8")
     return parser.parse_args()
 
@@ -61,7 +66,15 @@ def main() -> None:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     rows = _read_rows(args.image_csv)
     thresholds = _parse_float_list(args.source_tanimoto_thresholds)
-    decoded_rows = [_decode_row(row, method=args.method, smiles_column=args.smiles_column) for row in rows]
+    decoded_rows = [
+        _decode_row_with_options(
+            row,
+            method=args.method,
+            smiles_column=args.smiles_column,
+            accept_direct_smiles=args.accept_direct_smiles,
+        )
+        for row in rows
+    ]
     summary_rows = _summarize(decoded_rows, thresholds=thresholds)
 
     _write_rows(args.output_dir / "benchmark_decoded.csv", decoded_rows)
@@ -71,6 +84,7 @@ def main() -> None:
         "image_csv": str(args.image_csv),
         "output_dir": str(args.output_dir),
         "method": args.method,
+        "accept_direct_smiles": bool(args.accept_direct_smiles),
         "rows": len(decoded_rows),
         "source_tanimoto_thresholds": thresholds,
         "decoded_csv": str(args.output_dir / "benchmark_decoded.csv"),
@@ -87,12 +101,24 @@ def _graph_decoded(row: Mapping[str, str]) -> bool:
 
 
 def _decode_row(row: Mapping[str, str], *, method: str, smiles_column: str) -> dict[str, object]:
+    return _decode_row_with_options(row, method=method, smiles_column=smiles_column, accept_direct_smiles=False)
+
+
+def _decode_row_with_options(
+    row: Mapping[str, str],
+    *,
+    method: str,
+    smiles_column: str,
+    accept_direct_smiles: bool,
+) -> dict[str, object]:
     raw_smiles = row.get(smiles_column) or row.get("generated_smiles") or ""
     decode_source = str(row.get("molscribe_decode_source", "") or "")
+    if accept_direct_smiles and not decode_source:
+        decode_source = "direct_smiles"
     graph_decoded = _graph_decoded(row)
-    generated = (_safe_canonical(raw_smiles) or "") if graph_decoded else ""
+    generated = (_safe_canonical(raw_smiles) or "") if graph_decoded or accept_direct_smiles else ""
     valid = bool(generated)
-    raw_fallback_valid = bool(not graph_decoded and _safe_canonical(raw_smiles))
+    raw_fallback_valid = bool(not graph_decoded and not accept_direct_smiles and _safe_canonical(raw_smiles))
     selected_props = _selected_props(row)
     generated_props = _normalized_properties(generated) if valid else {}
     source_smiles = row.get("source_smiles", "")
@@ -243,13 +269,15 @@ def _summary_row(method: str, rows: list[dict[str, object]], property_count: int
 def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argparse.Namespace, thresholds: list[float]) -> None:
     rows_by_key = {(row["method"], row["property_count"]): row for row in summary_rows}
     methods = sorted({str(row.get("method", "")) for row in summary_rows})
+    input_mode = "direct SMILES materialization" if args.accept_direct_smiles else "MolScribe OCR"
     lines = [
         "# UniVideo Image-to-Structure Benchmark",
         "",
-        "This report evaluates generated molecule images after MolScribe OCR and RDKit validation.",
+        f"This report evaluates UniVideo molecule outputs after {input_mode} and RDKit validation.",
         "",
         f"- image CSV: `{args.image_csv}`",
         f"- method label: `{args.method}`",
+        f"- accept direct SMILES: `{bool(args.accept_direct_smiles)}`",
         f"- source Tanimoto thresholds: `{','.join(str(value) for value in thresholds)}`",
         "",
         "## Main 2p-7p Table",
@@ -293,7 +321,7 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             "",
             "## Diagnostics",
             "",
-            "| method | OCR present | valid | source scaffold | unique valid | exact target | source identity | decode source |",
+            "| method | SMILES present | valid | source scaffold | unique valid | exact target | source identity | decode source |",
             "| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
         ]
     )

@@ -5,6 +5,12 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
+import pytest
+
+
+RDKit_MISSING = importlib.util.find_spec("rdkit") is None
+
 
 def test_prepare_univideo_molscribe_csv_smoke(tmp_path):
     predictions = tmp_path / "predictions.csv"
@@ -83,6 +89,7 @@ def test_prepare_univideo_molscribe_csv_smoke(tmp_path):
     assert rows[0]["target_QED"] == "0.5"
 
 
+@pytest.mark.skipif(RDKit_MISSING, reason="RDKit is required for SMILES validation")
 def test_decode_row_ignores_raw_token_fallback_for_validity():
     module = _load_script("evaluate_univideo_image_benchmark.py")
     row = {
@@ -102,6 +109,7 @@ def test_decode_row_ignores_raw_token_fallback_for_validity():
     assert decoded["graph_decoded"] is False
 
 
+@pytest.mark.skipif(RDKit_MISSING, reason="RDKit is required for SMILES validation")
 def test_decode_row_accepts_sketchmol_graph_decode():
     module = _load_script("evaluate_univideo_image_benchmark.py")
     row = {
@@ -160,6 +168,236 @@ def test_image_benchmark_summary_counts_invalid_as_strict_failure():
     assert by_label["2_properties"]["success_rate_strict_in_valid_mols"] == 1.0
     assert by_label["2_properties"]["validity"] == 0.5
     assert by_label["2_properties"]["strict_success_at_source_tanimoto_ge_0_6"] == 0.5
+
+
+def test_materialize_univideo_target_molecules_target_oracle(tmp_path):
+    source = tmp_path / "image_path.csv"
+    output = tmp_path / "direct.csv"
+    _write_simple_target_rows(
+        source,
+        [
+            {
+                "sample_id": "s0",
+                "condition_id": "c0",
+                "source_smiles": "CCO",
+                "target_smiles": "CCN",
+                "condition_properties": "MW",
+                "target_MW": "45",
+                "MW_active": "True",
+            }
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/materialize_univideo_target_molecules.py",
+            "--source-csv",
+            str(source),
+            "--output-csv",
+            str(output),
+            "--mode",
+            "target_oracle",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output.open(newline="", encoding="utf-8")))
+    assert rows[0]["generated_smiles"] == "CCN"
+    assert rows[0]["target_finder_mode"] == "target_oracle"
+    assert rows[0]["exact_target_match"] == "True"
+
+
+def test_materialize_univideo_target_molecules_multiple_methods(tmp_path):
+    source = tmp_path / "image_path.csv"
+    output = tmp_path / "direct.csv"
+    _write_simple_target_rows(
+        source,
+        [
+            {
+                "sample_id": "s0",
+                "condition_id": "c0",
+                "source_smiles": "CCO",
+                "target_smiles": "CCN",
+                "condition_properties": "MW",
+                "target_MW": "45",
+                "MW_active": "True",
+            }
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/materialize_univideo_target_molecules.py",
+            "--source-csv",
+            str(source),
+            "--output-csv",
+            str(output),
+            "--methods",
+            "source_identity,target_oracle",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output.open(newline="", encoding="utf-8")))
+    by_method = {row["method"]: row for row in rows}
+    assert sorted(by_method) == ["source_identity", "target_oracle"]
+    assert by_method["source_identity"]["generated_smiles"] == "CCO"
+    assert by_method["target_oracle"]["generated_smiles"] == "CCN"
+    summary = json.loads(output.with_suffix(".summary.json").read_text(encoding="utf-8"))
+    assert summary["methods"] == ["source_identity", "target_oracle"]
+    assert summary["rows"] == 2
+
+
+def test_materialize_univideo_target_molecules_latent_nearest(tmp_path):
+    source = tmp_path / "image_path.csv"
+    output = tmp_path / "direct.csv"
+    generated = tmp_path / "generated_latents.npy"
+    targets = tmp_path / "target_latents.npy"
+    _write_simple_target_rows(
+        source,
+        [
+            {"sample_id": "s0", "condition_id": "c0", "source_smiles": "CCO", "target_smiles": "CCN"},
+            {"sample_id": "s1", "condition_id": "c1", "source_smiles": "CCC", "target_smiles": "CCCl"},
+        ],
+    )
+    np.save(generated, np.asarray([[0.05, 1.0], [1.0, 0.05]], dtype=np.float32))
+    np.save(targets, np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/materialize_univideo_target_molecules.py",
+            "--source-csv",
+            str(source),
+            "--output-csv",
+            str(output),
+            "--mode",
+            "latent_nearest",
+            "--generated-latents-npy",
+            str(generated),
+            "--candidate-latents-npy",
+            str(targets),
+            "--top-k",
+            "2",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output.open(newline="", encoding="utf-8")))
+    assert rows[0]["generated_smiles"] == "CCCl"
+    assert rows[0]["matched_condition_id"] == "c1"
+    assert rows[1]["generated_smiles"] == "CCN"
+    assert rows[1]["matched_condition_id"] == "c0"
+
+
+def test_materialize_univideo_target_molecules_property_nearest(tmp_path):
+    source = tmp_path / "image_path.csv"
+    candidates = tmp_path / "candidates.csv"
+    output = tmp_path / "direct.csv"
+    _write_simple_target_rows(
+        source,
+        [
+            {
+                "sample_id": "q0",
+                "condition_id": "q0",
+                "source_smiles": "CCO",
+                "target_smiles": "CCN",
+                "condition_properties": "MW,LogP",
+                "target_MW": "100",
+                "target_LogP": "2.0",
+                "MW_active": "True",
+                "LogP_active": "True",
+            }
+        ],
+    )
+    _write_simple_target_rows(
+        candidates,
+        [
+            {
+                "sample_id": "k0",
+                "condition_id": "k0",
+                "target_smiles": "CCCC",
+                "target_MW": "150",
+                "target_LogP": "3.0",
+            },
+            {
+                "sample_id": "k1",
+                "condition_id": "k1",
+                "target_smiles": "CCCO",
+                "target_MW": "101",
+                "target_LogP": "2.1",
+            },
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/materialize_univideo_target_molecules.py",
+            "--source-csv",
+            str(source),
+            "--candidate-csv",
+            str(candidates),
+            "--output-csv",
+            str(output),
+            "--mode",
+            "property_nearest",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output.open(newline="", encoding="utf-8")))
+    assert rows[0]["generated_smiles"] == "CCCO"
+    assert rows[0]["matched_condition_id"] == "k1"
+
+
+def _write_simple_target_rows(path: Path, rows: list[dict[str, str]]) -> None:
+    fieldnames = [
+        "sample_id",
+        "condition_id",
+        "pair_id",
+        "image_path",
+        "source_smiles",
+        "target_smiles",
+        "condition_properties",
+        "target_MW",
+        "target_LogP",
+        "target_QED",
+        "target_TPSA",
+        "target_HBD",
+        "target_HBA",
+        "target_RB",
+        "MW_active",
+        "LogP_active",
+        "QED_active",
+        "TPSA_active",
+        "HBD_active",
+        "HBA_active",
+        "RB_active",
+    ]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow(row)
 
 
 def _load_script(name: str):

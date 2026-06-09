@@ -247,7 +247,67 @@ $SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/evaluate_univideo_ima
   --source-tanimoto-thresholds 0.4,0.6,0.8
 ```
 
-## 6. 输出文件怎么看
+## 6. OCR 跑不通时对齐 Unified 3M materialized benchmark
+
+如果服务器 MolScribe / OCR 环境暂时跑不通，推荐直接跑 OCR-free
+materialized benchmark。这个流程和 `SketchMol-Unified-3MDiffusion` 的
+testing 方法对齐：先从 `image_path.csv` 和 eval latent 里 materialize
+`generated_smiles`，再用同一个 image benchmark evaluator 按 `method` 分组输出
+`benchmark_report.md` / `benchmark_summary.csv` / `benchmark_decoded.csv`。
+
+默认 `primary_fast` profile 会一次跑这些对照：
+
+```text
+source_identity
+source_tanimoto_property_oracle
+edit_latent_source_first_rerank
+edit_latent_source_similarity_rerank
+target_oracle
+```
+
+本地或交互节点直接跑：
+
+```bash
+SUCC_UNIFIED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1 \
+SUCC_MATERIALIZED_BENCHMARK_PROFILE=primary_fast \
+bash SketchMol-Understanding-Condition/scripts/run_univideo_materialized_benchmark.sh
+```
+
+服务器上单独提交 CPU benchmark job：
+
+```bash
+SUCC_UNIFIED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1 \
+SUCC_MATERIALIZED_BENCHMARK_PROFILE=primary_fast \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_materialized_benchmark.sh
+```
+
+输出默认在：
+
+```text
+SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/benchmark_materialized_primary_fast/
+```
+
+如果当前产物只有 `image_path.csv`，还没有 `generated_latents.npy` /
+`target_latents.npy`，先用 `oracle` profile 做数据流 sanity check：
+
+```bash
+SUCC_UNIFIED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1 \
+SUCC_MATERIALIZED_BENCHMARK_PROFILE=oracle \
+bash SketchMol-Understanding-Condition/scripts/run_univideo_materialized_benchmark.sh
+```
+
+注意 `target_oracle` 会直接复制 row 里的 `target_smiles`，是上界/校验，不是模型预测。
+`source_tanimoto_property_oracle` 是 candidate-library upper bound，用 source
+Tanimoto 过滤后再按 active target properties 找最近 molecule。
+
+需要只跑指定 method 时，用 `SUCC_MATERIALIZED_METHODS` 覆盖：
+
+```bash
+SUCC_MATERIALIZED_METHODS=source_identity,edit_latent_source_similarity_rerank,target_oracle \
+bash SketchMol-Understanding-Condition/scripts/run_univideo_materialized_benchmark.sh
+```
+
+## 7. 输出文件怎么看
 
 主输出目录：
 
@@ -509,7 +569,7 @@ OCR pipeline works, but benchmark is all zeros because upstream images are blank
 MolScribe confidence scores are ~0.076 with empty SMILES. Root cause is upstream
 diffusion/VAE collapse, not OCR.
 
-## 7. 查看 Slurm 状态
+## 8. 查看 Slurm 状态
 
 提交后脚本会打印 job id：
 
@@ -536,7 +596,7 @@ tail -f SketchMol-Understanding-Condition/logs/succ-univideo-mol-<job_id>.log
 squeue -j <job_id> -o "%.18i %.9P %.20j %.8u %.2t %.10M %.6D %R"
 ```
 
-## 8. 常见问题
+## 9. 常见问题
 
 如果报 `SUCC_HF_MODEL_NAME_OR_PATH is required`：
 
@@ -583,7 +643,7 @@ squeue -j <job_id> -o "%.18i %.9P %.20j %.8u %.2t %.10M %.6D %R"
 报告时要同时列 strict@Tanimoto>=0.4/0.6/0.8。
 ```
 
-## 9. 最小推荐配置
+## 10. 最小推荐配置
 
 第一次完整跑建议：
 
