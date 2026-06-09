@@ -1,6 +1,15 @@
 # UniVideo Image-to-Structure 完整实验 README
 
-这份文档只说明当前主线实验怎么跑：
+这份文档保留历史 image-to-structure / MolScribe OCR 实验说明。当前主线已经切到
+MolEdit-Instruct enhanced_v1 + OCR-free materialized benchmark：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_pipeline.sh
+```
+
+下面的 MolScribe/OCR 流程仅作为 legacy 诊断：
 
 ```text
 source molecule image / SMILES + instruction
@@ -247,8 +256,9 @@ $SUCC_PYTHON_BIN SketchMol-Understanding-Condition/scripts/evaluate_univideo_ima
 
 如果服务器 MolScribe / OCR 环境暂时跑不通，推荐直接跑 OCR-free
 materialized benchmark。这个流程和 `SketchMol-Unified-3MDiffusion` 的
-testing 方法对齐：先从 `image_path.csv` 和 eval latent 里 materialize
-`generated_smiles`，再用同一个 image benchmark evaluator 按 `method` 分组输出
+testing 方法对齐：当前默认先从 MolEdit eval JSONL + `predictions.csv` 导出
+`benchmark_condition_rows.csv`，再结合 eval latent materialize `generated_smiles`，
+最后用同一个 image benchmark evaluator 按 `method` 分组输出
 `benchmark_report.md` / `benchmark_summary.csv` / `benchmark_decoded.csv`。
 
 默认 `primary_fast` profile 会一次跑这些对照：
@@ -283,8 +293,9 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_materialized_benc
 SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1/univideo_molecule/benchmark_materialized_primary_fast/
 ```
 
-如果当前产物只有 `image_path.csv`，还没有 `generated_latents.npy` /
-`target_latents.npy`，先用 `oracle` profile 做数据流 sanity check：
+如果当前产物只有 benchmark condition rows，还没有 `generated_latents.npy` /
+`target_latents.npy`，先用 `oracle` profile 做数据流 sanity check。旧的
+`image_path.csv` 仍可通过 `SUCC_SOURCE_CSV` 显式指定，但不再是 MolEdit 主线默认：
 
 ```bash
 SUCC_UNIFIED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1 \

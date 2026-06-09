@@ -53,29 +53,47 @@ if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
   exit 2
 fi
 
-IMAGE_CSV="${SUCC_IMAGE_CSV:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/image_structure_benchmark/image_path.csv}"
+EVAL_LATENT_DIR="${SUCC_EVAL_LATENT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/eval_latent}"
+DATASET_DIR="${SUCC_UNIVIDEO_DATASET_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/dataset}"
+EVAL_JSONL="${SUCC_EVAL_JSONL:-$DATASET_DIR/univideo_edit_eval.jsonl}"
+PREDICTIONS_CSV="${SUCC_PREDICTIONS_CSV:-$EVAL_LATENT_DIR/predictions.csv}"
+BENCHMARK_ROWS_CSV="${SUCC_BENCHMARK_ROWS_CSV:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_condition_rows.csv}"
+SOURCE_CSV="${SUCC_SOURCE_CSV:-${SUCC_IMAGE_CSV:-$BENCHMARK_ROWS_CSV}}"
 GENERATED_LATENTS="${SUCC_GENERATED_LATENTS:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/eval_latent/generated_latents.npy}"
 CANDIDATE_LATENTS="${SUCC_CANDIDATE_LATENTS:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/eval_latent/target_latents.npy}"
-if [[ ! -f "$IMAGE_CSV" ]]; then
-  echo "ERROR: missing image CSV: $IMAGE_CSV" >&2
-  echo "Run the UniVideo pipeline with SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=prepare first." >&2
-  exit 2
-fi
-if [[ "$SUCC_MATERIALIZED_BENCHMARK_PROFILE" != "oracle" ]]; then
-  for required in "$GENERATED_LATENTS" "$CANDIDATE_LATENTS"; do
-    if [[ ! -f "$required" ]]; then
-      echo "ERROR: missing latent file: $required" >&2
-      echo "Use SUCC_MATERIALIZED_BENCHMARK_PROFILE=oracle if only image_path.csv is available." >&2
-      exit 2
-    fi
-  done
+if [[ -z "$BENCH_DEPENDENCY" ]]; then
+  if [[ "$SOURCE_CSV" != "$BENCHMARK_ROWS_CSV" && ! -f "$SOURCE_CSV" ]]; then
+    echo "ERROR: missing source CSV: $SOURCE_CSV" >&2
+    exit 2
+  fi
+  if [[ "$SOURCE_CSV" == "$BENCHMARK_ROWS_CSV" ]]; then
+    for required in "$EVAL_JSONL" "$PREDICTIONS_CSV"; do
+      if [[ ! -f "$required" ]]; then
+        echo "ERROR: missing file for benchmark row export: $required" >&2
+        exit 2
+      fi
+    done
+  fi
+  if [[ "$SUCC_MATERIALIZED_BENCHMARK_PROFILE" != "oracle" ]]; then
+    for required in "$GENERATED_LATENTS" "$CANDIDATE_LATENTS"; do
+      if [[ ! -f "$required" ]]; then
+        echo "ERROR: missing latent file: $required" >&2
+        echo "Use SUCC_MATERIALIZED_BENCHMARK_PROFILE=oracle if only benchmark rows are available." >&2
+        exit 2
+      fi
+    done
+  fi
+else
+  echo "Skipping pre-submit benchmark artifact checks because dependency=$BENCH_DEPENDENCY"
 fi
 
 mkdir -p "$BENCH_LOG_DIR"
 
 echo "Submitting UniVideo OCR-free materialized benchmark"
 echo "  output_dir=$SUCC_UNIFIED_OUTPUT_DIR"
-echo "  image_csv=$IMAGE_CSV"
+echo "  source_csv=$SOURCE_CSV"
+echo "  eval_jsonl=$EVAL_JSONL"
+echo "  predictions_csv=$PREDICTIONS_CSV"
 echo "  generated_latents=$GENERATED_LATENTS"
 echo "  candidate_latents=$CANDIDATE_LATENTS"
 echo "  benchmark_profile=$SUCC_MATERIALIZED_BENCHMARK_PROFILE"

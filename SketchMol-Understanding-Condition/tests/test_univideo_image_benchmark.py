@@ -89,6 +89,78 @@ def test_prepare_univideo_molscribe_csv_smoke(tmp_path):
     assert rows[0]["target_QED"] == "0.5"
 
 
+def test_export_univideo_benchmark_rows_without_images(tmp_path):
+    predictions = tmp_path / "predictions.csv"
+    eval_jsonl = tmp_path / "eval.jsonl"
+    output = tmp_path / "benchmark_condition_rows.csv"
+
+    with predictions.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=["sample_id", "condition_id", "source_smiles", "target_smiles", "latent_mse"],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "sample_id": "edit:moledit_instruct:m1",
+                "condition_id": "m1",
+                "source_smiles": "CCO",
+                "target_smiles": "CCN",
+                "latent_mse": "0.1",
+            }
+        )
+
+    eval_jsonl.write_text(
+        json.dumps(
+            {
+                "sample_id": "edit:moledit_instruct:m1",
+                "task_type": "edit_generation",
+                "split": "eval",
+                "prompt": "edit",
+                "target_smiles": "CCN",
+                "source_smiles": "CCO",
+                "instruction": "edit",
+                "condition_properties": "MW,QED",
+                "property_count": "2",
+                "source_tanimoto": "0.5",
+                "source_properties": {"MW": 46, "QED": 0.4},
+                "target_properties": {"MW": 45, "QED": 0.5},
+                "property_deltas": {"MW": -1, "QED": 0.1},
+                "active_properties": {"MW": True, "QED": True},
+                "directions": {"MW": "decrease", "QED": "increase"},
+                "metadata": {"condition_id": "m1", "pair_hash": "p1", "moledit_task_key": "MW:decrease+QED:increase"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_univideo_benchmark_rows.py",
+            "--predictions-csv",
+            str(predictions),
+            "--eval-jsonl",
+            str(eval_jsonl),
+            "--output-csv",
+            str(output),
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output.open(newline="", encoding="utf-8")))
+    assert rows[0]["condition_id"] == "m1"
+    assert rows[0]["source_smiles"] == "CCO"
+    assert rows[0]["condition_properties"] == "MW,QED"
+    assert rows[0]["target_QED"] == "0.5"
+    assert rows[0]["moledit_task_key"] == "MW:decrease+QED:increase"
+
+
 @pytest.mark.skipif(RDKit_MISSING, reason="RDKit is required for SMILES validation")
 def test_decode_row_ignores_raw_token_fallback_for_validity():
     module = _load_script("evaluate_univideo_image_benchmark.py")

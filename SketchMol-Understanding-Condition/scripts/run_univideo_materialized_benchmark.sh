@@ -21,9 +21,12 @@ fi
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-$SUCC_DEFAULT_UNIVIDEO_OUTPUT_DIR}"
 EVAL_LATENT_DIR="${SUCC_EVAL_LATENT_DIR:-$UNIFIED_OUTPUT_DIR/univideo_molecule/eval_latent}"
-STRUCTURE_BENCHMARK_DIR="${SUCC_STRUCTURE_BENCHMARK_DIR:-$UNIFIED_OUTPUT_DIR/univideo_molecule/image_structure_benchmark}"
-IMAGE_CSV="${SUCC_IMAGE_CSV:-$STRUCTURE_BENCHMARK_DIR/image_path.csv}"
-CANDIDATE_CSV="${SUCC_TARGET_FINDER_CANDIDATE_CSV:-$IMAGE_CSV}"
+DATASET_DIR="${SUCC_UNIVIDEO_DATASET_DIR:-$UNIFIED_OUTPUT_DIR/dataset}"
+EVAL_JSONL="${SUCC_EVAL_JSONL:-$DATASET_DIR/univideo_edit_eval.jsonl}"
+PREDICTIONS_CSV="${SUCC_PREDICTIONS_CSV:-$EVAL_LATENT_DIR/predictions.csv}"
+BENCHMARK_ROWS_CSV="${SUCC_BENCHMARK_ROWS_CSV:-$UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_condition_rows.csv}"
+SOURCE_CSV="${SUCC_SOURCE_CSV:-${SUCC_IMAGE_CSV:-$BENCHMARK_ROWS_CSV}}"
+CANDIDATE_CSV="${SUCC_TARGET_FINDER_CANDIDATE_CSV:-$SOURCE_CSV}"
 GENERATED_LATENTS="${SUCC_GENERATED_LATENTS:-$EVAL_LATENT_DIR/generated_latents.npy}"
 CANDIDATE_LATENTS="${SUCC_CANDIDATE_LATENTS:-$EVAL_LATENT_DIR/target_latents.npy}"
 
@@ -67,7 +70,9 @@ echo "UniVideo OCR-free materialized benchmark"
 echo "  python=$PYTHON_BIN"
 echo "  unified_output_dir=$UNIFIED_OUTPUT_DIR"
 echo "  eval_latent_dir=$EVAL_LATENT_DIR"
-echo "  image_csv=$IMAGE_CSV"
+echo "  eval_jsonl=$EVAL_JSONL"
+echo "  predictions_csv=$PREDICTIONS_CSV"
+echo "  source_csv=$SOURCE_CSV"
 echo "  candidate_csv=$CANDIDATE_CSV"
 echo "  generated_latents=$GENERATED_LATENTS"
 echo "  candidate_latents=$CANDIDATE_LATENTS"
@@ -79,10 +84,23 @@ echo "  source_first_min_tanimoto=$SOURCE_FIRST_MIN_TANIMOTO"
 echo "  source_similarity_rerank_candidates=$SOURCE_SIMILARITY_RERANK_CANDIDATES"
 echo "  source_tanimoto_thresholds=$SOURCE_TANIMOTO_THRESHOLDS"
 
-if [[ ! -f "$IMAGE_CSV" ]]; then
-  echo "ERROR: image CSV not found: $IMAGE_CSV" >&2
-  echo "Run the UniVideo pipeline with SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=prepare first." >&2
-  exit 2
+if [[ ! -f "$SOURCE_CSV" ]]; then
+  if [[ "$SOURCE_CSV" == "$BENCHMARK_ROWS_CSV" ]]; then
+    for required in "$EVAL_JSONL" "$PREDICTIONS_CSV"; do
+      if [[ ! -f "$required" ]]; then
+        echo "ERROR: required file not found for benchmark row export: $required" >&2
+        exit 2
+      fi
+    done
+    "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_univideo_benchmark_rows.py" \
+      --predictions-csv "$PREDICTIONS_CSV" \
+      --eval-jsonl "$EVAL_JSONL" \
+      --output-csv "$SOURCE_CSV" \
+      --method "univideo_${BENCHMARK_PROFILE}"
+  else
+    echo "ERROR: source CSV not found: $SOURCE_CSV" >&2
+    exit 2
+  fi
 fi
 if [[ ! -f "$CANDIDATE_CSV" ]]; then
   echo "ERROR: candidate CSV not found: $CANDIDATE_CSV" >&2
@@ -92,7 +110,7 @@ if [[ "$METHODS" == *"edit_latent"* ]]; then
   for required in "$GENERATED_LATENTS" "$CANDIDATE_LATENTS"; do
     if [[ ! -f "$required" ]]; then
       echo "ERROR: required latent file not found: $required" >&2
-      echo "Use SUCC_MATERIALIZED_BENCHMARK_PROFILE=oracle if only image_path.csv is available." >&2
+      echo "Use SUCC_MATERIALIZED_BENCHMARK_PROFILE=oracle if only benchmark condition rows are available." >&2
       exit 2
     fi
   done
@@ -101,7 +119,7 @@ fi
 mkdir -p "$BENCHMARK_OUTPUT_DIR"
 
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/materialize_univideo_target_molecules.py" \
-  --source-csv "$IMAGE_CSV" \
+  --source-csv "$SOURCE_CSV" \
   --candidate-csv "$CANDIDATE_CSV" \
   --output-csv "$DIRECT_CSV" \
   --methods "$METHODS" \

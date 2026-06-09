@@ -33,6 +33,17 @@ FEATURES_DIR="${SUCC_CONDITION_FEATURES_DIR:-$SUCC_DEFAULT_FEATURES_DIR}"
 CONDITION_ROWS="${SUCC_CONDITION_ROWS:-$SMMED_DEFAULT_CONDITION_ROWS}"
 DATASET_DIR="${SUCC_UNIVIDEO_DATASET_DIR:-$UNIFIED_OUTPUT_DIR/dataset}"
 BASELINE_CSV="${SUCC_BASELINE_CSV:-$DATASET_DIR/baseline_variants.csv}"
+DATASET_MODE="${SUCC_DATASET_MODE:-multiproperty}"
+if [[ "$DATASET_MODE" == "auto" ]]; then
+  if [[ -n "${SUCC_MOLEDIT_TRAIN_SPLIT:-}" || -n "${SUCC_MOLEDIT_EVAL_SPLIT:-}" || "$UNIFIED_OUTPUT_DIR" == *"moledit"* ]]; then
+    DATASET_MODE="moledit"
+  else
+    DATASET_MODE="multiproperty"
+  fi
+fi
+MOLEDIT_TRAIN_SPLIT="${SUCC_MOLEDIT_TRAIN_SPLIT:-${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}/processed/moledit-instruct/enhanced_v1/splits/train.csv}"
+MOLEDIT_EVAL_SPLIT="${SUCC_MOLEDIT_EVAL_SPLIT:-${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv}"
+MOLEDIT_TABLE1_TASKS_ONLY="${SUCC_MOLEDIT_TABLE1_TASKS_ONLY:-0}"
 
 RUN_FEATURE_EXPORT="${SUCC_RUN_FEATURE_EXPORT:-auto}"
 RUN_DATASET_EXPORT="${SUCC_RUN_DATASET_EXPORT:-1}"
@@ -48,6 +59,8 @@ HF_RENDER_IMAGE_SIZE="${SUCC_HF_RENDER_IMAGE_SIZE:-256}"
 EDIT_LIMIT="${SUCC_EDIT_LIMIT:-50000}"
 TRAIN_LIMIT="${SUCC_TRAIN_LIMIT:-50000}"
 EVAL_LIMIT="${SUCC_EVAL_LIMIT:-1000}"
+MOLEDIT_TRAIN_LIMIT="${SUCC_MOLEDIT_TRAIN_LIMIT:-$EDIT_LIMIT}"
+MOLEDIT_EVAL_LIMIT="${SUCC_MOLEDIT_EVAL_LIMIT:-$EVAL_LIMIT}"
 BATCH_SIZE="${SUCC_BATCH_SIZE:-64}"
 EVAL_BATCH_SIZE="${SUCC_EVAL_BATCH_SIZE:-64}"
 STAGE1_EPOCHS="${SUCC_STAGE1_EPOCHS:-2}"
@@ -92,6 +105,9 @@ SKETCHMOL_VAE_CHECKPOINT="${SUCC_SKETCHMOL_VAE_CHECKPOINT:-}"
 SKETCHMOL_SCALE_FACTOR="${SUCC_SKETCHMOL_SCALE_FACTOR:-1.0}"
 STRUCTURE_BENCHMARK_DIR="${SUCC_STRUCTURE_BENCHMARK_DIR:-$UNIFIED_OUTPUT_DIR/univideo_molecule/image_structure_benchmark}"
 RUN_IMAGE_STRUCTURE_BENCHMARK="${SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK:-auto}"
+if [[ "$DATASET_MODE" == "moledit" ]]; then
+  RUN_IMAGE_STRUCTURE_BENCHMARK=0
+fi
 DEFAULT_MOLSCRIBE_MODEL="/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth"
 if [[ -n "${SUCC_MOLSCRIBE_MODEL:-}" ]]; then
   MOLSCRIBE_MODEL="$SUCC_MOLSCRIBE_MODEL"
@@ -103,6 +119,9 @@ else
   MOLSCRIBE_MODEL=""
 fi
 RUN_MOLSCRIBE_OCR="${SUCC_RUN_MOLSCRIBE_OCR:-auto}"
+if [[ "$DATASET_MODE" == "moledit" ]]; then
+  RUN_MOLSCRIBE_OCR=0
+fi
 DEFAULT_MOLSCRIBE_WORKDIR=""
 if [[ -d "$SKETCHMOL_ROOT/evaluate/molscribe" ]]; then
   DEFAULT_MOLSCRIBE_WORKDIR="$SKETCHMOL_ROOT/evaluate"
@@ -115,8 +134,10 @@ MOLSCRIBE_RUNNER="${SUCC_MOLSCRIBE_RUNNER:-official}"
 SOURCE_TANIMOTO_THRESHOLDS="${SUCC_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
 PREPROCESS_IMAGES="${SUCC_PREPROCESS_IMAGES:-0}"
 
-# shellcheck source=./molscribe_env.sh
-source "$SCRIPT_DIR/molscribe_env.sh"
+if [[ "$RUN_IMAGE_STRUCTURE_BENCHMARK" != "0" && "$RUN_MOLSCRIBE_OCR" != "0" ]]; then
+  # shellcheck source=./molscribe_env.sh
+  source "$SCRIPT_DIR/molscribe_env.sh"
+fi
 
 if [[ -z "${MOLSCRIBE_WORKDIR:-}" && -d "$SKETCHMOL_ROOT/evaluate/molscribe" ]]; then
   MOLSCRIBE_WORKDIR="$SKETCHMOL_ROOT/evaluate"
@@ -124,7 +145,16 @@ fi
 
 echo "Running UniVideo-style molecular generation pipeline"
 echo "  python=$PYTHON_BIN"
-echo "  condition_rows=$CONDITION_ROWS"
+echo "  dataset_mode=$DATASET_MODE"
+if [[ "$DATASET_MODE" == "moledit" ]]; then
+  echo "  moledit_train_split=$MOLEDIT_TRAIN_SPLIT"
+  echo "  moledit_eval_split=$MOLEDIT_EVAL_SPLIT"
+  echo "  moledit_train_limit=${MOLEDIT_TRAIN_LIMIT:-none}"
+  echo "  moledit_eval_limit=${MOLEDIT_EVAL_LIMIT:-none}"
+  echo "  moledit_table1_tasks_only=$MOLEDIT_TABLE1_TASKS_ONLY"
+else
+  echo "  condition_rows=$CONDITION_ROWS"
+fi
 echo "  min_edit_source_tanimoto=$SUCC_MIN_EDIT_SOURCE_TANIMOTO"
 echo "  require_edit_quality_columns=$SUCC_REQUIRE_EDIT_QUALITY_COLUMNS"
 echo "  require_eval_oracle_strict=$SUCC_REQUIRE_EVAL_ORACLE_STRICT"
@@ -143,11 +173,13 @@ echo "  sample_eta=$SAMPLE_ETA"
 echo "  max_decode_images=$MAX_DECODE_IMAGES"
 echo "  run_image_structure_benchmark=$RUN_IMAGE_STRUCTURE_BENCHMARK"
 echo "  run_molscribe_ocr=$RUN_MOLSCRIBE_OCR"
-echo "  molscribe_model=${MOLSCRIBE_MODEL:-missing}"
-echo "  molscribe_workdir=${MOLSCRIBE_WORKDIR:-pythonpath-default}"
-echo "  molscribe_runner=$MOLSCRIBE_RUNNER"
-echo "  molscribe_batch_size=$MOLSCRIBE_BATCH_SIZE"
-echo "  preprocess_images=$PREPROCESS_IMAGES"
+if [[ "$RUN_IMAGE_STRUCTURE_BENCHMARK" != "0" && "$RUN_MOLSCRIBE_OCR" != "0" ]]; then
+  echo "  molscribe_model=${MOLSCRIBE_MODEL:-missing}"
+  echo "  molscribe_workdir=${MOLSCRIBE_WORKDIR:-pythonpath-default}"
+  echo "  molscribe_runner=$MOLSCRIBE_RUNNER"
+  echo "  molscribe_batch_size=$MOLSCRIBE_BATCH_SIZE"
+  echo "  preprocess_images=$PREPROCESS_IMAGES"
+fi
 if [[ "$LATENT_BACKEND" == "image_vae" ]]; then
   echo "  image_vae_checkpoint=$IMAGE_VAE_CHECKPOINT"
   echo "  run_image_vae_train=$RUN_IMAGE_VAE_TRAIN"
@@ -162,19 +194,47 @@ elif [[ "$LATENT_BACKEND" == "sketchmol_vae" ]]; then
 fi
 
 if [[ "$RUN_DATASET_EXPORT" == "1" || ! -f "$DATASET_DIR/univideo_edit_train.jsonl" || ! -f "$DATASET_DIR/univideo_edit_eval.jsonl" || ! -f "$BASELINE_CSV" ]]; then
-  if [[ ! -f "$CONDITION_ROWS" ]]; then
-    echo "ERROR: missing condition rows CSV: $CONDITION_ROWS" >&2
-    echo "Set SUCC_CONDITION_ROWS to the condition_rows.csv produced by your dataset build." >&2
-    exit 2
+  if [[ "$DATASET_MODE" == "moledit" ]]; then
+    if [[ ! -f "$MOLEDIT_TRAIN_SPLIT" ]]; then
+      echo "ERROR: missing MolEdit train split: $MOLEDIT_TRAIN_SPLIT" >&2
+      exit 2
+    fi
+    if [[ ! -f "$MOLEDIT_EVAL_SPLIT" ]]; then
+      echo "ERROR: missing MolEdit eval split: $MOLEDIT_EVAL_SPLIT" >&2
+      exit 2
+    fi
+    MOLEDIT_EXPORT_ARGS=(
+      --moledit-train-split "$MOLEDIT_TRAIN_SPLIT"
+      --moledit-eval-split "$MOLEDIT_EVAL_SPLIT"
+      --output-dir "$DATASET_DIR"
+      --variants full
+      --min-source-tanimoto "$SUCC_MIN_EDIT_SOURCE_TANIMOTO"
+    )
+    if [[ -n "$MOLEDIT_TRAIN_LIMIT" && "$MOLEDIT_TRAIN_LIMIT" != "0" ]]; then
+      MOLEDIT_EXPORT_ARGS+=(--moledit-train-limit "$MOLEDIT_TRAIN_LIMIT")
+    fi
+    if [[ -n "$MOLEDIT_EVAL_LIMIT" && "$MOLEDIT_EVAL_LIMIT" != "0" ]]; then
+      MOLEDIT_EXPORT_ARGS+=(--moledit-eval-limit "$MOLEDIT_EVAL_LIMIT")
+    fi
+    if [[ "$MOLEDIT_TABLE1_TASKS_ONLY" == "1" ]]; then
+      MOLEDIT_EXPORT_ARGS+=(--moledit-table1-tasks-only)
+    fi
+    "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_univideo_edit_dataset.py" "${MOLEDIT_EXPORT_ARGS[@]}"
+  else
+    if [[ ! -f "$CONDITION_ROWS" ]]; then
+      echo "ERROR: missing condition rows CSV: $CONDITION_ROWS" >&2
+      echo "Set SUCC_CONDITION_ROWS to the condition_rows.csv produced by your dataset build." >&2
+      exit 2
+    fi
+    "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_univideo_edit_dataset.py" \
+      --condition-rows-csv "$CONDITION_ROWS" \
+      --output-dir "$DATASET_DIR" \
+      --limit "$EDIT_LIMIT" \
+      --variants full \
+      --min-source-tanimoto "$SUCC_MIN_EDIT_SOURCE_TANIMOTO" \
+      $( [[ "$SUCC_REQUIRE_EDIT_QUALITY_COLUMNS" == "1" ]] && echo --require-edit-quality-columns ) \
+      $( [[ "$SUCC_REQUIRE_EVAL_ORACLE_STRICT" == "1" ]] && echo --require-eval-oracle-strict )
   fi
-  "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_univideo_edit_dataset.py" \
-    --condition-rows-csv "$CONDITION_ROWS" \
-    --output-dir "$DATASET_DIR" \
-    --limit "$EDIT_LIMIT" \
-    --variants full \
-    --min-source-tanimoto "$SUCC_MIN_EDIT_SOURCE_TANIMOTO" \
-    $( [[ "$SUCC_REQUIRE_EDIT_QUALITY_COLUMNS" == "1" ]] && echo --require-edit-quality-columns ) \
-    $( [[ "$SUCC_REQUIRE_EVAL_ORACLE_STRICT" == "1" ]] && echo --require-eval-oracle-strict )
 fi
 
 if [[ "$RUN_FEATURE_EXPORT" == "1" || ( "$RUN_FEATURE_EXPORT" == "auto" && ! -f "$FEATURES_DIR/query_tokens.npy" ) ]]; then

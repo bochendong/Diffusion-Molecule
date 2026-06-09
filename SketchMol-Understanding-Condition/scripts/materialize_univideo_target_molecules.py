@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Materialize UniVideo target molecules without MolScribe/OCR.
 
-The normal UniVideo image-to-structure path writes `image_path.csv`, runs
-MolScribe over generated PNGs, and evaluates the resulting `SMILES` column.
-When MolScribe is unavailable on the server, this script creates a compatible
-direct-prediction CSV with `generated_smiles`.
+The MolEdit-aligned path consumes benchmark condition rows, generated latents,
+and target/candidate latents, then writes a direct-prediction CSV with
+`generated_smiles`. This mirrors the Unified 3M x MolEdit materialized
+benchmark shape while avoiding any generated-image OCR dependency.
 
 Modes:
   target_oracle   Copy each row's `target_smiles` into `generated_smiles`.
@@ -65,7 +65,12 @@ METHODS = (
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--source-csv", required=True, type=Path, help="UniVideo image_path.csv or compatible row CSV")
+    parser.add_argument(
+        "--source-csv",
+        required=True,
+        type=Path,
+        help="Benchmark condition rows CSV, such as univideo_molecule/benchmark_condition_rows.csv",
+    )
     parser.add_argument("--output-csv", required=True, type=Path)
     parser.add_argument(
         "--mode",

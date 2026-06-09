@@ -1,5 +1,7 @@
 import csv
 import json
+import subprocess
+import sys
 
 import torch
 
@@ -15,6 +17,7 @@ from sketchmol_understanding_condition.unified_condition_dataset import (
     EDIT_GENERATION,
     read_3m_description_samples,
     read_edit_generation_samples,
+    read_moledit_generation_samples,
     split_samples,
 )
 
@@ -80,6 +83,62 @@ def test_unified_dataset_reads_description_and_edit_rows(tmp_path):
     assert row["active_properties"]["QED"] is True
 
 
+def test_unified_dataset_reads_moledit_enhanced_rows(tmp_path):
+    moledit_csv = tmp_path / "eval_balanced.csv"
+    _write_moledit_split(moledit_csv)
+
+    samples = read_moledit_generation_samples(moledit_csv, split="eval", table1_tasks_only=True)
+
+    assert len(samples) == 1
+    sample = samples[0]
+    assert sample.sample_id == "edit:moledit_instruct:m1"
+    assert sample.split == "eval"
+    assert sample.condition_properties == "MW,HBA,QED"
+    assert sample.property_count == "3"
+    assert sample.source_tanimoto == "0.55"
+    assert sample.metadata["moledit_task_key"] == "HBA:increase+MW:increase+QED:decrease"
+
+
+def test_export_univideo_edit_dataset_from_moledit_splits(tmp_path):
+    train_csv = tmp_path / "train.csv"
+    eval_csv = tmp_path / "eval_balanced.csv"
+    _write_moledit_split(train_csv)
+    _write_moledit_split(eval_csv, example_id="m2")
+    output_dir = tmp_path / "dataset"
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_univideo_edit_dataset.py",
+            "--moledit-train-split",
+            str(train_csv),
+            "--moledit-eval-split",
+            str(eval_csv),
+            "--output-dir",
+            str(output_dir),
+            "--variants",
+            "full,text_only",
+            "--moledit-table1-tasks-only",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    train_row = json.loads((output_dir / "univideo_edit_train.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    eval_row = json.loads((output_dir / "univideo_edit_eval.jsonl").read_text(encoding="utf-8").splitlines()[0])
+    assert train_row["metadata"]["condition_id"] == "m1"
+    assert eval_row["metadata"]["condition_id"] == "m2"
+    assert eval_row["condition_properties"] == "MW,HBA,QED"
+    with (output_dir / "baseline_variants.csv").open(newline="", encoding="utf-8") as handle:
+        baseline_rows = list(csv.DictReader(handle))
+    assert len(baseline_rows) == 4
+    assert {row["variant"] for row in baseline_rows} == {"full", "text_only"}
+    assert {row["condition_id"] for row in baseline_rows} == {"m1", "m2"}
+
+
 def test_edit_condition_connector_and_diffusion_loss_shapes():
     connector = EditConditionTokenConnector(
         input_hidden_dim=32,
@@ -112,3 +171,78 @@ def test_edit_condition_connector_and_diffusion_loss_shapes():
 
     assert torch.isfinite(diffusion_loss)
 
+
+def _write_moledit_split(path, *, example_id: str = "m1") -> None:
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "example_id",
+                "instruction",
+                "source_smiles",
+                "target_smiles",
+                "pair_hash",
+                "instruction_tasks",
+                "instruction_task_properties",
+                "instruction_task_directions",
+                "source_target_tanimoto",
+                "difficulty_bucket",
+                "pair_quality",
+                "computed_active_properties",
+                "computed_active_count",
+                "source_MW",
+                "target_MW",
+                "delta_MW",
+                "MW_active",
+                "MW_direction",
+                "source_QED",
+                "target_QED",
+                "delta_QED",
+                "QED_active",
+                "QED_direction",
+                "source_HBA",
+                "target_HBA",
+                "delta_HBA",
+                "HBA_active",
+                "HBA_direction",
+            ],
+        )
+        writer.writeheader()
+        writer.writerow(
+            {
+                "example_id": example_id,
+                "instruction": "Increase hydrogen bond acceptors and molecular weight, decrease QED.",
+                "source_smiles": "CCO",
+                "target_smiles": "CCN",
+                "pair_hash": f"pair-{example_id}",
+                "instruction_tasks": json.dumps(
+                    [
+                        {"property": "MW", "direction": "increase"},
+                        {"property": "HBA", "direction": "increase"},
+                        {"property": "QED", "direction": "decrease"},
+                    ]
+                ),
+                "instruction_task_properties": "HBA|MW|QED",
+                "instruction_task_directions": '{"HBA":"increase","MW":"increase","QED":"decrease"}',
+                "source_target_tanimoto": "0.55",
+                "difficulty_bucket": "medium_similarity",
+                "pair_quality": "cross_scaffold_medium_similarity",
+                "computed_active_properties": "MW|QED|HBA",
+                "computed_active_count": "3",
+                "source_MW": "46.0",
+                "target_MW": "45.0",
+                "delta_MW": "-1.0",
+                "MW_active": "1",
+                "MW_direction": "increase",
+                "source_QED": "0.5",
+                "target_QED": "0.4",
+                "delta_QED": "-0.1",
+                "QED_active": "1",
+                "QED_direction": "decrease",
+                "source_HBA": "1",
+                "target_HBA": "2",
+                "delta_HBA": "1",
+                "HBA_active": "1",
+                "HBA_direction": "increase",
+            }
+        )

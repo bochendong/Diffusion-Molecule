@@ -1,6 +1,8 @@
 # SketchMol Understanding-Condition Stream
 
-当前 UniVideo-style image-to-structure 完整实验的运行说明见：
+当前主线是 MolEdit-Instruct enhanced_v1 + OCR-free materialized benchmark，见
+§0.2。旧 UniVideo-style image-to-structure / MolScribe OCR 实验只作为 legacy
+诊断保留：
 [`README_UNIVIDEO_IMAGE_STRUCTURE_EXPERIMENT.md`](README_UNIVIDEO_IMAGE_STRUCTURE_EXPERIMENT.md)。
 
 ## 0. 核心判断
@@ -9,7 +11,7 @@
 
 > 用 MLLM 把分子图像 + 自然语言编辑目标解析成一组可被 diffusion cross-attention 使用的 condition tokens，从而提升分子编辑里的 scaffold 保留、局部替换、性质优化和目标蛋白活性控制。
 
-换句话说，大模型不负责直接生成 SMILES，也不只是输出一段 caption；它负责生成 conditional latent / condition token sequence。diffusion generator 仍然负责生成分子图像，MolScribe 或后处理再把图像还原成结构。
+换句话说，大模型不负责直接生成 SMILES，也不只是输出一段 caption；它负责生成 conditional latent / condition token sequence。diffusion generator 仍然负责生成分子图像，结构评估默认走 OCR-free materialized target-finder / RDKit 后处理。
 
 这和 UniVideo 的思路最像：
 
@@ -23,12 +25,36 @@ SketchMol 现有条件流已经是 cross-attention：`MixedEmbedderV2` 把离散
 当前主实验不再以小 CNN / hashed text proxy 作为方法主体。那些结果只保留为
 pipeline sanity check 和 ablation 负控。
 
-## 0.2 独立 unified 3M-Diffusion 版本
+## 0.2 当前主线：MolEdit-Instruct enhanced_v1，OCR-free
 
-3M-Diffusion 启发的 unified 训练已独立到 `SketchMol-Unified-3MDiffusion/`。
-**当前默认 benchmark / 训练数据是 MolEdit-Instruct enhanced splits**（见
-`datasets/README.md` 与 `submit_unified_moledit_pipeline.sh`）。旧的
-multi-property manifest 仍用于 image / VLM pipeline，但不再是 Unified 3M 的主线默认。
+当前训练 / benchmark 数据统一使用 MolEdit-Instruct enhanced splits：
+
+```text
+$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/train.csv
+$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv
+```
+
+SUCC UniVideo-style 路径与 `SketchMol-Unified-3MDiffusion` 的 MolEdit 主线对齐：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_pipeline.sh
+```
+
+这个入口会设置 `SUCC_DATASET_MODE=moledit`，导出 MolEdit train/eval JSONL，
+关闭 `SUCC_RUN_MOLSCRIBE_OCR` 和 image-structure OCR benchmark，并在训练完成后
+提交 OCR-free materialized benchmark。单独重跑 benchmark：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_benchmark.sh
+```
+
+3M-Diffusion 启发的 unified 训练仍独立在 `SketchMol-Unified-3MDiffusion/`；
+两条线共享 MolEdit split 和 MolEditRL table metric 口径。旧 multi-property
+manifest / OCR 路径只保留为历史对照，不再是当前主线默认。
 
 ## 0.3 UniVideo-style 双流生成模型
 
@@ -95,15 +121,16 @@ SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residu
   univideo_molecule/benchmark_materialized_primary_fast/   # materialized benchmark
 ```
 
-更新到 source-neighbor 数据集后，推荐重新训练一条 v2-style pipeline：
+旧 source-neighbor 数据集对照可以重新训练一条 v2-style pipeline：
 
 ```bash
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_source_neighbor_v2_pipeline.sh
 ```
 
 这个入口默认使用 `multiproperty_source_neighbor_v1/condition_rows.csv`，复用旧 v2
-ink-aware image VAE（如果 checkpoint 存在），只准备 image benchmark CSV，不再跑
-MolScribe，并在训练 job 成功后自动提交 OCR-free materialized benchmark。
+ink-aware image VAE（如果 checkpoint 存在），并在训练 job 成功后自动提交
+OCR-free materialized benchmark。它现在只是 legacy / ablation，对齐 MolEdit 的主线
+请使用 `submit_univideo_moledit_pipeline.sh`。
 
 ## 代码入口与 legacy 实验
 
@@ -123,7 +150,11 @@ SketchMol-Unified-3MDiffusion/README.md         # Unified 3M + MolEdit 训练
 ```text
 scripts/run_univideo_molecule_pipeline.sh
 scripts/submit_univideo_molecule_pipeline.sh
+scripts/submit_univideo_moledit_pipeline.sh
+scripts/submit_univideo_moledit_benchmark.sh
+scripts/submit_univideo_moledit_table_metrics.sh
 scripts/submit_univideo_source_neighbor_v2_pipeline.sh
+scripts/export_univideo_benchmark_rows.py
 scripts/run_univideo_materialized_benchmark.sh
 scripts/submit_univideo_materialized_benchmark.sh
 scripts/submit_hf_vlm_multiproperty_pipeline.sh
@@ -488,7 +519,7 @@ SketchMol 已有 EP4/AKT1/ROCK1 这类 protein condition 使用方式。可以�
 
 ## 10. 近期可执行 TODO
 
-1. 用 `submit_univideo_source_neighbor_v2_pipeline.sh` 在 source-neighbor 数据上重训 image pipeline，并自动接 OCR-free materialized benchmark。
-2. 用 `submit_unified_moledit_pipeline.sh` 在 MolEdit-Instruct enhanced splits 上训练 Unified 3M。
-3. 用 `evaluate_moledit_table_metrics.py` 对齐 MolEditRL 表格指标。
-4. 保留 image pipeline 作为并行对照，但不再把旧 encoder v0–v2.2 实验日志写回本 README。
+1. 用 `submit_univideo_moledit_pipeline.sh` 在 MolEdit-Instruct enhanced splits 上训练 SUCC UniVideo-style pipeline。
+2. 训练完成后读取自动提交的 `benchmark_materialized_primary_fast/` 与 `moledit_table_metrics/`。
+3. 用 `submit_unified_moledit_pipeline.sh` / `submit_unified_moledit_benchmark.sh` 作为 Unified 3M 对照。
+4. 保留 source-neighbor 和 OCR image-to-structure 作为历史对照，但不再作为主线 TODO。

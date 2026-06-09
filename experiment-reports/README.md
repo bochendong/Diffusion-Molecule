@@ -20,7 +20,8 @@ experiment-reports/
 | 文件夹 | 报告文件 | 说明 |
 | --- | --- | --- |
 | `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | MolEdit Unified 3M 训练完成（`15810199`）；benchmark 首次空跑，重跑入口已修复 |
-| `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | **新主线** source-neighbor 重训 + benchmark（`15821981`/`15821983`） |
+| `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | SUCC UniVideo 已切到 MolEdit-Instruct enhanced_v1 + OCR-free benchmark，待提交 |
+| `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 历史对照：重训 + benchmark（`15821981`/`15821983`） |
 | `understanding-condition/` | [univideo-v2-residual-ink.md](understanding-condition/univideo-v2-residual-ink.md) | 旧 canonical v2（`multiproperty_100k_v1`，历史对照） |
 | `understanding-condition/` | [materialized-benchmark-v2-primary-fast.md](understanding-condition/materialized-benchmark-v2-primary-fast.md) | 旧 v2 materialized benchmark（`15810260`） |
 | `multiproperty/` | [source-neighbor-v1.md](multiproperty/source-neighbor-v1.md) | source-neighbor 数据集构建 |
