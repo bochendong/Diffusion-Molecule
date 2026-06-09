@@ -34,6 +34,9 @@ Research/Molecule Generation/MolEditRL
 
 datasets
   线上数据集布置说明；本地只提交 README，不提交大数据。
+
+experiment-reports
+  可更新的实验报告（Markdown）；按实验线分子文件夹，见 experiment-reports/README.md。
 ```
 
 ## 研究主线
