@@ -19,10 +19,10 @@ experiment-reports/
 
 | 文件夹 | 报告文件 | 说明 |
 | --- | --- | --- |
-| `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | MolEdit Unified 3M 训练完成（`15810199`）；benchmark 首次空跑，重跑入口已修复 |
-| `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | SUCC UniVideo 已切到 MolEdit-Instruct enhanced_v1 + OCR-free benchmark，待提交 |
-| `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 历史对照：重训 + benchmark（`15821981`/`15821983`） |
-| `understanding-condition/` | [univideo-v2-residual-ink.md](understanding-condition/univideo-v2-residual-ink.md) | 旧 canonical v2（`multiproperty_100k_v1`，历史对照） |
+| `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | **完成** MolEdit Unified 3M（`15810199`/`15837897`/`15851992`） |
+| `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | **完成** SUCC UniVideo × MolEdit（`15838733`/`15838734`/`15844098`） |
+| `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 历史对照（`15821981`/`15821983`） |
+| `understanding-condition/` | [univideo-v2-residual-ink.md](understanding-condition/univideo-v2-residual-ink.md) | 旧 canonical v2（`multiproperty_100k_v1`） |
 | `understanding-condition/` | [materialized-benchmark-v2-primary-fast.md](understanding-condition/materialized-benchmark-v2-primary-fast.md) | 旧 v2 materialized benchmark（`15810260`） |
 | `multiproperty/` | [source-neighbor-v1.md](multiproperty/source-neighbor-v1.md) | source-neighbor 数据集构建 |
 
@@ -30,11 +30,15 @@ experiment-reports/
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| `15810199` | `smu3m-unified` | 完成（3m45s） | [moledit-instruct-v1](unified-3m/moledit-instruct-v1.md) |
-| `15821981` | `succ-univideo-mol` | 完成（54m35s） | [source-neighbor-v2](understanding-condition/source-neighbor-v2-residual-ink.md) |
-| `15821983` | `succ-univideo-bench` | 完成（12m28s） | [source-neighbor-v2](understanding-condition/source-neighbor-v2-residual-ink.md) |
-| `15822025` | `smu3m-diff-bench` | 完成但空结果（condition rows 错配） | [moledit-instruct-v1](unified-3m/moledit-instruct-v1.md) |
-| `15822029` | `smu3m-moledit-table` | 完成但空结果（依赖空 benchmark） | [moledit-instruct-v1](unified-3m/moledit-instruct-v1.md) |
+| `15810199` | `smu3m-unified` | 完成（3m45s） | [unified moledit](unified-3m/moledit-instruct-v1.md) |
+| `15837897` | `smu3m-diff-bench` | 完成（~4h） | [unified moledit](unified-3m/moledit-instruct-v1.md) |
+| `15851992` | `smu3m-moledit-table` | 完成 | [unified moledit](unified-3m/moledit-instruct-v1.md) |
+| `15838733` | `succ-univideo-mol` | 完成（~43m） | [succ moledit](understanding-condition/moledit-instruct-v1.md) |
+| `15838734` | `succ-univideo-bench` | 完成（~13m） | [succ moledit](understanding-condition/moledit-instruct-v1.md) |
+| `15844098` | `succ-moledit-table` | 完成 | [succ moledit](understanding-condition/moledit-instruct-v1.md) |
+| `15821981` | `succ-univideo-mol`（source-neighbor） | 完成（54m35s） | [source-neighbor-v2](understanding-condition/source-neighbor-v2-residual-ink.md) |
+| `15821983` | `succ-univideo-bench`（source-neighbor） | 完成（12m28s） | [source-neighbor-v2](understanding-condition/source-neighbor-v2-residual-ink.md) |
+| `15822025`/`15822029` | smu3m benchmark（首次） | 空结果 | [unified moledit](unified-3m/moledit-instruct-v1.md) |
 | `15810260` | `succ-univideo-bench`（旧 v2） | 完成 | [materialized-benchmark-v2](understanding-condition/materialized-benchmark-v2-primary-fast.md) |
 
 新增实验时：在对应子文件夹下新建 `{实验名}.md`，并在此表加一行链接。

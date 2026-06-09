@@ -2,10 +2,12 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | completed（训练 + latent eval）；benchmark / 表格指标 **首次提交失败，提交流程已修复待重跑** |
+| **状态** | completed（训练 + latent eval + materialized benchmark + table metrics） |
 | **最后更新** | 2026-06-09 |
 | **项目** | `SketchMol-Unified-3MDiffusion` |
-| **Slurm Job** | `15810199`（`smu3m-unified`） |
+| **训练 Job** | `15810199`（`smu3m-unified`） |
+| **Benchmark Job** | `15837897`（`smu3m-diff-bench`） |
+| **Table Job** | `15851992`（`smu3m-moledit-table`，重跑） |
 
 ## Slurm 运行记录
 
@@ -74,8 +76,8 @@ SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1/
   latent_diffusion/latent_diffusion_generation.pt
   eval_latent/metrics.json
   eval_latent/predictions.csv
-  benchmark_materialized_primary_fast/   # 尚未跑
-  moledit_table_metrics/                 # 尚未跑
+  benchmark_materialized_primary_fast/   # job 15837897
+  moledit_table_metrics/                 # job 15851992
 ```
 
 日志：`SketchMol-Unified-3MDiffusion/logs/smu3m-unified-15810199.log`
@@ -121,14 +123,38 @@ Diffusion 末 epoch：`source_property_worse_rate`≈0.45%，`source_fingerprint
 
 ### Benchmark / 表格指标（Slurm，2026-06-09）
 
-| Job | 名称 | 用时 | 结果 |
-| --- | --- | --- | --- |
-| `15822025` | `smu3m-diff-bench` | 36s | **失败（eval_rows=0）** |
-| `15822029` | `smu3m-moledit-table` | 7s | **失败（0 行，依赖空 benchmark）** |
+| Job | 名称 | 结果 |
+| --- | --- | --- |
+| `15822025` | `smu3m-diff-bench` | **空结果**（condition rows 错配） |
+| `15822029` | `smu3m-moledit-table` | **空结果**（依赖空 benchmark） |
+| `15837897` | `smu3m-diff-bench` | **完成**（~4h，1000 eval rows） |
+| `15837898` | `smu3m-moledit-table` | **失败**（`task_key` 命名冲突 + 无 TDC） |
+| `15851992` | `smu3m-moledit-table` | **完成**（修复后重跑） |
 
-**根因**：`submit_unified_materialized_benchmark.sh` 默认使用 `multiproperty_source_neighbor_v1/condition_rows.csv`，与 MolEdit eval latent 的 `condition_id`（如 `135`）不匹配；`restrict_eval_to_edit_latent_index` 后交集为空。
+**Materialized benchmark**（`15837897`，`edit_latent_source_similarity_rerank`，4p–7p）：
 
-**修复**：`run_unified_materialized_benchmark.sh` 现在会在 MolEdit 模式下自动导出/使用 `dataset/moledit_benchmark_condition_rows.csv`，不再默认落回 source-neighbor rows；新增 `submit_unified_moledit_benchmark.sh` 作为重跑入口，并在单 shard 时用 Slurm `afterok` 自动接上 MolEdit table metrics。
+| 指标 | 值 |
+| --- | ---: |
+| 4p strict | 0.279 |
+| 5p strict | 0.286 |
+| 6p strict | 0.244 |
+| 7p strict | 0.158 |
+| mean source Tanimoto | 0.158 |
+| strict@0.4 | 0.001 |
+
+与 latent eval 一致：property 方向有信号，但 **source 保真度极低**（mean Tani≈0.16），远低于 oracle（0.708）。
+
+**MolEdit Table Metrics**（`15851992`，RDKit SA fallback + skip-task 缺 TDC 的 GSK3B/DRD2）：
+
+| task | Acc_all(0.65) | Acc_all(0.15) | n |
+| --- | ---: | ---: | ---: |
+| Rotbonds↓ | 0 | 0 | 3 |
+| MW↑ | 0 | 0 | 1 |
+| SA↓ | 0 | 0.333 | 15 |
+
+完整 Table1 需安装 PyTDC（GSK3B/DRD2 oracle）。
+
+重跑入口：
 
 ```bash
 export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
@@ -136,11 +162,9 @@ SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_benchmark.sh
 ```
 
-注意：MolEdit benchmark 在 1000 eval × 93k candidate DB 上 CPU 较慢（可 1h+），新 wrapper 默认申请 4h / 16G。若 `SMU3M_BENCHMARK_SHARDS>1`，先 merge shards，再单独运行 `submit_unified_moledit_table_metrics.sh`。
-
 ## 结论与下一步
 
 1. **训练链路正常**：job `15810199` 3m45s 完成全流程 + latent eval。
-2. **性质方向有信号**：87% 样本 property MAE beats source。
-3. **Benchmark 待有效重跑**：job `15822025`/`15822029` 因 condition_rows 错配产出空表；现在用 `submit_unified_moledit_benchmark.sh` 重提。
-4. **对照**：SUCC source-neighbor v2 materialized 已完成（见 [source-neighbor-v2-residual-ink.md](../understanding-condition/source-neighbor-v2-residual-ink.md)）。
+2. **性质方向有信号**：87% 样本 property MAE beats source；materialized 4p–7p strict 0.16–0.29。
+3. **Source 保真不足**：mean source Tanimoto≈0.16，strict@0.4≈0.001；生成更像 property retrieval 而非 source-conditioned edit。
+4. **对照**：SUCC MolEdit materialized 2p strict≈0.45（见 [moledit-instruct-v1.md](../understanding-condition/moledit-instruct-v1.md)）；source-neighbor v2 见 [source-neighbor-v2-residual-ink.md](../understanding-condition/source-neighbor-v2-residual-ink.md)。

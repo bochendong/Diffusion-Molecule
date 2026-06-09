@@ -86,24 +86,24 @@ def main() -> None:
             if ref is None:
                 continue
             task_specs = task_specs_for_reference(ref)
-            task_key = task_key(task_specs)
-            if args.task_filter == "table1" and task_key not in TASK_LABELS:
+            current_task_key = task_key(task_specs)
+            if args.task_filter == "table1" and current_task_key not in TASK_LABELS:
                 continue
             missing_oracles = sorted(chem.missing_oracles(task_specs))
             if missing_oracles and args.missing_oracle_policy == "skip-task":
-                skipped_missing_oracle[task_key] += 1
+                skipped_missing_oracle[current_task_key] += 1
                 continue
             if missing_oracles and args.missing_oracle_policy == "fail":
                 raise SystemExit(
-                    f"Missing TDC oracle(s) for task {task_key}: {', '.join(missing_oracles)}. "
+                    f"Missing TDC oracle(s) for task {current_task_key}: {', '.join(missing_oracles)}. "
                     "Install TDC or rerun with --missing-oracle-policy skip-task."
                 )
             evaluated = evaluate_prediction(ref, pred["predicted_smiles"], task_specs, chem=chem, thresholds=thresholds)
-            evaluated["task_key"] = task_key
-            grouped[task_key].append(evaluated)
+            evaluated["task_key"] = current_task_key
+            grouped[current_task_key].append(evaluated)
             if evaluated["valid"]:
-                generated_by_task[task_key].append(pred["predicted_smiles"])
-                reference_by_task[task_key].append(str(ref.get("target_smiles", "")))
+                generated_by_task[current_task_key].append(pred["predicted_smiles"])
+                reference_by_task[current_task_key].append(str(ref.get("target_smiles", "")))
 
         for key in sorted(grouped, key=task_sort_key):
             task_rows = grouped[key]
@@ -197,6 +197,10 @@ class Chemistry:
     def oracle(self, prop: str) -> Callable[[str], float] | None:
         if prop in self._oracles:
             return self._oracles[prop]
+        if prop == "SA":
+            sa_oracle = self._rdkit_sa_oracle()
+            self._oracles[prop] = sa_oracle
+            return sa_oracle
         try:
             from tdc import Oracle
 
@@ -204,6 +208,29 @@ class Chemistry:
         except Exception:
             self._oracles[prop] = None
         return self._oracles[prop]
+
+    def _rdkit_sa_oracle(self) -> Callable[[str], float] | None:
+        import importlib.util
+        from pathlib import Path
+
+        from rdkit.Chem import RDConfig
+
+        sascorer_path = Path(RDConfig.RDContribDir) / "SA_Score" / "sascorer.py"
+        if not sascorer_path.is_file():
+            return None
+        spec = importlib.util.spec_from_file_location("sascorer", sascorer_path)
+        if spec is None or spec.loader is None:
+            return None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        def score(smiles: str) -> float:
+            mol = self.mol(smiles)
+            if mol is None:
+                raise ValueError("invalid SMILES")
+            return float(module.calculateScore(mol))
+
+        return score
 
     def missing_oracles(self, task_specs: Iterable[Mapping[str, str]]) -> set[str]:
         missing = set()

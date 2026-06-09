@@ -2,77 +2,99 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | ready to launch（MolEdit 数据 + OCR-free benchmark 已接线） |
+| **状态** | completed（训练 + materialized benchmark + table metrics） |
 | **最后更新** | 2026-06-09 |
 | **项目** | `SketchMol-Understanding-Condition` |
-| **对齐对象** | `SketchMol-Unified-3MDiffusion` × MolEdit-Instruct v1 |
+| **训练 Job** | `15838733`（`succ-univideo-mol`） |
+| **Benchmark Job** | `15838734`（`succ-univideo-bench`） |
+| **Table Job** | `15844098`（`succ-moledit-table`，重跑） |
+
+## Slurm 运行记录
+
+| Job | 名称 | 墙钟时间 | Exit |
+| --- | --- | --- | --- |
+| `15838733` | `succ-univideo-mol` | ~43 min | 0 |
+| `15838734` | `succ-univideo-bench` | ~13 min | 0 |
+| `15838735` | `succ-moledit-table` | 3s | **失败**（`task_key` 命名冲突） |
+| `15844098` | `succ-moledit-table` | ~3s | 0（修复后重跑） |
 
 ## 目的
 
-将 `SketchMol-Understanding-Condition` 从 source-neighbor / OCR 评估主线切到
-`MolEdit-Instruct enhanced_v1`，训练和 benchmark 口径与 Unified 3M × MolEdit 对齐。
+在 MolEdit-Instruct enhanced splits 上训练 UniVideo v2-style pipeline（image_vae + residual + pred_x0），OCR-free materialized benchmark，与 Unified 3M × MolEdit 对齐。
 
-## 数据
-
-```text
-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/train.csv
-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv
-```
-
-## 新入口
-
-训练 + latent eval + dependent materialized benchmark：
-
-```bash
-export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
-SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_pipeline.sh
-```
-
-只重跑 materialized benchmark + MolEdit table metrics：
-
-```bash
-export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
-SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_benchmark.sh
-```
-
-## 关键配置
+## 配置要点
 
 | 变量 | 值 |
 | --- | --- |
 | `SUCC_DATASET_MODE` | `moledit` |
-| `SUCC_UNIFIED_OUTPUT_DIR` | `SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_v1/` |
-| `SUCC_CONDITION_FEATURES_DIR` | `SketchMol-Understanding-Condition/outputs/condition_features_moledit_hf_vlm_v1/` |
-| `SUCC_RUN_MOLSCRIBE_OCR` | `0` |
-| `SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK` | `0` |
-| `SUCC_DECODE_EVAL_IMAGES` | `0` |
-| `SUCC_LATENT_BACKEND` | `image_vae` |
-| `SUCC_LATENT_TARGET_MODE` | `residual` |
-| `SUCC_DIFFUSION_OBJECTIVE` | `pred_x0` |
+| `SUCC_UNIFIED_OUTPUT_DIR` | `outputs/univideo_molecule_generation_moledit_instruct_v1/` |
+| `SUCC_CONDITION_FEATURES_DIR` | `outputs/condition_features_moledit_hf_vlm_v1/` |
+| Image VAE | 复用 v2 `molecule_image_vae.pt` |
+| OCR | 关闭（direct SMILES materialization） |
 
-## Benchmark 对齐
+## 训练结果（eval_latent，n=1000）
 
-Materialized benchmark 不再依赖 `image_path.csv` 或 MolScribe。默认从：
+| 指标 | 值 |
+| --- | ---: |
+| latent MAE | 0.735 |
+| source latent cosine | 0.991 |
+| target latent cosine | 0.380 |
+
+Latent 高度贴近 source（cos≈0.99），与 target cosine 仅 ~0.38。
+
+## Materialized Benchmark（job `15838734`，n=1000）
+
+来源：`univideo_molecule/benchmark_materialized_primary_fast/benchmark_report.md`
+
+### 2p–7p strict
+
+| method | 2p | 3p | 4p | 5p | 6p | 7p |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `edit_latent_source_first_rerank` | **0.959** | 0.949 | 0.957 | 0.957 | 0.971 | 0.953 |
+| `edit_latent_source_similarity_rerank` | 0.450 | 0.333 | 0.391 | 0.366 | 0.495 | 0.311 |
+| `source_identity` | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 | 0.000 |
+| SketchMol reference | 0.804 | 0.768 | 0.736 | 0.716 | 0.678 | 0.685 |
+
+### Source-similarity
+
+| method | mean Tani | strict@0.4 | strict@0.6 | strict@0.8 |
+| --- | ---: | ---: | ---: | ---: |
+| `edit_latent_source_first_rerank` | 0.700 | 0.972 | 0.971 | 0.030 |
+| `edit_latent_source_similarity_rerank` | 0.428 | 0.379 | 0.379 | 0.016 |
+| `source_tanimoto_property_oracle` | 0.708 | 1.000 | 1.000 | 0.030 |
+
+Diagnostics：`source_first_rerank` 高 strict（~96%）但 mean Tani≈0.70，接近 oracle 检索上界；`source_similarity_rerank` 2p=0.45、mean Tani≈0.43，更平衡。`source_identity` strict=0（MolEdit 任务需改性质，直接 copy source 不满足）。
+
+## MolEdit Table Metrics（job `15844098`）
+
+来源：`univideo_molecule/moledit_table_metrics/moledit_table_summary.md`
+
+| task | Acc_all(0.65) | Acc_all(0.15) | n |
+| --- | ---: | ---: | ---: |
+| Rotbonds↓ | 0.333 | 0.667 | 3 |
+| MW↑ | 0 | 0 | 1 |
+| SA↓ | 0.333 | 0.667 | 15 |
+
+仅覆盖 3 个 Table1 task（无 PyTDC，GSK3B/DRD2 跳过）。
+
+## 产出路径
 
 ```text
-dataset/univideo_edit_eval.jsonl
-univideo_molecule/eval_latent/predictions.csv
-univideo_molecule/eval_latent/generated_latents.npy
-univideo_molecule/eval_latent/target_latents.npy
+SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_v1/
+  univideo_molecule/univideo_molecule_generation.pt
+  univideo_molecule/eval_latent/
+  univideo_molecule/benchmark_materialized_primary_fast/
+  univideo_molecule/moledit_table_metrics/
 ```
 
-导出：
+日志：
+- `logs/succ-univideo-mol-15838733.log`
+- `logs/succ-univideo-bench-15838734.log`
+- `logs/succ-moledit-table-15844098.log`
 
-```text
-univideo_molecule/benchmark_condition_rows.csv
-```
+## 结论与下一步
 
-再运行 `edit_latent_source_similarity_rerank` 等 Unified-style retrieval 方法，并可接
-MolEditRL table metrics。
-
-## 与旧线区别
-
-1. 不使用 `multiproperty_source_neighbor_v1/condition_rows.csv` 作为主数据。
-2. 不跑 `submit_succ_ocr_benchmark.sh` / MolScribe OCR。
-3. 旧 source-neighbor v2 保留为历史对照；新结果应写入本报告。
+1. **Materialized 2p strict**：`source_similarity_rerank`≈0.45，优于 Unified 3M（~0，4p+）和 source-neighbor v2（~0.50）。
+2. **`source_first_rerank` 虚高**：~96% strict 但 mean Tani≈0.70，接近 property oracle 检索，不宜单独作为生成质量指标。
+3. **Latent 仍贴 source**：source cosine≈0.99，需加强 edit signal。
+4. **对照 Unified 3M**：见 [moledit-instruct-v1.md](../unified-3m/moledit-instruct-v1.md)。
