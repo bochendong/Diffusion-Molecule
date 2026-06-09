@@ -26,7 +26,7 @@ experiment-reports/
 
 | 文件夹 | 报告文件 | 说明 |
 | --- | --- | --- |
-| `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | MolEdit-Instruct enhanced splits 上的 Unified 3M 训练 |
+| `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | MolEdit-Instruct Unified 3M（**已完成**，job `15810199`，3m45s） |
 | `understanding-condition/` | [univideo-v2-residual-ink.md](understanding-condition/univideo-v2-residual-ink.md) | UniVideo image-to-structure 完整 pipeline（canonical v2） |
 | `understanding-condition/` | [materialized-benchmark-v2-primary-fast.md](understanding-condition/materialized-benchmark-v2-primary-fast.md) | v2 OCR-free materialized benchmark（**已完成**，job `15810260`，12 min） |
 | `multiproperty/` | [source-neighbor-v1.md](multiproperty/source-neighbor-v1.md) | source-neighbor multi-property 数据集构建 |
