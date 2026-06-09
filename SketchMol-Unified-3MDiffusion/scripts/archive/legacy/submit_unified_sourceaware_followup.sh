@@ -140,7 +140,7 @@ fi
 followup_job_id=""
 for gpu_request in "${GPU_CANDIDATES[@]}"; do
   echo "Trying sbatch with --gpus=$gpu_request"
-  if output="$(sbatch "${SBATCH_ARGS[@]}" --gpus="$gpu_request" --wrap="bash '$PROJECT_DIR/scripts/run_unified_sourceaware_followup.sh'")"; then
+  if output="$(sbatch "${SBATCH_ARGS[@]}" --gpus="$gpu_request" --wrap="bash '$PROJECT_DIR/scripts/archive/legacy/run_unified_sourceaware_followup.sh'")"; then
     echo "$output"
     followup_job_id="$(echo "$output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
     break

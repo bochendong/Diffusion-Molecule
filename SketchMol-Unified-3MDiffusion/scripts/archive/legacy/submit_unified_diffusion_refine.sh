@@ -154,7 +154,7 @@ for GPU_REQUEST in "${GPU_CANDIDATES[@]}"; do
   if train_output="$(
     sbatch "${TRAIN_SBATCH_ARGS[@]}" \
       --gpus="$GPU_REQUEST" \
-      --wrap="bash '$PROJECT_DIR/scripts/run_unified_diffusion_refine.sh'"
+      --wrap="bash '$PROJECT_DIR/scripts/archive/legacy/run_unified_diffusion_refine.sh'"
   )"; then
     echo "$train_output"
     train_job_id="$(echo "$train_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"

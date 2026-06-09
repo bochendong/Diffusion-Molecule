@@ -90,7 +90,7 @@ for raw_mode in "${modes[@]}"; do
     shard_output="$(
       sbatch "${SBATCH_ARGS[@]}" \
         --output="$BENCH_LOG_DIR/${BENCH_JOB_NAME}-${mode_tag}-s${shard_index}-%j.log" \
-        --wrap="SMU3M_SOURCEANCHOR_BENCHMARK_MODES=$mode SMMED_EVAL_SHARD_INDEX=$shard_index bash '$PROJECT_DIR/scripts/run_unified_sourceanchor_prior_benchmark.sh'"
+        --wrap="SMU3M_SOURCEANCHOR_BENCHMARK_MODES=$mode SMMED_EVAL_SHARD_INDEX=$shard_index bash '$PROJECT_DIR/scripts/archive/legacy/run_unified_sourceanchor_prior_benchmark.sh'"
     )"
     echo "$shard_output"
     shard_job_id="$(echo "$shard_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"

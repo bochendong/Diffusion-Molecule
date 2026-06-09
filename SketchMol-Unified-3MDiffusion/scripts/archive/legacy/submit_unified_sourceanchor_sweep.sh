@@ -115,7 +115,7 @@ for gpu_request in "${GPU_CANDIDATES[@]}"; do
   if output="$(
     sbatch "${SBATCH_ARGS[@]}" \
       --gpus="$gpu_request" \
-      --wrap="bash '$PROJECT_DIR/scripts/run_unified_sourceanchor_sweep.sh'"
+      --wrap="bash '$PROJECT_DIR/scripts/archive/legacy/run_unified_sourceanchor_sweep.sh'"
   )"; then
     echo "$output"
     sweep_job_id="$(echo "$output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
