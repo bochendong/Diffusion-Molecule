@@ -154,6 +154,22 @@ Diffusion 末 epoch：`source_property_worse_rate`≈0.45%，`source_fingerprint
 
 完整 Table1 需安装 PyTDC（GSK3B/DRD2 oracle）。
 
+**与 MolEditRL 对照**：
+
+MolEditRL paper Table1 baseline 已记录在
+[MolEditRL Reference Comparison](../moleditrl-baseline-comparison.md)。Unified 3M
+当前只和其中 3 个任务有 overlap，且样本数很小，因此只作为方向性比较。
+
+| task | MolEditRL Acc_all(0.65) | Unified 3M Acc_all(0.65) | MolEditRL Acc_all(0.15) | Unified 3M Acc_all(0.15) |
+| --- | ---: | ---: | ---: | ---: |
+| Rotbonds↓ | 0.634 | 0.000 | 0.830 | 0.000 |
+| MW↑ | 0.404 | 0.000 | 0.856 | 0.000 |
+| SA↓ | 0.628 | 0.000 | 0.828 | 0.333 |
+| **mean over overlap** | **0.555** | **0.000** | **0.838** | **0.111** |
+
+结论：Unified 3M 的 latent/property 指标虽然有信号，但 materialized table
+metrics 明显没有跟上；和 MolEditRL 差距比 SUCC 更大。
+
 重跑入口：
 
 ```bash
@@ -167,4 +183,5 @@ bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_benchmark.sh
 1. **训练链路正常**：job `15810199` 3m45s 完成全流程 + latent eval。
 2. **性质方向有信号**：87% 样本 property MAE beats source；materialized 4p–7p strict 0.16–0.29。
 3. **Source 保真不足**：mean source Tanimoto≈0.16，strict@0.4≈0.001；生成更像 property retrieval 而非 source-conditioned edit。
-4. **对照**：SUCC MolEdit materialized 2p strict≈0.45（见 [moledit-instruct-v1.md](../understanding-condition/moledit-instruct-v1.md)）；source-neighbor v2 见 [source-neighbor-v2-residual-ink.md](../understanding-condition/source-neighbor-v2-residual-ink.md)。
+4. **对照 SUCC**：SUCC MolEdit materialized 2p strict≈0.45，且 table metric overlap mean 为 0.222/0.445（0.65/0.15），明显好于 Unified 3M 的 0.000/0.111；见 [moledit-instruct-v1.md](../understanding-condition/moledit-instruct-v1.md)。
+5. **对照 MolEditRL**：MolEditRL overlap mean 为 0.555/0.838（0.65/0.15），当前 Unified 3M 还有较大差距；完整基线见 [MolEditRL Reference Comparison](../moleditrl-baseline-comparison.md)。

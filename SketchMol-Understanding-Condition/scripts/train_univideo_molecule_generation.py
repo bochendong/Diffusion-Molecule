@@ -11,14 +11,19 @@ from pathlib import Path
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader, Dataset, WeightedRandomSampler
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from sketchmol_understanding_condition.unified_condition_dataset import EDIT_GENERATION, PROPERTY_COLUMNS, read_jsonl  # noqa: E402
+from sketchmol_understanding_condition.unified_condition_dataset import (  # noqa: E402
+    EDIT_GENERATION,
+    PROPERTY_COLUMNS,
+    TABLE1_TASK_KEYS,
+    read_jsonl,
+)
 from sketchmol_understanding_condition.molecule_image_vae import (  # noqa: E402
     image_to_tensor,
     load_molecule_image_vae,
@@ -114,6 +119,27 @@ class UniVideoMoleculeDataset(Dataset):
     def __len__(self) -> int:
         return len(self.rows)
 
+    def sample_weights(
+        self,
+        *,
+        table1_weight: float,
+        property_weights: dict[str, float],
+    ) -> np.ndarray:
+        weights = []
+        for sample in self.samples:
+            weight = 1.0
+            if sample.metadata.get("moledit_task_key", "") in TABLE1_TASK_KEYS:
+                weight *= max(float(table1_weight), 0.0)
+            active_props = [
+                prop
+                for prop in PROPERTY_COLUMNS
+                if sample.active_properties.get(prop, False) or prop in sample.condition_properties.split(",")
+            ]
+            prop_weight = max([float(property_weights.get(prop, 1.0)) for prop in active_props] or [1.0])
+            weight *= max(prop_weight, 0.0)
+            weights.append(weight if weight > 0 else 1.0)
+        return np.asarray(weights, dtype=np.float64)
+
     def __getitem__(self, idx: int) -> dict[str, object]:
         row = self.rows[idx]
         sample = self.samples[idx]
@@ -193,6 +219,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--aux-loss-weight", type=float, default=0.25)
     parser.add_argument("--condition-dropout", type=float, default=0.1)
     parser.add_argument("--source-dropout", type=float, default=0.05)
+    parser.add_argument("--sampling-strategy", choices=["shuffle", "weighted"], default="shuffle")
+    parser.add_argument("--table1-sample-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--train-property-sample-weights",
+        default="",
+        help="Comma-separated property sampling weights, e.g. MW=4,RB=2,SA=2.",
+    )
+    parser.add_argument(
+        "--aux-property-weights",
+        default="",
+        help="Comma-separated auxiliary loss property weights, e.g. MW=3,RB=2,SA=2.",
+    )
+    parser.add_argument(
+        "--aux-all-properties",
+        action="store_true",
+        help="Apply target/delta/direction auxiliary losses to every property instead of active instruction properties only.",
+    )
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--eval-limit", type=int, default=1000)
     parser.add_argument("--sample-steps", type=int, default=20)
@@ -257,7 +300,29 @@ def main() -> None:
         vae_batch_size=args.vae_batch_size,
         limit=args.limit,
     )
-    train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True, collate_fn=_collate)
+    train_property_sample_weights = _parse_property_weights(args.train_property_sample_weights)
+    aux_property_weights = _property_weight_tensor(args.aux_property_weights, device=device)
+    sampler = None
+    if args.sampling_strategy == "weighted":
+        sample_weights = train_data.sample_weights(
+            table1_weight=args.table1_sample_weight,
+            property_weights=train_property_sample_weights,
+        )
+        generator = torch.Generator()
+        generator.manual_seed(args.seed)
+        sampler = WeightedRandomSampler(
+            torch.as_tensor(sample_weights, dtype=torch.double),
+            num_samples=len(sample_weights),
+            replacement=True,
+            generator=generator,
+        )
+    train_loader = DataLoader(
+        train_data,
+        batch_size=args.batch_size,
+        shuffle=sampler is None,
+        sampler=sampler,
+        collate_fn=_collate,
+    )
 
     connector = UniVideoMoleculeConnector(
         input_hidden_dim=train_data.input_hidden_dim,
@@ -295,6 +360,8 @@ def main() -> None:
                 diffusion_weight=0.0,
                 aux_weight=1.0,
                 latent_target_mode=args.latent_target_mode,
+                aux_property_weights=aux_property_weights,
+                aux_active_only=not args.aux_all_properties,
             )
         )
     if args.stage2_epochs > 0:
@@ -311,6 +378,8 @@ def main() -> None:
                 diffusion_weight=1.0,
                 aux_weight=args.aux_loss_weight,
                 latent_target_mode=args.latent_target_mode,
+                aux_property_weights=aux_property_weights,
+                aux_active_only=not args.aux_all_properties,
             )
         )
     if args.stage3_epochs > 0:
@@ -327,6 +396,8 @@ def main() -> None:
                 diffusion_weight=1.0,
                 aux_weight=args.aux_loss_weight,
                 latent_target_mode=args.latent_target_mode,
+                aux_property_weights=aux_property_weights,
+                aux_active_only=not args.aux_all_properties,
             )
         )
 
@@ -359,6 +430,11 @@ def main() -> None:
         "sample_eta": args.sample_eta,
         "condition_dropout": args.condition_dropout,
         "source_dropout": args.source_dropout,
+        "sampling_strategy": args.sampling_strategy,
+        "table1_sample_weight": args.table1_sample_weight,
+        "train_property_sample_weights": train_property_sample_weights,
+        "aux_property_weights": _parse_property_weights(args.aux_property_weights),
+        "aux_active_only": not args.aux_all_properties,
         "stats": {key: value.tolist() for key, value in train_data.stats.items()},
         "history": history,
     }
@@ -421,6 +497,8 @@ def _train_stage(
     diffusion_weight: float,
     aux_weight: float,
     latent_target_mode: str,
+    aux_property_weights: torch.Tensor | None,
+    aux_active_only: bool,
 ) -> list[dict[str, float | str | int]]:
     records = []
     for epoch in range(epochs):
@@ -442,6 +520,8 @@ def _train_stage(
                 active_mask=batch["active_mask"],
                 direction_labels=batch["direction_labels"],
                 similarity_bin=batch["similarity_bin"],
+                property_weights=aux_property_weights,
+                active_only=aux_active_only,
                 weights={
                     "target_latent_mse": 1.0,
                     "target_property_mse": 0.25,
@@ -475,6 +555,7 @@ def _train_stage(
             "aux_loss": float(np.mean(aux_losses)),
             "diffusion_loss": float(np.mean(diffusion_losses)),
             "latent_target_mode": latent_target_mode,
+            "aux_active_only": str(aux_active_only),
         }
         records.append(record)
         print(json.dumps(record, sort_keys=True))
@@ -620,6 +701,30 @@ def _export_condition_tokens(
     np.save(output_dir / "query_tokens.npy", np.concatenate(tokens, axis=0))
     np.save(output_dir / "pooled.npy", np.concatenate(pooled, axis=0))
     _write_rows(output_dir / "index.csv", rows)
+
+
+def _parse_property_weights(text: str) -> dict[str, float]:
+    weights: dict[str, float] = {}
+    for part in str(text or "").split(","):
+        item = part.strip()
+        if not item:
+            continue
+        if "=" not in item:
+            raise ValueError(f"Invalid property weight {item!r}; expected PROP=WEIGHT")
+        key, value = item.split("=", 1)
+        prop = key.strip()
+        if prop not in PROPERTY_COLUMNS:
+            raise ValueError(f"Unknown property weight key {prop!r}; expected one of {PROPERTY_COLUMNS}")
+        weights[prop] = float(value)
+    return weights
+
+
+def _property_weight_tensor(text: str, *, device: torch.device) -> torch.Tensor | None:
+    weights = _parse_property_weights(text)
+    if not weights:
+        return None
+    values = [float(weights.get(prop, 1.0)) for prop in PROPERTY_COLUMNS]
+    return torch.tensor(values, dtype=torch.float32, device=device)
 
 
 def _collate(items: list[dict[str, object]]) -> dict[str, object]:

@@ -77,6 +77,23 @@ Diagnostics：`source_first_rerank` 高 strict（~96%）但 mean Tani≈0.70，�
 
 仅覆盖 3 个 Table1 task（无 PyTDC，GSK3B/DRD2 跳过）。
 
+### 与 MolEditRL 对照
+
+MolEditRL paper Table1 baseline 已记录在
+[MolEditRL Reference Comparison](../moleditrl-baseline-comparison.md)。
+当前 SUCC 只和其中 3 个任务有 overlap，且样本数很小
+（Rotbonds↓ n=3，MW↑ n=1，SA↓ n=15），因此下面只作为方向性比较。
+
+| task | MolEditRL Acc_all(0.65) | SUCC Acc_all(0.65) | MolEditRL Acc_all(0.15) | SUCC Acc_all(0.15) |
+| --- | ---: | ---: | ---: | ---: |
+| Rotbonds↓ | 0.634 | 0.333 | 0.830 | 0.667 |
+| MW↑ | 0.404 | 0.000 | 0.856 | 0.000 |
+| SA↓ | 0.628 | 0.333 | 0.828 | 0.667 |
+| **mean over overlap** | **0.555** | **0.222** | **0.838** | **0.445** |
+
+结论：SUCC 在 Rotbonds↓ / SA↓ 上已有部分成功，但仍明显落后 MolEditRL；
+MW↑ 当前完全没打中，是最该优先修的 Table1 单任务。
+
 ## 产出路径
 
 ```text
@@ -97,4 +114,6 @@ SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_i
 1. **Materialized 2p strict**：`source_similarity_rerank`≈0.45，优于 Unified 3M（~0，4p+）和 source-neighbor v2（~0.50）。
 2. **`source_first_rerank` 虚高**：~96% strict 但 mean Tani≈0.70，接近 property oracle 检索，不宜单独作为生成质量指标。
 3. **Latent 仍贴 source**：source cosine≈0.99，需加强 edit signal。
-4. **对照 Unified 3M**：见 [moledit-instruct-v1.md](../unified-3m/moledit-instruct-v1.md)。
+4. **对照 Unified 3M**：SUCC 在当前 table metrics 和 source/edit balance 上都优于 Unified 3M，见 [moledit-instruct-v1.md](../unified-3m/moledit-instruct-v1.md)。
+5. **对照 MolEditRL**：SUCC 仍明显落后 MolEditRL；3 个 overlap task 的平均 Acc_all 为 0.222/0.445（0.65/0.15），MolEditRL 为 0.555/0.838。
+6. **修复入口**：下一版使用 [moledit-instruct-v2-fix.md](moledit-instruct-v2-fix.md)，重点修 MW↑、Table1-balanced eval 和 active-only direction/delta loss。

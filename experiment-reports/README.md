@@ -7,6 +7,7 @@
 ```text
 experiment-reports/
   README.md                 # 本说明
+  moleditrl-baseline-comparison.md
   unified-3m/               # SketchMol-Unified-3MDiffusion
   understanding-condition/  # SketchMol-Understanding-Condition
   multiproperty/            # SketchMol-MultiProperty-EditDataset
@@ -19,8 +20,10 @@ experiment-reports/
 
 | 文件夹 | 报告文件 | 说明 |
 | --- | --- | --- |
+| `.` | [moleditrl-baseline-comparison.md](moleditrl-baseline-comparison.md) | MolEditRL Table1 baseline 与当前 SUCC / Unified overlap 对照 |
 | `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | **完成** MolEdit Unified 3M（`15810199`/`15837897`/`15851992`） |
 | `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | **完成** SUCC UniVideo × MolEdit（`15838733`/`15838734`/`15844098`） |
+| `understanding-condition/` | [moledit-instruct-v2-fix.md](understanding-condition/moledit-instruct-v2-fix.md) | **待跑** SUCC MolEdit 修复版（Table1-balanced + weighted active loss） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 历史对照（`15821981`/`15821983`） |
 | `understanding-condition/` | [univideo-v2-residual-ink.md](understanding-condition/univideo-v2-residual-ink.md) | 旧 canonical v2（`multiproperty_100k_v1`） |
 | `understanding-condition/` | [materialized-benchmark-v2-primary-fast.md](understanding-condition/materialized-benchmark-v2-primary-fast.md) | 旧 v2 materialized benchmark（`15810260`） |

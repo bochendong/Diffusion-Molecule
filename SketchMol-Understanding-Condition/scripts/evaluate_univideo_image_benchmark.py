@@ -23,9 +23,9 @@ from sketchmol_understanding_condition.chem import (  # noqa: E402
     morgan_tanimoto,
     scaffold_smiles,
 )
+from sketchmol_understanding_condition.unified_condition_dataset import PROPERTY_COLUMNS  # noqa: E402
 
 
-PROPERTY_COLUMNS = ("MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB")
 SKETCHMOL_STRICT_TOLERANCE = {
     "MW": 35.0,
     "LogP": 1.0,
@@ -34,6 +34,7 @@ SKETCHMOL_STRICT_TOLERANCE = {
     "HBD": 1.0,
     "HBA": 1.0,
     "RB": 1.0,
+    "SA": 1.0,
 }
 SKETCHMOL_REFERENCE_MULTI_PROPERTY = {
     2: 0.804,
@@ -370,6 +371,7 @@ def _normalized_properties(smiles: str) -> dict[str, float]:
         "HBD": float(props.get("HBD", math.nan)),
         "HBA": float(props.get("HBA", math.nan)),
         "RB": float(props.get("rotatable", math.nan)),
+        "SA": float(props.get("SA", math.nan)),
     }
 
 

@@ -21,6 +21,7 @@ from sketchmol_understanding_condition.unified_condition_dataset import (  # noq
     EDIT_GENERATION,
     EDIT_QUALITY_METADATA_FIELDS,
     PROPERTY_COLUMNS,
+    TABLE1_TASK_KEYS,
     UnifiedConditionSample,
     read_moledit_generation_samples,
     summarize_samples,
@@ -37,6 +38,7 @@ PROPERTY_ALIASES = {
     "HBD": ("HBD",),
     "HBA": ("HBA",),
     "RB": ("RB", "rotatable", "rotatable_bonds"),
+    "SA": ("SA", "SAscore", "SAS", "synthetic_accessibility"),
 }
 
 
@@ -49,6 +51,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--limit", type=int, default=None)
     parser.add_argument("--moledit-train-limit", type=int, default=None)
     parser.add_argument("--moledit-eval-limit", type=int, default=None)
+    parser.add_argument("--moledit-balanced-train-per-task", type=int, default=None)
+    parser.add_argument("--moledit-balanced-eval-per-task", type=int, default=None)
     parser.add_argument("--include-splits", default="train,eval,valid,validation,test")
     parser.add_argument("--variants", default="full")
     parser.add_argument("--dataset-name", default="univideo_edit")
@@ -83,10 +87,16 @@ def main() -> None:
             args.moledit_train_split,
             split="train",
             dataset_name="moledit_instruct",
-            limit=args.moledit_train_limit if args.moledit_train_limit is not None else args.limit,
+            limit=None if args.moledit_balanced_train_per_task else (
+                args.moledit_train_limit if args.moledit_train_limit is not None else args.limit
+            ),
             min_source_tanimoto=args.min_source_tanimoto,
             table1_tasks_only=args.moledit_table1_tasks_only,
         )
+        if args.moledit_balanced_train_per_task:
+            train_samples = _balanced_by_task(train_samples, per_task=args.moledit_balanced_train_per_task)
+            if args.moledit_train_limit:
+                train_samples = train_samples[: args.moledit_train_limit]
         samples.extend(train_samples)
         baseline_source_rows.extend(_condition_rows_from_samples(train_samples))
     if args.moledit_eval_split is not None:
@@ -94,10 +104,14 @@ def main() -> None:
             args.moledit_eval_split,
             split="eval",
             dataset_name="moledit_instruct",
-            limit=args.moledit_eval_limit,
+            limit=None if args.moledit_balanced_eval_per_task else args.moledit_eval_limit,
             min_source_tanimoto=args.min_source_tanimoto,
             table1_tasks_only=args.moledit_table1_tasks_only,
         )
+        if args.moledit_balanced_eval_per_task:
+            eval_samples = _balanced_by_task(eval_samples, per_task=args.moledit_balanced_eval_per_task)
+            if args.moledit_eval_limit:
+                eval_samples = eval_samples[: args.moledit_eval_limit]
         samples.extend(eval_samples)
         baseline_source_rows.extend(_condition_rows_from_samples(eval_samples))
     if not samples:
@@ -121,6 +135,9 @@ def main() -> None:
             "moledit_train_split": str(args.moledit_train_split) if args.moledit_train_split else None,
             "moledit_eval_split": str(args.moledit_eval_split) if args.moledit_eval_split else None,
             "moledit_table1_tasks_only": bool(args.moledit_table1_tasks_only),
+            "moledit_balanced_train_per_task": args.moledit_balanced_train_per_task,
+            "moledit_balanced_eval_per_task": args.moledit_balanced_eval_per_task,
+            "moledit_task_counts": _task_counts(samples),
             "output_dir": str(args.output_dir),
             "train_jsonl": str(train_jsonl),
             "eval_jsonl": str(eval_jsonl),
@@ -130,6 +147,30 @@ def main() -> None:
     )
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2, sort_keys=True))
+
+
+def _balanced_by_task(samples: list[UnifiedConditionSample], *, per_task: int) -> list[UnifiedConditionSample]:
+    per_task = int(per_task)
+    if per_task <= 0:
+        return samples
+    groups: dict[str, list[UnifiedConditionSample]] = {}
+    for sample in samples:
+        task_key = sample.metadata.get("moledit_task_key", "") or "unknown"
+        groups.setdefault(task_key, []).append(sample)
+    ordered_keys = [key for key in sorted(TABLE1_TASK_KEYS) if key in groups]
+    ordered_keys.extend(key for key in sorted(groups) if key not in set(ordered_keys))
+    out: list[UnifiedConditionSample] = []
+    for key in ordered_keys:
+        out.extend(groups[key][:per_task])
+    return out
+
+
+def _task_counts(samples: Iterable[UnifiedConditionSample]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for sample in samples:
+        key = sample.metadata.get("moledit_task_key", "") or "unknown"
+        counts[key] = counts.get(key, 0) + 1
+    return counts
 
 
 def _read_condition_rows(args: argparse.Namespace, *, include_splits: set[str]) -> list[dict[str, str]]:

@@ -6,6 +6,8 @@ Torch-only tests can still run in minimal environments.
 
 from __future__ import annotations
 
+import importlib.util
+from functools import lru_cache
 from pathlib import Path
 from typing import Optional
 
@@ -88,7 +90,7 @@ def molecular_properties(smiles: str) -> Optional[dict[str, float]]:
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         return None
-    return {
+    out = {
         "MolWt": float(Descriptors.MolWt(mol)),
         "LogP": float(Crippen.MolLogP(mol)),
         "QED": float(QED.qed(mol)),
@@ -97,6 +99,37 @@ def molecular_properties(smiles: str) -> Optional[dict[str, float]]:
         "HBA": float(Lipinski.NumHAcceptors(mol)),
         "rotatable": float(Lipinski.NumRotatableBonds(mol)),
     }
+    sa_score = _synthetic_accessibility_score(mol)
+    if sa_score is not None:
+        out["SA"] = float(sa_score)
+    return out
+
+
+def _synthetic_accessibility_score(mol) -> float | None:
+    module = _sa_scorer_module()
+    if module is None:
+        return None
+    try:
+        return float(module.calculateScore(mol))
+    except Exception:
+        return None
+
+
+@lru_cache(maxsize=1)
+def _sa_scorer_module():
+    try:
+        from rdkit.Chem import RDConfig
+    except ImportError:
+        return None
+    sascorer_path = Path(RDConfig.RDContribDir) / "SA_Score" / "sascorer.py"
+    if not sascorer_path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("sascorer", sascorer_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def render_molecule_image_pil(smiles: str, image_size: int = 256):

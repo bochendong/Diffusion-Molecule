@@ -61,6 +61,8 @@ TRAIN_LIMIT="${SUCC_TRAIN_LIMIT:-50000}"
 EVAL_LIMIT="${SUCC_EVAL_LIMIT:-1000}"
 MOLEDIT_TRAIN_LIMIT="${SUCC_MOLEDIT_TRAIN_LIMIT:-$EDIT_LIMIT}"
 MOLEDIT_EVAL_LIMIT="${SUCC_MOLEDIT_EVAL_LIMIT:-$EVAL_LIMIT}"
+MOLEDIT_BALANCED_TRAIN_PER_TASK="${SUCC_MOLEDIT_BALANCED_TRAIN_PER_TASK:-}"
+MOLEDIT_BALANCED_EVAL_PER_TASK="${SUCC_MOLEDIT_BALANCED_EVAL_PER_TASK:-}"
 BATCH_SIZE="${SUCC_BATCH_SIZE:-64}"
 EVAL_BATCH_SIZE="${SUCC_EVAL_BATCH_SIZE:-64}"
 STAGE1_EPOCHS="${SUCC_STAGE1_EPOCHS:-2}"
@@ -75,6 +77,12 @@ SAMPLE_STEPS="${SUCC_SAMPLE_STEPS:-20}"
 SAMPLE_ETA="${SUCC_SAMPLE_ETA:-0.0}"
 CONDITION_DROPOUT="${SUCC_CONDITION_DROPOUT:-0.1}"
 SOURCE_DROPOUT="${SUCC_SOURCE_DROPOUT:-0.05}"
+AUX_LOSS_WEIGHT="${SUCC_AUX_LOSS_WEIGHT:-0.25}"
+SAMPLING_STRATEGY="${SUCC_SAMPLING_STRATEGY:-shuffle}"
+TABLE1_SAMPLE_WEIGHT="${SUCC_TABLE1_SAMPLE_WEIGHT:-1.0}"
+TRAIN_PROPERTY_SAMPLE_WEIGHTS="${SUCC_TRAIN_PROPERTY_SAMPLE_WEIGHTS:-}"
+AUX_PROPERTY_WEIGHTS="${SUCC_AUX_PROPERTY_WEIGHTS:-}"
+AUX_ALL_PROPERTIES="${SUCC_AUX_ALL_PROPERTIES:-0}"
 LATENT_BACKEND="${SUCC_LATENT_BACKEND:-image_vae}"
 if [[ -z "$LATENT_TARGET_MODE" ]]; then
   if [[ "$LATENT_BACKEND" == "fingerprint_property_vector" ]]; then
@@ -151,6 +159,8 @@ if [[ "$DATASET_MODE" == "moledit" ]]; then
   echo "  moledit_eval_split=$MOLEDIT_EVAL_SPLIT"
   echo "  moledit_train_limit=${MOLEDIT_TRAIN_LIMIT:-none}"
   echo "  moledit_eval_limit=${MOLEDIT_EVAL_LIMIT:-none}"
+  echo "  moledit_balanced_train_per_task=${MOLEDIT_BALANCED_TRAIN_PER_TASK:-none}"
+  echo "  moledit_balanced_eval_per_task=${MOLEDIT_BALANCED_EVAL_PER_TASK:-none}"
   echo "  moledit_table1_tasks_only=$MOLEDIT_TABLE1_TASKS_ONLY"
 else
   echo "  condition_rows=$CONDITION_ROWS"
@@ -169,6 +179,14 @@ echo "  diffusion_objective=$DIFFUSION_OBJECTIVE"
 echo "  latent_target_mode=$LATENT_TARGET_MODE"
 echo "  residual_sample_scale=$RESIDUAL_SAMPLE_SCALE"
 echo "  connector_latent_blend=$CONNECTOR_LATENT_BLEND"
+echo "  condition_dropout=$CONDITION_DROPOUT"
+echo "  source_dropout=$SOURCE_DROPOUT"
+echo "  aux_loss_weight=$AUX_LOSS_WEIGHT"
+echo "  sampling_strategy=$SAMPLING_STRATEGY"
+echo "  table1_sample_weight=$TABLE1_SAMPLE_WEIGHT"
+echo "  train_property_sample_weights=${TRAIN_PROPERTY_SAMPLE_WEIGHTS:-none}"
+echo "  aux_property_weights=${AUX_PROPERTY_WEIGHTS:-none}"
+echo "  aux_all_properties=$AUX_ALL_PROPERTIES"
 echo "  sample_eta=$SAMPLE_ETA"
 echo "  max_decode_images=$MAX_DECODE_IMAGES"
 echo "  run_image_structure_benchmark=$RUN_IMAGE_STRUCTURE_BENCHMARK"
@@ -218,6 +236,12 @@ if [[ "$RUN_DATASET_EXPORT" == "1" || ! -f "$DATASET_DIR/univideo_edit_train.jso
     fi
     if [[ "$MOLEDIT_TABLE1_TASKS_ONLY" == "1" ]]; then
       MOLEDIT_EXPORT_ARGS+=(--moledit-table1-tasks-only)
+    fi
+    if [[ -n "$MOLEDIT_BALANCED_TRAIN_PER_TASK" && "$MOLEDIT_BALANCED_TRAIN_PER_TASK" != "0" ]]; then
+      MOLEDIT_EXPORT_ARGS+=(--moledit-balanced-train-per-task "$MOLEDIT_BALANCED_TRAIN_PER_TASK")
+    fi
+    if [[ -n "$MOLEDIT_BALANCED_EVAL_PER_TASK" && "$MOLEDIT_BALANCED_EVAL_PER_TASK" != "0" ]]; then
+      MOLEDIT_EXPORT_ARGS+=(--moledit-balanced-eval-per-task "$MOLEDIT_BALANCED_EVAL_PER_TASK")
     fi
     "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_univideo_edit_dataset.py" "${MOLEDIT_EXPORT_ARGS[@]}"
   else
@@ -379,8 +403,14 @@ fi
   --sample-eta "$SAMPLE_ETA" \
   --condition-dropout "$CONDITION_DROPOUT" \
   --source-dropout "$SOURCE_DROPOUT" \
+  --aux-loss-weight "$AUX_LOSS_WEIGHT" \
+  --sampling-strategy "$SAMPLING_STRATEGY" \
+  --table1-sample-weight "$TABLE1_SAMPLE_WEIGHT" \
+  --train-property-sample-weights "$TRAIN_PROPERTY_SAMPLE_WEIGHTS" \
+  --aux-property-weights "$AUX_PROPERTY_WEIGHTS" \
   "${LATENT_BACKEND_ARGS[@]}" \
-  --export-condition-tokens
+  --export-condition-tokens \
+  $( [[ "$AUX_ALL_PROPERTIES" == "1" ]] && echo --aux-all-properties )
 
 if [[ "$LATENT_BACKEND" != "fingerprint_property_vector" && "$DECODE_EVAL_IMAGES" == "1" ]]; then
   IMAGE_CSV="$STRUCTURE_BENCHMARK_DIR/image_path.csv"

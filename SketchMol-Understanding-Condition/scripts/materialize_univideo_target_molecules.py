@@ -42,7 +42,8 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-PROPERTY_COLUMNS = ("MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB")
+from sketchmol_understanding_condition.unified_condition_dataset import PROPERTY_COLUMNS  # noqa: E402
+
 PROPERTY_NORMALIZERS = {
     "MW": 50.0,
     "LogP": 0.5,
@@ -51,6 +52,7 @@ PROPERTY_NORMALIZERS = {
     "HBD": 1.0,
     "HBA": 1.0,
     "RB": 1.0,
+    "SA": 1.0,
 }
 METHODS = (
     "target_oracle",

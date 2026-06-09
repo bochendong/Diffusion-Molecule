@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Iterable, Mapping
 
 
-PROPERTY_COLUMNS = ("MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB")
+PROPERTY_COLUMNS = ("MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB", "SA")
 TABLE1_TASK_SPECS = {
     frozenset({("GSK3B", "increase")}): "GSK3B:increase",
     frozenset({("RB", "decrease")}): "RB:decrease",
@@ -306,6 +306,7 @@ def read_moledit_generation_samples(
             source_props = _properties_from_prefix(row, "source")
             target_props = _properties_from_prefix(row, "target")
             deltas = _properties_from_prefix(row, "delta")
+            _fill_missing_computed_properties(source_props, target_props, deltas, source_smiles, target_smiles, task_specs)
             active_props = _active_props_from_moledit(row, task_specs, deltas)
             directions = _directions_from_moledit(row, task_specs, deltas)
             condition_props = [prop for prop in (spec.get("property", "") for spec in task_specs) if prop]
@@ -455,6 +456,53 @@ def _properties_from_prefix(row: Mapping[str, str], prefix: str) -> dict[str, fl
         if not math.isnan(value):
             out[prop] = value
     return out
+
+
+def _fill_missing_computed_properties(
+    source_props: dict[str, float],
+    target_props: dict[str, float],
+    deltas: dict[str, float],
+    source_smiles: str,
+    target_smiles: str,
+    task_specs: list[dict[str, str]],
+) -> None:
+    requested = {spec.get("property", "") for spec in task_specs}
+    needed = {prop for prop in requested if prop in PROPERTY_COLUMNS}
+    if not needed:
+        return
+    source_computed = _computed_properties(source_smiles) if any(prop not in source_props for prop in needed) else {}
+    target_computed = _computed_properties(target_smiles) if any(prop not in target_props for prop in needed) else {}
+    for prop in needed:
+        if prop not in source_props and prop in source_computed:
+            source_props[prop] = source_computed[prop]
+        if prop not in target_props and prop in target_computed:
+            target_props[prop] = target_computed[prop]
+        if prop not in deltas and prop in source_props and prop in target_props:
+            deltas[prop] = float(target_props[prop]) - float(source_props[prop])
+
+
+def _computed_properties(smiles: str) -> dict[str, float]:
+    try:
+        from .chem import molecular_properties
+    except Exception:
+        return {}
+    try:
+        props = molecular_properties(smiles)
+    except RuntimeError:
+        return {}
+    if not props:
+        return {}
+    out = {
+        "MW": props.get("MolWt", math.nan),
+        "LogP": props.get("LogP", math.nan),
+        "QED": props.get("QED", math.nan),
+        "TPSA": props.get("TPSA", math.nan),
+        "HBD": props.get("HBD", math.nan),
+        "HBA": props.get("HBA", math.nan),
+        "RB": props.get("rotatable", math.nan),
+        "SA": props.get("SA", math.nan),
+    }
+    return {key: float(value) for key, value in out.items() if value is not None and not math.isnan(float(value))}
 
 
 def _parse_instruction_tasks(value: object) -> list[dict[str, str]]:

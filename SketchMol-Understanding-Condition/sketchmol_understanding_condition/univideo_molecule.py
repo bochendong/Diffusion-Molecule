@@ -326,17 +326,34 @@ def univideo_connector_alignment_loss(
     active_mask: torch.Tensor,
     direction_labels: torch.Tensor,
     similarity_bin: torch.Tensor,
+    property_weights: torch.Tensor | None = None,
+    active_only: bool = True,
     weights: Mapping[str, float] | None = None,
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Auxiliary connector loss used before/alongside diffusion training."""
 
     weights = weights or {}
+    prop_weights = property_weights
+    if prop_weights is None:
+        prop_weights = torch.ones(active_mask.shape[-1], device=active_mask.device, dtype=active_mask.dtype)
+    prop_weights = prop_weights.to(device=active_mask.device, dtype=active_mask.dtype).view(1, -1)
+    supervised_mask = active_mask if active_only else torch.ones_like(active_mask)
+    supervised_weight = (supervised_mask * prop_weights).clamp_min(0.0)
+    supervised_denom = supervised_weight.sum().clamp_min(1.0)
+    property_error = (output.target_properties - target_properties).pow(2)
+    delta_error = (output.property_deltas - property_deltas).pow(2)
+    active_error = F.binary_cross_entropy_with_logits(output.active_logits, active_mask, reduction="none")
+    direction_error = F.cross_entropy(
+        output.direction_logits.reshape(-1, 3),
+        direction_labels.reshape(-1),
+        reduction="none",
+    ).view_as(active_mask)
     losses = {
         "target_latent_mse": F.mse_loss(output.target_latent, target_latent),
-        "target_property_mse": F.mse_loss(output.target_properties, target_properties),
-        "delta_mse": F.mse_loss(output.property_deltas, property_deltas),
-        "active_bce": F.binary_cross_entropy_with_logits(output.active_logits, active_mask),
-        "direction_ce": F.cross_entropy(output.direction_logits.reshape(-1, 3), direction_labels.reshape(-1)),
+        "target_property_mse": (property_error * supervised_weight).sum() / supervised_denom,
+        "delta_mse": (delta_error * supervised_weight).sum() / supervised_denom,
+        "active_bce": (active_error * prop_weights).sum() / prop_weights.expand_as(active_error).sum().clamp_min(1.0),
+        "direction_ce": (direction_error * supervised_weight).sum() / supervised_denom,
         "similarity_ce": F.cross_entropy(output.similarity_bin_logits, similarity_bin),
     }
     total = sum(float(weights.get(name, 1.0)) * loss for name, loss in losses.items())

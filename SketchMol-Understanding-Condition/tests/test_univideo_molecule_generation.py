@@ -6,7 +6,7 @@ import sys
 import numpy as np
 import torch
 
-from sketchmol_understanding_condition.unified_condition_dataset import UnifiedConditionSample, write_jsonl
+from sketchmol_understanding_condition.unified_condition_dataset import PROPERTY_COLUMNS, UnifiedConditionSample, write_jsonl
 from sketchmol_understanding_condition.molecule_image_vae import MoleculeImageVAE, vae_loss
 from sketchmol_understanding_condition.univideo_molecule import (
     FrozenConditionFeatureStore,
@@ -49,11 +49,12 @@ def test_univideo_connector_and_source_conditioned_diffusion_shapes():
     aux_loss, logs = univideo_connector_alignment_loss(
         output,
         target_latent=torch.randn(3, 20),
-        target_properties=torch.randn(3, 7),
-        property_deltas=torch.randn(3, 7),
-        active_mask=torch.rand(3, 7),
-        direction_labels=torch.ones(3, 7, dtype=torch.long),
+        target_properties=torch.randn(3, len(PROPERTY_COLUMNS)),
+        property_deltas=torch.randn(3, len(PROPERTY_COLUMNS)),
+        active_mask=torch.rand(3, len(PROPERTY_COLUMNS)),
+        direction_labels=torch.ones(3, len(PROPERTY_COLUMNS), dtype=torch.long),
         similarity_bin=torch.zeros(3, dtype=torch.long),
+        property_weights=torch.ones(len(PROPERTY_COLUMNS)),
     )
     assert torch.isfinite(aux_loss)
     assert "target_latent_mse" in logs
@@ -156,6 +157,14 @@ def test_train_univideo_molecule_generation_script_smoke(tmp_path):
             "2",
             "--sample-steps",
             "2",
+            "--sampling-strategy",
+            "weighted",
+            "--table1-sample-weight",
+            "2",
+            "--train-property-sample-weights",
+            "QED=2,MW=3",
+            "--aux-property-weights",
+            "QED=2,MW=3",
             "--export-condition-tokens",
         ],
         cwd="SketchMol-Understanding-Condition",

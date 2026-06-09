@@ -151,6 +151,7 @@ SketchMol-Unified-3MDiffusion/README.md         # Unified 3M + MolEdit 训练
 scripts/run_univideo_molecule_pipeline.sh
 scripts/submit_univideo_molecule_pipeline.sh
 scripts/submit_univideo_moledit_pipeline.sh
+scripts/submit_univideo_moledit_v2_fix_pipeline.sh
 scripts/submit_univideo_moledit_benchmark.sh
 scripts/submit_univideo_moledit_table_metrics.sh
 scripts/submit_univideo_source_neighbor_v2_pipeline.sh
@@ -519,7 +520,7 @@ SketchMol 已有 EP4/AKT1/ROCK1 这类 protein condition 使用方式。可以�
 
 ## 10. 近期可执行 TODO
 
-1. 用 `submit_univideo_moledit_pipeline.sh` 在 MolEdit-Instruct enhanced splits 上训练 SUCC UniVideo-style pipeline。
+1. 用 `submit_univideo_moledit_v2_fix_pipeline.sh` 跑 SUCC 修复版：Table1-balanced splits、MW/SA/RB weighted sampling、active-only direction/delta auxiliary loss。
 2. 训练完成后读取自动提交的 `benchmark_materialized_primary_fast/` 与 `moledit_table_metrics/`。
-3. 用 `submit_unified_moledit_pipeline.sh` / `submit_unified_moledit_benchmark.sh` 作为 Unified 3M 对照。
+3. 用 `submit_univideo_moledit_pipeline.sh` 的 v1 结果、`submit_unified_moledit_pipeline.sh` / `submit_unified_moledit_benchmark.sh` 作为对照。
 4. 保留 source-neighbor 和 OCR image-to-structure 作为历史对照，但不再作为主线 TODO。
