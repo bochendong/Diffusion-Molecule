@@ -13,22 +13,27 @@ experiment-reports/
   smiles-dualstream/        # SMILES-DualStream-EditorAtomas
 ```
 
-每个实验 md 建议包含：
-
-- **状态**：planned / running / completed / blocked
-- **目的**：一句话说明要验证什么
-- **配置**：关键环境变量、数据路径、Slurm job
-- **产出**：checkpoint、metrics、benchmark 路径
-- **结果摘要**：表格或要点（从 `outputs/` 或 benchmark_report 抄录）
-- **结论与下一步**：待填
+每个实验 md 建议包含：**状态**、**目的**、**配置**、**产出路径**、**结果摘要**、**结论与下一步**。
 
 ## 当前实验索引
 
 | 文件夹 | 报告文件 | 说明 |
 | --- | --- | --- |
-| `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | MolEdit-Instruct Unified 3M（**已完成**，job `15810199`，3m45s） |
-| `understanding-condition/` | [univideo-v2-residual-ink.md](understanding-condition/univideo-v2-residual-ink.md) | UniVideo image-to-structure 完整 pipeline（canonical v2） |
-| `understanding-condition/` | [materialized-benchmark-v2-primary-fast.md](understanding-condition/materialized-benchmark-v2-primary-fast.md) | v2 OCR-free materialized benchmark（**已完成**，job `15810260`，12 min） |
-| `multiproperty/` | [source-neighbor-v1.md](multiproperty/source-neighbor-v1.md) | source-neighbor multi-property 数据集构建 |
+| `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | MolEdit Unified 3M 训练完成（`15810199`）；benchmark 首次空跑（`15822025`/`15822029`） |
+| `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | **新主线** source-neighbor 重训 + benchmark（`15821981`/`15821983`） |
+| `understanding-condition/` | [univideo-v2-residual-ink.md](understanding-condition/univideo-v2-residual-ink.md) | 旧 canonical v2（`multiproperty_100k_v1`，历史对照） |
+| `understanding-condition/` | [materialized-benchmark-v2-primary-fast.md](understanding-condition/materialized-benchmark-v2-primary-fast.md) | 旧 v2 materialized benchmark（`15810260`） |
+| `multiproperty/` | [source-neighbor-v1.md](multiproperty/source-neighbor-v1.md) | source-neighbor 数据集构建 |
+
+## 近期 Slurm Job 一览（2026-06-08 ~ 09）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `15810199` | `smu3m-unified` | 完成（3m45s） | [moledit-instruct-v1](unified-3m/moledit-instruct-v1.md) |
+| `15821981` | `succ-univideo-mol` | 完成（54m35s） | [source-neighbor-v2](understanding-condition/source-neighbor-v2-residual-ink.md) |
+| `15821983` | `succ-univideo-bench` | 完成（12m28s） | [source-neighbor-v2](understanding-condition/source-neighbor-v2-residual-ink.md) |
+| `15822025` | `smu3m-diff-bench` | 完成但空结果 | [moledit-instruct-v1](unified-3m/moledit-instruct-v1.md) |
+| `15822029` | `smu3m-moledit-table` | 完成但空结果 | [moledit-instruct-v1](unified-3m/moledit-instruct-v1.md) |
+| `15810260` | `succ-univideo-bench`（旧 v2） | 完成 | [materialized-benchmark-v2](understanding-condition/materialized-benchmark-v2-primary-fast.md) |
 
 新增实验时：在对应子文件夹下新建 `{实验名}.md`，并在此表加一行链接。
