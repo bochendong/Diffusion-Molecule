@@ -13,9 +13,21 @@ if ! command -v sbatch >/dev/null 2>&1; then
   exit 2
 fi
 
+export DM_DATA_ROOT="${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}"
 export SMU3M_OUTPUT_DIR="${SMU3M_OUTPUT_DIR:-SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1}"
+if [[ -z "${SMU3M_DATASET_MODE:-}" ]]; then
+  if [[ "$SMU3M_OUTPUT_DIR" == *"moledit"* ]]; then
+    export SMU3M_DATASET_MODE=moledit
+  else
+    export SMU3M_DATASET_MODE=multiproperty
+  fi
+else
+  export SMU3M_DATASET_MODE
+fi
 export SMMED_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1}"
 export SMU3M_PYTHON_BIN="${SMU3M_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
+export SMU3M_MOLEDIT_EVAL_SPLIT="${SMU3M_MOLEDIT_EVAL_SPLIT:-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv}"
+export SMU3M_MOLEDIT_CONDITION_ROWS="${SMU3M_MOLEDIT_CONDITION_ROWS:-$SMU3M_OUTPUT_DIR/dataset/moledit_benchmark_condition_rows.csv}"
 export SMU3M_BENCHMARK_PROFILE="${SMU3M_BENCHMARK_PROFILE:-primary_fast}"
 export SMU3M_BENCHMARK_SHARDS="${SMU3M_BENCHMARK_SHARDS:-1}"
 export SMU3M_BENCHMARK_SUBMIT_MODE="${SMU3M_BENCHMARK_SUBMIT_MODE:-jobs}"
@@ -78,12 +90,21 @@ if [[ ! -f "$GENERATED_LATENTS" ]]; then
   echo "Run submit_unified_moledit_pipeline.sh or submit_unified_generation_pipeline.sh first." >&2
   exit 2
 fi
+if [[ -n "${SMMED_CONDITION_ROWS:-}" ]]; then
+  CONDITION_ROWS_FOR_PRINT="$SMMED_CONDITION_ROWS"
+elif [[ "$SMU3M_DATASET_MODE" == "moledit" || "$SMU3M_OUTPUT_DIR" == *"moledit"* ]]; then
+  CONDITION_ROWS_FOR_PRINT="$SMU3M_MOLEDIT_CONDITION_ROWS"
+else
+  CONDITION_ROWS_FOR_PRINT="$SMMED_OUTPUT_DIR/condition_rows.csv"
+fi
 
 mkdir -p "$BENCH_LOG_DIR"
 
 echo "Submitting Unified 3M materialized benchmark"
 echo "  output_dir=$SMU3M_OUTPUT_DIR"
+echo "  dataset_mode=$SMU3M_DATASET_MODE"
 echo "  multiproperty_output_dir=$SMMED_OUTPUT_DIR"
+echo "  condition_rows=$CONDITION_ROWS_FOR_PRINT"
 echo "  generated_latents=$GENERATED_LATENTS"
 echo "  benchmark_profile=$SMU3M_BENCHMARK_PROFILE"
 echo "  benchmark_shards=$SMU3M_BENCHMARK_SHARDS"

@@ -2,7 +2,7 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | completed（训练 + latent eval）；benchmark / 表格指标 **首次提交失败，待重跑** |
+| **状态** | completed（训练 + latent eval）；benchmark / 表格指标 **首次提交失败，提交流程已修复待重跑** |
 | **最后更新** | 2026-06-09 |
 | **项目** | `SketchMol-Unified-3MDiffusion` |
 | **Slurm Job** | `15810199`（`smu3m-unified`） |
@@ -128,36 +128,19 @@ Diffusion 末 epoch：`source_property_worse_rate`≈0.45%，`source_fingerprint
 
 **根因**：`submit_unified_materialized_benchmark.sh` 默认使用 `multiproperty_source_neighbor_v1/condition_rows.csv`，与 MolEdit eval latent 的 `condition_id`（如 `135`）不匹配；`restrict_eval_to_edit_latent_index` 后交集为空。
 
-**修复**：已添加 `export_moledit_benchmark_condition_rows.py`，导出 1000 行 MolEdit condition rows 至 `dataset/moledit_benchmark_condition_rows.csv`。重跑时需显式设置：
+**修复**：`run_unified_materialized_benchmark.sh` 现在会在 MolEdit 模式下自动导出/使用 `dataset/moledit_benchmark_condition_rows.csv`，不再默认落回 source-neighbor rows；新增 `submit_unified_moledit_benchmark.sh` 作为重跑入口，并在单 shard 时用 Slurm `afterok` 自动接上 MolEdit table metrics。
 
 ```bash
 export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
-export SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1
-export SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python
-
-# 1) 导出 condition rows（若尚未生成）
-python SketchMol-Unified-3MDiffusion/scripts/export_moledit_benchmark_condition_rows.py \
-  --moledit-eval-split "$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv" \
-  --edit-latent-index "$SMU3M_OUTPUT_DIR/eval_latent/index.csv" \
-  --output-csv "$SMU3M_OUTPUT_DIR/dataset/moledit_benchmark_condition_rows.csv"
-
-# 2) materialized benchmark
-export SMMED_CONDITION_ROWS="$SMU3M_OUTPUT_DIR/dataset/moledit_benchmark_condition_rows.csv"
-bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
-
-# 3) MolEdit 2p–7p 表格
-python SketchMol-Unified-3MDiffusion/scripts/evaluate_moledit_table_metrics.py \
-  --reference "$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv" \
-  --predictions "$SMU3M_OUTPUT_DIR/benchmark_materialized_primary_fast/benchmark_decoded.csv" \
-  --method edit_latent_source_similarity_rerank \
-  --output-dir "$SMU3M_OUTPUT_DIR/moledit_table_metrics"
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_benchmark.sh
 ```
 
-注意：MolEdit benchmark 在 1000 eval × 93k candidate DB 上 CPU 较慢（可 1h+），建议单独 Slurm job。
+注意：MolEdit benchmark 在 1000 eval × 93k candidate DB 上 CPU 较慢（可 1h+），新 wrapper 默认申请 4h / 16G。若 `SMU3M_BENCHMARK_SHARDS>1`，先 merge shards，再单独运行 `submit_unified_moledit_table_metrics.sh`。
 
 ## 结论与下一步
 
 1. **训练链路正常**：job `15810199` 3m45s 完成全流程 + latent eval。
 2. **性质方向有信号**：87% 样本 property MAE beats source。
-3. **Benchmark 待有效重跑**：job `15822025`/`15822029` 因 condition_rows 错配产出空表；用 MolEdit 专用 export 后重提。
+3. **Benchmark 待有效重跑**：job `15822025`/`15822029` 因 condition_rows 错配产出空表；现在用 `submit_unified_moledit_benchmark.sh` 重提。
 4. **对照**：SUCC source-neighbor v2 materialized 已完成（见 [source-neighbor-v2-residual-ink.md](../understanding-condition/source-neighbor-v2-residual-ink.md)）。

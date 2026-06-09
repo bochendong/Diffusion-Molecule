@@ -23,7 +23,7 @@ UNIFIED_EVAL_JSONL="${SMU3M_EVAL_JSONL:-$UNIFIED_OUTPUT_DIR/dataset/unified_cond
 GENERATED_LATENTS="${SMU3M_GENERATED_LATENTS:-$EVAL_LATENT_DIR/generated_latents.npy}"
 EVAL_METRICS="${SMU3M_EVAL_METRICS:-$EVAL_LATENT_DIR/metrics.json}"
 MULTIPROPERTY_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1}"
-CONDITION_ROWS="${SMMED_CONDITION_ROWS:-$MULTIPROPERTY_OUTPUT_DIR/condition_rows.csv}"
+CONDITION_ROWS="${SMMED_CONDITION_ROWS:-}"
 MOLECULE_DB="${SMMED_MOLECULE_DB_CSV:-$MULTIPROPERTY_OUTPUT_DIR/molecule_database.csv}"
 BENCHMARK_PROFILE="${SMU3M_BENCHMARK_PROFILE:-primary_fast}"
 case "$BENCHMARK_PROFILE" in
@@ -73,6 +73,19 @@ EVAL_PREDICTIONS="${SMU3M_EVAL_PREDICTIONS:-$EVAL_LATENT_DIR/predictions.csv}"
 EVAL_EXPORT_LIMIT="${SMU3M_EVAL_EXPORT_LIMIT:-}"
 ALLOW_EVAL_TARGET_CANDIDATES="${SMMED_ALLOW_EVAL_TARGET_CANDIDATES:-0}"
 SEED="${SMMED_SEED:-7}"
+DATA_ROOT="${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}"
+DATASET_MODE="${SMU3M_DATASET_MODE:-}"
+if [[ -z "$DATASET_MODE" ]]; then
+  if [[ "$UNIFIED_OUTPUT_DIR" == *"moledit"* ]]; then
+    DATASET_MODE="moledit"
+  else
+    DATASET_MODE="multiproperty"
+  fi
+fi
+MOLEDIT_EVAL_SPLIT="${SMU3M_MOLEDIT_EVAL_SPLIT:-$DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv}"
+MOLEDIT_CONDITION_ROWS="${SMU3M_MOLEDIT_CONDITION_ROWS:-$UNIFIED_OUTPUT_DIR/dataset/moledit_benchmark_condition_rows.csv}"
+MOLEDIT_CONDITION_VARIANT="${SMU3M_MOLEDIT_CONDITION_VARIANT:-full}"
+MOLEDIT_CONDITION_SPLIT_NAME="${SMU3M_MOLEDIT_CONDITION_SPLIT_NAME:-eval}"
 
 if (( EVAL_SHARD_COUNT > 1 )); then
   if [[ -n "${SMU3M_BENCHMARK_SHARD_OUTPUT_DIR:-}" ]]; then
@@ -84,26 +97,7 @@ fi
 
 export PYTHONPATH="$PROJECT_DIR:$DATASET_PROJECT_DIR:$REPO_DIR/SketchMol-Understanding-Condition${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "Unified 3M materialized benchmark"
-echo "  python=$PYTHON_BIN"
-echo "  unified_output_dir=$UNIFIED_OUTPUT_DIR"
-echo "  eval_latent_dir=$EVAL_LATENT_DIR"
-echo "  condition_rows=$CONDITION_ROWS"
-echo "  molecule_db=$MOLECULE_DB"
-echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
-echo "  benchmark_profile=$BENCHMARK_PROFILE"
-echo "  methods=$METHODS"
-echo "  fingerprint_weight=$FINGERPRINT_WEIGHT"
-echo "  max_edit_latent_candidates=$MAX_EDIT_LATENT_CANDIDATES"
-echo "  source_similarity_rerank_candidates=$SOURCE_SIMILARITY_RERANK_CANDIDATES"
-echo "  source_first_min_tanimoto=$SOURCE_FIRST_MIN_TANIMOTO"
-echo "  source_first_candidates=$SOURCE_FIRST_CANDIDATES"
-echo "  source_tanimoto_thresholds=$SOURCE_TANIMOTO_THRESHOLDS"
-echo "  restrict_to_edit_latent_index=$RESTRICT_TO_EDIT_LATENT_INDEX"
-echo "  eval_shard_index=$EVAL_SHARD_INDEX"
-echo "  eval_shard_count=$EVAL_SHARD_COUNT"
-
-for required in "$UNIFIED_EVAL_JSONL" "$GENERATED_LATENTS" "$CONDITION_ROWS" "$MOLECULE_DB"; do
+for required in "$UNIFIED_EVAL_JSONL" "$GENERATED_LATENTS" "$MOLECULE_DB"; do
   if [[ ! -f "$required" ]]; then
     echo "ERROR: required file not found: $required" >&2
     exit 2
@@ -155,6 +149,63 @@ if [[ ! -f "$EVAL_LATENT_DIR/edit_latent_predictions.npy" \
     exit 2
   fi
 fi
+
+if [[ -z "$CONDITION_ROWS" ]]; then
+  if [[ "$DATASET_MODE" == "moledit" || "$UNIFIED_OUTPUT_DIR" == *"moledit"* ]]; then
+    CONDITION_ROWS="$MOLEDIT_CONDITION_ROWS"
+    export SMMED_CONDITION_ROWS="$CONDITION_ROWS"
+  else
+    CONDITION_ROWS="$MULTIPROPERTY_OUTPUT_DIR/condition_rows.csv"
+    export SMMED_CONDITION_ROWS="$CONDITION_ROWS"
+  fi
+fi
+
+if [[ "$DATASET_MODE" == "moledit" || "$CONDITION_ROWS" == "$MOLEDIT_CONDITION_ROWS" ]]; then
+  needs_moledit_condition_export=0
+  if [[ "${SMU3M_FORCE_MOLEDIT_CONDITION_EXPORT:-0}" == "1" || ! -s "$CONDITION_ROWS" ]]; then
+    needs_moledit_condition_export=1
+  elif ! awk 'NR > 1 { found = 1; exit } END { exit found ? 0 : 1 }' "$CONDITION_ROWS"; then
+    needs_moledit_condition_export=1
+  fi
+  if (( needs_moledit_condition_export )); then
+    if [[ ! -f "$MOLEDIT_EVAL_SPLIT" ]]; then
+      echo "ERROR: missing MolEdit eval split for condition export: $MOLEDIT_EVAL_SPLIT" >&2
+      echo "Set SMU3M_MOLEDIT_EVAL_SPLIT or DM_DATA_ROOT." >&2
+      exit 2
+    fi
+    "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_moledit_benchmark_condition_rows.py" \
+      --moledit-eval-split "$MOLEDIT_EVAL_SPLIT" \
+      --edit-latent-index "$EVAL_LATENT_DIR/index.csv" \
+      --output-csv "$CONDITION_ROWS" \
+      --split-name "$MOLEDIT_CONDITION_SPLIT_NAME" \
+      --variant "$MOLEDIT_CONDITION_VARIANT"
+  fi
+fi
+
+if [[ ! -f "$CONDITION_ROWS" ]]; then
+  echo "ERROR: required file not found: $CONDITION_ROWS" >&2
+  exit 2
+fi
+
+echo "Unified 3M materialized benchmark"
+echo "  python=$PYTHON_BIN"
+echo "  unified_output_dir=$UNIFIED_OUTPUT_DIR"
+echo "  dataset_mode=$DATASET_MODE"
+echo "  eval_latent_dir=$EVAL_LATENT_DIR"
+echo "  condition_rows=$CONDITION_ROWS"
+echo "  molecule_db=$MOLECULE_DB"
+echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
+echo "  benchmark_profile=$BENCHMARK_PROFILE"
+echo "  methods=$METHODS"
+echo "  fingerprint_weight=$FINGERPRINT_WEIGHT"
+echo "  max_edit_latent_candidates=$MAX_EDIT_LATENT_CANDIDATES"
+echo "  source_similarity_rerank_candidates=$SOURCE_SIMILARITY_RERANK_CANDIDATES"
+echo "  source_first_min_tanimoto=$SOURCE_FIRST_MIN_TANIMOTO"
+echo "  source_first_candidates=$SOURCE_FIRST_CANDIDATES"
+echo "  source_tanimoto_thresholds=$SOURCE_TANIMOTO_THRESHOLDS"
+echo "  restrict_to_edit_latent_index=$RESTRICT_TO_EDIT_LATENT_INDEX"
+echo "  eval_shard_index=$EVAL_SHARD_INDEX"
+echo "  eval_shard_count=$EVAL_SHARD_COUNT"
 
 BENCHMARK_ARGS=(
   --condition-rows-csv "$CONDITION_ROWS"

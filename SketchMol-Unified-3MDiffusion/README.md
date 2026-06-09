@@ -130,6 +130,20 @@ SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_pipeline.sh
 ```
 
+After the training/eval job has written `eval_latent/generated_latents.npy`, run
+the MolEdit benchmark wrapper:
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_benchmark.sh
+```
+
+That wrapper exports the matching
+`dataset/moledit_benchmark_condition_rows.csv`, submits the materialized
+benchmark, and for a single-shard run submits MolEdit table metrics with an
+`afterok` dependency.
+
 Legacy multi-property / source-neighbor runs still use
 `submit_unified_generation_pipeline.sh`. Override `SMMED_OUTPUT_DIR`,
 `SMU3M_EDIT_MANIFEST`, and `SMU3M_DATASET_MODE=multiproperty` only when
@@ -276,13 +290,15 @@ SMU3M_SLURM_GPUS
 
 Latent-space metrics are only diagnostics. To compare against SketchMol-style
 paper tables, materialize the Unified 3M eval latents through the shared
-multi-property benchmark:
+multi-property benchmark. For MolEdit-Instruct outputs, use the dedicated
+wrapper so `condition_rows.csv` is exported from the MolEdit eval split instead
+of falling back to legacy source-neighbor rows:
 
 ```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1 \
-SMU3M_BENCHMARK_SHARDS=5 \
 SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_benchmark.sh
 ```
 
 The wrapper uses `eval_latent/generated_latents.npy` plus
@@ -293,6 +309,12 @@ before benchmark export existed, it automatically writes:
 eval_latent/edit_latent_predictions.npy     # target props / deltas / active / directions
 eval_latent/edit_latent_fingerprints.npy    # Unified target fingerprint block
 eval_latent/index.csv                       # condition_id alignment for the benchmark
+```
+
+For MolEdit mode it also writes:
+
+```text
+dataset/moledit_benchmark_condition_rows.csv
 ```
 
 It then runs `benchmark_multiproperty_retrieval.py`. The default benchmark
@@ -321,6 +343,16 @@ For the default fast profile, the directory is:
 
 ```text
 SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1/benchmark_materialized_primary_fast/
+```
+
+Use the generic materialized submit script directly only for legacy or custom
+multi-property outputs:
+
+```bash
+SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_3m_edit_v1 \
+SMU3M_DATASET_MODE=multiproperty \
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_materialized_benchmark.sh
 ```
 
 With `SMU3M_BENCHMARK_SHARDS=5`, the submit script calls `sbatch` five times by
@@ -358,11 +390,8 @@ existing materialized benchmark `benchmark_decoded.csv` format with `method`.
 
 ```bash
 SMU3M_OUTPUT_DIR=SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_instruct_v1
-python SketchMol-Unified-3MDiffusion/scripts/evaluate_moledit_table_metrics.py \
-  --reference "$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv" \
-  --predictions "$SMU3M_OUTPUT_DIR/benchmark_materialized_primary_fast/benchmark_decoded.csv" \
-  --method edit_latent_source_similarity_rerank \
-  --output-dir "$SMU3M_OUTPUT_DIR/moledit_table_metrics"
+SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_table_metrics.sh
 ```
 
 `MW`, `LogP`, `QED`, `HBA`, and rotatable-bond tasks are scored with RDKit.
