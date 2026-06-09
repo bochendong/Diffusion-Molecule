@@ -28,7 +28,7 @@ source "$SCRIPT_DIR/multiproperty_dataset_defaults.sh"
 export_smmed_source_neighbor_defaults
 export_succ_edit_quality_defaults
 
-UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1}"
+UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-$SUCC_DEFAULT_UNIVIDEO_OUTPUT_DIR}"
 FEATURES_DIR="${SUCC_CONDITION_FEATURES_DIR:-$SUCC_DEFAULT_FEATURES_DIR}"
 CONDITION_ROWS="${SUCC_CONDITION_ROWS:-$SMMED_DEFAULT_CONDITION_ROWS}"
 DATASET_DIR="${SUCC_UNIVIDEO_DATASET_DIR:-$UNIFIED_OUTPUT_DIR/dataset}"

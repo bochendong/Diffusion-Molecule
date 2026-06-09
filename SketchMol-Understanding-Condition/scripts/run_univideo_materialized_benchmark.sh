@@ -8,6 +8,9 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
+# shellcheck source=./multiproperty_dataset_defaults.sh
+source "$SCRIPT_DIR/multiproperty_dataset_defaults.sh"
+
 if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true
   module load StdEnv/2023
@@ -16,7 +19,7 @@ if command -v module >/dev/null 2>&1; then
 fi
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
-UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1}"
+UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-$SUCC_DEFAULT_UNIVIDEO_OUTPUT_DIR}"
 EVAL_LATENT_DIR="${SUCC_EVAL_LATENT_DIR:-$UNIFIED_OUTPUT_DIR/univideo_molecule/eval_latent}"
 STRUCTURE_BENCHMARK_DIR="${SUCC_STRUCTURE_BENCHMARK_DIR:-$UNIFIED_OUTPUT_DIR/univideo_molecule/image_structure_benchmark}"
 IMAGE_CSV="${SUCC_IMAGE_CSV:-$STRUCTURE_BENCHMARK_DIR/image_path.csv}"

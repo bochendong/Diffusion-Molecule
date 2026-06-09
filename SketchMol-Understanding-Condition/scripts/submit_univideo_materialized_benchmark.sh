@@ -8,12 +8,15 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
 cd "$REPO_DIR"
 
+# shellcheck source=./multiproperty_dataset_defaults.sh
+source "$SCRIPT_DIR/multiproperty_dataset_defaults.sh"
+
 if ! command -v sbatch >/dev/null 2>&1; then
   echo "ERROR: sbatch not found. Run this on a Slurm login node." >&2
   exit 2
 fi
 
-export SUCC_UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v1}"
+export SUCC_UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-$SUCC_DEFAULT_UNIVIDEO_OUTPUT_DIR}"
 export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 export SUCC_MATERIALIZED_BENCHMARK_PROFILE="${SUCC_MATERIALIZED_BENCHMARK_PROFILE:-primary_fast}"
 export SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES="${SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES:-256}"
@@ -43,6 +46,7 @@ BENCH_CPUS="${SUCC_MATERIALIZED_SLURM_CPUS:-${SUCC_SLURM_CPUS:-$DEFAULT_BENCH_CP
 BENCH_JOB_NAME="${SUCC_MATERIALIZED_SLURM_JOB_NAME:-succ-univideo-bench}"
 BENCH_LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 BENCH_PARTITION="${SUCC_MATERIALIZED_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
+BENCH_DEPENDENCY="${SUCC_MATERIALIZED_SLURM_DEPENDENCY:-}"
 
 if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
   echo "ERROR: SUCC_PYTHON_BIN is not executable: $SUCC_PYTHON_BIN" >&2
@@ -80,6 +84,9 @@ echo "  python=$SUCC_PYTHON_BIN"
 echo "  bench_cpus=$BENCH_CPUS"
 echo "  bench_mem=$BENCH_MEM"
 echo "  bench_time=$BENCH_TIME"
+if [[ -n "$BENCH_DEPENDENCY" ]]; then
+  echo "  dependency=$BENCH_DEPENDENCY"
+fi
 
 BENCH_SBATCH_ARGS=(
   --account="$BENCH_ACCOUNT"
@@ -92,6 +99,9 @@ BENCH_SBATCH_ARGS=(
 )
 if [[ -n "$BENCH_PARTITION" ]]; then
   BENCH_SBATCH_ARGS+=(--partition="$BENCH_PARTITION")
+fi
+if [[ -n "$BENCH_DEPENDENCY" ]]; then
+  BENCH_SBATCH_ARGS+=(--dependency="$BENCH_DEPENDENCY")
 fi
 
 bench_output="$(

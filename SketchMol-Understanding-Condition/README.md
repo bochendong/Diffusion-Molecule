@@ -86,7 +86,7 @@ Stage 3: multi-task/dropout
 [`README_UNIVIDEO_IMAGE_STRUCTURE_EXPERIMENT.md`](README_UNIVIDEO_IMAGE_STRUCTURE_EXPERIMENT.md)。
 OCR 跑不通时，同一文档 §6 有 OCR-free materialized benchmark。
 
-当前 canonical 输出目录：
+旧 canonical v2 输出目录：
 
 ```text
 SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink/
@@ -95,13 +95,15 @@ SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residu
   univideo_molecule/benchmark_materialized_primary_fast/   # materialized benchmark
 ```
 
-最小提交示例：
+更新到 source-neighbor 数据集后，推荐重新训练一条 v2-style pipeline：
 
 ```bash
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
-SUCC_CONDITION_ROWS=SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_source_neighbor_v2_pipeline.sh
 ```
+
+这个入口默认使用 `multiproperty_source_neighbor_v1/condition_rows.csv`，复用旧 v2
+ink-aware image VAE（如果 checkpoint 存在），只准备 image benchmark CSV，不再跑
+MolScribe，并在训练 job 成功后自动提交 OCR-free materialized benchmark。
 
 ## 代码入口与 legacy 实验
 
@@ -121,6 +123,7 @@ SketchMol-Unified-3MDiffusion/README.md         # Unified 3M + MolEdit 训练
 ```text
 scripts/run_univideo_molecule_pipeline.sh
 scripts/submit_univideo_molecule_pipeline.sh
+scripts/submit_univideo_source_neighbor_v2_pipeline.sh
 scripts/run_univideo_materialized_benchmark.sh
 scripts/submit_univideo_materialized_benchmark.sh
 scripts/submit_hf_vlm_multiproperty_pipeline.sh
@@ -485,7 +488,7 @@ SketchMol 已有 EP4/AKT1/ROCK1 这类 protein condition 使用方式。可以�
 
 ## 10. 近期可执行 TODO
 
-1. 用 `submit_univideo_materialized_benchmark.sh` 在 canonical v2 输出上跑 OCR-free benchmark。
+1. 用 `submit_univideo_source_neighbor_v2_pipeline.sh` 在 source-neighbor 数据上重训 image pipeline，并自动接 OCR-free materialized benchmark。
 2. 用 `submit_unified_moledit_pipeline.sh` 在 MolEdit-Instruct enhanced splits 上训练 Unified 3M。
 3. 用 `evaluate_moledit_table_metrics.py` 对齐 MolEditRL 表格指标。
 4. 保留 image pipeline 作为并行对照，但不再把旧 encoder v0–v2.2 实验日志写回本 README。

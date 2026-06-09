@@ -36,7 +36,7 @@ git pull origin main
 检查数据是否存在：
 
 ```bash
-test -f SketchMol-MultiProperty-EditDataset/outputs/multiproperty_100k_v1/condition_rows.csv
+test -f SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1/condition_rows.csv
 ```
 
 如果这条失败，说明 multi-property 数据集还没在当前 checkout 里生成或路径不对，需要设置：
@@ -95,7 +95,7 @@ test -d "$SUCC_HF_MODEL_NAME_OR_PATH"
 
 ```bash
 export SUCC_RUN_FEATURE_EXPORT=0
-export SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm
+export SUCC_CONDITION_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_source_neighbor_v1
 test -f "$SUCC_CONDITION_FEATURES_DIR/query_tokens.npy"
 test -f "$SUCC_CONDITION_FEATURES_DIR/index.csv"
 ```
@@ -111,43 +111,39 @@ df -i /scratch/bdong
 
 ## 2. 最推荐的一键运行
 
-如果使用 SUCC-local molecule-image VAE，直接跑：
+更新到 source-neighbor 数据集后，直接跑 v2-style source-neighbor launcher：
 
 ```bash
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
-SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
-SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=1 \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_source_neighbor_v2_pipeline.sh
 ```
 
 默认设置：
 
 ```text
 SUCC_LATENT_BACKEND=image_vae
-SUCC_RUN_IMAGE_VAE_TRAIN=auto
+SUCC_LATENT_TARGET_MODE=residual
+SUCC_DIFFUSION_OBJECTIVE=pred_x0
+SUCC_IMAGE_VAE_INK_LOSS_WEIGHT=4.0
+SUCC_RUN_IMAGE_VAE_TRAIN=0 if old v2 image VAE exists, otherwise auto
 SUCC_RUN_FEATURE_EXPORT=auto
-SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=auto
+SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=prepare
+SUCC_RUN_MOLSCRIBE_OCR=0
+SUCC_SUBMIT_MATERIALIZED_BENCHMARK_AFTER=1
 SUCC_EVAL_LIMIT=1000
 SUCC_MAX_DECODE_IMAGES=$SUCC_EVAL_LIMIT
-SUCC_IMAGE_VAE_EPOCHS=10
-SUCC_IMAGE_VAE_FOREGROUND_WEIGHT=8.0
-SUCC_IMAGE_VAE_INK_LOSS_WEIGHT=4.0
-SUCC_IMAGE_VAE_INK_FRACTION_WEIGHT=2.0
-SUCC_DIFFUSION_OBJECTIVE=pred_x0
-SUCC_LATENT_TARGET_MODE=residual
 SUCC_SAMPLE_ETA=0.0
+SUCC_UNIFIED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_source_neighbor_v2_residual_ink
 ```
 
 含义是：
 
 ```text
 如果没有 condition features，就导出 HF VLM features；
-如果没有 molecule_image_vae.pt，就先训练 VAE；
-如果已有旧版 molecule_image_vae.pt 但 metrics 里没有 ink_loss_weight，会自动重训 VAE；
+如果旧 v2 ink-aware image VAE checkpoint 存在，就复用它，否则自动训练 VAE；
 训练 UniVideo-style generator；
 decode eval latents 为 molecule images；
-跑 MolScribe OCR；
-跑 RDKit / SketchMol-style benchmark。
+只准备 image_path.csv；
+训练 job 成功后，自动提交 OCR-free materialized benchmark。
 ```
 
 这版优先修 blank-image collapse。SUCC-local VAE 训练会提高黑色分子骨架像素权重，
@@ -476,20 +472,14 @@ squeue -j <job_id> -o "%.18i %.9P %.20j %.8u %.2t %.10M %.6D %R"
 第一次完整跑建议：
 
 ```bash
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
-SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
-SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=1 \
 SUCC_EVAL_LIMIT=1000 \
 SUCC_MAX_DECODE_IMAGES=1000 \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_source_neighbor_v2_pipeline.sh
 ```
 
 如果只是快速检查链路，不想等太久：
 
 ```bash
-SUCC_HF_MODEL_NAME_OR_PATH=/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct \
-SUCC_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
-SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=1 \
 SUCC_EDIT_LIMIT=2000 \
 SUCC_TRAIN_LIMIT=2000 \
 SUCC_EVAL_LIMIT=64 \
@@ -497,8 +487,7 @@ SUCC_MAX_DECODE_IMAGES=64 \
 SUCC_STAGE1_EPOCHS=1 \
 SUCC_STAGE2_EPOCHS=1 \
 SUCC_STAGE3_EPOCHS=0 \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_molecule_pipeline.sh
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_source_neighbor_v2_pipeline.sh
 ```
 
 快速检查只用来确认 pipeline，不用于报告主结果。
-

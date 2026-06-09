@@ -10,6 +10,9 @@ SMMED_DEFAULT_MOLECULE_DB="${SMMED_DEFAULT_OUTPUT_DIR}/molecule_database.csv"
 SUCC_DEFAULT_FEATURES_DIR="${SUCC_DEFAULT_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/condition_features_multiproperty_hf_vlm_source_neighbor_v1}"
 SUCC_DEFAULT_BENCHMARK_DIR="${SUCC_DEFAULT_BENCHMARK_DIR:-$SMMED_DEFAULT_OUTPUT_DIR/benchmark_hf_vlm_source_neighbor_v1}"
 SUCC_DEFAULT_UNIFIED_OUTPUT_DIR="${SUCC_DEFAULT_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/unified_generation_3m_source_neighbor_v1}"
+SUCC_DEFAULT_UNIVIDEO_OUTPUT_DIR="${SUCC_DEFAULT_UNIVIDEO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_source_neighbor_v2_residual_ink}"
+SUCC_CANONICAL_V2_OUTPUT_DIR="${SUCC_CANONICAL_V2_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_v2_residual_ink}"
+SUCC_CANONICAL_V2_IMAGE_VAE_CHECKPOINT="${SUCC_CANONICAL_V2_IMAGE_VAE_CHECKPOINT:-$SUCC_CANONICAL_V2_OUTPUT_DIR/molecule_image_vae/molecule_image_vae.pt}"
 
 export_smmed_source_neighbor_defaults() {
   export SMMED_OUTPUT_DIR="${SMMED_OUTPUT_DIR:-$SMMED_DEFAULT_OUTPUT_DIR}"
