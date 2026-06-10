@@ -243,6 +243,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=23)
     parser.add_argument("--export-condition-tokens", action="store_true")
+    parser.add_argument("--eval-only", action="store_true", help="Load checkpoint and run eval without training.")
+    parser.add_argument("--resume-checkpoint", type=Path, default=None)
     return parser.parse_args()
 
 
@@ -287,6 +289,10 @@ def main() -> None:
             map_location=device,
             scale_factor=args.sketchmol_scale_factor,
         )
+
+    if args.eval_only:
+        _run_eval_only(args, device=device, feature_store=feature_store, image_vae=image_vae)
+        return
 
     train_data = UniVideoMoleculeDataset(
         args.train_jsonl,
@@ -483,6 +489,102 @@ def main() -> None:
         print(json.dumps({"history": history, "eval": eval_metrics}, indent=2, sort_keys=True))
     else:
         print(json.dumps({"history": history, "checkpoint": str(args.output_dir / "univideo_molecule_generation.pt")}, indent=2, sort_keys=True))
+
+
+def _run_eval_only(
+    args: argparse.Namespace,
+    *,
+    device: torch.device,
+    feature_store: FrozenConditionFeatureStore | None,
+    image_vae: torch.nn.Module | None,
+) -> None:
+    if args.resume_checkpoint is None:
+        raise ValueError("--resume-checkpoint is required when --eval-only")
+    if args.eval_jsonl is None or not args.eval_jsonl.exists():
+        raise ValueError("--eval-jsonl must exist when --eval-only")
+    if args.eval_limit == 0:
+        raise ValueError("--eval-limit must be > 0 when --eval-only")
+
+    payload = torch.load(args.resume_checkpoint, map_location=device)
+    ckpt_config = payload.get("config", {})
+    stats = _stats_from_checkpoint_config(ckpt_config)
+    latent_shape = tuple(ckpt_config.get("latent_shape") or ()) or None
+
+    connector = UniVideoMoleculeConnector(
+        input_hidden_dim=int(ckpt_config["input_hidden_dim"]),
+        latent_dim=int(ckpt_config["latent_dim"]),
+        context_dim=int(ckpt_config.get("context_dim", args.context_dim)),
+        num_queries=int(ckpt_config.get("num_queries", args.num_queries)),
+        hidden_dim=int(ckpt_config.get("connector_hidden_dim", args.connector_hidden_dim)),
+    ).to(device)
+    denoiser = SourceConditionedEditDenoiser(
+        latent_dim=int(ckpt_config["latent_dim"]),
+        context_dim=int(ckpt_config.get("context_dim", args.context_dim)),
+        hidden_dim=int(ckpt_config.get("denoiser_hidden_dim", args.denoiser_hidden_dim)),
+        depth=int(ckpt_config.get("denoiser_depth", args.denoiser_depth)),
+    ).to(device)
+    diffusion = SourceConditionedGaussianLatentDiffusion(
+        denoiser,
+        timesteps=int(ckpt_config.get("timesteps", args.timesteps)),
+        objective=str(ckpt_config.get("diffusion_objective", args.diffusion_objective)),
+        condition_dropout=float(ckpt_config.get("condition_dropout", args.condition_dropout)),
+        source_dropout=float(ckpt_config.get("source_dropout", args.source_dropout)),
+    ).to(device)
+    connector.load_state_dict(payload["connector_state"])
+    diffusion.load_state_dict(payload["diffusion_state"])
+    connector.eval()
+    diffusion.eval()
+
+    eval_data = UniVideoMoleculeDataset(
+        args.eval_jsonl,
+        feature_store=feature_store,
+        fallback_token_dim=args.fallback_token_dim,
+        fingerprint_dim=int(ckpt_config.get("fingerprint_dim", args.fingerprint_dim)),
+        latent_backend=str(ckpt_config.get("latent_backend", args.latent_backend)),
+        image_vae=image_vae,
+        image_vae_device=device,
+        image_size=args.image_size,
+        vae_batch_size=args.vae_batch_size,
+        limit=args.eval_limit,
+        stats=stats,
+    )
+    latent_target_mode = str(ckpt_config.get("latent_target_mode", args.latent_target_mode))
+    eval_metrics = _evaluate(
+        connector,
+        diffusion,
+        eval_data,
+        output_dir=args.output_dir / "eval_latent",
+        batch_size=args.eval_batch_size,
+        sample_steps=args.sample_steps,
+        sample_eta=float(ckpt_config.get("sample_eta", args.sample_eta)),
+        device=device,
+        latent_backend=str(ckpt_config.get("latent_backend", args.latent_backend)),
+        latent_target_mode=latent_target_mode,
+        residual_sample_scale=float(ckpt_config.get("residual_sample_scale", args.residual_sample_scale)),
+        connector_latent_blend=float(ckpt_config.get("connector_latent_blend", args.connector_latent_blend)),
+        image_vae=image_vae if args.decode_eval_images else None,
+        latent_shape=latent_shape,
+        max_decode_images=args.max_decode_images,
+    )
+    print(
+        json.dumps(
+            {
+                "eval_only": True,
+                "resume_checkpoint": str(args.resume_checkpoint),
+                "eval_jsonl": str(args.eval_jsonl),
+                "eval": eval_metrics,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
+
+
+def _stats_from_checkpoint_config(config: dict[str, object]) -> dict[str, np.ndarray]:
+    stats = config.get("stats", {})
+    if not isinstance(stats, dict):
+        raise ValueError("Checkpoint config is missing stats for --eval-only")
+    return {key: np.asarray(value, dtype=np.float32) for key, value in stats.items()}
 
 
 def _train_stage(
