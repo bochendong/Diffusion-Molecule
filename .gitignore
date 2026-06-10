@@ -13,3 +13,6 @@ Research/Molecule Generation/Atomas/
 Research/Molecule Generation/smi-editor/
 Research/Molecule Generation/*.png
 generated_slides/
+
+# PyTDC oracle model cache (downloaded on first GSK3B/DRD2/SA scoring).
+oracle/

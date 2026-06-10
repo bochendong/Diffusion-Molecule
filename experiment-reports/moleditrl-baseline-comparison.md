@@ -2,21 +2,23 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | updated with SUCC v2 fix results |
-| **最后更新** | 2026-06-09 |
+| **状态** | updated with PyTDC-enabled SUCC v2 table metrics |
+| **最后更新** | 2026-06-10 |
 | **来源** | MolEditRL Table1 screenshot |
 | **用途** | 对照 SUCC / Unified × MolEdit |
 
-## Overlap Table Metrics（Rotbonds↓ / MW↑ / SA↓）
+## SUCC v2 fix Table Metrics（job `15897034`，6/10 Table1 tasks）
 
-| task | MolEditRL Acc(0.65) | SUCC v2 fix | Unified v1 | Unified src-anchored v2 |
+| task | MolEditRL Acc(0.65) | SUCC v2 fix | MolEditRL Acc(0.15) | SUCC v2 fix |
 | --- | ---: | ---: | ---: | ---: |
-| Rotbonds↓ | 0.634 | **0.740 (n=100)** | 0.000 (n=3) | 0.000 (n=3) |
-| MW↑ | 0.404 | **0.631 (n=84)** | 0.000 (n=1) | 0.000 (n=1) |
-| SA↓ | 0.628 | **0.480 (n=100)** | 0.000 (n=15) | 0.000 (n=15) |
-| **mean** | **0.555** | **0.617** | 0.000 | 0.000 |
-
-Acc(0.15) overlap mean：MolEditRL **0.838**，SUCC v2 **0.753**，SUCC v1 0.445，Unified v1 0.111。
+| GSK3B↑ | 0.342 | 0.000 (n=100) | 0.514 | 0.000 |
+| Rotbonds↓ | 0.634 | **0.740** | 0.830 | **0.920** |
+| MW↑ | 0.404 | **0.631** | 0.856 | 0.750 |
+| SA↓ | 0.628 | 0.480 | 0.828 | 0.590 |
+| Haccept↓ LogP↑ | 0.316 | 1.000 (n=1) | 0.800 | 1.000 |
+| DRD2↓ MW↓ SA↓ | 0.518 | **0.500** (n=10) | 0.724 | 0.800 |
+| **mean over 6 tasks** | — | **0.559** | — | **0.677** |
+| **overlap-3 mean (RB/MW/SA)** | **0.555** | **0.617** | **0.838** | **0.753** |
 
 ## Materialized 2p strict（similarity rerank）
 
@@ -29,10 +31,10 @@ Acc(0.15) overlap mean：MolEditRL **0.838**，SUCC v2 **0.753**，SUCC v1 0.445
 
 ## 结论
 
-1. **SUCC v2 fix 是当前最佳线**：overlap table mean Acc(0.65) **0.617**，已超过 MolEditRL 截图 baseline 0.555。
-2. **MW↑ 从 0 修复到 0.631**，Table1-balanced 训练是关键。
-3. **Unified source-anchored v2** latent source fingerprint 0.953，但 materialized mean Tani 仍仅 0.17，table overlap Acc(0.65)=0。
-4. 完整 Table1（10 task）仍需 PyTDC（GSK3B/DRD2）。
+1. **SUCC v2 fix 仍是当前最佳线**；overlap-3 Acc(0.65) **0.617** > MolEditRL **0.555**。
+2. **GSK3B↑ 是当前明显短板**（0 vs MolEditRL 0.342）；DRD2 组合 task 已可评估（0.5）。
+3. **PyTDC 已在集群跑通**（`setup_moledit_tdc.sh` + `rdkit.six` shim）；benchmark 预测仍只覆盖 6/10 Table1 task。
+4. **Unified source-anchored v2** materialized mean Tani ~0.17，table overlap Acc(0.65)=0。
 
 详细报告：
 - [SUCC v2 fix](understanding-condition/moledit-instruct-v2-fix.md)

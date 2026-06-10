@@ -8,11 +8,27 @@ import csv
 import json
 import math
 import sys
+import types
 from collections import defaultdict
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
 
 import numpy as np
+
+
+def _ensure_rdkit_six_compat() -> None:
+    """PyTDC 1.x imports rdkit.six, which RDKit >=2024 removed from easybuild modules."""
+    if "rdkit.six" in sys.modules:
+        return
+    try:
+        from rdkit.six import iteritems  # noqa: F401
+    except ModuleNotFoundError:
+        six_mod = types.ModuleType("rdkit.six")
+        six_mod.iteritems = dict.items
+        sys.modules["rdkit.six"] = six_mod
+
+
+_ensure_rdkit_six_compat()
 
 
 PROJECT_DIR = Path(__file__).resolve().parents[1]
@@ -60,7 +76,10 @@ def parse_args() -> argparse.Namespace:
         "--missing-oracle-policy",
         choices=("fail", "skip-task", "mark-false"),
         default="fail",
-        help="What to do when TDC oracle tasks such as GSK3B/DRD2/SA are unavailable.",
+        help=(
+            "What to do when TDC oracle tasks such as GSK3B/DRD2/SA are unavailable. "
+            "Use skip-task only for smoke/debug runs."
+        ),
     )
     return parser.parse_args()
 

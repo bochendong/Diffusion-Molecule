@@ -60,17 +60,22 @@ v1 对比：2p **0.450** → **0.727**
 
 v1：mean Tani 0.428，strict@0.4 0.379
 
-## MolEdit Table Metrics（job `15866601`）
+## MolEdit Table Metrics（job `15897034`，PyTDC 修复后）
 
-| task | Acc_all(0.65) | Acc_all(0.15) | n | v1 Acc(0.65) | MolEditRL |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Rotbonds↓ | **0.740** | 0.920 | 100 | 0.333 | 0.634 |
-| MW↑ | **0.631** | 0.750 | 84 | 0.000 | 0.404 |
-| SA↓ | **0.480** | 0.590 | 100 | 0.333 | 0.628 |
-| Haccept↓ LogP↑ | 1.000 | 1.000 | 1 | — | 0.316 |
-| **overlap mean** | **0.617** | **0.753** | — | 0.222 | 0.555 |
+| task | Acc_all(0.65) | Acc_all(0.15) | n | MolEditRL Acc(0.65) |
+| --- | ---: | ---: | ---: | ---: |
+| **GSK3B↑** | 0.000 | 0.000 | 100 | 0.342 |
+| Rotbonds↓ | **0.740** | 0.920 | 100 | 0.634 |
+| MW↑ | **0.631** | 0.750 | 84 | 0.404 |
+| SA↓ | **0.480** | 0.590 | 100 | 0.628 |
+| Haccept↓ LogP↑ | 1.000 | 1.000 | 1 | 0.316 |
+| **DRD2↓ MW↓ SA↓** | **0.500** | 0.800 | 10 | 0.518 |
+| **6-task mean** | **0.559** | **0.677** | — | — |
+| overlap-3 mean (RB/MW/SA) | **0.617** | **0.753** | — | 0.555 |
 
-MW↑ 从 0 提升到 **0.631**；overlap mean Acc(0.65) 从 0.222 提升到 **0.617**，接近 MolEditRL 0.555 水平。GSK3B/DRD2 仍因无 PyTDC 跳过。
+PyTDC 修复：`rdkit.six` shim + `module load rdkit` + `setup_moledit_tdc.sh`。此前 job `15866601` 仅 4 行（缺 GSK3B/DRD2）。
+
+benchmark_decoded 仅覆盖 **6/10** Table1 task；其余 4 个组合 task 在预测集中无行。
 
 ## 产出路径
 
@@ -85,11 +90,12 @@ SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_i
 日志：
 - `logs/succ-univideo-mol-15866598.log`
 - `logs/succ-univideo-bench-15866600.log`
-- `logs/succ-moledit-table-15866601.log`
+- `logs/succ-moledit-table-15866601.log`（旧，缺 TDC）
+- `logs/succ-moledit-table-15897034.log`（PyTDC 完整版）
 
 ## 结论与下一步
 
-1. **Table1-balanced + weighted loss 有效**：MW↑/Rotbonds↓/SA↓ 全面提升，overlap mean 接近 MolEditRL。
-2. **Materialized 2p strict 0.73**，source Tani 0.58，比 v1 更平衡。
-3. **Latent cosine 仍贴 source**（0.993），edit signal 在 latent 层未明显改善。
-4. **对照 Unified source-anchored v2**：见 [moledit-sourceanchored-v2.md](../unified-3m/moledit-sourceanchored-v2.md)；完整 Table1 需 PyTDC。
+1. **Table1-balanced + weighted loss 有效**：6-task mean Acc(0.65)=**0.559**，overlap-3 mean **0.617**（仍高于 MolEditRL 0.555）。
+2. **GSK3B↑ 仍弱**（Acc=0），DRD2 组合 task Acc(0.65)=0.5；后续可加强 GSK3B 方向监督。
+3. **Materialized 2p strict 0.73**，source Tani 0.58，比 v1 更平衡。
+4. **对照 Unified source-anchored v2**：见 [moledit-sourceanchored-v2.md](../unified-3m/moledit-sourceanchored-v2.md)。
