@@ -2,87 +2,94 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | ready to launch |
+| **状态** | completed（训练 + materialized benchmark + table metrics） |
 | **最后更新** | 2026-06-09 |
 | **项目** | `SketchMol-Understanding-Condition` |
-| **入口** | `scripts/submit_univideo_moledit_v2_fix_pipeline.sh` |
+| **训练 Job** | `15866598`（`succ-univideo-mol`） |
+| **Benchmark Job** | `15866600`（`succ-univideo-bench`） |
+| **Table Job** | `15866601`（`succ-moledit-table`） |
 | **基线** | v1: [moledit-instruct-v1.md](moledit-instruct-v1.md) |
+
+## Slurm 运行记录
+
+| Job | 名称 | 墙钟时间 | Exit |
+| --- | --- | --- | --- |
+| `15866598` | `succ-univideo-mol` | **27m16s** | 0 |
+| `15866600` | `succ-univideo-bench` | **2m37s** | 0 |
+| `15866601` | `succ-moledit-table` | **5s** | 0 |
 
 ## 目的
 
-修复 v1 暴露的两个问题：
+修复 v1 问题：Table1-balanced 训练/eval、weighted active-property loss、MW/SA/RB 加权监督。
 
-1. latent 太贴 source：`source latent cosine≈0.991`，edit signal 不够。
-2. MolEdit table metrics 落后 MolEditRL，尤其 MW↑ 当前为 0。
-
-本轮不改成 OCR 路线，仍然保持 MolEdit-Instruct enhanced_v1 +
-OCR-free materialized benchmark，与 Unified 3M x MolEdit 的 testing 口径对齐。
-
-## 主要改动
-
-| 模块 | 改动 |
-| --- | --- |
-| dataset export | 支持 `--moledit-balanced-train-per-task` / `--moledit-balanced-eval-per-task` |
-| dataset export | 支持 Table1-only balanced subset，默认 v2 train 每 task 5000、eval 每 task 100 |
-| properties | SUCC `PROPERTY_COLUMNS` 加入 `SA`；有 RDKit SA scorer 时自动补 source/target/delta SA |
-| train sampler | 新增 `--sampling-strategy weighted`，按 Table1 task / active property 加权采样 |
-| aux loss | target property / delta / direction loss 默认只监督 active instruction properties |
-| aux loss | 新增 `--aux-property-weights`，v2 默认 `MW=3,SA=3,RB=2` |
-| pipeline | 新增 v2 wrapper，不覆盖 v1 输出 |
-
-## 默认 v2 配置
-
-```bash
-export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
-SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_v2_fix_pipeline.sh
-```
-
-Wrapper 默认关键变量：
+## 配置要点
 
 | 变量 | 值 |
 | --- | --- |
-| `SUCC_UNIFIED_OUTPUT_DIR` | `SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_v2_fix` |
-| `SUCC_CONDITION_FEATURES_DIR` | `SketchMol-Understanding-Condition/outputs/condition_features_moledit_hf_vlm_v2_fix` |
-| `SUCC_MOLEDIT_TABLE1_TASKS_ONLY` | `1` |
-| `SUCC_MOLEDIT_BALANCED_TRAIN_PER_TASK` | `5000` |
-| `SUCC_MOLEDIT_BALANCED_EVAL_PER_TASK` | `100` |
-| `SUCC_SAMPLING_STRATEGY` | `weighted` |
-| `SUCC_TRAIN_PROPERTY_SAMPLE_WEIGHTS` | `MW=4,SA=3,RB=2` |
-| `SUCC_AUX_PROPERTY_WEIGHTS` | `MW=3,SA=3,RB=2` |
-| `SUCC_AUX_LOSS_WEIGHT` | `0.50` |
-| `SUCC_RESIDUAL_SAMPLE_SCALE` | `1.25` |
-| `SUCC_CONNECTOR_LATENT_BLEND` | `0.10` |
-| OCR | off |
+| 输出 | `outputs/univideo_molecule_generation_moledit_instruct_v2_fix/` |
+| Table1-only balanced | train 5000/task，eval 100/task |
+| 采样 | `weighted`，`MW=4,SA=3,RB=2` |
+| aux loss | `MW=3,SA=3,RB=2`，weight=0.50 |
+| residual_sample_scale | 1.25，connector_latent_blend=0.10 |
 
-## 要看的指标
+## 训练结果（eval_latent，n=395 Table1-balanced）
 
-优先看：
+| 指标 | v1 | v2 fix |
+| --- | ---: | ---: |
+| latent MAE | 0.735 | 0.738 |
+| source latent cosine | 0.991 | **0.993** |
+| target latent cosine | 0.380 | 0.374 |
 
-1. `univideo_molecule/eval_latent/metrics.json`
-   - `source_latent_cosine` 是否从 v1 的 0.991 降下来。
-   - `target_latent_cosine` 是否从 v1 的 0.380 上升。
-2. `univideo_molecule/benchmark_materialized_primary_fast/benchmark_report.md`
-   - 主看 `edit_latent_source_similarity_rerank`，不要主推 `source_first_rerank`。
-   - mean source Tani 希望保持在 0.4 左右或更高。
-3. `univideo_molecule/moledit_table_metrics/moledit_table_summary.md`
-   - MW↑ 是否从 0 起步。
-   - Rotbonds↓ / SA↓ 是否高于 v1。
+Latent 仍高度贴 source；property 改善主要体现在 table/benchmark 层。
 
-## 对照目标
+## Materialized Benchmark（job `15866600`，n=395）
 
-| metric | v1 SUCC | Unified 3M | MolEditRL overlap baseline | v2 目标 |
-| --- | ---: | ---: | ---: | ---: |
-| overlap Acc_all(0.65) mean | 0.222 | 0.000 | 0.555 | >0.30 |
-| overlap Acc_all(0.15) mean | 0.445 | 0.111 | 0.838 | >0.55 |
-| MW↑ Acc_all(0.65) | 0.000 | 0.000 | 0.404 | >0 |
-| MW↑ Acc_all(0.15) | 0.000 | 0.000 | 0.856 | >0 |
+### 2p–7p strict（`edit_latent_source_similarity_rerank`）
 
-## 风险
+| 2p | 3p | 4p | 5p | 6p | 7p |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| **0.727** | — | 0.800 | 0.826 | 0.765 | 0.519 |
 
-- GSK3B / DRD2 仍需要 PyTDC oracle，没装时 table metrics 会按
-  `skip-task` 跳过。
-- 本轮把 `SA` 纳入 SUCC property head，但如果服务器 RDKit 没有
-  `SA_Score/sascorer.py`，SA 数值监督会退化为 direction/text 信号。
-- Table1-only 训练更利于和 MolEditRL 对齐，但可能牺牲 broader MolEdit
-  enhanced split 上的泛化；需要和 v1 并排读。
+v1 对比：2p **0.450** → **0.727**
+
+### Source-similarity
+
+| mean Tani | strict@0.4 | strict@0.6 |
+| ---: | ---: | ---: |
+| **0.580** | **0.729** | 0.729 |
+
+v1：mean Tani 0.428，strict@0.4 0.379
+
+## MolEdit Table Metrics（job `15866601`）
+
+| task | Acc_all(0.65) | Acc_all(0.15) | n | v1 Acc(0.65) | MolEditRL |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Rotbonds↓ | **0.740** | 0.920 | 100 | 0.333 | 0.634 |
+| MW↑ | **0.631** | 0.750 | 84 | 0.000 | 0.404 |
+| SA↓ | **0.480** | 0.590 | 100 | 0.333 | 0.628 |
+| Haccept↓ LogP↑ | 1.000 | 1.000 | 1 | — | 0.316 |
+| **overlap mean** | **0.617** | **0.753** | — | 0.222 | 0.555 |
+
+MW↑ 从 0 提升到 **0.631**；overlap mean Acc(0.65) 从 0.222 提升到 **0.617**，接近 MolEditRL 0.555 水平。GSK3B/DRD2 仍因无 PyTDC 跳过。
+
+## 产出路径
+
+```text
+SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_v2_fix/
+  univideo_molecule/univideo_molecule_generation.pt
+  univideo_molecule/eval_latent/
+  univideo_molecule/benchmark_materialized_primary_fast/
+  univideo_molecule/moledit_table_metrics/
+```
+
+日志：
+- `logs/succ-univideo-mol-15866598.log`
+- `logs/succ-univideo-bench-15866600.log`
+- `logs/succ-moledit-table-15866601.log`
+
+## 结论与下一步
+
+1. **Table1-balanced + weighted loss 有效**：MW↑/Rotbonds↓/SA↓ 全面提升，overlap mean 接近 MolEditRL。
+2. **Materialized 2p strict 0.73**，source Tani 0.58，比 v1 更平衡。
+3. **Latent cosine 仍贴 source**（0.993），edit signal 在 latent 层未明显改善。
+4. **对照 Unified source-anchored v2**：见 [moledit-sourceanchored-v2.md](../unified-3m/moledit-sourceanchored-v2.md)；完整 Table1 需 PyTDC。

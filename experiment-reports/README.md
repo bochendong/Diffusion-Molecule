@@ -1,47 +1,25 @@
 # 实验报告
 
-本目录存放各实验的可更新报告（Markdown）。每个子文件夹对应一条实验线或一类任务；文件夹内的 `.md` 文件按实验命名，随跑数、改配置或出新结果持续更新。
-
-## 目录约定
-
-```text
-experiment-reports/
-  README.md                 # 本说明
-  moleditrl-baseline-comparison.md
-  unified-3m/               # SketchMol-Unified-3MDiffusion
-  understanding-condition/  # SketchMol-Understanding-Condition
-  multiproperty/            # SketchMol-MultiProperty-EditDataset
-  smiles-dualstream/        # SMILES-DualStream-EditorAtomas
-```
-
-每个实验 md 建议包含：**状态**、**目的**、**配置**、**产出路径**、**结果摘要**、**结论与下一步**。
+本目录存放各实验的可更新报告（Markdown）。
 
 ## 当前实验索引
 
 | 文件夹 | 报告文件 | 说明 |
 | --- | --- | --- |
-| `.` | [moleditrl-baseline-comparison.md](moleditrl-baseline-comparison.md) | MolEditRL Table1 baseline 与当前 SUCC / Unified overlap 对照 |
-| `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | **完成** MolEdit Unified 3M（`15810199`/`15837897`/`15851992`） |
-| `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | **完成** SUCC UniVideo × MolEdit（`15838733`/`15838734`/`15844098`） |
-| `understanding-condition/` | [moledit-instruct-v2-fix.md](understanding-condition/moledit-instruct-v2-fix.md) | **待跑** SUCC MolEdit 修复版（Table1-balanced + weighted active loss） |
-| `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 历史对照（`15821981`/`15821983`） |
-| `understanding-condition/` | [univideo-v2-residual-ink.md](understanding-condition/univideo-v2-residual-ink.md) | 旧 canonical v2（`multiproperty_100k_v1`） |
-| `understanding-condition/` | [materialized-benchmark-v2-primary-fast.md](understanding-condition/materialized-benchmark-v2-primary-fast.md) | 旧 v2 materialized benchmark（`15810260`） |
-| `multiproperty/` | [source-neighbor-v1.md](multiproperty/source-neighbor-v1.md) | source-neighbor 数据集构建 |
+| `.` | [moleditrl-baseline-comparison.md](moleditrl-baseline-comparison.md) | MolEditRL vs SUCC v1/v2 / Unified 对照 |
+| `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | Unified 3M MolEdit v1（`15810199`/`15837897`） |
+| `unified-3m/` | [moledit-sourceanchored-v2.md](unified-3m/moledit-sourceanchored-v2.md) | **新** source-anchored v2 训练（`15866599`，benchmark 待跑） |
+| `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | SUCC MolEdit v1（`15838733`/`15838734`） |
+| `understanding-condition/` | [moledit-instruct-v2-fix.md](understanding-condition/moledit-instruct-v2-fix.md) | **完成** SUCC v2 fix（`15866598`/`15866600`/`15866601`） |
+| `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
 
-## 近期 Slurm Job 一览（2026-06-08 ~ 09）
+## 近期 Slurm Job 一览（2026-06-09 晚）
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| `15810199` | `smu3m-unified` | 完成（3m45s） | [unified moledit](unified-3m/moledit-instruct-v1.md) |
-| `15837897` | `smu3m-diff-bench` | 完成（~4h） | [unified moledit](unified-3m/moledit-instruct-v1.md) |
-| `15851992` | `smu3m-moledit-table` | 完成 | [unified moledit](unified-3m/moledit-instruct-v1.md) |
-| `15838733` | `succ-univideo-mol` | 完成（~43m） | [succ moledit](understanding-condition/moledit-instruct-v1.md) |
-| `15838734` | `succ-univideo-bench` | 完成（~13m） | [succ moledit](understanding-condition/moledit-instruct-v1.md) |
-| `15844098` | `succ-moledit-table` | 完成 | [succ moledit](understanding-condition/moledit-instruct-v1.md) |
-| `15821981` | `succ-univideo-mol`（source-neighbor） | 完成（54m35s） | [source-neighbor-v2](understanding-condition/source-neighbor-v2-residual-ink.md) |
-| `15821983` | `succ-univideo-bench`（source-neighbor） | 完成（12m28s） | [source-neighbor-v2](understanding-condition/source-neighbor-v2-residual-ink.md) |
-| `15822025`/`15822029` | smu3m benchmark（首次） | 空结果 | [unified moledit](unified-3m/moledit-instruct-v1.md) |
-| `15810260` | `succ-univideo-bench`（旧 v2） | 完成 | [materialized-benchmark-v2](understanding-condition/materialized-benchmark-v2-primary-fast.md) |
+| `15866598` | `succ-univideo-mol`（v2 fix） | 完成（27m16s） | [v2 fix](understanding-condition/moledit-instruct-v2-fix.md) |
+| `15866600` | `succ-univideo-bench`（v2 fix） | 完成（2m37s） | [v2 fix](understanding-condition/moledit-instruct-v2-fix.md) |
+| `15866601` | `succ-moledit-table`（v2 fix） | 完成（5s） | [v2 fix](understanding-condition/moledit-instruct-v2-fix.md) |
+| `15866599` | `smu3m-srcanch-v2` | 完成（3m17s） | [source-anchored v2](unified-3m/moledit-sourceanchored-v2.md) |
 
 新增实验时：在对应子文件夹下新建 `{实验名}.md`，并在此表加一行链接。
