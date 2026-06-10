@@ -50,6 +50,44 @@ TASK_LABELS = {
     "DRD2:decrease+MW:decrease+SA:decrease": "DRD2↓ MW↓ SA↓",
     "HBA:increase+MW:increase+QED:decrease": "Haccept↑ MW↑ QED↓",
 }
+TABLE1_TASK_ORDER = tuple(TASK_LABELS.keys())
+PROPERTY_ALIASES = {
+    "gsk3b": "GSK3B",
+    "gsk3β": "GSK3B",
+    "gsk3": "GSK3B",
+    "rb": "RB",
+    "rotbonds": "RB",
+    "rotbond": "RB",
+    "rotatable": "RB",
+    "rotatable_bonds": "RB",
+    "mw": "MW",
+    "molwt": "MW",
+    "molecular_weight": "MW",
+    "sa": "SA",
+    "sas": "SA",
+    "sascorer": "SA",
+    "synthetic_accessibility": "SA",
+    "haccept": "HBA",
+    "hacceptor": "HBA",
+    "hba": "HBA",
+    "logp": "LogP",
+    "qed": "QED",
+    "drd2": "DRD2",
+}
+DIRECTION_ALIASES = {
+    "increase": "increase",
+    "up": "increase",
+    "higher": "increase",
+    "raise": "increase",
+    "↑": "increase",
+    "+": "increase",
+    "decrease": "decrease",
+    "down": "decrease",
+    "lower": "decrease",
+    "reduce": "decrease",
+    "↓": "decrease",
+    "-": "decrease",
+}
 
 PREDICTION_SMILES_COLUMNS = (
     "predicted_smiles",
@@ -73,6 +111,16 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--thresholds", default="0.65,0.15")
     parser.add_argument("--task-filter", choices=("table1", "all"), default="table1")
     parser.add_argument(
+        "--include-empty-table1",
+        action="store_true",
+        help="Write one row for every MolEditRL Table1 task, even when no predictions were evaluated.",
+    )
+    parser.add_argument(
+        "--require-table1-coverage",
+        action="store_true",
+        help="Fail if any Table1 task lacks references or evaluated prediction rows.",
+    )
+    parser.add_argument(
         "--missing-oracle-policy",
         choices=("fail", "skip-task", "mark-false"),
         default="fail",
@@ -94,12 +142,17 @@ def main() -> None:
     references = load_references(args.reference)
     predictions = load_predictions(args.predictions, model_name=args.model_name, method=args.method)
     rows = []
+    reference_counts = count_reference_tasks(references.values(), task_filter=args.task_filter)
     skipped_missing_oracle: dict[str, int] = defaultdict(int)
+    coverage_failures: list[str] = []
 
-    for model_name, pred_rows in sorted(predictions.items()):
+    model_names = sorted(predictions) or [args.model_name]
+    for model_name in model_names:
+        pred_rows = predictions.get(model_name, [])
         grouped: dict[str, list[dict[str, object]]] = defaultdict(list)
         generated_by_task: dict[str, list[str]] = defaultdict(list)
         reference_by_task: dict[str, list[str]] = defaultdict(list)
+        matched_predictions_by_task: dict[str, int] = defaultdict(int)
         for pred in pred_rows:
             ref = references.get(pred["example_id"])
             if ref is None:
@@ -108,6 +161,7 @@ def main() -> None:
             current_task_key = task_key(task_specs)
             if args.task_filter == "table1" and current_task_key not in TASK_LABELS:
                 continue
+            matched_predictions_by_task[current_task_key] += 1
             missing_oracles = sorted(chem.missing_oracles(task_specs))
             if missing_oracles and args.missing_oracle_policy == "skip-task":
                 skipped_missing_oracle[current_task_key] += 1
@@ -136,10 +190,55 @@ def main() -> None:
                     "model": model_name,
                     "task": TASK_LABELS.get(key, key),
                     "task_key": key,
+                    "reference_n": reference_counts.get(key, 0),
+                    "prediction_n": matched_predictions_by_task.get(key, 0),
+                    "missing_prediction_rows": max(
+                        reference_counts.get(key, 0) - matched_predictions_by_task.get(key, 0),
+                        0,
+                    ),
                     "missing_oracle_skipped_rows": skipped_missing_oracle.get(key, 0),
                 }
             )
+            summary["status"] = coverage_status(summary)
             rows.append(summary)
+        if args.include_empty_table1 and args.task_filter == "table1":
+            present = {row["task_key"] for row in rows if row.get("model") == model_name}
+            for key in TABLE1_TASK_ORDER:
+                if key in present:
+                    continue
+                summary = empty_task_summary(thresholds)
+                summary.update(
+                    {
+                        "model": model_name,
+                        "task": TASK_LABELS[key],
+                        "task_key": key,
+                        "reference_n": reference_counts.get(key, 0),
+                        "prediction_n": matched_predictions_by_task.get(key, 0),
+                        "missing_prediction_rows": max(
+                            reference_counts.get(key, 0) - matched_predictions_by_task.get(key, 0),
+                            0,
+                        ),
+                        "missing_oracle_skipped_rows": skipped_missing_oracle.get(key, 0),
+                    }
+                )
+                summary["status"] = coverage_status(summary)
+                rows.append(summary)
+
+        if args.require_table1_coverage and args.task_filter == "table1":
+            by_task = {
+                row["task_key"]: row
+                for row in rows
+                if row.get("model") == model_name and row.get("task_key") in TASK_LABELS
+            }
+            for key in TABLE1_TASK_ORDER:
+                row = by_task.get(key)
+                if row is None:
+                    coverage_failures.append(f"{model_name}:{key}:missing-summary-row")
+                    continue
+                if int(row.get("reference_n") or 0) <= 0:
+                    coverage_failures.append(f"{model_name}:{key}:missing-reference")
+                if int(row.get("n") or 0) <= 0:
+                    coverage_failures.append(f"{model_name}:{key}:{row.get('status', 'not-evaluated')}")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     csv_path = args.output_dir / "moledit_table_summary.csv"
@@ -148,6 +247,25 @@ def main() -> None:
     write_csv(csv_path, rows)
     json_path.write_text(json.dumps(rows, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     write_markdown(md_path, rows, thresholds=thresholds)
+    coverage_path = args.output_dir / "moledit_table_coverage.json"
+    coverage_path.write_text(
+        json.dumps(
+            {
+                "reference_counts": dict(sorted(reference_counts.items(), key=lambda item: task_sort_key(item[0]))),
+                "failures": coverage_failures,
+                "required": bool(args.require_table1_coverage),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    if coverage_failures:
+        message = "Table1 coverage check failed: " + ", ".join(coverage_failures)
+        if args.require_table1_coverage:
+            raise SystemExit(message)
+        print(message, file=sys.stderr)
     print(json.dumps({"rows": len(rows), "csv": str(csv_path), "markdown": str(md_path)}, indent=2, sort_keys=True))
 
 
@@ -202,6 +320,7 @@ class Chemistry:
         }
 
     def score(self, smiles: str, prop: str) -> float | None:
+        prop = canonical_property(prop)
         if prop in {"MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB"}:
             props = self.rdkit_properties(smiles)
             return None if props is None else props[prop]
@@ -214,6 +333,7 @@ class Chemistry:
             return None
 
     def oracle(self, prop: str) -> Callable[[str], float] | None:
+        prop = canonical_property(prop)
         if prop in self._oracles:
             return self._oracles[prop]
         if prop == "SA":
@@ -254,7 +374,7 @@ class Chemistry:
     def missing_oracles(self, task_specs: Iterable[Mapping[str, str]]) -> set[str]:
         missing = set()
         for spec in task_specs:
-            prop = str(spec.get("property", ""))
+            prop = canonical_property(spec.get("property", ""))
             if prop not in {"MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB"} and self.oracle(prop) is None:
                 missing.add(prop)
         return missing
@@ -326,22 +446,23 @@ def task_specs_for_reference(row: Mapping[str, object]) -> list[dict[str, str]]:
         for item in parsed:
             if not isinstance(item, Mapping):
                 continue
-            prop = str(item.get("property", "")).strip()
-            direction = str(item.get("direction", "") or "unknown").strip().lower()
+            prop = canonical_property(item.get("property", ""))
+            direction = canonical_direction(item.get("direction", "") or "unknown")
             if prop:
                 specs.append({"property": prop, "direction": direction})
     if specs:
         return specs
     props = str(row.get("instruction_task_properties") or row.get("computed_active_properties") or "").replace(",", "|")
     for prop in [item.strip() for item in props.split("|") if item.strip()]:
-        direction = str(row.get(f"{prop}_direction", "") or "unknown").lower()
-        specs.append({"property": prop, "direction": direction})
+        canonical = canonical_property(prop)
+        direction = canonical_direction(row.get(f"{canonical}_direction", "") or row.get(f"{prop}_direction", "") or "unknown")
+        specs.append({"property": canonical, "direction": direction})
     return specs
 
 
 def task_key(task_specs: list[dict[str, str]]) -> str:
     pairs = [
-        (spec.get("property", ""), str(spec.get("direction", "") or "unknown").lower())
+        (canonical_property(spec.get("property", "")), canonical_direction(spec.get("direction", "") or "unknown"))
         for spec in task_specs
         if spec.get("property")
     ]
@@ -352,7 +473,7 @@ def task_key(task_specs: list[dict[str, str]]) -> str:
 
 
 def task_sort_key(key: str) -> tuple[int, str]:
-    ordered = list(TASK_LABELS)
+    ordered = list(TABLE1_TASK_ORDER)
     return (ordered.index(key), key) if key in TASK_LABELS else (999, key)
 
 
@@ -388,8 +509,8 @@ def desired_property_success(
     if not task_specs:
         return False
     for spec in task_specs:
-        prop = str(spec.get("property", ""))
-        direction = str(spec.get("direction", "") or "unknown").lower()
+        prop = canonical_property(spec.get("property", ""))
+        direction = canonical_direction(spec.get("direction", "") or "unknown")
         source_score = chem.score(source_smiles, prop)
         pred_score = chem.score(predicted_smiles, prop)
         if source_score is None or pred_score is None:
@@ -416,6 +537,51 @@ def summarize_task(rows: list[dict[str, object]], *, thresholds: list[float], fc
         out[f"Acc_all({threshold:g})"] = fraction(row[key] for row in rows)
         out[f"Acc_valid({threshold:g})"] = fraction(row[key] for row in valid_rows)
     return out
+
+
+def empty_task_summary(thresholds: list[float]) -> dict[str, object]:
+    out: dict[str, object] = {
+        "n": 0,
+        "valid_n": 0,
+        "Validity": "",
+        "FCD": "",
+    }
+    for threshold in thresholds:
+        out[f"Acc_all({threshold:g})"] = ""
+        out[f"Acc_valid({threshold:g})"] = ""
+    return out
+
+
+def coverage_status(row: Mapping[str, object]) -> str:
+    reference_n = int(row.get("reference_n") or 0)
+    prediction_n = int(row.get("prediction_n") or 0)
+    evaluated_n = int(row.get("n") or 0)
+    skipped_oracle = int(row.get("missing_oracle_skipped_rows") or 0)
+    if reference_n <= 0:
+        return "missing-reference"
+    if skipped_oracle > 0 and evaluated_n <= 0:
+        return "skipped-missing-oracle"
+    if prediction_n <= 0:
+        return "missing-prediction"
+    if evaluated_n <= 0:
+        return "not-evaluated"
+    if prediction_n < reference_n:
+        return "partial"
+    return "measured"
+
+
+def count_reference_tasks(
+    references: Iterable[Mapping[str, object]],
+    *,
+    task_filter: str,
+) -> dict[str, int]:
+    counts: dict[str, int] = defaultdict(int)
+    for ref in references:
+        key = task_key(task_specs_for_reference(ref))
+        if task_filter == "table1" and key not in TASK_LABELS:
+            continue
+        counts[key] += 1
+    return counts
 
 
 def fraction(values: Iterable[object]) -> float:
@@ -467,6 +633,10 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         "model",
         "task",
         "task_key",
+        "status",
+        "reference_n",
+        "prediction_n",
+        "missing_prediction_rows",
         "n",
         "valid_n",
         "Validity",
@@ -488,7 +658,7 @@ def write_markdown(path: Path, rows: list[dict[str, object]], *, thresholds: lis
     threshold_cols = []
     for threshold in thresholds:
         threshold_cols.extend([f"Acc_all({threshold:g})", f"Acc_valid({threshold:g})"])
-    columns = ["model", "task", "Validity", *threshold_cols, "FCD", "n"]
+    columns = ["model", "task", "status", "reference_n", "prediction_n", "Validity", *threshold_cols, "FCD", "n"]
     lines = [
         "# MolEdit Table Metrics",
         "",
@@ -505,6 +675,18 @@ def format_cell(value: object) -> str:
     if isinstance(value, float):
         return f"{value:.4g}"
     return str(value)
+
+
+def canonical_property(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return PROPERTY_ALIASES.get(text.lower(), text)
+
+
+def canonical_direction(value: object) -> str:
+    text = str(value or "").strip().lower()
+    return DIRECTION_ALIASES.get(text, text or "unknown")
 
 
 if __name__ == "__main__":

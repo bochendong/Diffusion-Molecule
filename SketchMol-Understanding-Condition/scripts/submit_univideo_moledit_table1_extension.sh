@@ -19,13 +19,16 @@ export SUCC_UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understandi
 export SUCC_MOLEDIT_TRAIN_SPLIT="${SUCC_MOLEDIT_TRAIN_SPLIT:-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/train.csv}"
 export SUCC_MOLEDIT_EVAL_SPLIT="${SUCC_MOLEDIT_EVAL_SPLIT:-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv}"
 export SUCC_TABLE1_PER_TASK="${SUCC_TABLE1_PER_TASK:-100}"
+export SUCC_TABLE1_SYNTHESIZE_MISSING_TASKS="${SUCC_TABLE1_SYNTHESIZE_MISSING_TASKS:-0}"
+export SUCC_TABLE1_SYNTHETIC_MIN_SOURCE_TANIMOTO="${SUCC_TABLE1_SYNTHETIC_MIN_SOURCE_TANIMOTO:-0.4}"
+export SUCC_TABLE1_SYNTHETIC_CANDIDATE_LIMIT="${SUCC_TABLE1_SYNTHETIC_CANDIDATE_LIMIT:-8000}"
 export SUCC_TABLE1_PACK_DIR="${SUCC_TABLE1_PACK_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/dataset/table1_benchmark}"
 export SUCC_TABLE1_EVAL_OUTPUT_DIR="${SUCC_TABLE1_EVAL_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/table1_eval_latent}"
 export SUCC_MATERIALIZED_BENCHMARK_PROFILE="${SUCC_MATERIALIZED_BENCHMARK_PROFILE:-primary_fast}"
 export SUCC_MOLEDIT_TABLE_MISSING_ORACLE_POLICY="${SUCC_MOLEDIT_TABLE_MISSING_ORACLE_POLICY:-fail}"
 
-TABLE1_BENCHMARK_OUTPUT_DIR="${SUCC_TABLE1_BENCHMARK_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_materialized_table1_primary_fast}"
-TABLE1_TABLE_OUTPUT_DIR="${SUCC_TABLE1_TABLE_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/moledit_table_metrics_table1}"
+TABLE1_BENCHMARK_OUTPUT_DIR="${SUCC_TABLE1_BENCHMARK_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_materialized_table1_$SUCC_MATERIALIZED_BENCHMARK_PROFILE}"
+TABLE1_TABLE_OUTPUT_DIR="${SUCC_TABLE1_TABLE_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/moledit_table_metrics_table1_$SUCC_MATERIALIZED_BENCHMARK_PROFILE}"
 TABLE1_REFERENCE="${SUCC_TABLE1_REFERENCE:-$SUCC_TABLE1_PACK_DIR/table1_moledit_rows.csv}"
 
 SLURM_ACCOUNT="${SUCC_SLURM_ACCOUNT:-def-hup-ab_gpu}"
@@ -43,18 +46,31 @@ echo "Exporting Table1 benchmark pack"
 echo "  train_split=$SUCC_MOLEDIT_TRAIN_SPLIT"
 echo "  eval_split=$SUCC_MOLEDIT_EVAL_SPLIT"
 echo "  per_task=$SUCC_TABLE1_PER_TASK"
+echo "  synthesize_missing_tasks=$SUCC_TABLE1_SYNTHESIZE_MISSING_TASKS"
 echo "  output_dir=$SUCC_TABLE1_PACK_DIR"
 
-"$SUCC_PYTHON_BIN" "$REPO_DIR/SketchMol-Unified-3MDiffusion/scripts/export_moledit_table1_benchmark_pack.py" \
-  --moledit-train-split "$SUCC_MOLEDIT_TRAIN_SPLIT" \
-  --moledit-eval-split "$SUCC_MOLEDIT_EVAL_SPLIT" \
-  --output-dir "$SUCC_TABLE1_PACK_DIR" \
+EXPORT_ARGS=(
+  "$SUCC_PYTHON_BIN"
+  "$REPO_DIR/SketchMol-Unified-3MDiffusion/scripts/export_moledit_table1_benchmark_pack.py"
+  --moledit-train-split "$SUCC_MOLEDIT_TRAIN_SPLIT"
+  --moledit-eval-split "$SUCC_MOLEDIT_EVAL_SPLIT"
+  --output-dir "$SUCC_TABLE1_PACK_DIR"
   --per-task "$SUCC_TABLE1_PER_TASK"
+)
+if [[ "$SUCC_TABLE1_SYNTHESIZE_MISSING_TASKS" == "1" ]]; then
+  EXPORT_ARGS+=(
+    --synthesize-missing-tasks
+    --synthetic-min-source-tanimoto "$SUCC_TABLE1_SYNTHETIC_MIN_SOURCE_TANIMOTO"
+    --synthetic-candidate-limit "$SUCC_TABLE1_SYNTHETIC_CANDIDATE_LIMIT"
+  )
+fi
+"${EXPORT_ARGS[@]}"
 
 EVAL_TIME="${SUCC_TABLE1_EVAL_SLURM_TIME:-03:00:00}"
 EVAL_MEM="${SUCC_TABLE1_EVAL_SLURM_MEM:-16G}"
 EVAL_CPUS="${SUCC_TABLE1_EVAL_SLURM_CPUS:-1}"
 EVAL_JOB_NAME="${SUCC_TABLE1_EVAL_SLURM_JOB_NAME:-succ-table1-eval}"
+EVAL_DEPENDENCY="${SUCC_TABLE1_EVAL_SLURM_DEPENDENCY:-}"
 
 eval_sbatch_args=(
   --account="$SLURM_ACCOUNT"
@@ -68,9 +84,15 @@ eval_sbatch_args=(
 if [[ -n "$SLURM_PARTITION" ]]; then
   eval_sbatch_args+=(--partition="$SLURM_PARTITION")
 fi
+if [[ -n "$EVAL_DEPENDENCY" ]]; then
+  eval_sbatch_args+=(--dependency="$EVAL_DEPENDENCY")
+fi
 
 echo
 echo "Submitting Table1 eval_latent job"
+if [[ -n "$EVAL_DEPENDENCY" ]]; then
+  echo "  dependency=$EVAL_DEPENDENCY"
+fi
 eval_output="$(sbatch "${eval_sbatch_args[@]}" --wrap="bash '$SCRIPT_DIR/run_univideo_table1_eval_latent.sh'")"
 echo "$eval_output"
 eval_job_id="$(echo "$eval_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
@@ -98,6 +120,7 @@ bench_output="$(
   SUCC_EVAL_JSONL="$SUCC_TABLE1_PACK_DIR/table1_eval.jsonl" \
   SUCC_BENCHMARK_ROWS_CSV="$SUCC_TABLE1_PACK_DIR/table1_benchmark_condition_rows.csv" \
   SUCC_MATERIALIZED_BENCHMARK_OUTPUT_DIR="$TABLE1_BENCHMARK_OUTPUT_DIR" \
+  SUCC_MATERIALIZED_BENCHMARK_PROFILE="$SUCC_MATERIALIZED_BENCHMARK_PROFILE" \
   SUCC_MATERIALIZED_SLURM_DEPENDENCY="$bench_dependency" \
   SUCC_MATERIALIZED_SLURM_JOB_NAME="$BENCH_JOB_NAME" \
   SUCC_MATERIALIZED_SLURM_TIME="$BENCH_TIME" \

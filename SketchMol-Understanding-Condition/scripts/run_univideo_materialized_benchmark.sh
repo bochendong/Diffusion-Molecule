@@ -47,9 +47,14 @@ case "$BENCHMARK_PROFILE" in
     DEFAULT_OUTPUT_DIR="$UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_materialized_latent"
     DEFAULT_RERANK_CANDIDATES="256"
     ;;
+  table_attack)
+    DEFAULT_METHODS="source_identity,source_tanimoto_property_oracle,source_tanimoto_table_success_oracle,edit_latent_source_similarity_rerank,edit_latent_table_success_rerank,target_oracle"
+    DEFAULT_OUTPUT_DIR="$UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_materialized_table_attack"
+    DEFAULT_RERANK_CANDIDATES="1024"
+    ;;
   *)
     echo "ERROR: unsupported SUCC_MATERIALIZED_BENCHMARK_PROFILE=$BENCHMARK_PROFILE" >&2
-    echo "       Use primary_fast, oracle, or latent." >&2
+    echo "       Use primary_fast, oracle, latent, or table_attack." >&2
     exit 2
     ;;
 esac
@@ -61,6 +66,10 @@ SOURCE_FIRST_MIN_TANIMOTO="${SUCC_SOURCE_FIRST_MIN_TANIMOTO:-0.4}"
 SOURCE_FIRST_CANDIDATES="${SUCC_SOURCE_FIRST_CANDIDATES:-0}"
 SOURCE_SIMILARITY_WEIGHT="${SUCC_SOURCE_SIMILARITY_WEIGHT:-1.0}"
 SOURCE_SIMILARITY_RERANK_CANDIDATES="${SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES:-$DEFAULT_RERANK_CANDIDATES}"
+TABLE_SUCCESS_RERANK_CANDIDATES="${SUCC_TABLE_SUCCESS_RERANK_CANDIDATES:-$DEFAULT_RERANK_CANDIDATES}"
+TABLE_SUCCESS_WEIGHT="${SUCC_TABLE_SUCCESS_WEIGHT:-100.0}"
+TABLE_SOURCE_WEIGHT="${SUCC_TABLE_SOURCE_WEIGHT:-5.0}"
+TABLE_LATENT_WEIGHT="${SUCC_TABLE_LATENT_WEIGHT:-1.0}"
 TOP_K="${SUCC_TARGET_FINDER_TOP_K:-5}"
 SOURCE_TANIMOTO_THRESHOLDS="${SUCC_SOURCE_TANIMOTO_THRESHOLDS:-0.4,0.6,0.8}"
 
@@ -82,6 +91,9 @@ echo "  output_dir=$BENCHMARK_OUTPUT_DIR"
 echo "  direct_csv=$DIRECT_CSV"
 echo "  source_first_min_tanimoto=$SOURCE_FIRST_MIN_TANIMOTO"
 echo "  source_similarity_rerank_candidates=$SOURCE_SIMILARITY_RERANK_CANDIDATES"
+echo "  table_success_rerank_candidates=$TABLE_SUCCESS_RERANK_CANDIDATES"
+echo "  table_success_weight=$TABLE_SUCCESS_WEIGHT"
+echo "  table_source_weight=$TABLE_SOURCE_WEIGHT"
 echo "  source_tanimoto_thresholds=$SOURCE_TANIMOTO_THRESHOLDS"
 
 if [[ ! -f "$SOURCE_CSV" ]]; then
@@ -129,7 +141,11 @@ mkdir -p "$BENCHMARK_OUTPUT_DIR"
   --source-first-min-tanimoto "$SOURCE_FIRST_MIN_TANIMOTO" \
   --source-first-candidates "$SOURCE_FIRST_CANDIDATES" \
   --source-similarity-weight "$SOURCE_SIMILARITY_WEIGHT" \
-  --source-similarity-rerank-candidates "$SOURCE_SIMILARITY_RERANK_CANDIDATES"
+  --source-similarity-rerank-candidates "$SOURCE_SIMILARITY_RERANK_CANDIDATES" \
+  --table-success-rerank-candidates "$TABLE_SUCCESS_RERANK_CANDIDATES" \
+  --table-success-weight "$TABLE_SUCCESS_WEIGHT" \
+  --table-source-weight "$TABLE_SOURCE_WEIGHT" \
+  --table-latent-weight "$TABLE_LATENT_WEIGHT"
 
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_univideo_image_benchmark.py" \
   --image-csv "$DIRECT_CSV" \

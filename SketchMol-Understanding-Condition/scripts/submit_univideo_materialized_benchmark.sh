@@ -19,13 +19,25 @@ fi
 export SUCC_UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-$SUCC_DEFAULT_UNIVIDEO_OUTPUT_DIR}"
 export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 export SUCC_MATERIALIZED_BENCHMARK_PROFILE="${SUCC_MATERIALIZED_BENCHMARK_PROFILE:-primary_fast}"
-export SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES="${SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES:-256}"
+if [[ -z "${SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES:-}" ]]; then
+  if [[ "$SUCC_MATERIALIZED_BENCHMARK_PROFILE" == "table_attack" ]]; then
+    export SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES=1024
+  else
+    export SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES=256
+  fi
+fi
+export SUCC_TABLE_SUCCESS_RERANK_CANDIDATES="${SUCC_TABLE_SUCCESS_RERANK_CANDIDATES:-$SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES}"
 
 case "$SUCC_MATERIALIZED_BENCHMARK_PROFILE" in
   primary_fast | latent)
     DEFAULT_BENCH_CPUS="1"
     DEFAULT_BENCH_MEM="16G"
     DEFAULT_BENCH_TIME="02:00:00"
+    ;;
+  table_attack)
+    DEFAULT_BENCH_CPUS="1"
+    DEFAULT_BENCH_MEM="24G"
+    DEFAULT_BENCH_TIME="04:00:00"
     ;;
   oracle)
     DEFAULT_BENCH_CPUS="1"
@@ -34,7 +46,7 @@ case "$SUCC_MATERIALIZED_BENCHMARK_PROFILE" in
     ;;
   *)
     echo "ERROR: unsupported SUCC_MATERIALIZED_BENCHMARK_PROFILE=$SUCC_MATERIALIZED_BENCHMARK_PROFILE" >&2
-    echo "       Use primary_fast, oracle, or latent." >&2
+    echo "       Use primary_fast, oracle, latent, or table_attack." >&2
     exit 2
     ;;
 esac
@@ -98,6 +110,7 @@ echo "  generated_latents=$GENERATED_LATENTS"
 echo "  candidate_latents=$CANDIDATE_LATENTS"
 echo "  benchmark_profile=$SUCC_MATERIALIZED_BENCHMARK_PROFILE"
 echo "  source_similarity_rerank_candidates=$SUCC_SOURCE_SIMILARITY_RERANK_CANDIDATES"
+echo "  table_success_rerank_candidates=$SUCC_TABLE_SUCCESS_RERANK_CANDIDATES"
 echo "  python=$SUCC_PYTHON_BIN"
 echo "  bench_cpus=$BENCH_CPUS"
 echo "  bench_mem=$BENCH_MEM"
@@ -137,6 +150,7 @@ case "$SUCC_MATERIALIZED_BENCHMARK_PROFILE" in
   primary_fast) default_output_dir="$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_materialized_primary_fast" ;;
   oracle) default_output_dir="$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_materialized_oracle" ;;
   latent) default_output_dir="$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_materialized_latent" ;;
+  table_attack) default_output_dir="$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_materialized_table_attack" ;;
 esac
 output_base_dir="${SUCC_MATERIALIZED_BENCHMARK_OUTPUT_DIR:-$default_output_dir}"
 

@@ -218,12 +218,12 @@ def _write_moledit_split(path, *, example_id: str = "m1") -> None:
                 "instruction_tasks": json.dumps(
                     [
                         {"property": "MW", "direction": "increase"},
-                        {"property": "HBA", "direction": "increase"},
-                        {"property": "QED", "direction": "decrease"},
+                        {"property": "Haccept", "direction": "↑"},
+                        {"property": "QED", "direction": "↓"},
                     ]
                 ),
-                "instruction_task_properties": "HBA|MW|QED",
-                "instruction_task_directions": '{"HBA":"increase","MW":"increase","QED":"decrease"}',
+                "instruction_task_properties": "Haccept|MW|QED",
+                "instruction_task_directions": '{"Haccept":"↑","MW":"increase","QED":"↓"}',
                 "source_target_tanimoto": "0.55",
                 "difficulty_bucket": "medium_similarity",
                 "pair_quality": "cross_scaffold_medium_similarity",

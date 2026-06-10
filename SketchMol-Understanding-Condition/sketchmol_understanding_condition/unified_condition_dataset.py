@@ -28,6 +28,42 @@ TABLE1_TASK_SPECS = {
     ),
 }
 TABLE1_TASK_KEYS = set(TABLE1_TASK_SPECS.values())
+PROPERTY_ALIASES = {
+    "gsk3b": "GSK3B",
+    "gsk3β": "GSK3B",
+    "gsk3": "GSK3B",
+    "rb": "RB",
+    "rotbonds": "RB",
+    "rotbond": "RB",
+    "rotatable": "RB",
+    "rotatable_bonds": "RB",
+    "mw": "MW",
+    "molwt": "MW",
+    "molecular_weight": "MW",
+    "sa": "SA",
+    "sas": "SA",
+    "synthetic_accessibility": "SA",
+    "haccept": "HBA",
+    "hacceptor": "HBA",
+    "hba": "HBA",
+    "logp": "LogP",
+    "qed": "QED",
+    "drd2": "DRD2",
+}
+DIRECTION_ALIASES = {
+    "increase": "increase",
+    "up": "increase",
+    "higher": "increase",
+    "raise": "increase",
+    "↑": "increase",
+    "+": "increase",
+    "decrease": "decrease",
+    "down": "decrease",
+    "lower": "decrease",
+    "reduce": "decrease",
+    "↓": "decrease",
+    "-": "decrease",
+}
 DESCRIPTION_PRETRAIN = "description_pretrain"
 EDIT_GENERATION = "edit_generation"
 EDIT_QUALITY_METADATA_FIELDS = (
@@ -309,7 +345,7 @@ def read_moledit_generation_samples(
             _fill_missing_computed_properties(source_props, target_props, deltas, source_smiles, target_smiles, task_specs)
             active_props = _active_props_from_moledit(row, task_specs, deltas)
             directions = _directions_from_moledit(row, task_specs, deltas)
-            condition_props = [prop for prop in (spec.get("property", "") for spec in task_specs) if prop]
+            condition_props = [_canonical_property(spec.get("property", "")) for spec in task_specs if spec.get("property", "")]
             model_props = [prop for prop in condition_props if prop in PROPERTY_COLUMNS]
             if not model_props:
                 model_props = [prop for prop in PROPERTY_COLUMNS if active_props.get(prop, False)]
@@ -516,8 +552,8 @@ def _parse_instruction_tasks(value: object) -> list[dict[str, str]]:
     for item in parsed:
         if not isinstance(item, Mapping):
             continue
-        prop = str(item.get("property", "")).strip()
-        direction = str(item.get("direction", "")).strip().lower()
+        prop = _canonical_property(item.get("property", ""))
+        direction = _canonical_direction(item.get("direction", ""))
         if prop:
             out.append({"property": prop, "direction": direction or "unknown"})
     return out
@@ -533,8 +569,9 @@ def _task_specs_from_instruction(
     raw_props = row.get("instruction_task_properties", "") or row.get("computed_active_properties", "")
     directions = _parse_json_mapping(row.get("instruction_task_directions", ""))
     for prop in [item for item in _split_props(raw_props) if item]:
-        direction = str(directions.get(prop, "") or row.get(f"{prop}_direction", "") or "unknown").lower()
-        specs.append({"property": prop, "direction": direction})
+        canonical = _canonical_property(prop)
+        direction = _canonical_direction(directions.get(prop, "") or directions.get(canonical, "") or row.get(f"{canonical}_direction", "") or row.get(f"{prop}_direction", "") or "unknown")
+        specs.append({"property": canonical, "direction": direction})
     return specs
 
 
@@ -553,7 +590,7 @@ def _parse_json_mapping(value: object) -> dict[str, object]:
 
 def _task_key(task_specs: list[dict[str, str]]) -> str:
     pairs = [
-        (spec.get("property", ""), str(spec.get("direction", "") or "unknown").lower())
+        (_canonical_property(spec.get("property", "")), _canonical_direction(spec.get("direction", "") or "unknown"))
         for spec in task_specs
         if spec.get("property")
     ]
@@ -568,7 +605,7 @@ def _active_props_from_moledit(
     task_specs: list[dict[str, str]],
     deltas: Mapping[str, float],
 ) -> dict[str, bool]:
-    task_props = {spec.get("property", "") for spec in task_specs}
+    task_props = {_canonical_property(spec.get("property", "")) for spec in task_specs}
     active = {}
     for prop in PROPERTY_COLUMNS:
         value = row.get(f"{prop}_active", "")
@@ -587,7 +624,7 @@ def _directions_from_moledit(
     deltas: Mapping[str, float],
 ) -> dict[str, str]:
     task_directions = {
-        spec.get("property", ""): str(spec.get("direction", "") or "").lower()
+        _canonical_property(spec.get("property", "")): _canonical_direction(spec.get("direction", "") or "")
         for spec in task_specs
     }
     out = {}
@@ -619,6 +656,18 @@ def _bool_dict(value: object) -> dict[str, bool]:
 def _truthy(value: object) -> bool:
     text = str(value).strip().lower()
     return text in {"1", "true", "yes", "y", "active", "increase", "decrease"}
+
+
+def _canonical_property(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return PROPERTY_ALIASES.get(text.lower(), text)
+
+
+def _canonical_direction(value: object) -> str:
+    text = str(value or "").strip().lower()
+    return DIRECTION_ALIASES.get(text, text or "unknown")
 
 
 def _to_float(value: object) -> float:

@@ -32,6 +32,7 @@ import csv
 import json
 import math
 import sys
+import types
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -54,15 +55,65 @@ PROPERTY_NORMALIZERS = {
     "RB": 1.0,
     "SA": 1.0,
 }
+PROPERTY_ALIASES = {
+    "gsk3b": "GSK3B",
+    "gsk3β": "GSK3B",
+    "gsk3": "GSK3B",
+    "rb": "RB",
+    "rotbonds": "RB",
+    "rotbond": "RB",
+    "rotatable": "RB",
+    "rotatable_bonds": "RB",
+    "mw": "MW",
+    "molwt": "MW",
+    "molecular_weight": "MW",
+    "sa": "SA",
+    "sas": "SA",
+    "synthetic_accessibility": "SA",
+    "haccept": "HBA",
+    "hacceptor": "HBA",
+    "hba": "HBA",
+    "logp": "LogP",
+    "qed": "QED",
+    "drd2": "DRD2",
+}
+DIRECTION_ALIASES = {
+    "increase": "increase",
+    "up": "increase",
+    "higher": "increase",
+    "raise": "increase",
+    "↑": "increase",
+    "+": "increase",
+    "decrease": "decrease",
+    "down": "decrease",
+    "lower": "decrease",
+    "reduce": "decrease",
+    "↓": "decrease",
+    "-": "decrease",
+}
+RDKIT_PROPERTY_KEYS = {
+    "MW": "MolWt",
+    "LogP": "LogP",
+    "QED": "QED",
+    "TPSA": "TPSA",
+    "HBD": "HBD",
+    "HBA": "HBA",
+    "RB": "rotatable",
+    "SA": "SA",
+}
 METHODS = (
     "target_oracle",
     "source_identity",
     "latent_nearest",
     "property_nearest",
     "source_tanimoto_property_oracle",
+    "source_tanimoto_table_success_oracle",
     "edit_latent_source_first_rerank",
     "edit_latent_source_similarity_rerank",
+    "edit_latent_table_success_rerank",
 )
+_PROPERTY_CACHE: dict[str, dict[str, float]] = {}
+_ORACLE_CACHE: dict[str, object | None] = {}
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -98,6 +149,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-first-candidates", type=int, default=0)
     parser.add_argument("--source-similarity-weight", type=float, default=1.0)
     parser.add_argument("--source-similarity-rerank-candidates", type=int, default=256)
+    parser.add_argument(
+        "--table-success-rerank-candidates",
+        type=int,
+        default=512,
+        help="Number of latent candidates to rerank by Table1-style property-direction success.",
+    )
+    parser.add_argument("--table-success-weight", type=float, default=100.0)
+    parser.add_argument("--table-source-weight", type=float, default=5.0)
+    parser.add_argument("--table-latent-weight", type=float, default=1.0)
     return parser.parse_args(argv)
 
 
@@ -144,8 +204,10 @@ def materialize_method(
     top_k = max(1, int(args.top_k))
     if method in {
         "source_tanimoto_property_oracle",
+        "source_tanimoto_table_success_oracle",
         "edit_latent_source_first_rerank",
         "edit_latent_source_similarity_rerank",
+        "edit_latent_table_success_rerank",
     }:
         ensure_source_tanimoto_available()
     if method == "target_oracle":
@@ -162,7 +224,12 @@ def materialize_method(
             generated_column="source_smiles",
             method=method,
         )
-    elif method in {"latent_nearest", "edit_latent_source_first_rerank", "edit_latent_source_similarity_rerank"}:
+    elif method in {
+        "latent_nearest",
+        "edit_latent_source_first_rerank",
+        "edit_latent_source_similarity_rerank",
+        "edit_latent_table_success_rerank",
+    }:
         generated_latents, candidate_latents = resolve_latents(args, len(source_rows), len(candidate_rows))
         matches = nearest_latent_matches(
             generated_latents,
@@ -183,6 +250,14 @@ def materialize_method(
                 else 0
             ),
             source_similarity_weight=float(args.source_similarity_weight),
+            table_success_rerank_candidates=(
+                int(args.table_success_rerank_candidates)
+                if method == "edit_latent_table_success_rerank"
+                else 0
+            ),
+            table_success_weight=float(args.table_success_weight),
+            table_source_weight=float(args.table_source_weight),
+            table_latent_weight=float(args.table_latent_weight),
         )
         out_rows = materialize_matches(
             source_rows,
@@ -201,6 +276,25 @@ def materialize_method(
                 float(args.source_first_min_tanimoto) if method == "source_tanimoto_property_oracle" else None
             ),
             source_first_candidates=int(args.source_first_candidates),
+        )
+        out_rows = materialize_matches(
+            source_rows,
+            candidate_rows,
+            matches,
+            method=method,
+            candidate_smiles_column=args.candidate_smiles_column,
+        )
+    elif method == "source_tanimoto_table_success_oracle":
+        matches = table_success_matches(
+            source_rows,
+            candidate_rows,
+            top_k=top_k,
+            exclude_self=bool(args.exclude_self),
+            source_first_min_tanimoto=float(args.source_first_min_tanimoto),
+            source_first_candidates=int(args.source_first_candidates),
+            table_success_weight=float(args.table_success_weight),
+            table_source_weight=float(args.table_source_weight),
+            candidate_smiles_column=args.candidate_smiles_column,
         )
         out_rows = materialize_matches(
             source_rows,
@@ -358,6 +452,10 @@ def nearest_latent_matches(
     source_first_candidates: int,
     source_similarity_rerank_candidates: int,
     source_similarity_weight: float,
+    table_success_rerank_candidates: int,
+    table_success_weight: float,
+    table_source_weight: float,
+    table_latent_weight: float,
 ) -> list[dict[str, object]]:
     matches: list[dict[str, object]] = []
     if metric == "cosine":
@@ -381,7 +479,29 @@ def nearest_latent_matches(
                         source_tanimoto = candidate_source_tanimoto(source_rows[row_index], candidate_rows[int(idx)])
                         source_bonus = 0.0 if math.isnan(source_tanimoto) else float(source_similarity_weight) * source_tanimoto
                         rerank_scores[int(idx)] = float(scores[int(idx)]) + source_bonus
-                    scores = rerank_scores
+                    if np.any(np.isfinite(rerank_scores)):
+                        scores = rerank_scores
+                if table_success_rerank_candidates > 0:
+                    ranked = top_indices_desc(scores, min(table_success_rerank_candidates, scores.shape[0]))
+                    rerank_scores = scores.copy()
+                    rerank_scores[:] = -np.inf
+                    for idx in ranked:
+                        candidate = candidate_rows[int(idx)]
+                        table_score = table_success_candidate_score(
+                            source_rows[row_index],
+                            candidate,
+                            candidate_smiles=str(candidate.get("target_smiles", "") or candidate.get("generated_smiles", "")),
+                        )
+                        if not table_score["valid"]:
+                            continue
+                        latent_bonus = float(table_latent_weight) * float(scores[int(idx)])
+                        rerank_scores[int(idx)] = (
+                            float(table_success_weight) * float(table_score["success_fraction"])
+                            + float(table_source_weight) * float(table_score["source_tanimoto"])
+                            + latent_bonus
+                        )
+                    if np.any(np.isfinite(rerank_scores)):
+                        scores = rerank_scores
                 top_indices = top_indices_desc(scores, top_k)
                 matches.append(
                     {
@@ -417,7 +537,28 @@ def nearest_latent_matches(
                     source_tanimoto = candidate_source_tanimoto(source_rows[row_index], candidate_rows[int(idx)])
                     source_bonus = 0.0 if math.isnan(source_tanimoto) else float(source_similarity_weight) * source_tanimoto
                     rerank_distances[int(idx)] = float(row_distances[int(idx)]) - source_bonus
-                row_distances = rerank_distances
+                if np.any(np.isfinite(rerank_distances)):
+                    row_distances = rerank_distances
+            if table_success_rerank_candidates > 0:
+                ranked = top_indices_asc(row_distances, min(table_success_rerank_candidates, row_distances.shape[0]))
+                rerank_distances = row_distances.copy()
+                rerank_distances[:] = np.inf
+                for idx in ranked:
+                    candidate = candidate_rows[int(idx)]
+                    table_score = table_success_candidate_score(
+                        source_rows[row_index],
+                        candidate,
+                        candidate_smiles=str(candidate.get("target_smiles", "") or candidate.get("generated_smiles", "")),
+                    )
+                    if not table_score["valid"]:
+                        continue
+                    rerank_distances[int(idx)] = (
+                        float(table_latent_weight) * float(row_distances[int(idx)])
+                        - float(table_success_weight) * float(table_score["success_fraction"])
+                        - float(table_source_weight) * float(table_score["source_tanimoto"])
+                    )
+                if np.any(np.isfinite(rerank_distances)):
+                    row_distances = rerank_distances
             top_indices = top_indices_asc(row_distances, top_k)
             best_distance = float(math.sqrt(float(row_distances[top_indices[0]])))
             top_distances = [float(math.sqrt(float(row_distances[idx]))) for idx in top_indices]
@@ -481,6 +622,202 @@ def nearest_property_matches(
             }
         )
     return matches
+
+
+def table_success_matches(
+    source_rows: list[dict[str, str]],
+    candidate_rows: list[dict[str, str]],
+    *,
+    top_k: int,
+    exclude_self: bool,
+    source_first_min_tanimoto: float,
+    source_first_candidates: int,
+    table_success_weight: float,
+    table_source_weight: float,
+    candidate_smiles_column: str,
+) -> list[dict[str, object]]:
+    matches: list[dict[str, object]] = []
+    for row in source_rows:
+        scores = np.full(len(candidate_rows), -np.inf, dtype=np.float32)
+        source_tanimotos = np.full(len(candidate_rows), np.nan, dtype=np.float32)
+        for idx, candidate in enumerate(candidate_rows):
+            candidate_smiles = str(candidate.get(candidate_smiles_column, "") or "").strip()
+            table_score = table_success_candidate_score(row, candidate, candidate_smiles=candidate_smiles)
+            if not table_score["valid"]:
+                continue
+            source_tanimotos[idx] = float(table_score["source_tanimoto"])
+            if source_first_min_tanimoto > 0 and float(table_score["source_tanimoto"]) < source_first_min_tanimoto:
+                continue
+            scores[idx] = (
+                float(table_success_weight) * float(table_score["success_fraction"])
+                + float(table_source_weight) * float(table_score["source_tanimoto"])
+            )
+        if exclude_self:
+            mask_self(scores, row, candidate_rows, fill=-np.inf)
+        if source_first_candidates > 0:
+            keep_only_top(scores, source_first_candidates, descending=True, fill=-np.inf)
+        if not np.any(np.isfinite(scores)):
+            for idx, value in enumerate(source_tanimotos):
+                if math.isfinite(float(value)):
+                    scores[idx] = float(value)
+        top_indices = top_indices_desc(scores, top_k)
+        best = int(top_indices[0])
+        best_score = float(scores[best])
+        matches.append(
+            {
+                "best_index": best,
+                "score": best_score,
+                "distance": float(1.0 - source_tanimotos[best]) if math.isfinite(float(source_tanimotos[best])) else math.nan,
+                "top_indices": [int(idx) for idx in top_indices],
+                "top_scores": [float(scores[idx]) for idx in top_indices],
+                "top_distances": [
+                    float(1.0 - source_tanimotos[idx]) if math.isfinite(float(source_tanimotos[idx])) else math.nan
+                    for idx in top_indices
+                ],
+            }
+        )
+    return matches
+
+
+def table_success_candidate_score(
+    row: Mapping[str, str],
+    candidate: Mapping[str, str],
+    *,
+    candidate_smiles: str,
+) -> dict[str, object]:
+    source_smiles = str(row.get("source_smiles", "") or "").strip()
+    candidate_smiles = str(candidate_smiles or "").strip()
+    if not source_smiles or not candidate_smiles:
+        return {"valid": False, "success_fraction": 0.0, "source_tanimoto": 0.0}
+    try:
+        source_tanimoto = candidate_source_tanimoto(row, {"target_smiles": candidate_smiles})
+    except RuntimeError:
+        source_tanimoto = math.nan
+    if math.isnan(source_tanimoto):
+        return {"valid": False, "success_fraction": 0.0, "source_tanimoto": 0.0}
+    task_specs = task_specs_from_row(row)
+    if not task_specs:
+        return {"valid": True, "success_fraction": 0.0, "source_tanimoto": float(source_tanimoto)}
+
+    successes = []
+    for spec in task_specs:
+        prop = canonical_property(spec.get("property", ""))
+        direction = canonical_direction(spec.get("direction", ""))
+        if not prop or direction not in {"increase", "decrease"}:
+            successes.append(False)
+            continue
+        source_value = property_value(source_smiles, prop)
+        candidate_value = property_value(candidate_smiles, prop)
+        if source_value is None or candidate_value is None:
+            successes.append(False)
+            continue
+        if direction == "increase":
+            successes.append(float(candidate_value) > float(source_value))
+        else:
+            successes.append(float(candidate_value) < float(source_value))
+    success_fraction = fraction(successes)
+    return {
+        "valid": True,
+        "success_fraction": float(success_fraction),
+        "source_tanimoto": float(source_tanimoto),
+    }
+
+
+def task_specs_from_row(row: Mapping[str, str]) -> list[dict[str, str]]:
+    for key in ("moledit_tasks", "instruction_tasks"):
+        raw = row.get(key, "")
+        if not raw:
+            continue
+        try:
+            parsed = json.loads(str(raw))
+        except json.JSONDecodeError:
+            parsed = []
+        if isinstance(parsed, list):
+            specs = []
+            for item in parsed:
+                if not isinstance(item, Mapping):
+                    continue
+                prop = canonical_property(item.get("property", ""))
+                direction = canonical_direction(item.get("direction", ""))
+                if prop:
+                    specs.append({"property": prop, "direction": direction})
+            if specs:
+                return specs
+    specs = []
+    for prop in selected_props(row.get("condition_properties", "")):
+        canonical = canonical_property(prop)
+        direction = canonical_direction(row.get(f"{canonical}_direction", "") or row.get(f"{prop}_direction", ""))
+        if canonical:
+            specs.append({"property": canonical, "direction": direction})
+    return specs
+
+
+def property_value(smiles: str, prop: str) -> float | None:
+    prop = canonical_property(prop)
+    if not smiles:
+        return None
+    props = cached_molecular_properties(smiles)
+    if prop in RDKIT_PROPERTY_KEYS:
+        key = RDKIT_PROPERTY_KEYS[prop]
+        value = props.get(key)
+        return None if value is None else float(value)
+    oracle = tdc_oracle(prop)
+    if oracle is None:
+        return None
+    try:
+        return float(oracle(smiles))
+    except Exception:
+        return None
+
+
+def cached_molecular_properties(smiles: str) -> dict[str, float]:
+    key = str(smiles or "").strip()
+    if key not in _PROPERTY_CACHE:
+        try:
+            from sketchmol_understanding_condition.chem import molecular_properties
+
+            props = molecular_properties(key)
+        except RuntimeError:
+            props = None
+        _PROPERTY_CACHE[key] = dict(props or {})
+    return _PROPERTY_CACHE[key]
+
+
+def tdc_oracle(prop: str):
+    prop = canonical_property(prop)
+    if prop in _ORACLE_CACHE:
+        return _ORACLE_CACHE[prop]
+    ensure_rdkit_six_compat()
+    try:
+        from tdc import Oracle
+
+        _ORACLE_CACHE[prop] = Oracle(name=prop)
+    except Exception:
+        _ORACLE_CACHE[prop] = None
+    return _ORACLE_CACHE[prop]
+
+
+def ensure_rdkit_six_compat() -> None:
+    if "rdkit.six" in sys.modules:
+        return
+    try:
+        from rdkit.six import iteritems  # noqa: F401
+    except ModuleNotFoundError:
+        six_mod = types.ModuleType("rdkit.six")
+        six_mod.iteritems = dict.items
+        sys.modules["rdkit.six"] = six_mod
+
+
+def canonical_property(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return PROPERTY_ALIASES.get(text.lower(), text)
+
+
+def canonical_direction(value: object) -> str:
+    text = str(value or "").strip().lower()
+    return DIRECTION_ALIASES.get(text, text or "unknown")
 
 
 def property_vector(row: Mapping[str, str], *, active_from_row: bool) -> tuple[np.ndarray, np.ndarray]:
