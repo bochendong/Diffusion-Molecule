@@ -2,23 +2,24 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | completed（训练 + latent eval）；materialized benchmark **待跑** |
-| **最后更新** | 2026-06-09 |
+| **状态** | completed（训练 + latent eval + materialized benchmark + table metrics） |
+| **最后更新** | 2026-06-10 |
 | **项目** | `SketchMol-Unified-3MDiffusion` |
 | **训练 Job** | `15866599`（`smu3m-srcanch-v2`） |
+| **Benchmark Jobs** | `15884514`–`15884521`（5 shards）→ `15884576`（merge）→ `15884578`（table） |
 | **基线** | v1: [moledit-instruct-v1.md](moledit-instruct-v1.md) |
 
 ## Slurm 运行记录
 
-| Job | 名称 | 墙钟时间 | Exit |
-| --- | --- | --- | --- |
-| `15866599` | `smu3m-srcanch-v2` | **3m17s** | 0 |
+| Job | 名称 | 结果 |
+| --- | --- | --- |
+| `15866599` | `smu3m-srcanch-v2` | 完成（3m17s） |
+| `15872825` | `smu3m-diff-bench` | **超时**（4h，无产出） |
+| `15884514`–`15884521` | `smu3m-diff-bench`（5 shards） | 完成（~8h 并行） |
+| `15884576` | `smu3m-bench-merge` | 完成 |
+| `15884578` | `smu3m-moledit-table` | 完成（5s） |
 
-economy profile（batch=512，5 epochs，H100 20GB MIG）。
-
-## 目的
-
-在 v1 基础上改用 **source-residual diffusion** + source-anchor clamp，解决 v1 materialized benchmark 中 mean source Tanimoto 仅 0.158 的问题。
+首次单 job 4h 不够；改用 5 shard × 6h 后成功。
 
 ## 配置要点
 
@@ -26,47 +27,56 @@ economy profile（batch=512，5 epochs，H100 20GB MIG）。
 | --- | --- |
 | 输出 | `outputs/unified_generation_moledit_sourceanchored_v2/` |
 | `SMU3M_DIFFUSION_TARGET` | `source_residual` |
-| `SMU3M_SOURCE_FINGERPRINT_PRIOR_BLEND` | 0.90 |
-| `SMU3M_FINGERPRINT_GUARD_LOSS_WEIGHT` | 0.75 |
-| `SMU3M_SOURCE_RADIUS_LOSS_WEIGHT` | 0.25 |
-| `SMU3M_SOURCE_RESIDUAL_RADIUS_MULTIPLIER` | 1.25 |
+| source fingerprint prior blend | 0.90 |
+| fingerprint guard / radius loss | 0.75 / 0.25 |
 
-## 结果摘要（eval_latent，n=1000）
+## Latent eval（n=1000）
 
 | 指标 | v1 | source-anchored v2 |
 | --- | ---: | ---: |
 | latent MAE | 0.262 | **0.139** |
 | target fingerprint cosine | 0.751 | **0.827** |
-| **source fingerprint cosine** | ~0.84 (pair) | **0.953** |
+| source fingerprint cosine | — | **0.953** |
 | property MAE beats source | 87.2% | **99.5%** |
 | fingerprint beats source | 2.2% | **23.9%** |
-| source_residual_clamped_rate | — | 6.2% |
 
-Source 保真显著改善：source→generated fingerprint cosine 0.953 vs v1 materialized mean Tani 0.158。
+## Materialized Benchmark（5-shard merge，n=1000）
 
-## 尚未完成
+`edit_latent_source_similarity_rerank`：
 
-Materialized benchmark + MolEdit table metrics 未自动链式提交。训练完成后运行：
+| 指标 | v1 | source-anchored v2 |
+| --- | ---: | ---: |
+| mean source Tani | 0.158 | **0.167** |
+| strict@0.4 | 0.001 | 0.001 |
+| 4p strict | 0.279 | 0.205 |
+| 5p strict | 0.286 | **0.269** |
+| 6p strict | 0.244 | **0.341** |
+| 7p strict | 0.158 | **0.181** |
 
-```bash
-export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
-SMU3M_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
-bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_sourceanchored_v2_benchmark.sh
-```
+**Latent→materialized gap**：eval_latent 上 source fingerprint 0.953，但 retrieval materialized mean Tani 仍仅 ~0.17，与 v1 同量级。训练信号未有效传导到 candidate rerank 路径。
+
+## MolEdit Table Metrics（job `15884578`）
+
+| task | Acc(0.65) | Acc(0.15) | n |
+| --- | ---: | ---: | ---: |
+| Rotbonds↓ | 0 | 0.667 | 3 |
+| MW↑ | 0 | 1.000 | 1 |
+| SA↓ | 0 | 0.267 | 15 |
+
+overlap mean Acc(0.65)=0（样本极少，且非 Table1-balanced eval）。
 
 ## 产出路径
 
 ```text
 SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_sourceanchored_v2/
-  latent_diffusion/latent_diffusion_generation.pt
   eval_latent/metrics.json
-  eval_latent/predictions.csv
+  benchmark_materialized_primary_fast/
+  moledit_table_metrics_sourceanchored_v2/
 ```
 
-日志：`SketchMol-Unified-3MDiffusion/logs/smu3m-srcanch-v2-15866599.log`
+## 结论
 
-## 结论与下一步
-
-1. **Latent eval 大幅改善**：source fingerprint cosine 0.953，property beats source 99.5%。
-2. **待 materialized benchmark** 验证 strict@Tanimoto 是否从 v1 的 0.001 提升。
-3. **对照 SUCC v2 fix**：SUCC table overlap mean Acc(0.65)=0.617 已接近 MolEditRL；Unified 需 benchmark 后才能对比。
+1. **Latent 层改善明显**，但 **materialized source 保真几乎不变**（Tani 0.17 vs v1 0.16）。
+2. **4p–7p strict** 有波动提升（6p 0.341 vs v1 0.244），但整体仍远低于 SUCC v2 fix（2p strict 0.727）。
+3. **当前最佳线仍是 SUCC v2 fix**（见 [moledit-instruct-v2-fix.md](../understanding-condition/moledit-instruct-v2-fix.md)）。
+4. 后续若继续 Unified 线，需修 latent→retrieval 解码/rerank 链路，而非仅加强 diffusion loss。
