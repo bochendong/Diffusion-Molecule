@@ -6,14 +6,23 @@
 
 | 文件夹 | 报告文件 | 说明 |
 | --- | --- | --- |
-| `.` | [moleditrl-baseline-comparison.md](moleditrl-baseline-comparison.md) | MolEditRL vs SUCC v1/v2 / Unified 对照 |
+| `.` | [moleditrl-baseline-comparison.md](moleditrl-baseline-comparison.md) | MolEditRL vs SUCC v1/v2/v3 / Unified 对照 |
 | `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | Unified 3M MolEdit v1（`15810199`/`15837897`） |
 | `unified-3m/` | [moledit-sourceanchored-v2.md](unified-3m/moledit-sourceanchored-v2.md) | **完成** source-anchored v2（`15866599`/`15884514-21`/`15884578`） |
 | `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | SUCC MolEdit v1（`15838733`/`15838734`） |
-| `understanding-condition/` | [moledit-instruct-v2-fix.md](understanding-condition/moledit-instruct-v2-fix.md) | **完成** SUCC v2 fix（`15866598`/`15866600`/`15866601`） |
+| `understanding-condition/` | [moledit-instruct-v2-fix.md](understanding-condition/moledit-instruct-v2-fix.md) | **完成** SUCC v2 fix（`15866598`/`15866600`/`15897034`） |
+| `understanding-condition/` | [moledit-instruct-v3-attack.md](understanding-condition/moledit-instruct-v3-attack.md) | **完成** SUCC v3 attack（`15901616`/`15902241`，10/10 Table1） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
 
-## 近期 Slurm Job 一览（2026-06-09 晚）
+## 近期 Slurm Job 一览（2026-06-10）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `15901616`–`15901618` | v3 attack 训练/bench/table | 完成 | [v3 attack](understanding-condition/moledit-instruct-v3-attack.md) |
+| `15902238`–`15902241` | v3 Table1 扩展 eval/bench/table | 完成 | [v3 attack](understanding-condition/moledit-instruct-v3-attack.md) |
+| `15898378`–`15898540` | v2 Table1 扩展 | 完成 | [v2 fix](understanding-condition/moledit-instruct-v2-fix.md) |
+
+## 历史 Slurm Job（2026-06-09 晚）
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
