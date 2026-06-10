@@ -243,6 +243,51 @@ If `prior_*` is already poor, the edit connector is the bottleneck. If prior is
 reasonable but generated is worse or barely moves from prior, Stage 3 diffusion
 still needs work.
 
+For a bolder MolEdit-Instruct run that treats Unified 3M as a local source edit
+operator instead of a target generator, use:
+
+```bash
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_sourceanchored_v2.sh
+```
+
+This wrapper writes to
+`SketchMol-Unified-3MDiffusion/outputs/unified_generation_moledit_sourceanchored_v2`
+and changes Stage 3 to:
+
+```text
+diffusion target = normalized target latent - normalized source latent
+sampling = source latent + sampled residual
+eval/training guard = cap source residual radius against the connector prior radius
+```
+
+The default source-anchored settings are intentionally stronger than the v1
+MolEdit run:
+
+```text
+SMU3M_DIFFUSION_TARGET=source_residual
+SMU3M_SOURCE_AWARE_SHARED_GRADIENT=1
+SMU3M_HARD_NEGATIVE_LOSS_WEIGHT=0.20
+SMU3M_SOURCE_SIMILARITY_LOSS_WEIGHT=0.30
+SMU3M_SOURCE_FINGERPRINT_PRIOR_BLEND=0.90
+SMU3M_FINGERPRINT_GUARD_LOSS_WEIGHT=0.75
+SMU3M_SOURCE_RADIUS_LOSS_WEIGHT=0.25
+SMU3M_SOURCE_RESIDUAL_RADIUS_MULTIPLIER=1.25
+SMU3M_SOURCE_RESIDUAL_RADIUS_MARGIN=0.05
+SMU3M_SOURCE_RESIDUAL_MIN_RADIUS=0.05
+```
+
+The first pass should be judged by source preservation before property MAE:
+`eval_latent/metrics.json` should show `source_residual_clamped_rate`,
+`source_residual_scale_mean`, `source_fingerprint_cosine`, and the later
+materialized benchmark should move `mean_source_tanimoto` / `strict@0.4` away
+from the near-zero regime.
+
+After training finishes, submit the matching materialized benchmark with:
+
+```bash
+bash SketchMol-Unified-3MDiffusion/scripts/submit_unified_moledit_sourceanchored_v2_benchmark.sh
+```
+
 If you intentionally request a 40GB H100 MIG, use the throughput profile so the
 job increases batch/model size instead of wasting the larger allocation:
 

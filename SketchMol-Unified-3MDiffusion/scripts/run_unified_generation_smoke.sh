@@ -44,6 +44,9 @@ SOURCE_SIMILARITY_WEIGHT_FLOOR="${SMU3M_SOURCE_SIMILARITY_WEIGHT_FLOOR:-0.25}"
 SOURCE_FINGERPRINT_PRIOR_BLEND="${SMU3M_SOURCE_FINGERPRINT_PRIOR_BLEND:-0.85}"
 FINGERPRINT_GUARD_LOSS_WEIGHT="${SMU3M_FINGERPRINT_GUARD_LOSS_WEIGHT:-0.50}"
 FINGERPRINT_GUARD_MARGIN="${SMU3M_FINGERPRINT_GUARD_MARGIN:-0.02}"
+SOURCE_RESIDUAL_RADIUS_MULTIPLIER="${SMU3M_SOURCE_RESIDUAL_RADIUS_MULTIPLIER:-0.0}"
+SOURCE_RESIDUAL_RADIUS_MARGIN="${SMU3M_SOURCE_RESIDUAL_RADIUS_MARGIN:-0.0}"
+SOURCE_RESIDUAL_MIN_RADIUS="${SMU3M_SOURCE_RESIDUAL_MIN_RADIUS:-0.0}"
 DIFFUSION_EPOCHS="${SMU3M_DIFFUSION_EPOCHS:-$EPOCHS}"
 DIFFUSION_LR="${SMU3M_DIFFUSION_LR:-1e-3}"
 TRAIN_DIFFUSION_CONNECTOR="${SMU3M_TRAIN_DIFFUSION_CONNECTOR:-1}"
@@ -96,6 +99,9 @@ echo "  source_similarity_weight_floor=$SOURCE_SIMILARITY_WEIGHT_FLOOR"
 echo "  source_fingerprint_prior_blend=$SOURCE_FINGERPRINT_PRIOR_BLEND"
 echo "  fingerprint_guard_loss_weight=$FINGERPRINT_GUARD_LOSS_WEIGHT"
 echo "  fingerprint_guard_margin=$FINGERPRINT_GUARD_MARGIN"
+echo "  source_residual_radius_multiplier=$SOURCE_RESIDUAL_RADIUS_MULTIPLIER"
+echo "  source_residual_radius_margin=$SOURCE_RESIDUAL_RADIUS_MARGIN"
+echo "  source_residual_min_radius=$SOURCE_RESIDUAL_MIN_RADIUS"
 echo "  train_diffusion_connector=$TRAIN_DIFFUSION_CONNECTOR"
 echo "  eval_limit=$EVAL_LIMIT"
 echo "  max_eval_per_property_count=${MAX_EVAL_PER_PROPERTY_COUNT:-none}"
@@ -158,6 +164,30 @@ elif [ ! -f "$EDIT_MANIFEST" ]; then
 fi
 
 mkdir -p "$OUTPUT_DIR"
+
+json_config_matches() {
+  local metrics_json="$1"
+  local key="$2"
+  local expected="$3"
+  "$PYTHON_BIN" - "$metrics_json" "$key" "$expected" <<'PY'
+import json
+import sys
+
+metrics_json, key, expected = sys.argv[1:4]
+with open(metrics_json, encoding="utf-8") as handle:
+    payload = json.load(handle)
+config = payload.get("config", payload)
+actual = config.get(key)
+if actual is None:
+    raise SystemExit(1)
+try:
+    if abs(float(actual) - float(expected)) <= 1e-9:
+        raise SystemExit(0)
+except (TypeError, ValueError):
+    pass
+raise SystemExit(0 if str(actual) == expected else 1)
+PY
+}
 
 PREFLIGHT_ARGS=(
   --three-m-root "$THREE_M_ROOT"
@@ -288,6 +318,9 @@ DIFFUSION_ARGS=(
   --source-fingerprint-prior-blend "$SOURCE_FINGERPRINT_PRIOR_BLEND" \
   --fingerprint-guard-loss-weight "$FINGERPRINT_GUARD_LOSS_WEIGHT" \
   --fingerprint-guard-margin "$FINGERPRINT_GUARD_MARGIN" \
+  --source-residual-radius-multiplier "$SOURCE_RESIDUAL_RADIUS_MULTIPLIER" \
+  --source-residual-radius-margin "$SOURCE_RESIDUAL_RADIUS_MARGIN" \
+  --source-residual-min-radius "$SOURCE_RESIDUAL_MIN_RADIUS" \
   --lr "$DIFFUSION_LR" \
   --hidden-dim "$DIFFUSION_HIDDEN_DIM" \
   --depth "$DIFFUSION_DEPTH" \
@@ -303,11 +336,14 @@ if [ "$PIN_MEMORY" = "1" ]; then
 fi
 if [ "$RESUME" = "1" ] && [ -f "$OUTPUT_DIR/latent_diffusion/checkpoints/latest.pt" ]; then
   if [ -f "$OUTPUT_DIR/latent_diffusion/metrics.json" ] \
-    && grep -q "\"diffusion_objective\": \"$DIFFUSION_OBJECTIVE\"" "$OUTPUT_DIR/latent_diffusion/metrics.json" \
-    && grep -q "\"diffusion_target\": \"$DIFFUSION_TARGET\"" "$OUTPUT_DIR/latent_diffusion/metrics.json"; then
+    && json_config_matches "$OUTPUT_DIR/latent_diffusion/metrics.json" "diffusion_objective" "$DIFFUSION_OBJECTIVE" \
+    && json_config_matches "$OUTPUT_DIR/latent_diffusion/metrics.json" "diffusion_target" "$DIFFUSION_TARGET" \
+    && json_config_matches "$OUTPUT_DIR/latent_diffusion/metrics.json" "source_residual_radius_multiplier" "$SOURCE_RESIDUAL_RADIUS_MULTIPLIER" \
+    && json_config_matches "$OUTPUT_DIR/latent_diffusion/metrics.json" "source_residual_radius_margin" "$SOURCE_RESIDUAL_RADIUS_MARGIN" \
+    && json_config_matches "$OUTPUT_DIR/latent_diffusion/metrics.json" "source_residual_min_radius" "$SOURCE_RESIDUAL_MIN_RADIUS"; then
     DIFFUSION_ARGS+=(--resume-checkpoint "$OUTPUT_DIR/latent_diffusion/checkpoints/latest.pt")
   else
-    echo "Existing latent diffusion checkpoint predates $DIFFUSION_OBJECTIVE/$DIFFUSION_TARGET settings; retraining latent diffusion."
+    echo "Existing latent diffusion checkpoint predates $DIFFUSION_OBJECTIVE/$DIFFUSION_TARGET source-anchor settings; retraining latent diffusion."
   fi
 fi
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_latent_diffusion_generation.py" "${DIFFUSION_ARGS[@]}"
@@ -321,6 +357,9 @@ EVAL_ARGS=(
   --batch-size "$EVAL_BATCH_SIZE" \
   --sample-steps "$EVAL_SAMPLE_STEPS" \
   --sample-eta "$EVAL_SAMPLE_ETA" \
+  --source-residual-radius-multiplier "$SOURCE_RESIDUAL_RADIUS_MULTIPLIER" \
+  --source-residual-radius-margin "$SOURCE_RESIDUAL_RADIUS_MARGIN" \
+  --source-residual-min-radius "$SOURCE_RESIDUAL_MIN_RADIUS" \
   --device "$DEVICE" \
   --seed "$EVAL_SEED"
 )

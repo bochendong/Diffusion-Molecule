@@ -45,6 +45,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=64)
     parser.add_argument("--sample-steps", type=int, default=None)
     parser.add_argument("--sample-eta", type=float, default=0.0)
+    parser.add_argument("--source-residual-radius-multiplier", type=float, default=None)
+    parser.add_argument("--source-residual-radius-margin", type=float, default=None)
+    parser.add_argument("--source-residual-min-radius", type=float, default=None)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--seed", type=int, default=17)
     return parser.parse_args()
@@ -102,12 +105,32 @@ def main() -> None:
     diffusion_target = str(diffusion_config.get("diffusion_target", "target"))
     source_fingerprint_prior_blend = float(diffusion_config.get("source_fingerprint_prior_blend", 0.0))
     source_similarity_weight_floor = float(diffusion_config.get("source_similarity_weight_floor", 0.25))
+    source_residual_radius_multiplier = _override_or_config(
+        args.source_residual_radius_multiplier,
+        diffusion_config,
+        "source_residual_radius_multiplier",
+        0.0,
+    )
+    source_residual_radius_margin = _override_or_config(
+        args.source_residual_radius_margin,
+        diffusion_config,
+        "source_residual_radius_margin",
+        0.0,
+    )
+    source_residual_min_radius = _override_or_config(
+        args.source_residual_min_radius,
+        diffusion_config,
+        "source_residual_min_radius",
+        0.0,
+    )
 
     rows = []
     generated_raw = []
     target_raw = []
     prior_raw = []
     source_latents = []
+    clamp_rates = []
+    clamp_scale_means = []
     with torch.no_grad():
         for start in range(0, len(samples), args.batch_size):
             batch = samples[start : start + args.batch_size]
@@ -149,6 +172,16 @@ def main() -> None:
             )
             if diffusion_target == "residual":
                 sampled_norm = sampled_norm + prior_norm
+            elif diffusion_target == "source_residual":
+                sampled_norm = sampled_norm + source_norm
+            sampled_norm, clamp_logs = clamp_source_residual_latent(
+                sampled_norm,
+                source_norm,
+                reference_latent=prior_norm,
+                radius_multiplier=source_residual_radius_multiplier,
+                radius_margin=source_residual_radius_margin,
+                min_radius=source_residual_min_radius,
+            )
             sampled = sampled_norm * latent_std + latent_mean
             prior = prior_norm * latent_std + latent_mean
             generated_raw.append(sampled.cpu().numpy().astype(np.float32))
@@ -159,6 +192,8 @@ def main() -> None:
                 )
             )
             source_latents.append(source_raw)
+            clamp_rates.append(float(clamp_logs["source_residual_clamped_rate"].item()))
+            clamp_scale_means.append(float(clamp_logs["source_residual_scale_mean"].item()))
 
     gen = np.concatenate(generated_raw, axis=0)
     target = np.concatenate(target_raw, axis=0)
@@ -191,6 +226,11 @@ def main() -> None:
             "diffusion_target": diffusion_target,
             "source_fingerprint_prior_blend": source_fingerprint_prior_blend,
             "source_similarity_weight_floor": source_similarity_weight_floor,
+            "source_residual_radius_multiplier": source_residual_radius_multiplier,
+            "source_residual_radius_margin": source_residual_radius_margin,
+            "source_residual_min_radius": source_residual_min_radius,
+            "source_residual_clamped_rate": float(np.mean(clamp_rates)) if clamp_rates else 0.0,
+            "source_residual_scale_mean": float(np.mean(clamp_scale_means)) if clamp_scale_means else 1.0,
             "fingerprint_dim": fingerprint_dim,
             "connector_source": connector_source,
             "max_eval_per_property_count": args.max_eval_per_property_count,
@@ -288,6 +328,41 @@ def condition_prior_latent(
     raw[:, fingerprint_dim + 32 : fingerprint_dim + 32 + num_props] = deltas
     raw[:, fingerprint_dim + 64 : fingerprint_dim + 64 + num_props] = active
     return ((raw - latent_mean) / latent_std.clamp_min(1e-6)).to(dtype=torch.float32)
+
+
+def clamp_source_residual_latent(
+    pred_latent: torch.Tensor,
+    source_latent: torch.Tensor,
+    *,
+    reference_latent: torch.Tensor,
+    radius_multiplier: float,
+    radius_margin: float,
+    min_radius: float,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    multiplier = float(radius_multiplier)
+    if multiplier <= 0.0:
+        zero = torch.zeros((), device=pred_latent.device, dtype=pred_latent.dtype)
+        one = torch.ones((), device=pred_latent.device, dtype=pred_latent.dtype)
+        return pred_latent, {"source_residual_clamped_rate": zero, "source_residual_scale_mean": one}
+
+    residual = pred_latent - source_latent
+    pred_radius = torch.mean(torch.abs(residual), dim=1, keepdim=True)
+    reference_radius = torch.mean(torch.abs(reference_latent - source_latent), dim=1, keepdim=True)
+    budget = reference_radius * multiplier + float(radius_margin)
+    budget = budget.clamp_min(float(min_radius))
+    scale = torch.minimum(torch.ones_like(pred_radius), budget / pred_radius.clamp_min(1e-8))
+    clamped = source_latent + residual * scale
+    logs = {
+        "source_residual_clamped_rate": torch.mean((scale < 0.999).to(dtype=pred_latent.dtype)),
+        "source_residual_scale_mean": torch.mean(scale),
+    }
+    return clamped, logs
+
+
+def _override_or_config(value: float | None, config: dict[str, object], key: str, default: float) -> float:
+    if value is not None:
+        return float(value)
+    return float(config.get(key, default))
 
 
 def _config_tensor(config: dict[str, object], key: str, *, device: torch.device, dtype: torch.dtype) -> torch.Tensor:

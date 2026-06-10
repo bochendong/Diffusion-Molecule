@@ -83,7 +83,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fingerprint-dim", type=int, default=512)
     parser.add_argument("--timesteps", type=int, default=100)
     parser.add_argument("--diffusion-objective", choices=["pred_noise", "pred_x0"], default="pred_x0")
-    parser.add_argument("--diffusion-target", choices=["target", "residual"], default="residual")
+    parser.add_argument("--diffusion-target", choices=["target", "residual", "source_residual"], default="residual")
     parser.add_argument("--prior-loss-weight", type=float, default=0.0)
     parser.add_argument("--source-regret-loss-weight", type=float, default=0.0)
     parser.add_argument("--source-regret-margin", type=float, default=0.0)
@@ -93,6 +93,27 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-fingerprint-prior-blend", type=float, default=0.0)
     parser.add_argument("--fingerprint-guard-loss-weight", type=float, default=0.0)
     parser.add_argument("--fingerprint-guard-margin", type=float, default=0.02)
+    parser.add_argument(
+        "--source-residual-radius-multiplier",
+        type=float,
+        default=0.0,
+        help=(
+            "When positive, cap predicted source residuals to this multiple of the connector prior's "
+            "source radius before source-aware guard losses are computed."
+        ),
+    )
+    parser.add_argument(
+        "--source-residual-radius-margin",
+        type=float,
+        default=0.0,
+        help="Extra normalized-radius allowance added to the source residual cap.",
+    )
+    parser.add_argument(
+        "--source-residual-min-radius",
+        type=float,
+        default=0.0,
+        help="Minimum normalized source residual radius allowed by the cap.",
+    )
     parser.add_argument("--hidden-dim", type=int, default=512)
     parser.add_argument("--depth", type=int, default=4)
     parser.add_argument("--limit", type=int, default=None)
@@ -241,6 +262,8 @@ def main() -> None:
         source_regret_losses = []
         source_radius_losses = []
         source_fingerprint_losses = []
+        source_residual_clamped_rates = []
+        source_residual_scale_means = []
         source_worse_rates = []
         source_fingerprint_worse_rates = []
         source_fingerprint_gains = []
@@ -267,14 +290,33 @@ def main() -> None:
             )
             if not args.train_connector:
                 prior_latent = prior_latent.detach()
-            diffusion_target = target_latent - prior_latent if args.diffusion_target == "residual" else target_latent
+            source_latent = batch["source_latent"].float()
+            diffusion_target = diffusion_target_latent(
+                args.diffusion_target,
+                target_latent=target_latent,
+                prior_latent=prior_latent,
+                source_latent=source_latent,
+            )
             diffusion_loss, pred_diffusion_target = diffusion.loss_and_pred_x0(diffusion_target, tokens, mask)
             prior_loss = F.mse_loss(prior_latent, target_latent)
-            pred_final_latent = pred_diffusion_target + prior_latent if args.diffusion_target == "residual" else pred_diffusion_target
-            source_losses = source_guard_losses(
+            pred_final_latent = final_latent_from_diffusion_prediction(
+                args.diffusion_target,
+                pred_diffusion_target=pred_diffusion_target,
+                prior_latent=prior_latent,
+                source_latent=source_latent,
+            )
+            pred_guard_latent, clamp_logs = clamp_source_residual_latent(
                 pred_final_latent,
+                source_latent,
+                reference_latent=prior_latent,
+                radius_multiplier=args.source_residual_radius_multiplier,
+                radius_margin=args.source_residual_radius_margin,
+                min_radius=args.source_residual_min_radius,
+            )
+            source_losses = source_guard_losses(
+                pred_guard_latent,
                 target_latent,
-                batch["source_latent"].float(),
+                source_latent,
                 batch["source_tanimoto"].float(),
                 fingerprint_dim=args.fingerprint_dim,
                 source_regret_margin=args.source_regret_margin,
@@ -300,6 +342,8 @@ def main() -> None:
             source_regret_losses.append(float(source_losses["source_property_regret"].item()))
             source_radius_losses.append(float(source_losses["source_radius_regret"].item()))
             source_fingerprint_losses.append(float(source_losses["source_fingerprint_regret"].item()))
+            source_residual_clamped_rates.append(float(clamp_logs["source_residual_clamped_rate"].item()))
+            source_residual_scale_means.append(float(clamp_logs["source_residual_scale_mean"].item()))
             source_worse_rates.append(float(source_losses["source_property_worse_rate"].item()))
             source_fingerprint_worse_rates.append(float(source_losses["source_fingerprint_worse_rate"].item()))
             source_fingerprint_gains.append(float(source_losses["source_fingerprint_cosine_gain"].item()))
@@ -312,6 +356,8 @@ def main() -> None:
             "source_property_regret": float(np.mean(source_regret_losses)),
             "source_radius_regret": float(np.mean(source_radius_losses)),
             "source_fingerprint_regret": float(np.mean(source_fingerprint_losses)),
+            "source_residual_clamped_rate": float(np.mean(source_residual_clamped_rates)),
+            "source_residual_scale_mean": float(np.mean(source_residual_scale_means)),
             "source_property_worse_rate": float(np.mean(source_worse_rates)),
             "source_fingerprint_worse_rate": float(np.mean(source_fingerprint_worse_rates)),
             "source_fingerprint_cosine_gain": float(np.mean(source_fingerprint_gains)),
@@ -366,6 +412,9 @@ def _config(
         "source_fingerprint_prior_blend": args.source_fingerprint_prior_blend,
         "fingerprint_guard_loss_weight": args.fingerprint_guard_loss_weight,
         "fingerprint_guard_margin": args.fingerprint_guard_margin,
+        "source_residual_radius_multiplier": args.source_residual_radius_multiplier,
+        "source_residual_radius_margin": args.source_residual_radius_margin,
+        "source_residual_min_radius": args.source_residual_min_radius,
         "hidden_dim": args.hidden_dim,
         "depth": args.depth,
         "connector_config": connector_config,
@@ -464,12 +513,76 @@ def _resume_config_compatible(resume_config: object, current_config: dict[str, o
         "source_fingerprint_prior_blend",
         "fingerprint_guard_loss_weight",
         "fingerprint_guard_margin",
+        "source_residual_radius_multiplier",
+        "source_residual_radius_margin",
+        "source_residual_min_radius",
         "train_connector",
     ]
     for key in keys:
         if resume_config.get(key) != current_config.get(key):
             return False
     return True
+
+
+def diffusion_target_latent(
+    mode: str,
+    *,
+    target_latent: torch.Tensor,
+    prior_latent: torch.Tensor,
+    source_latent: torch.Tensor,
+) -> torch.Tensor:
+    if mode == "target":
+        return target_latent
+    if mode == "residual":
+        return target_latent - prior_latent
+    if mode == "source_residual":
+        return target_latent - source_latent
+    raise ValueError(f"Unsupported diffusion target: {mode}")
+
+
+def final_latent_from_diffusion_prediction(
+    mode: str,
+    *,
+    pred_diffusion_target: torch.Tensor,
+    prior_latent: torch.Tensor,
+    source_latent: torch.Tensor,
+) -> torch.Tensor:
+    if mode == "target":
+        return pred_diffusion_target
+    if mode == "residual":
+        return pred_diffusion_target + prior_latent
+    if mode == "source_residual":
+        return pred_diffusion_target + source_latent
+    raise ValueError(f"Unsupported diffusion target: {mode}")
+
+
+def clamp_source_residual_latent(
+    pred_latent: torch.Tensor,
+    source_latent: torch.Tensor,
+    *,
+    reference_latent: torch.Tensor,
+    radius_multiplier: float,
+    radius_margin: float,
+    min_radius: float,
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    multiplier = float(radius_multiplier)
+    if multiplier <= 0.0:
+        zero = torch.zeros((), device=pred_latent.device, dtype=pred_latent.dtype)
+        one = torch.ones((), device=pred_latent.device, dtype=pred_latent.dtype)
+        return pred_latent, {"source_residual_clamped_rate": zero, "source_residual_scale_mean": one}
+
+    residual = pred_latent - source_latent
+    pred_radius = torch.mean(torch.abs(residual), dim=1, keepdim=True)
+    reference_radius = torch.mean(torch.abs(reference_latent - source_latent), dim=1, keepdim=True)
+    budget = reference_radius * multiplier + float(radius_margin)
+    budget = budget.clamp_min(float(min_radius))
+    scale = torch.minimum(torch.ones_like(pred_radius), budget / pred_radius.clamp_min(1e-8))
+    clamped = source_latent + residual * scale
+    logs = {
+        "source_residual_clamped_rate": torch.mean((scale < 0.999).to(dtype=pred_latent.dtype)),
+        "source_residual_scale_mean": torch.mean(scale),
+    }
+    return clamped, logs
 
 
 def condition_prior_latent(

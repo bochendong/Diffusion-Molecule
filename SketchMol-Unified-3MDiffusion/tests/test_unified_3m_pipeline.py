@@ -320,6 +320,45 @@ def test_condition_prior_latent_can_source_anchor_fingerprint():
     assert torch.equal(prior[:, :fingerprint_dim], source_latent[:, :fingerprint_dim])
 
 
+def test_source_residual_target_and_radius_clamp():
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "train_latent_diffusion_generation.py"
+    spec = importlib.util.spec_from_file_location("train_latent_diffusion_generation", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    source = torch.zeros(2, 4)
+    target = torch.tensor([[2.0, 0.0, 0.0, 0.0], [0.4, 0.4, 0.0, 0.0]])
+    prior = torch.tensor([[0.5, 0.0, 0.0, 0.0], [0.2, 0.2, 0.0, 0.0]])
+
+    target_residual = module.diffusion_target_latent(
+        "source_residual",
+        target_latent=target,
+        prior_latent=prior,
+        source_latent=source,
+    )
+    assert torch.equal(target_residual, target - source)
+
+    pred_final = module.final_latent_from_diffusion_prediction(
+        "source_residual",
+        pred_diffusion_target=target_residual,
+        prior_latent=prior,
+        source_latent=source,
+    )
+    assert torch.equal(pred_final, target)
+
+    clamped, logs = module.clamp_source_residual_latent(
+        target,
+        source,
+        reference_latent=prior,
+        radius_multiplier=1.0,
+        radius_margin=0.0,
+        min_radius=0.0,
+    )
+    assert logs["source_residual_clamped_rate"].item() == 1.0
+    assert torch.all(torch.mean(torch.abs(clamped - source), dim=1) <= torch.mean(torch.abs(prior - source), dim=1) + 1e-6)
+
+
 def test_source_aware_fingerprint_losses_backprop_to_logits():
     logits = torch.randn(4, 16, requires_grad=True)
     losses = source_aware_fingerprint_losses(
