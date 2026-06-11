@@ -12,9 +12,17 @@
 | `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | SUCC MolEdit v1（`15838733`/`15838734`） |
 | `understanding-condition/` | [moledit-instruct-v2-fix.md](understanding-condition/moledit-instruct-v2-fix.md) | **完成** SUCC v2 fix（`15866598`/`15866600`/`15897034`） |
 | `understanding-condition/` | [moledit-instruct-v3-attack.md](understanding-condition/moledit-instruct-v3-attack.md) | **完成** SUCC v3 attack（`15901616`/`15902241`，10/10 Table1） |
+| `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（`15958481` baseline / `15959362` ours） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
 
-## 近期 Slurm Job 一览（2026-06-10）
+## 近期 Slurm Job 一览（2026-06-11）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `15958481` | `succ-denovo-2p7p`（baseline） | 完成（1h08m） | [denovo 2p7p](understanding-condition/denovo-2p7p-benchmark.md) |
+| `15959362` | `succ-denovo-2p7p-ours` | 完成（13m46s） | [denovo 2p7p](understanding-condition/denovo-2p7p-benchmark.md) |
+
+## 历史 Slurm Job（2026-06-10）
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
