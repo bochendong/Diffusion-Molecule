@@ -184,6 +184,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--condition-features-dir", type=Path, default=None)
     parser.add_argument("--condition-feature-array", choices=["query_tokens", "pooled"], default="query_tokens")
     parser.add_argument("--condition-feature-variant", default="full")
+    parser.add_argument("--negative-eval-jsonl", type=Path, default=None)
+    parser.add_argument("--negative-condition-features-dir", type=Path, default=None)
+    parser.add_argument("--negative-guidance-scale", type=float, default=1.0)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--fallback-token-dim", type=int, default=512)
     parser.add_argument("--context-dim", type=int, default=256)
@@ -503,6 +506,8 @@ def _run_eval_only(
         raise ValueError("--resume-checkpoint is required when --eval-only")
     if args.eval_jsonl is None or not args.eval_jsonl.exists():
         raise ValueError("--eval-jsonl must exist when --eval-only")
+    if args.negative_eval_jsonl is not None and not args.negative_eval_jsonl.exists():
+        raise ValueError("--negative-eval-jsonl must exist when provided")
     if args.eval_limit == 0:
         raise ValueError("--eval-limit must be > 0 when --eval-only")
 
@@ -551,15 +556,47 @@ def _run_eval_only(
         limit=args.eval_limit,
         stats=stats,
     )
+    negative_data = None
+    if args.negative_eval_jsonl is not None:
+        negative_feature_store = None
+        if args.negative_condition_features_dir is not None:
+            negative_feature_store = FrozenConditionFeatureStore(
+                args.negative_condition_features_dir,
+                array_name=args.condition_feature_array,
+                variant=args.condition_feature_variant,
+            )
+        negative_data = UniVideoMoleculeDataset(
+            args.negative_eval_jsonl,
+            feature_store=negative_feature_store,
+            fallback_token_dim=int(
+                negative_feature_store.input_hidden_dim
+                if negative_feature_store is not None
+                else ckpt_config["input_hidden_dim"]
+            ),
+            fingerprint_dim=int(ckpt_config.get("fingerprint_dim", args.fingerprint_dim)),
+            latent_backend=str(ckpt_config.get("latent_backend", args.latent_backend)),
+            image_vae=image_vae,
+            image_vae_device=device,
+            image_size=args.image_size,
+            vae_batch_size=args.vae_batch_size,
+            limit=args.eval_limit,
+            stats=stats,
+        )
+        if len(negative_data) != len(eval_data):
+            raise ValueError(
+                f"Negative eval rows ({len(negative_data)}) must match positive eval rows ({len(eval_data)})"
+            )
     latent_target_mode = str(ckpt_config.get("latent_target_mode", args.latent_target_mode))
     eval_metrics = _evaluate(
         connector,
         diffusion,
         eval_data,
+        negative_dataset=negative_data,
         output_dir=args.output_dir / "eval_latent",
         batch_size=args.eval_batch_size,
         sample_steps=args.sample_steps,
         sample_eta=float(ckpt_config.get("sample_eta", args.sample_eta)),
+        negative_guidance_scale=args.negative_guidance_scale,
         device=device,
         latent_backend=str(ckpt_config.get("latent_backend", args.latent_backend)),
         latent_target_mode=latent_target_mode,
@@ -575,6 +612,8 @@ def _run_eval_only(
                 "eval_only": True,
                 "resume_checkpoint": str(args.resume_checkpoint),
                 "eval_jsonl": str(args.eval_jsonl),
+                "negative_eval_jsonl": str(args.negative_eval_jsonl) if args.negative_eval_jsonl else None,
+                "negative_guidance_scale": float(args.negative_guidance_scale),
                 "eval": eval_metrics,
             },
             indent=2,
@@ -673,10 +712,12 @@ def _evaluate(
     diffusion: SourceConditionedGaussianLatentDiffusion,
     dataset: UniVideoMoleculeDataset,
     *,
+    negative_dataset: UniVideoMoleculeDataset | None = None,
     output_dir: Path,
     batch_size: int,
     sample_steps: int,
     sample_eta: float,
+    negative_guidance_scale: float = 1.0,
     device: torch.device,
     latent_backend: str,
     latent_target_mode: str,
@@ -688,6 +729,11 @@ def _evaluate(
 ) -> dict[str, object]:
     output_dir.mkdir(parents=True, exist_ok=True)
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=_collate)
+    negative_loader = (
+        iter(DataLoader(negative_dataset, batch_size=batch_size, shuffle=False, collate_fn=_collate))
+        if negative_dataset is not None
+        else None
+    )
     connector.eval()
     diffusion.eval()
     rows = []
@@ -698,10 +744,20 @@ def _evaluate(
         metadata = _metadata_from_batch(batch)
         batch = _to_device(batch, device)
         condition = connector(batch["mllm_hidden"], batch["mllm_mask"])
+        negative_tokens = None
+        negative_mask = None
+        if negative_loader is not None:
+            negative_batch = _to_device(next(negative_loader), device)
+            negative_condition = connector(negative_batch["mllm_hidden"], negative_batch["mllm_mask"])
+            negative_tokens = negative_condition.tokens
+            negative_mask = negative_condition.attention_mask
         sampled_edit_or_target_norm = diffusion.sample(
             batch["source_latent"],
             condition.tokens,
             condition.attention_mask,
+            negative_condition_tokens=negative_tokens,
+            negative_condition_mask=negative_mask,
+            guidance_scale=negative_guidance_scale,
             steps=sample_steps,
             eta=sample_eta,
         )
@@ -770,6 +826,8 @@ def _evaluate(
             "rows": len(rows),
             "sample_steps": int(sample_steps),
             "sample_eta": float(sample_eta),
+            "negative_guidance_scale": float(negative_guidance_scale),
+            "negative_conditioning": negative_dataset is not None,
             "latent_target_mode": latent_target_mode,
             "residual_sample_scale": float(residual_sample_scale),
             "connector_latent_blend": float(connector_latent_blend),

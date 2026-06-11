@@ -92,6 +92,9 @@ def sample_from_row(row: dict[str, str], *, split_override: str | None) -> Unifi
         "variant": value(row, "variant") or "full",
         "variant_id": value(row, "variant_id") or condition_id,
     }
+    for key, raw_value in row.items():
+        if (key.startswith("ood_") or key.startswith("negative_")) and str(raw_value or "").strip():
+            metadata[key] = str(raw_value).strip()
     return UnifiedConditionSample(
         sample_id=sample_id,
         task_type=EDIT_GENERATION,

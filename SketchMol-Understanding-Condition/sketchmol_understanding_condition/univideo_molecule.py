@@ -244,6 +244,35 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
             pred_noise = self.predict_noise_from_x0(xt, timesteps, pred_x0)
         return UniVideoDiffusionPrediction(pred_noise=pred_noise, pred_x0=pred_x0)
 
+    def guided_model_predictions(
+        self,
+        xt: torch.Tensor,
+        timesteps: torch.Tensor,
+        source_latent: torch.Tensor,
+        condition_tokens: torch.Tensor,
+        condition_mask: torch.Tensor | None,
+        negative_condition_tokens: torch.Tensor,
+        negative_condition_mask: torch.Tensor | None,
+        *,
+        guidance_scale: float,
+    ) -> UniVideoDiffusionPrediction:
+        positive = self.model_predictions(xt, timesteps, source_latent, condition_tokens, condition_mask)
+        negative = self.model_predictions(
+            xt,
+            timesteps,
+            source_latent,
+            negative_condition_tokens,
+            negative_condition_mask,
+        )
+        scale = float(guidance_scale)
+        if self.objective == "pred_noise":
+            pred_noise = negative.pred_noise + scale * (positive.pred_noise - negative.pred_noise)
+            pred_x0 = self.predict_x0_from_noise(xt, timesteps, pred_noise)
+        else:
+            pred_x0 = negative.pred_x0 + scale * (positive.pred_x0 - negative.pred_x0)
+            pred_noise = self.predict_noise_from_x0(xt, timesteps, pred_x0)
+        return UniVideoDiffusionPrediction(pred_noise=pred_noise, pred_x0=pred_x0)
+
     def loss(
         self,
         target_latent: torch.Tensor,
@@ -268,6 +297,9 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
         condition_tokens: torch.Tensor,
         condition_mask: torch.Tensor | None = None,
         *,
+        negative_condition_tokens: torch.Tensor | None = None,
+        negative_condition_mask: torch.Tensor | None = None,
+        guidance_scale: float = 1.0,
         steps: int | None = None,
         eta: float = 0.0,
     ) -> torch.Tensor:
@@ -279,7 +311,19 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
         time_pairs = list(zip(time_values, [*time_values[1:], -1]))
         for timestep, next_timestep in time_pairs:
             t = torch.full((source_latent.shape[0],), int(timestep), device=source_latent.device, dtype=torch.long)
-            predictions = self.model_predictions(latent, t, source_latent, condition_tokens, condition_mask)
+            if negative_condition_tokens is None:
+                predictions = self.model_predictions(latent, t, source_latent, condition_tokens, condition_mask)
+            else:
+                predictions = self.guided_model_predictions(
+                    latent,
+                    t,
+                    source_latent,
+                    condition_tokens,
+                    condition_mask,
+                    negative_condition_tokens,
+                    negative_condition_mask,
+                    guidance_scale=guidance_scale,
+                )
             if int(next_timestep) < 0:
                 latent = predictions.pred_x0
                 continue

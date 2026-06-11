@@ -167,6 +167,40 @@ SUCC_DENOVO_MODEL_OUTPUT_DIR=/path/to/model/output \
 bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_ours_benchmark.sh
 ```
 
+测我们的 OOD 能力用独立入口。它会导出三类 OOD rows：
+`forward_extreme`、`reverse_stimulation`、`rare_combo`。其中
+`reverse_stimulation` 会额外导出 negative condition rows，并在 eval-only sampling
+里用 negative guidance：
+
+```text
+pred = pred_negative + guidance_scale * (pred_positive - pred_negative)
+```
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_ood_ours_benchmark.sh
+```
+
+常用覆盖项：
+
+```bash
+SUCC_OOD_RESUME_CHECKPOINT=/path/to/univideo_molecule_generation.pt \
+SUCC_OOD_ROWS_PER_SPEC=200 \
+SUCC_OOD_NEGATIVE_GUIDANCE_SCALE=2.5 \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_ood_ours_benchmark.sh
+```
+
+如果要自定义 OOD preset，写一个 JSON list，并传
+`SUCC_OOD_SPEC_JSON=/path/to/ood_specs.json`：
+
+```json
+[
+  {"bucket": "reverse_stimulation", "name": "reverse_mw300", "positive": "MW:300", "negative": "MW:300 HBD:0 HBA:1 RB:1"},
+  {"bucket": "rare_combo", "name": "qed_high_mw_high", "positive": "QED:0.90 MW:520"}
+]
+```
+
 下面这个入口只是 OCR-free sanity baseline，不会跑我们的模型；默认方法是
 `property_nearest,target_oracle`，用于检查数据和 evaluator：
 
@@ -241,9 +275,12 @@ scripts/run_univideo_materialized_benchmark.sh
 scripts/submit_univideo_materialized_benchmark.sh
 scripts/export_denovo_2p7p_benchmark_rows.py
 scripts/export_denovo_2p7p_eval_jsonl.py
+scripts/export_denovo_ood_benchmark_rows.py
 scripts/export_univideo_target_latents.py
 scripts/run_denovo_2p7p_ours_benchmark.sh
 scripts/submit_denovo_2p7p_ours_benchmark.sh
+scripts/run_denovo_ood_ours_benchmark.sh
+scripts/submit_denovo_ood_ours_benchmark.sh
 scripts/run_denovo_2p7p_materialized_benchmark.sh
 scripts/submit_denovo_2p7p_materialized_benchmark.sh
 scripts/submit_hf_vlm_multiproperty_pipeline.sh

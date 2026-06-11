@@ -299,6 +299,79 @@ def test_export_denovo_2p7p_benchmark_rows_and_property_nearest(tmp_path):
     assert all(row["generated_smiles"] for row in direct_rows)
 
 
+def test_export_denovo_ood_benchmark_rows_and_negative_jsonl(tmp_path):
+    molecule_db = tmp_path / "molecule_database.csv"
+    rows_csv = tmp_path / "denovo_ood_rows.csv"
+    negative_csv = tmp_path / "denovo_ood_negative_rows.csv"
+    candidates_csv = tmp_path / "denovo_ood_candidates.csv"
+    eval_jsonl = tmp_path / "denovo_ood_eval.jsonl"
+    negative_jsonl = tmp_path / "denovo_ood_negative_eval.jsonl"
+    _write_molecule_database(molecule_db, count=16)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_denovo_ood_benchmark_rows.py",
+            "--molecule-db-csv",
+            str(molecule_db),
+            "--output-csv",
+            str(rows_csv),
+            "--negative-output-csv",
+            str(negative_csv),
+            "--candidate-output-csv",
+            str(candidates_csv),
+            "--rows-per-spec",
+            "1",
+            "--include-eval-in-candidates",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert export_result.returncode == 0, export_result.stderr
+    rows = list(csv.DictReader(rows_csv.open(newline="", encoding="utf-8")))
+    negative_rows = list(csv.DictReader(negative_csv.open(newline="", encoding="utf-8")))
+    candidates = list(csv.DictReader(candidates_csv.open(newline="", encoding="utf-8")))
+    assert len(rows) == len(negative_rows) == 10
+    assert len(candidates) == 16
+    assert {"forward_extreme", "rare_combo", "reverse_stimulation"} <= {row["ood_bucket"] for row in rows}
+    assert all(row["source_smiles"] == "" for row in rows)
+    assert all(row["negative_condition_id"] for row in rows)
+    assert all(row["condition_id"].endswith(":negative") for row in negative_rows)
+    reverse_negatives = [row for row in negative_rows if row["ood_bucket"] == "reverse_stimulation"]
+    assert reverse_negatives
+    assert all(row["condition_properties"] for row in reverse_negatives)
+
+    for input_csv, output_jsonl in [(rows_csv, eval_jsonl), (negative_csv, negative_jsonl)]:
+        result = subprocess.run(
+            [
+                sys.executable,
+                "scripts/export_denovo_2p7p_eval_jsonl.py",
+                "--input-csv",
+                str(input_csv),
+                "--output-jsonl",
+                str(output_jsonl),
+                "--split",
+                "eval",
+            ],
+            cwd="SketchMol-Understanding-Condition",
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+
+    exported = [json.loads(line) for line in eval_jsonl.read_text(encoding="utf-8").splitlines()]
+    negative_exported = [json.loads(line) for line in negative_jsonl.read_text(encoding="utf-8").splitlines()]
+    assert len(exported) == len(negative_exported) == 10
+    assert {sample["task_type"] for sample in exported} == {"edit_generation"}
+    assert {sample["metadata"]["benchmark_task"] for sample in exported} == {"denovo_ood_property_design"}
+    assert all("ood_bucket" in sample["metadata"] for sample in exported)
+    assert all(sample["metadata"]["source_condition_mode"] == "zero" for sample in negative_exported)
+
+
 @pytest.mark.skipif(RDKit_MISSING, reason="RDKit is required for SMILES validation")
 def test_decode_row_ignores_raw_token_fallback_for_validity():
     module = _load_script("evaluate_univideo_image_benchmark.py")
