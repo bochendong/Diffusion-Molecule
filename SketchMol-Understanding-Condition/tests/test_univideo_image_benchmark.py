@@ -161,6 +161,76 @@ def test_export_univideo_benchmark_rows_without_images(tmp_path):
     assert rows[0]["moledit_task_key"] == "MW:decrease+QED:increase"
 
 
+def test_export_denovo_2p7p_benchmark_rows_and_property_nearest(tmp_path):
+    molecule_db = tmp_path / "molecule_database.csv"
+    rows_csv = tmp_path / "denovo_2p7p_rows.csv"
+    candidates_csv = tmp_path / "denovo_candidate_rows.csv"
+    direct_csv = tmp_path / "direct.csv"
+    _write_molecule_database(molecule_db, count=8)
+
+    export_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_denovo_2p7p_benchmark_rows.py",
+            "--molecule-db-csv",
+            str(molecule_db),
+            "--output-csv",
+            str(rows_csv),
+            "--candidate-output-csv",
+            str(candidates_csv),
+            "--rows-per-property-count",
+            "2",
+            "--min-properties",
+            "2",
+            "--max-properties",
+            "3",
+            "--seed",
+            "7",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert export_result.returncode == 0, export_result.stderr
+    rows = list(csv.DictReader(rows_csv.open(newline="", encoding="utf-8")))
+    candidates = list(csv.DictReader(candidates_csv.open(newline="", encoding="utf-8")))
+    assert len(rows) == 4
+    assert len(candidates) == 4
+    assert sorted({row["property_count"] for row in rows}) == ["2", "3"]
+    assert all(row["source_smiles"] == "" for row in rows)
+    assert all(row["task_type"] == "de_novo_design" for row in rows)
+    assert all(row["sketchmol_preset_str"] for row in rows)
+    assert all(len(row["condition_properties"].split(",")) == int(row["property_count"]) for row in rows)
+    assert not ({row["molecule_id"] for row in rows} & {row["molecule_id"] for row in candidates})
+
+    materialize_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/materialize_univideo_target_molecules.py",
+            "--source-csv",
+            str(rows_csv),
+            "--candidate-csv",
+            str(candidates_csv),
+            "--output-csv",
+            str(direct_csv),
+            "--mode",
+            "property_nearest",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert materialize_result.returncode == 0, materialize_result.stderr
+    direct_rows = list(csv.DictReader(direct_csv.open(newline="", encoding="utf-8")))
+    assert len(direct_rows) == 4
+    assert {row["method"] for row in direct_rows} == {"property_nearest"}
+    assert all(row["generated_smiles"] for row in direct_rows)
+
+
 @pytest.mark.skipif(RDKit_MISSING, reason="RDKit is required for SMILES validation")
 def test_decode_row_ignores_raw_token_fallback_for_validity():
     module = _load_script("evaluate_univideo_image_benchmark.py")
@@ -470,6 +540,28 @@ def _write_simple_target_rows(path: Path, rows: list[dict[str, str]]) -> None:
         writer.writeheader()
         for row in rows:
             writer.writerow(row)
+
+
+def _write_molecule_database(path: Path, *, count: int) -> None:
+    fieldnames = ["mol_id", "canonical_smiles", "scaffold", "MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB"]
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for index in range(count):
+            writer.writerow(
+                {
+                    "mol_id": f"mol_{index}",
+                    "canonical_smiles": "C" * (index + 2),
+                    "scaffold": "",
+                    "MW": 80 + index * 20,
+                    "LogP": 0.5 + index * 0.2,
+                    "QED": 0.3 + index * 0.03,
+                    "TPSA": 20 + index * 5,
+                    "HBD": index % 3,
+                    "HBA": 1 + (index % 4),
+                    "RB": index % 5,
+                }
+            )
 
 
 def _load_script(name: str):

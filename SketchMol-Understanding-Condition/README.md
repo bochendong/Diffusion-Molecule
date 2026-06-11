@@ -132,6 +132,56 @@ ink-aware image VAE（如果 checkpoint 存在），并在训练 job 成功后�
 OCR-free materialized benchmark。它现在只是 legacy / ablation，对齐 MolEdit 的主线
 请使用 `submit_univideo_moledit_pipeline.sh`。
 
+## 0.4 De novo 2p-7p property design
+
+De novo 能力单独按 SketchMol 的 2p-7p continuous-property benchmark 口径评估，
+不混入 source-conditioned edit / Table1 方向性指标。目标 rows 只包含
+MW/LogP/QED/TPSA/HBD/HBA/RB 的 property targets，评估报告会逐项列出 2p 到
+7p strict success，并附上 SketchMol structured reference 行。
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_materialized_benchmark.sh
+```
+
+默认读取：
+
+```text
+SketchMol-MultiProperty-EditDataset/outputs/multiproperty_source_neighbor_v1/molecule_database.csv
+```
+
+如果 molecule database 放在别处：
+
+```bash
+SUCC_DENOVO_MOLECULE_DB_CSV=/path/to/molecule_database.csv \
+bash SketchMol-Understanding-Condition/scripts/run_denovo_2p7p_materialized_benchmark.sh
+```
+
+对应的 real SketchMol baseline 仍走 `SketchMolBenchmark`。除了普通 preset，
+wrapper 现在也同步了 SketchMol README 里的 OOD / inpainting 设置：
+
+```bash
+# OOD forward stimulation: 在目标条件外附加高 MW 等刺激条件
+SKETCHMOL_PRESET_STR="HBA:3 MW:380" \
+bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
+
+# OOD reverse stimulation: 给 unconditional/valid branch 加 negative preset
+SKETCHMOL_PRESET_STR="MW:300" \
+SKETCHMOL_NEGATIVE_PRESET_STR="MW:300 HBD:0 HBA:1 RB:1" \
+SKETCHMOL_TRI=false \
+bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
+
+# Inpainting: validation CSV 需要 Path,Path_keep 两列
+SKETCHMOL_SAMPLING_MODE=inpaint \
+SKETCHMOL_PRESET_STR="LogP:4" \
+SKETCHMOL_VALIDATION_DATASET=/path/to/inpainting.csv \
+SKETCHMOL_MASK_FROM_WHERE=mol_various_preset \
+SKETCHMOL_ZOOM_FACTOR=0.98 \
+SKETCHMOL_REPAINT_TIME=1 \
+bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
+```
+
 ## 代码入口与 legacy 实验
 
 完整脚本列表、HF VLM pipeline、mixed-objective 旧实验和 encoder v0–v2.2
@@ -158,6 +208,9 @@ scripts/submit_univideo_source_neighbor_v2_pipeline.sh
 scripts/export_univideo_benchmark_rows.py
 scripts/run_univideo_materialized_benchmark.sh
 scripts/submit_univideo_materialized_benchmark.sh
+scripts/export_denovo_2p7p_benchmark_rows.py
+scripts/run_denovo_2p7p_materialized_benchmark.sh
+scripts/submit_denovo_2p7p_materialized_benchmark.sh
 scripts/submit_hf_vlm_multiproperty_pipeline.sh
 scripts/evaluate_univideo_image_benchmark.py
 scripts/materialize_univideo_target_molecules.py

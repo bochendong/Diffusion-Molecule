@@ -120,6 +120,51 @@ Replace both `/absolute/path/to/...` examples with real checkpoint files on the
 cluster filesystem. The submit script validates those files before it calls
 `sbatch`.
 
+Run SketchMol OOD forward stimulation by adding an auxiliary high-range
+condition to the normal preset:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_CKPT=/absolute/path/to/sketchmol/model.ckpt \
+SKETCHMOL_MOLSCRIBE_MODEL=/absolute/path/to/swin_base_char_aux_200k.pth \
+SKETCHMOL_PRESET_STR="HBA:3 MW:380" \
+SKETCHMOL_SCALE=4.5 \
+SKETCHMOL_TRI=false \
+bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
+```
+
+Run SketchMol OOD reverse stimulation by setting the negative branch preset
+without editing the vendored script:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_CKPT=/absolute/path/to/sketchmol/model.ckpt \
+SKETCHMOL_MOLSCRIBE_MODEL=/absolute/path/to/swin_base_char_aux_200k.pth \
+SKETCHMOL_PRESET_STR="MW:300" \
+SKETCHMOL_NEGATIVE_PRESET_STR="MW:300 HBD:0 HBA:1 RB:1" \
+SKETCHMOL_TRI=false \
+bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
+```
+
+Run SketchMol inpainting + OCR. The inpainting CSV follows the original
+SketchMol schema with `Path` and `Path_keep` columns:
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+
+SKETCHMOL_CKPT=/absolute/path/to/sketchmol/model.ckpt \
+SKETCHMOL_MOLSCRIBE_MODEL=/absolute/path/to/swin_base_char_aux_200k.pth \
+SKETCHMOL_SAMPLING_MODE=inpaint \
+SKETCHMOL_PRESET_STR="LogP:4" \
+SKETCHMOL_VALIDATION_DATASET=/absolute/path/to/inpainting.csv \
+SKETCHMOL_MASK_FROM_WHERE=mol_various_preset \
+SKETCHMOL_ZOOM_FACTOR=0.98 \
+SKETCHMOL_REPAINT_TIME=1 \
+bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
+```
+
 Run the original-paper reproduction preset (`MW:400`, `--scale 1.2`,
 `--scale_pro 6.3`, `--conditional_count 40`) with a separate MolScribe
 interpreter:

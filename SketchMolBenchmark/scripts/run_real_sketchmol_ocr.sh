@@ -16,7 +16,9 @@ SKETCHMOL_CKPT="${SKETCHMOL_CKPT:-}"
 SKETCHMOL_MOLSCRIBE_MODEL="${SKETCHMOL_MOLSCRIBE_MODEL:-}"
 SKETCHMOL_OUTPUT_ROOT="${SKETCHMOL_OUTPUT_ROOT:-$REPO_ROOT/SketchMolBenchmark/runs}"
 SKETCHMOL_RUN_NAME="${SKETCHMOL_RUN_NAME:-real_sketchmol_ocr_$(date +%Y%m%d_%H%M%S)}"
+SKETCHMOL_SAMPLING_MODE="${SKETCHMOL_SAMPLING_MODE:-sample}"
 SKETCHMOL_PRESET_STR="${SKETCHMOL_PRESET_STR:-MW:400}"
+SKETCHMOL_NEGATIVE_PRESET_STR="${SKETCHMOL_NEGATIVE_PRESET_STR:-}"
 SKETCHMOL_POST="${SKETCHMOL_POST:-_${SKETCHMOL_RUN_NAME}}"
 SKETCHMOL_CONDITIONAL_COUNT="${SKETCHMOL_CONDITIONAL_COUNT:-8}"
 SKETCHMOL_N_SAMPLES="${SKETCHMOL_N_SAMPLES:-1}"
@@ -25,6 +27,11 @@ SKETCHMOL_SCALE="${SKETCHMOL_SCALE:-2}"
 SKETCHMOL_SCALE_PRO="${SKETCHMOL_SCALE_PRO:-4}"
 SKETCHMOL_PROPERTY_NUM="${SKETCHMOL_PROPERTY_NUM:-1}"
 SKETCHMOL_TRI="${SKETCHMOL_TRI:-true}"
+SKETCHMOL_CONDITION_TYPE="${SKETCHMOL_CONDITION_TYPE:-mol_various_preset}"
+SKETCHMOL_VALIDATION_DATASET="${SKETCHMOL_VALIDATION_DATASET:-}"
+SKETCHMOL_MASK_FROM_WHERE="${SKETCHMOL_MASK_FROM_WHERE:-mol_various_preset}"
+SKETCHMOL_ZOOM_FACTOR="${SKETCHMOL_ZOOM_FACTOR:-0.98}"
+SKETCHMOL_REPAINT_TIME="${SKETCHMOL_REPAINT_TIME:-1}"
 SKETCHMOL_BENCHMARK_OUTPUT_DIR="${SKETCHMOL_BENCHMARK_OUTPUT_DIR:-SketchMolBenchmark/outputs/current}"
 
 check_python_imports() {
@@ -73,6 +80,16 @@ if [[ -z "$SKETCHMOL_MOLSCRIBE_MODEL" || ! -f "$SKETCHMOL_MOLSCRIBE_MODEL" ]]; t
   echo "ERROR: SKETCHMOL_MOLSCRIBE_MODEL must point to a MolScribe checkpoint." >&2
   exit 2
 fi
+if [[ "$SKETCHMOL_SAMPLING_MODE" != "sample" && "$SKETCHMOL_SAMPLING_MODE" != "inpaint" ]]; then
+  echo "ERROR: SKETCHMOL_SAMPLING_MODE must be sample or inpaint, got: $SKETCHMOL_SAMPLING_MODE" >&2
+  exit 2
+fi
+if [[ "$SKETCHMOL_SAMPLING_MODE" == "inpaint" ]]; then
+  if [[ -z "$SKETCHMOL_VALIDATION_DATASET" || ! -f "$SKETCHMOL_VALIDATION_DATASET" ]]; then
+    echo "ERROR: SKETCHMOL_VALIDATION_DATASET must point to an inpainting CSV for SKETCHMOL_SAMPLING_MODE=inpaint." >&2
+    exit 2
+  fi
+fi
 
 export PYTHONPATH="$SKETCHMOL_REPO${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -80,6 +97,12 @@ check_python_imports \
   "SketchMol" \
   "$SKETCHMOL_PYTHON_BIN" \
   yaml torch numpy pandas tqdm omegaconf PIL einops ldm.data.pubchemdata ldm.models.diffusion.ddpm
+if [[ "$SKETCHMOL_SAMPLING_MODE" == "inpaint" ]]; then
+  check_python_imports \
+    "SketchMol inpainting" \
+    "$SKETCHMOL_PYTHON_BIN" \
+    cv2
+fi
 check_python_imports \
   "MolScribe" \
   "$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" \
@@ -95,24 +118,49 @@ echo "  sketchmol_python=$SKETCHMOL_PYTHON_BIN" | tee -a "$RUN_LOG"
 echo "  molscribe_python=$SKETCHMOL_MOLSCRIBE_PYTHON_BIN" | tee -a "$RUN_LOG"
 echo "  ckpt=$SKETCHMOL_CKPT" | tee -a "$RUN_LOG"
 echo "  molscribe_model=$SKETCHMOL_MOLSCRIBE_MODEL" | tee -a "$RUN_LOG"
+echo "  sampling_mode=$SKETCHMOL_SAMPLING_MODE" | tee -a "$RUN_LOG"
 echo "  preset=$SKETCHMOL_PRESET_STR" | tee -a "$RUN_LOG"
+echo "  negative_preset=$SKETCHMOL_NEGATIVE_PRESET_STR" | tee -a "$RUN_LOG"
+echo "  condition_type=$SKETCHMOL_CONDITION_TYPE" | tee -a "$RUN_LOG"
+echo "  validation_dataset=$SKETCHMOL_VALIDATION_DATASET" | tee -a "$RUN_LOG"
+echo "  mask_from_where=$SKETCHMOL_MASK_FROM_WHERE" | tee -a "$RUN_LOG"
+echo "  zoom_factor=$SKETCHMOL_ZOOM_FACTOR" | tee -a "$RUN_LOG"
+echo "  repaint_time=$SKETCHMOL_REPAINT_TIME" | tee -a "$RUN_LOG"
 echo "  run_name=$SKETCHMOL_RUN_NAME" | tee -a "$RUN_LOG"
 
 pushd "$SKETCHMOL_REPO" >/dev/null
 
+SAMPLE_ARGS=(
+  -r "$SKETCHMOL_CKPT"
+  --logdir "$RUN_DIR/sketchmol_logs"
+  --post "$SKETCHMOL_POST"
+  -p "$SKETCHMOL_PRESET_STR"
+  --conditional_count "$SKETCHMOL_CONDITIONAL_COUNT"
+  -n "$SKETCHMOL_N_SAMPLES"
+  -c "$SKETCHMOL_CUSTOM_STEPS"
+  --scale "$SKETCHMOL_SCALE"
+  --scale_pro "$SKETCHMOL_SCALE_PRO"
+  --tri "$SKETCHMOL_TRI"
+)
+if [[ -n "$SKETCHMOL_NEGATIVE_PRESET_STR" ]]; then
+  SAMPLE_ARGS+=(--negative_preset_str "$SKETCHMOL_NEGATIVE_PRESET_STR")
+fi
+if [[ "$SKETCHMOL_SAMPLING_MODE" == "sample" ]]; then
+  SAMPLE_SCRIPT="scripts/sample_diffusion_condition_continuousV2.py"
+  SAMPLE_ARGS+=(--property_num "$SKETCHMOL_PROPERTY_NUM")
+else
+  SAMPLE_SCRIPT="scripts/inpaint_continuousV2.py"
+  SAMPLE_ARGS+=(
+    --condition_type "$SKETCHMOL_CONDITION_TYPE"
+    --validation_dataset "$SKETCHMOL_VALIDATION_DATASET"
+    --mask_from_where "$SKETCHMOL_MASK_FROM_WHERE"
+    --zoom_factor "$SKETCHMOL_ZOOM_FACTOR"
+    --repaint_time "$SKETCHMOL_REPAINT_TIME"
+  )
+fi
+
 set +e
-"$SKETCHMOL_PYTHON_BIN" scripts/sample_diffusion_condition_continuousV2.py \
-  -r "$SKETCHMOL_CKPT" \
-  --logdir "$RUN_DIR/sketchmol_logs" \
-  --post "$SKETCHMOL_POST" \
-  -p "$SKETCHMOL_PRESET_STR" \
-  --conditional_count "$SKETCHMOL_CONDITIONAL_COUNT" \
-  -n "$SKETCHMOL_N_SAMPLES" \
-  -c "$SKETCHMOL_CUSTOM_STEPS" \
-  --scale "$SKETCHMOL_SCALE" \
-  --scale_pro "$SKETCHMOL_SCALE_PRO" \
-  --property_num "$SKETCHMOL_PROPERTY_NUM" \
-  --tri "$SKETCHMOL_TRI" \
+"$SKETCHMOL_PYTHON_BIN" "$SAMPLE_SCRIPT" "${SAMPLE_ARGS[@]}" \
   2>&1 | tee -a "$RUN_LOG"
 SAMPLE_STATUS=${PIPESTATUS[0]}
 set -e

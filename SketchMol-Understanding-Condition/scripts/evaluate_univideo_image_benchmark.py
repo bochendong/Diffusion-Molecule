@@ -53,12 +53,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--method", default="univideo_image_diffusion")
     parser.add_argument("--smiles-column", default="SMILES")
+    parser.add_argument("--report-title", default="UniVideo Image-to-Structure Benchmark")
+    parser.add_argument("--benchmark-family", default="univideo_image_to_structure")
+    parser.add_argument("--benchmark-task", default="multi_property_image_to_structure")
     parser.add_argument(
         "--accept-direct-smiles",
         action="store_true",
         help="Trust --smiles-column as machine-readable generated SMILES instead of requiring MolScribe graph decode.",
     )
     parser.add_argument("--source-tanimoto-thresholds", default="0.4,0.6,0.8")
+    parser.add_argument(
+        "--hide-source-similarity-section",
+        action="store_true",
+        help="Omit source-similarity diagnostics for de novo benchmarks without source molecules.",
+    )
     return parser.parse_args()
 
 
@@ -76,7 +84,12 @@ def main() -> None:
         )
         for row in rows
     ]
-    summary_rows = _summarize(decoded_rows, thresholds=thresholds)
+    summary_rows = _summarize(
+        decoded_rows,
+        thresholds=thresholds,
+        family=args.benchmark_family,
+        benchmark_task=args.benchmark_task,
+    )
 
     _write_rows(args.output_dir / "benchmark_decoded.csv", decoded_rows)
     _write_rows(args.output_dir / "benchmark_summary.csv", summary_rows)
@@ -85,6 +98,8 @@ def main() -> None:
         "image_csv": str(args.image_csv),
         "output_dir": str(args.output_dir),
         "method": args.method,
+        "benchmark_family": args.benchmark_family,
+        "benchmark_task": args.benchmark_task,
         "accept_direct_smiles": bool(args.accept_direct_smiles),
         "rows": len(decoded_rows),
         "source_tanimoto_thresholds": thresholds,
@@ -185,7 +200,13 @@ def _decode_row_with_options(
     return out
 
 
-def _summarize(rows: list[dict[str, object]], *, thresholds: list[float]) -> list[dict[str, object]]:
+def _summarize(
+    rows: list[dict[str, object]],
+    *,
+    thresholds: list[float],
+    family: str = "univideo_image_to_structure",
+    benchmark_task: str = "multi_property_image_to_structure",
+) -> list[dict[str, object]]:
     out = []
     methods = sorted({str(row.get("method", "")) for row in rows})
     for method in methods:
@@ -193,13 +214,39 @@ def _summarize(rows: list[dict[str, object]], *, thresholds: list[float]) -> lis
         for property_count in range(2, 8):
             selected = [row for row in method_rows if int(row.get("property_count", 0) or 0) == property_count]
             if selected:
-                out.append(_summary_row(method, selected, property_count, thresholds=thresholds))
+                out.append(
+                    _summary_row(
+                        method,
+                        selected,
+                        property_count,
+                        thresholds=thresholds,
+                        family=family,
+                        benchmark_task=benchmark_task,
+                    )
+                )
         if method_rows:
-            out.append(_summary_row(method, method_rows, "all", thresholds=thresholds))
+            out.append(
+                _summary_row(
+                    method,
+                    method_rows,
+                    "all",
+                    thresholds=thresholds,
+                    family=family,
+                    benchmark_task=benchmark_task,
+                )
+            )
     return out
 
 
-def _summary_row(method: str, rows: list[dict[str, object]], property_count: int | str, *, thresholds: list[float]) -> dict[str, object]:
+def _summary_row(
+    method: str,
+    rows: list[dict[str, object]],
+    property_count: int | str,
+    *,
+    thresholds: list[float],
+    family: str,
+    benchmark_task: str,
+) -> dict[str, object]:
     valid_rows = [row for row in rows if _to_bool(row.get("valid"))]
     strict_count = sum(1 for row in rows if _to_bool(row.get("strict_success")))
     valid_strict_count = sum(1 for row in valid_rows if _to_bool(row.get("strict_success")))
@@ -212,9 +259,9 @@ def _summary_row(method: str, rows: list[dict[str, object]], property_count: int
     reference = SKETCHMOL_REFERENCE_MULTI_PROPERTY.get(property_count, "") if isinstance(property_count, int) else ""
     decode_sources = Counter(str(row.get("molscribe_decode_source", "") or "unknown") for row in rows)
     summary: dict[str, object] = {
-        "family": "univideo_image_to_structure",
+        "family": family,
         "method": method,
-        "benchmark_task": "multi_property_image_to_structure",
+        "benchmark_task": benchmark_task,
         "benchmark_label": f"{property_count}_properties" if isinstance(property_count, int) else "all",
         "property_count": property_count,
         "n": len(rows),
@@ -272,12 +319,14 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
     methods = sorted({str(row.get("method", "")) for row in summary_rows})
     input_mode = "direct SMILES materialization" if args.accept_direct_smiles else "MolScribe OCR"
     lines = [
-        "# UniVideo Image-to-Structure Benchmark",
+        f"# {args.report_title}",
         "",
         f"This report evaluates UniVideo molecule outputs after {input_mode} and RDKit validation.",
         "",
         f"- image CSV: `{args.image_csv}`",
         f"- method label: `{args.method}`",
+        f"- benchmark family: `{args.benchmark_family}`",
+        f"- benchmark task: `{args.benchmark_task}`",
         f"- accept direct SMILES: `{bool(args.accept_direct_smiles)}`",
         f"- source Tanimoto thresholds: `{','.join(str(value) for value in thresholds)}`",
         "",
@@ -296,27 +345,28 @@ def _write_report(path: Path, summary_rows: list[dict[str, object]], args: argpa
             values.append(_fmt(row.get("strict_success_rate")) if row else "")
         lines.append(f"| {method} | {' | '.join(values)} |")
     lines.append("| SketchMol structured reference |  | 0.804 | 0.768 | 0.736 | 0.716 | 0.678 | 0.685 |")
-    lines.extend(
-        [
-            "",
-            "## Source-Similarity-Constrained Success",
-            "",
-            "`strict@Tanimoto>=t` means strict property success and Morgan Tanimoto(source, generated) >= t.",
-            "",
-            "| method | mean source Tani | median source Tani | "
-            + " | ".join(f"strict@{threshold:g}" for threshold in thresholds)
-            + " |",
-            "| --- | ---: | ---: | " + " | ".join("---:" for _ in thresholds) + " |",
-        ]
-    )
-    for method in methods:
-        all_row = rows_by_key.get((method, "all"))
-        if not all_row:
-            continue
-        values = [_fmt(all_row.get("mean_source_tanimoto")), _fmt(all_row.get("median_source_tanimoto"))]
-        for threshold in thresholds:
-            values.append(_fmt(all_row.get(f"strict_success_at_source_tanimoto_ge_{_threshold_suffix(threshold)}")))
-        lines.append(f"| {method} | {' | '.join(values)} |")
+    if thresholds and not args.hide_source_similarity_section:
+        lines.extend(
+            [
+                "",
+                "## Source-Similarity-Constrained Success",
+                "",
+                "`strict@Tanimoto>=t` means strict property success and Morgan Tanimoto(source, generated) >= t.",
+                "",
+                "| method | mean source Tani | median source Tani | "
+                + " | ".join(f"strict@{threshold:g}" for threshold in thresholds)
+                + " |",
+                "| --- | ---: | ---: | " + " | ".join("---:" for _ in thresholds) + " |",
+            ]
+        )
+        for method in methods:
+            all_row = rows_by_key.get((method, "all"))
+            if not all_row:
+                continue
+            values = [_fmt(all_row.get("mean_source_tanimoto")), _fmt(all_row.get("median_source_tanimoto"))]
+            for threshold in thresholds:
+                values.append(_fmt(all_row.get(f"strict_success_at_source_tanimoto_ge_{_threshold_suffix(threshold)}")))
+            lines.append(f"| {method} | {' | '.join(values)} |")
     lines.extend(
         [
             "",

@@ -12,6 +12,18 @@ from ldm.models.diffusion.ddim import DDIMSampler
 from ldm.util import instantiate_from_config
 from ldm.data.pubchemdata import pubchemBase_various_continuousV2
 
+
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y"}:
+        return True
+    if text in {"false", "0", "no", "n"}:
+        return False
+    raise argparse.ArgumentTypeError("expected true/false")
+
+
 def extract_values(keywords, sequence):
     values = []
 
@@ -25,6 +37,25 @@ def extract_values(keywords, sequence):
             values.append(None)
 
     return values
+
+
+def apply_negative_preset(negative_preset_str, keywords, uc_list, uc_list_dict, valid_list=None, valid_list_dict=None):
+    if negative_preset_str is None or negative_preset_str == "":
+        return
+    extract_string = extract_values(keywords, negative_preset_str)
+    print("Your Negative Sample condition is :")
+    for i in range(len(extract_string)):
+        if i == 2:
+            continue
+        print("{}:{}".format(keywords[i], extract_string[i]))
+    for id, value in enumerate(extract_string):
+        if value == None:
+            continue
+        uc_list[id + 2] = value
+        uc_list_dict[id + 2] = False
+        if valid_list is not None and valid_list_dict is not None:
+            valid_list[id + 2] = value
+            valid_list_dict[id + 2] = False
 
 
 @torch.no_grad()
@@ -328,7 +359,7 @@ def property_masker(cur_example, cond_dict, property_constrained):
 
 def run(model, imglogdir=None, logdir=None, vanilla=False, custom_steps=None, eta=None, n_samples=50000, nplog=None,
         conditional_count=5, scale=1., condition_type=None, preset_str=None, scale_pro=1.,
-        property_constrained=2, tri_mode=False):
+        property_constrained=2, tri_mode=False, negative_preset_str=None):
     if vanilla:
         print(f'Using Vanilla DDPM sampling with {model.num_timesteps} sampling steps.')
     else:
@@ -403,6 +434,14 @@ def run(model, imglogdir=None, logdir=None, vanilla=False, custom_steps=None, et
         #   uc_list_dict[5 + 2] = False
         #   uc_list_dict[6 + 2] = False
         #   uc_list_dict[7 + 2] = False
+        apply_negative_preset(
+            negative_preset_str,
+            keywords,
+            uc_list,
+            uc_list_dict,
+            valid_list=valid_list,
+            valid_list_dict=valid_list_dict,
+        )
 
         print("Your Sample condition is :")
         for i in range(len(extract_string)):
@@ -563,13 +602,19 @@ def get_parser():
         default="",
     )
     parser.add_argument(
+        "--negative_preset_str",
+        type=str,
+        default="",
+        help="Optional reverse-stimulation preset, e.g. 'MW:300 HBD:0 HBA:1 RB:1'.",
+    )
+    parser.add_argument(
         "--property_num",
         type=int,
         default=2,
     )
     parser.add_argument(
         "--tri",
-        type=bool,
+        type=str_to_bool,
         default=True,
     )
 
@@ -670,4 +715,5 @@ if __name__ == "__main__":
         condition_type=opt.condition_type,
         preset_str=opt.preset_str,
         property_constrained=opt.property_num,
-        tri_mode=opt.tri,)
+        tri_mode=opt.tri,
+        negative_preset_str=opt.negative_preset_str,)

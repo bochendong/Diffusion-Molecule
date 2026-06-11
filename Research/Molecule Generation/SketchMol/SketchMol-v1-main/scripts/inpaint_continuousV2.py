@@ -14,6 +14,18 @@ from ldm.data.pubchemdata import pubchemBase_various_continuousV2
 import cv2
 import PIL
 
+
+def str_to_bool(value):
+    if isinstance(value, bool):
+        return value
+    text = str(value).strip().lower()
+    if text in {"true", "1", "yes", "y"}:
+        return True
+    if text in {"false", "0", "no", "n"}:
+        return False
+    raise argparse.ArgumentTypeError("expected true/false")
+
+
 def rescale_images_cv2(original_image, zoom_factor=0.8):
     if zoom_factor == 1:
         return original_image
@@ -180,6 +192,25 @@ def extract_values(keywords, sequence):
             values.append(None)
 
     return values
+
+
+def apply_negative_preset(negative_preset_str, keywords, uc_list, uc_list_dict, valid_list=None, valid_list_dict=None):
+    if negative_preset_str is None or negative_preset_str == "":
+        return
+    extract_string = extract_values(keywords, negative_preset_str)
+    print("Your Negative Sample condition is :")
+    for i in range(len(extract_string)):
+        if i == 2:
+            continue
+        print("{}:{}".format(keywords[i], extract_string[i]))
+    for id, value in enumerate(extract_string):
+        if value == None:
+            continue
+        uc_list[id + 2] = value
+        uc_list_dict[id + 2] = False
+        if valid_list is not None and valid_list_dict is not None:
+            valid_list[id + 2] = value
+            valid_list_dict[id + 2] = False
 
 
 @torch.no_grad()
@@ -402,7 +433,7 @@ def ori_scaffold_sidechain_exists(example):
 def run(model, imglogdir=None, logdir=None, vanilla=False, custom_steps=None, eta=None, n_samples=50000,
         conditional_count=5, scale=1., condition_type=None, preset_str=None, scale_pro=1., tri_mode=False,
         target_sample=0,
-        validation_dataset=None, mask_from_where=None, zoom_factor=None, repaint_time=3):
+        validation_dataset=None, mask_from_where=None, zoom_factor=None, repaint_time=3, negative_preset_str=None):
     if vanilla:
         print(f'Using Vanilla DDPM sampling with {model.num_timesteps} sampling steps.')
     else:
@@ -461,6 +492,14 @@ def run(model, imglogdir=None, logdir=None, vanilla=False, custom_steps=None, et
                 # uc_list_dict[id + 2] = False
                 # valid_list[id+2] = negvalue[id]
                 # valid_list_dict[id+2] = False
+        apply_negative_preset(
+            negative_preset_str,
+            keywords,
+            uc_list,
+            uc_list_dict,
+            valid_list=valid_list,
+            valid_list_dict=valid_list_dict,
+        )
 
         print("Your Sample condition is :")
         for i in range(len(extract_string)):
@@ -754,8 +793,14 @@ def get_parser():
         default="",
     )
     parser.add_argument(
+        "--negative_preset_str",
+        type=str,
+        default="",
+        help="Optional reverse-stimulation preset, e.g. 'MW:300 HBD:0 HBA:1 RB:1'.",
+    )
+    parser.add_argument(
         "--tri",
-        type=bool,
+        type=str_to_bool,
         default=True,
     )
     parser.add_argument(
@@ -884,4 +929,5 @@ if __name__ == "__main__":
         mask_from_where=opt.mask_from_where,
         zoom_factor=opt.zoom_factor,
         repaint_time=opt.repaint_time,
+        negative_preset_str=opt.negative_preset_str,
         )

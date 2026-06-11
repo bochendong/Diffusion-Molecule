@@ -20,6 +20,13 @@ export SKETCHMOL_REPO="${SKETCHMOL_REPO:-Research/Molecule Generation/SketchMol/
 export SKETCHMOL_PYTHON_BIN="${SKETCHMOL_PYTHON_BIN:-python}"
 export SKETCHMOL_MOLSCRIBE_PYTHON_BIN="${SKETCHMOL_MOLSCRIBE_PYTHON_BIN:-$SKETCHMOL_PYTHON_BIN}"
 export SKETCHMOL_RUN_NAME="${SKETCHMOL_RUN_NAME:-real_sketchmol_ocr_$(date +%Y%m%d_%H%M%S)}"
+export SKETCHMOL_SAMPLING_MODE="${SKETCHMOL_SAMPLING_MODE:-sample}"
+export SKETCHMOL_NEGATIVE_PRESET_STR="${SKETCHMOL_NEGATIVE_PRESET_STR:-}"
+export SKETCHMOL_CONDITION_TYPE="${SKETCHMOL_CONDITION_TYPE:-mol_various_preset}"
+export SKETCHMOL_VALIDATION_DATASET="${SKETCHMOL_VALIDATION_DATASET:-}"
+export SKETCHMOL_MASK_FROM_WHERE="${SKETCHMOL_MASK_FROM_WHERE:-mol_various_preset}"
+export SKETCHMOL_ZOOM_FACTOR="${SKETCHMOL_ZOOM_FACTOR:-0.98}"
+export SKETCHMOL_REPAINT_TIME="${SKETCHMOL_REPAINT_TIME:-1}"
 
 require_existing_file() {
   local env_name="$1"
@@ -50,6 +57,10 @@ if [[ ! -d "$SKETCHMOL_REPO" ]]; then
   echo "ERROR: real SketchMol repo not found: $SKETCHMOL_REPO" >&2
   exit 2
 fi
+if [[ "$SKETCHMOL_SAMPLING_MODE" != "sample" && "$SKETCHMOL_SAMPLING_MODE" != "inpaint" ]]; then
+  echo "ERROR: SKETCHMOL_SAMPLING_MODE must be sample or inpaint, got: $SKETCHMOL_SAMPLING_MODE" >&2
+  exit 2
+fi
 
 require_existing_file \
   "SKETCHMOL_CKPT" \
@@ -65,6 +76,16 @@ if ! find "$CKPT_DIR" -maxdepth 1 -type f \( -name "*.yaml" -o -name "*.yml" \) 
   echo "ERROR: no SketchMol config YAML found next to SKETCHMOL_CKPT in $CKPT_DIR" >&2
   echo "       Unzip or copy the pretrained model YAML into the checkpoint directory." >&2
   exit 2
+fi
+if [[ "$SKETCHMOL_SAMPLING_MODE" == "inpaint" ]]; then
+  if [[ -z "$SKETCHMOL_VALIDATION_DATASET" || "$SKETCHMOL_VALIDATION_DATASET" == "/path/to/"* ]]; then
+    echo "ERROR: set SKETCHMOL_VALIDATION_DATASET=/absolute/path/to/inpainting.csv for inpaint mode." >&2
+    exit 2
+  fi
+  if [[ ! -f "$SKETCHMOL_VALIDATION_DATASET" ]]; then
+    echo "ERROR: SKETCHMOL_VALIDATION_DATASET must point to a real CSV: $SKETCHMOL_VALIDATION_DATASET" >&2
+    exit 2
+  fi
 fi
 
 check_python_imports() {
@@ -107,6 +128,11 @@ PYTHONPATH="$SKETCHMOL_REPO${PYTHONPATH:+:$PYTHONPATH}" \
 check_python_imports \
   "$SKETCHMOL_PYTHON_BIN" \
   ldm.data.pubchemdata ldm.models.diffusion.ddpm
+if [[ "$SKETCHMOL_SAMPLING_MODE" == "inpaint" ]]; then
+  check_python_imports \
+    "$SKETCHMOL_PYTHON_BIN" \
+    cv2
+fi
 
 # shellcheck source=../../SketchMol-Understanding-Condition/scripts/molscribe_env.sh
 source "$REPO_ROOT/SketchMol-Understanding-Condition/scripts/molscribe_env.sh"
@@ -140,7 +166,13 @@ echo "  run_name=$SKETCHMOL_RUN_NAME"
 echo "  sketchmol_repo=$SKETCHMOL_REPO"
 echo "  ckpt=$SKETCHMOL_CKPT"
 echo "  molscribe_model=$SKETCHMOL_MOLSCRIBE_MODEL"
+echo "  sampling_mode=$SKETCHMOL_SAMPLING_MODE"
 echo "  preset=${SKETCHMOL_PRESET_STR:-MW:400}"
+echo "  negative_preset=$SKETCHMOL_NEGATIVE_PRESET_STR"
+echo "  validation_dataset=$SKETCHMOL_VALIDATION_DATASET"
+echo "  mask_from_where=$SKETCHMOL_MASK_FROM_WHERE"
+echo "  zoom_factor=$SKETCHMOL_ZOOM_FACTOR"
+echo "  repaint_time=$SKETCHMOL_REPAINT_TIME"
 echo "  gpu_candidates=${GPU_CANDIDATES[*]}"
 echo "  slurm_time=$TIME"
 echo "  slurm_mem=$MEM"
