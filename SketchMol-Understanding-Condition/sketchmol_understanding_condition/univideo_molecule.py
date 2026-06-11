@@ -31,6 +31,7 @@ from .unified_featurization import (
     similarity_bin_label,
     target_latent_vector,
     target_property_vector,
+    zero_source_condition,
 )
 
 
@@ -403,6 +404,8 @@ class FrozenConditionFeatureStore:
 def source_latent_vector(sample: UnifiedConditionSample, *, fingerprint_dim: int = 512) -> np.ndarray:
     """Fallback vector latent backend for fast sanity checks."""
 
+    if zero_source_condition(sample):
+        return np.zeros(fingerprint_dim + 32 + 32 + 16, dtype=np.float32)
     source = sample.source_smiles or sample.molecule_smiles or sample.target_smiles
     fp = molecule_feature(source, fingerprint_dim)
     props = _resize(np.asarray([sample.source_properties.get(prop, 0.0) for prop in PROPERTY_COLUMNS], dtype=np.float32), 32)

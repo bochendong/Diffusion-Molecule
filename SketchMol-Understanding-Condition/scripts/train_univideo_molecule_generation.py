@@ -38,6 +38,7 @@ from sketchmol_understanding_condition.univideo_molecule import (  # noqa: E402
     univideo_connector_alignment_loss,
     univideo_training_arrays,
 )
+from sketchmol_understanding_condition.unified_featurization import zero_source_condition  # noqa: E402
 
 
 class UniVideoMoleculeDataset(Dataset):
@@ -538,7 +539,9 @@ def _run_eval_only(
     eval_data = UniVideoMoleculeDataset(
         args.eval_jsonl,
         feature_store=feature_store,
-        fallback_token_dim=args.fallback_token_dim,
+        fallback_token_dim=int(
+            feature_store.input_hidden_dim if feature_store is not None else ckpt_config["input_hidden_dim"]
+        ),
         fingerprint_dim=int(ckpt_config.get("fingerprint_dim", args.fingerprint_dim)),
         latent_backend=str(ckpt_config.get("latent_backend", args.latent_backend)),
         image_vae=image_vae,
@@ -1011,6 +1014,9 @@ def _encode_image_vae_latents(
         device=device,
         batch_size=batch_size,
     )
+    for idx, sample in enumerate(samples):
+        if zero_source_condition(sample):
+            source_latents[idx] = np.zeros_like(source_latents[idx], dtype=np.float32)
     latent_shape = tuple(int(dim) for dim in source_latents[0].shape)
     return (
         [latent.reshape(-1).astype(np.float32) for latent in source_latents],
@@ -1034,9 +1040,16 @@ def _encode_sample_image_batches(
         image_tensors = []
         for sample in samples[start : start + batch_size]:
             if role == "source":
-                image_tensors.append(
-                    image_to_tensor(image_path=sample.source_image, smiles=sample.source_smiles, image_size=image_size)
-                )
+                if zero_source_condition(sample):
+                    image_tensors.append(torch.zeros(3, image_size, image_size, dtype=torch.float32))
+                else:
+                    image_tensors.append(
+                        image_to_tensor(
+                            image_path=sample.source_image,
+                            smiles=sample.source_smiles,
+                            image_size=image_size,
+                        )
+                    )
             elif role == "target":
                 image_tensors.append(
                     image_to_tensor(image_path=sample.target_image, smiles=sample.target_smiles, image_size=image_size)

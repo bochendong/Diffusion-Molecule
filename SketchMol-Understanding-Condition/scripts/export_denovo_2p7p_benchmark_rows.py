@@ -220,6 +220,8 @@ def make_condition_row(
     row: dict[str, object] = {
         "sample_id": condition_id,
         "condition_id": condition_id,
+        "variant_id": f"{condition_id}:full",
+        "variant": "full",
         "pair_id": "",
         "split": "eval" if role == "eval" else "candidate",
         "task_type": "de_novo_design",
@@ -230,9 +232,12 @@ def make_condition_row(
         "target_scaffold": molecule.get("scaffold", ""),
         "condition_properties": ",".join(selected_props),
         "property_count": len(selected_props),
+        "prompt": render_denovo_instruction(selected_props, props),
         "instruction": render_denovo_instruction(selected_props, props),
         "sketchmol_preset_str": render_sketchmol_preset(selected_props, props),
         "image_path": "",
+        "source_image": "",
+        "target_image": "",
         "molecule_id": molecule["mol_id"],
     }
     for prop in PROPERTY_COLUMNS:

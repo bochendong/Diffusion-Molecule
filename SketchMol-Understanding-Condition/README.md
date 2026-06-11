@@ -139,6 +139,37 @@ De novo 能力单独按 SketchMol 的 2p-7p continuous-property benchmark 口径
 MW/LogP/QED/TPSA/HBD/HBA/RB 的 property targets，评估报告会逐项列出 2p 到
 7p strict success，并附上 SketchMol structured reference 行。
 
+测我们的 SUCC / UniVideo 模型用下面这个入口。它会：
+
+1. 导出 de novo 2p-7p benchmark rows 和独立 candidate library；
+2. 用 HF VLM 导出当前 de novo prompt 的 condition tokens；
+3. 从已训练 checkpoint eval-only 生成 `generated_latents.npy`；
+4. 导出 candidate target latents，再用 `latent_nearest` materialize；
+5. 写出 `benchmark_ours/benchmark_report.md`。
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_ours_benchmark.sh
+```
+
+默认会找：
+
+```text
+SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_v3_attack/univideo_molecule/univideo_molecule_generation.pt
+```
+
+如果要测另一个 checkpoint：
+
+```bash
+SUCC_DENOVO_RESUME_CHECKPOINT=/path/to/univideo_molecule_generation.pt \
+SUCC_DENOVO_MODEL_OUTPUT_DIR=/path/to/model/output \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_ours_benchmark.sh
+```
+
+下面这个入口只是 OCR-free sanity baseline，不会跑我们的模型；默认方法是
+`property_nearest,target_oracle`，用于检查数据和 evaluator：
+
 ```bash
 export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
 SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
@@ -209,6 +240,10 @@ scripts/export_univideo_benchmark_rows.py
 scripts/run_univideo_materialized_benchmark.sh
 scripts/submit_univideo_materialized_benchmark.sh
 scripts/export_denovo_2p7p_benchmark_rows.py
+scripts/export_denovo_2p7p_eval_jsonl.py
+scripts/export_univideo_target_latents.py
+scripts/run_denovo_2p7p_ours_benchmark.sh
+scripts/submit_denovo_2p7p_ours_benchmark.sh
 scripts/run_denovo_2p7p_materialized_benchmark.sh
 scripts/submit_denovo_2p7p_materialized_benchmark.sh
 scripts/submit_hf_vlm_multiproperty_pipeline.sh

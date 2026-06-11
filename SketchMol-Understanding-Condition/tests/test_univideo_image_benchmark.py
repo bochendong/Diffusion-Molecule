@@ -165,6 +165,9 @@ def test_export_denovo_2p7p_benchmark_rows_and_property_nearest(tmp_path):
     molecule_db = tmp_path / "molecule_database.csv"
     rows_csv = tmp_path / "denovo_2p7p_rows.csv"
     candidates_csv = tmp_path / "denovo_candidate_rows.csv"
+    eval_jsonl = tmp_path / "denovo_eval.jsonl"
+    candidate_jsonl = tmp_path / "denovo_candidates.jsonl"
+    candidate_latents = tmp_path / "candidate_latents.npy"
     direct_csv = tmp_path / "direct.csv"
     _write_molecule_database(molecule_db, count=8)
 
@@ -201,9 +204,74 @@ def test_export_denovo_2p7p_benchmark_rows_and_property_nearest(tmp_path):
     assert sorted({row["property_count"] for row in rows}) == ["2", "3"]
     assert all(row["source_smiles"] == "" for row in rows)
     assert all(row["task_type"] == "de_novo_design" for row in rows)
+    assert all(row["variant"] == "full" for row in rows)
+    assert all(row["prompt"] for row in rows)
     assert all(row["sketchmol_preset_str"] for row in rows)
     assert all(len(row["condition_properties"].split(",")) == int(row["property_count"]) for row in rows)
     assert not ({row["molecule_id"] for row in rows} & {row["molecule_id"] for row in candidates})
+
+    jsonl_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_denovo_2p7p_eval_jsonl.py",
+            "--input-csv",
+            str(rows_csv),
+            "--output-jsonl",
+            str(eval_jsonl),
+            "--split",
+            "eval",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert jsonl_result.returncode == 0, jsonl_result.stderr
+    exported_samples = [json.loads(line) for line in eval_jsonl.read_text(encoding="utf-8").splitlines()]
+    assert len(exported_samples) == 4
+    assert {sample["task_type"] for sample in exported_samples} == {"edit_generation"}
+    assert {sample["metadata"]["source_condition_mode"] for sample in exported_samples} == {"zero"}
+    assert all(sample["source_smiles"] == "" for sample in exported_samples)
+    assert all(sample["target_smiles"] for sample in exported_samples)
+
+    candidate_jsonl_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_denovo_2p7p_eval_jsonl.py",
+            "--input-csv",
+            str(candidates_csv),
+            "--output-jsonl",
+            str(candidate_jsonl),
+            "--split",
+            "candidate",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert candidate_jsonl_result.returncode == 0, candidate_jsonl_result.stderr
+
+    latent_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_univideo_target_latents.py",
+            "--jsonl",
+            str(candidate_jsonl),
+            "--output-npy",
+            str(candidate_latents),
+            "--latent-backend",
+            "fingerprint_property_vector",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert latent_result.returncode == 0, latent_result.stderr
+    latents = np.load(candidate_latents)
+    assert latents.shape == (len(candidates), 512 + 32 + 32 + 16)
 
     materialize_result = subprocess.run(
         [

@@ -48,8 +48,11 @@ def hidden_sequence_for_sample(
 ) -> np.ndarray:
     """Build a small source/instruction hidden-state sequence for connector training."""
 
-    source = sample.source_smiles or sample.molecule_smiles or sample.target_smiles
-    source_vec = molecule_feature(source, token_dim)
+    if zero_source_condition(sample):
+        source_vec = np.zeros(token_dim, dtype=np.float32)
+    else:
+        source = sample.source_smiles or sample.molecule_smiles or sample.target_smiles
+        source_vec = molecule_feature(source, token_dim)
     target_text = sample.instruction or sample.description or sample.prompt
     text_vec = _resize(text_feature(target_text, text_dim), token_dim)
     image_vec = _resize(image_feature(sample.source_image, image_dim), token_dim)
@@ -121,6 +124,11 @@ def target_latent_vector(sample: UnifiedConditionSample, *, fingerprint_dim: int
     return np.concatenate([fp, props, deltas, active]).astype(np.float32)
 
 
+def zero_source_condition(sample: UnifiedConditionSample) -> bool:
+    mode = str(sample.metadata.get("source_condition_mode", "")).strip().lower()
+    return mode in {"zero", "none", "sourceless", "de_novo", "denovo"}
+
+
 def _resize(vec: np.ndarray, dim: int) -> np.ndarray:
     vec = np.asarray(vec, dtype=np.float32).reshape(-1)
     if vec.shape[0] == dim:
@@ -130,4 +138,3 @@ def _resize(vec: np.ndarray, dim: int) -> np.ndarray:
     out = np.zeros(dim, dtype=np.float32)
     out[: vec.shape[0]] = vec
     return out
-
