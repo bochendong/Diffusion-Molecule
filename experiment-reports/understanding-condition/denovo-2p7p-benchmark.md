@@ -64,7 +64,7 @@ Eval：`source_condition_mode=zero`（无 source 图/指纹），`edit_latent` �
 1. **当前 SUCC checkpoint 不适合 zero-source de novo**：模型在 MolEdit source-conditioned edit 上训练，零 source 条件下 latent 采样几乎不贴目标（target cosine **0.095**），strict 远低于 `property_nearest`（0.98）和 SketchMol 参考（0.68–0.80）。
 2. **Baseline `property_nearest` 可作为数据和 evaluator 上界**：证明 benchmark 管线与 6000 行目标定义正确。
 3. **Mode collapse 是主要症状**：validity=1 但 unique≈0.4%，需 de novo 专用训练（无 source / 随机 source dropout 更高）或 denovo head，而非直接复用 edit checkpoint。
-4. **OOD benchmark**（`submit_denovo_ood_ours_benchmark.sh`）单独评测 forward/rare/reverse，见后续报告。
+4. **OOD benchmark**（job `15959891`）见 [denovo-ood-benchmark.md](denovo-ood-benchmark.md)：overall strict **0.114**，rare_combo **0%**，`logp_high` 单点 **0.75**。
 
 ## 产出路径
 
