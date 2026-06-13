@@ -12,9 +12,16 @@
 | `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | SUCC MolEdit v1（`15838733`/`15838734`） |
 | `understanding-condition/` | [moledit-instruct-v2-fix.md](understanding-condition/moledit-instruct-v2-fix.md) | **完成** SUCC v2 fix（`15866598`/`15866600`/`15897034`） |
 | `understanding-condition/` | [moledit-instruct-v3-attack.md](understanding-condition/moledit-instruct-v3-attack.md) | **完成** SUCC v3 attack（`15901616`/`15902241`，10/10 Table1） |
+| `understanding-condition/` | [moledit-instruct-dualmode-v1.md](understanding-condition/moledit-instruct-dualmode-v1.md) | **完成** SUCC dual-mode 训练（`15963804`，MolEdit+de novo+OOD） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（`15958481` baseline / `15959362` ours） |
 | `understanding-condition/` | [denovo-ood-benchmark.md](understanding-condition/denovo-ood-benchmark.md) | **完成** de novo OOD ours（`15959891`） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
+
+## 近期 Slurm Job 一览（2026-06-12）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `15963804` | `succ-dualmode-v1`（MolEdit+de novo+OOD 训练） | 完成（54m29s） | [dualmode v1](understanding-condition/moledit-instruct-dualmode-v1.md) |
 
 ## 近期 Slurm Job 一览（2026-06-11）
 

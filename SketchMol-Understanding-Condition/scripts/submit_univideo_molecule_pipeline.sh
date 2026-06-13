@@ -33,7 +33,7 @@ STRUCTURE_BENCHMARK_DIR="${SUCC_STRUCTURE_BENCHMARK_DIR:-$UNIFIED_OUTPUT_DIR/uni
 DATASET_MODE="${SUCC_DATASET_MODE:-multiproperty}"
 
 export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
-if [[ "$DATASET_MODE" == "moledit" ]]; then
+if [[ "$DATASET_MODE" == "moledit" || "$DATASET_MODE" == "dualmode" || "$DATASET_MODE" == "moledit_dualmode" ]]; then
   export SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK=0
   export SUCC_RUN_MOLSCRIBE_OCR=0
   export SUCC_DECODE_EVAL_IMAGES="${SUCC_DECODE_EVAL_IMAGES:-0}"
@@ -78,9 +78,13 @@ echo "  gpu_candidates=${GPU_CANDIDATES[*]}"
 echo "  log_dir=$LOG_DIR"
 echo "  output_dir=$UNIFIED_OUTPUT_DIR"
 echo "  dataset_mode=$DATASET_MODE"
-if [[ "$DATASET_MODE" == "moledit" ]]; then
+if [[ "$DATASET_MODE" == "moledit" || "$DATASET_MODE" == "dualmode" || "$DATASET_MODE" == "moledit_dualmode" ]]; then
   echo "  moledit_train_split=${SUCC_MOLEDIT_TRAIN_SPLIT:-${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}/processed/moledit-instruct/enhanced_v1/splits/train.csv}"
   echo "  moledit_eval_split=${SUCC_MOLEDIT_EVAL_SPLIT:-${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv}"
+  if [[ "$DATASET_MODE" == "dualmode" || "$DATASET_MODE" == "moledit_dualmode" ]]; then
+    echo "  denovo_train_rows_per_property_count=${SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT:-500}"
+    echo "  ood_train_rows_per_spec=${SUCC_OOD_TRAIN_ROWS_PER_SPEC:-200}"
+  fi
 else
   echo "  condition_rows=${SUCC_CONDITION_ROWS:-$SMMED_DEFAULT_CONDITION_ROWS}"
 fi

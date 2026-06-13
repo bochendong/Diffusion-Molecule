@@ -210,6 +210,39 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_materialized_benchmark.sh
 ```
 
+### 0.4.1 Dual-mode 主训练（MolEdit + de novo + OOD）
+
+旧 checkpoint 在 OOD benchmark 上 overall strict 只有 0.114，且几乎被
+`logp_high=0.750` 撑起；`rare_combo=0.000`，MW/TPSA/RB extreme 也都是 0。
+根因是训练只见过 source-conditioned MolEdit rows，没见过 zero-source 的边界 /
+组合分布。
+
+`submit_univideo_moledit_dualmode_pipeline.sh` 在 Table1 MolEdit edit 之外，默认还会混入：
+
+- de novo 2p-7p train/eval rows（zero-source property design）
+- OOD train/eval rows：`forward_extreme`、`rare_combo`、`reverse_stimulation`
+
+下一轮主训练用这个入口：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
+```
+
+默认输出到 `outputs/univideo_molecule_generation_moledit_instruct_dualmode_v1/`，不会覆盖
+`v2_fix` / `v3_attack`。常用覆盖项：
+
+```bash
+SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT=500 \
+SUCC_OOD_TRAIN_ROWS_PER_SPEC=200 \
+SUCC_SOURCE_DROPOUT=0.30 \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
+```
+
+训练完成后，用 `submit_denovo_ood_ours_benchmark.sh` /
+`submit_denovo_2p7p_ours_benchmark.sh` 指向 dualmode checkpoint 复测 OOD 与 de novo。
+
 默认读取：
 
 ```text
@@ -267,6 +300,8 @@ scripts/run_univideo_molecule_pipeline.sh
 scripts/submit_univideo_molecule_pipeline.sh
 scripts/submit_univideo_moledit_pipeline.sh
 scripts/submit_univideo_moledit_v2_fix_pipeline.sh
+scripts/submit_univideo_moledit_dualmode_pipeline.sh
+scripts/export_univideo_dualmode_dataset.py
 scripts/submit_univideo_moledit_benchmark.sh
 scripts/submit_univideo_moledit_table_metrics.sh
 scripts/submit_univideo_source_neighbor_v2_pipeline.sh

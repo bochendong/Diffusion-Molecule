@@ -94,6 +94,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--id-column", default=None)
     parser.add_argument("--candidate-limit", type=int, default=0, help="0 keeps all candidate rows.")
     parser.add_argument("--include-eval-in-candidates", action="store_true")
+    parser.add_argument(
+        "--train-rows-per-spec",
+        type=int,
+        default=0,
+        help="Optional additional zero-source OOD train rows per spec.",
+    )
+    parser.add_argument(
+        "--train-output-csv",
+        type=Path,
+        default=None,
+        help="Optional train rows CSV. Defaults to output sibling denovo_ood_train_rows.csv.",
+    )
     return parser.parse_args(argv)
 
 
@@ -111,7 +123,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         specs=specs,
         rows_per_spec=args.rows_per_spec,
         rng=rng,
+        split="eval",
     )
+    train_rows: list[dict[str, object]] = []
+    train_output = args.train_output_csv
+    if args.train_rows_per_spec > 0:
+        train_rows, _, _ = build_ood_rows(
+            molecules,
+            specs=specs,
+            rows_per_spec=args.train_rows_per_spec,
+            rng=random.Random(args.seed + 1),
+            split="train",
+            exclude_keys=selected_keys,
+        )
+        train_output = train_output or args.output_csv.with_name("denovo_ood_train_rows.csv")
+        write_rows(train_output, train_rows)
     candidate_rows = build_candidate_rows(
         molecules,
         selected_keys=selected_keys,
@@ -140,6 +166,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "include_eval_in_candidates": bool(args.include_eval_in_candidates),
         "bucket_distribution": dict(Counter(str(row["ood_bucket"]) for row in eval_rows)),
         "spec_distribution": dict(Counter(str(row["ood_spec_id"]) for row in eval_rows)),
+        "train_rows": len(train_rows),
+        "train_output_csv": str(train_output) if train_output else None,
+        "train_rows_per_spec": int(args.train_rows_per_spec),
+        "train_bucket_distribution": dict(Counter(str(row["ood_bucket"]) for row in train_rows)),
     }
     args.output_csv.with_suffix(".summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
@@ -205,22 +235,26 @@ def build_ood_rows(
     specs: list[dict[str, str]],
     rows_per_spec: int,
     rng: random.Random,
+    split: str = "eval",
+    exclude_keys: set[str] | None = None,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]], set[str]]:
     rows: list[dict[str, object]] = []
     negative_rows: list[dict[str, object]] = []
     selected_keys: set[str] = set()
+    excluded = set(exclude_keys or ())
+    pool = [molecule for molecule in molecules if str(molecule["mol_key"]) not in excluded] or list(molecules)
     for spec in specs:
         positive = parse_preset(spec["positive"])
         negative = parse_preset(spec.get("negative", ""))
         ranked = sorted(
-            molecules,
+            pool,
             key=lambda mol: (preset_distance(mol["props"], positive), rng.random()),  # type: ignore[arg-type]
         )
         picked = []
         for molecule in ranked:
             if len(picked) >= rows_per_spec:
                 break
-            if str(molecule["mol_key"]) in selected_keys and len(molecules) >= rows_per_spec * len(specs):
+            if str(molecule["mol_key"]) in selected_keys and len(pool) >= rows_per_spec * len(specs):
                 continue
             picked.append(molecule)
             selected_keys.add(str(molecule["mol_key"]))
@@ -230,23 +264,24 @@ def build_ood_rows(
                     break
                 picked.append(molecule)
         for local_index, molecule in enumerate(picked):
-            condition_id = f"denovo_ood_{sanitize(spec['name'])}_{local_index:06d}"
+            prefix = "denovo_ood_train" if split == "train" else "denovo_ood"
+            condition_id = f"{prefix}_{sanitize(spec['name'])}_{local_index:06d}"
             rows.append(
                 make_condition_row(
                     molecule,
                     selected_props=list(positive),
                     target_values=dict(molecule["props"]),  # type: ignore[arg-type]
                     condition_id=condition_id,
-                    split="eval",
+                    split=split,
                     instruction=render_instruction(list(positive), molecule["props"]),  # type: ignore[arg-type]
                     preset_values=positive,
                     negative_preset=negative,
                     spec=spec,
-                    role="eval",
+                    role=split,
                     negative_condition_id=f"{condition_id}:negative",
                 )
             )
-            if negative:
+            if negative and split == "eval":
                 negative_values = dict(molecule["props"])  # type: ignore[arg-type]
                 negative_values.update(negative)
                 negative_props = list(negative)

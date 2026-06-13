@@ -44,6 +44,10 @@ fi
 MOLEDIT_TRAIN_SPLIT="${SUCC_MOLEDIT_TRAIN_SPLIT:-${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}/processed/moledit-instruct/enhanced_v1/splits/train.csv}"
 MOLEDIT_EVAL_SPLIT="${SUCC_MOLEDIT_EVAL_SPLIT:-${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv}"
 MOLEDIT_TABLE1_TASKS_ONLY="${SUCC_MOLEDIT_TABLE1_TASKS_ONLY:-0}"
+MOLEDIT_LIKE=0
+if [[ "$DATASET_MODE" == "moledit" || "$DATASET_MODE" == "dualmode" || "$DATASET_MODE" == "moledit_dualmode" ]]; then
+  MOLEDIT_LIKE=1
+fi
 
 RUN_FEATURE_EXPORT="${SUCC_RUN_FEATURE_EXPORT:-auto}"
 RUN_DATASET_EXPORT="${SUCC_RUN_DATASET_EXPORT:-1}"
@@ -113,7 +117,7 @@ SKETCHMOL_VAE_CHECKPOINT="${SUCC_SKETCHMOL_VAE_CHECKPOINT:-}"
 SKETCHMOL_SCALE_FACTOR="${SUCC_SKETCHMOL_SCALE_FACTOR:-1.0}"
 STRUCTURE_BENCHMARK_DIR="${SUCC_STRUCTURE_BENCHMARK_DIR:-$UNIFIED_OUTPUT_DIR/univideo_molecule/image_structure_benchmark}"
 RUN_IMAGE_STRUCTURE_BENCHMARK="${SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK:-auto}"
-if [[ "$DATASET_MODE" == "moledit" ]]; then
+if [[ "$MOLEDIT_LIKE" == "1" ]]; then
   RUN_IMAGE_STRUCTURE_BENCHMARK=0
 fi
 DEFAULT_MOLSCRIBE_MODEL="/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth"
@@ -127,7 +131,7 @@ else
   MOLSCRIBE_MODEL=""
 fi
 RUN_MOLSCRIBE_OCR="${SUCC_RUN_MOLSCRIBE_OCR:-auto}"
-if [[ "$DATASET_MODE" == "moledit" ]]; then
+if [[ "$MOLEDIT_LIKE" == "1" ]]; then
   RUN_MOLSCRIBE_OCR=0
 fi
 DEFAULT_MOLSCRIBE_WORKDIR=""
@@ -154,7 +158,7 @@ fi
 echo "Running UniVideo-style molecular generation pipeline"
 echo "  python=$PYTHON_BIN"
 echo "  dataset_mode=$DATASET_MODE"
-if [[ "$DATASET_MODE" == "moledit" ]]; then
+if [[ "$MOLEDIT_LIKE" == "1" ]]; then
   echo "  moledit_train_split=$MOLEDIT_TRAIN_SPLIT"
   echo "  moledit_eval_split=$MOLEDIT_EVAL_SPLIT"
   echo "  moledit_train_limit=${MOLEDIT_TRAIN_LIMIT:-none}"
@@ -212,7 +216,52 @@ elif [[ "$LATENT_BACKEND" == "sketchmol_vae" ]]; then
 fi
 
 if [[ "$RUN_DATASET_EXPORT" == "1" || ! -f "$DATASET_DIR/univideo_edit_train.jsonl" || ! -f "$DATASET_DIR/univideo_edit_eval.jsonl" || ! -f "$BASELINE_CSV" ]]; then
-  if [[ "$DATASET_MODE" == "moledit" ]]; then
+  if [[ "$DATASET_MODE" == "dualmode" || "$DATASET_MODE" == "moledit_dualmode" ]]; then
+    if [[ ! -f "$MOLEDIT_TRAIN_SPLIT" ]]; then
+      echo "ERROR: missing MolEdit train split: $MOLEDIT_TRAIN_SPLIT" >&2
+      exit 2
+    fi
+    if [[ ! -f "$MOLEDIT_EVAL_SPLIT" ]]; then
+      echo "ERROR: missing MolEdit eval split: $MOLEDIT_EVAL_SPLIT" >&2
+      exit 2
+    fi
+    MOLECULE_DB="${SUCC_DENOVO_MOLECULE_DB_CSV:-$SMMED_DEFAULT_MOLECULE_DB}"
+    if [[ ! -f "$MOLECULE_DB" ]]; then
+      echo "ERROR: missing molecule database for dual-mode export: $MOLECULE_DB" >&2
+      exit 2
+    fi
+    DUALMODE_EXPORT_ARGS=(
+      --output-dir "$DATASET_DIR"
+      --python-bin "$PYTHON_BIN"
+      --molecule-db-csv "$MOLECULE_DB"
+      --moledit-train-split "$MOLEDIT_TRAIN_SPLIT"
+      --moledit-eval-split "$MOLEDIT_EVAL_SPLIT"
+      --min-source-tanimoto "$SUCC_MIN_EDIT_SOURCE_TANIMOTO"
+      --denovo-eval-rows-per-property-count "${SUCC_DENOVO_EVAL_ROWS_PER_PROPERTY_COUNT:-1000}"
+      --denovo-train-rows-per-property-count "${SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT:-500}"
+      --ood-eval-rows-per-spec "${SUCC_OOD_EVAL_ROWS_PER_SPEC:-100}"
+      --ood-train-rows-per-spec "${SUCC_OOD_TRAIN_ROWS_PER_SPEC:-200}"
+    )
+    if [[ "$MOLEDIT_TABLE1_TASKS_ONLY" == "1" ]]; then
+      DUALMODE_EXPORT_ARGS+=(--moledit-table1-tasks-only)
+    fi
+    if [[ -n "$MOLEDIT_TRAIN_LIMIT" && "$MOLEDIT_TRAIN_LIMIT" != "0" ]]; then
+      DUALMODE_EXPORT_ARGS+=(--moledit-train-limit "$MOLEDIT_TRAIN_LIMIT")
+    fi
+    if [[ -n "$MOLEDIT_EVAL_LIMIT" && "$MOLEDIT_EVAL_LIMIT" != "0" ]]; then
+      DUALMODE_EXPORT_ARGS+=(--moledit-eval-limit "$MOLEDIT_EVAL_LIMIT")
+    fi
+    if [[ -n "$MOLEDIT_BALANCED_TRAIN_PER_TASK" && "$MOLEDIT_BALANCED_TRAIN_PER_TASK" != "0" ]]; then
+      DUALMODE_EXPORT_ARGS+=(--moledit-balanced-train-per-task "$MOLEDIT_BALANCED_TRAIN_PER_TASK")
+    fi
+    if [[ -n "$MOLEDIT_BALANCED_EVAL_PER_TASK" && "$MOLEDIT_BALANCED_EVAL_PER_TASK" != "0" ]]; then
+      DUALMODE_EXPORT_ARGS+=(--moledit-balanced-eval-per-task "$MOLEDIT_BALANCED_EVAL_PER_TASK")
+    fi
+    if [[ -n "${SUCC_OOD_SPEC_JSON:-}" ]]; then
+      DUALMODE_EXPORT_ARGS+=(--ood-spec-json "$SUCC_OOD_SPEC_JSON")
+    fi
+    "$PYTHON_BIN" "$PROJECT_DIR/scripts/export_univideo_dualmode_dataset.py" "${DUALMODE_EXPORT_ARGS[@]}"
+  elif [[ "$DATASET_MODE" == "moledit" ]]; then
     if [[ ! -f "$MOLEDIT_TRAIN_SPLIT" ]]; then
       echo "ERROR: missing MolEdit train split: $MOLEDIT_TRAIN_SPLIT" >&2
       exit 2

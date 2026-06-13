@@ -62,6 +62,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Keep eval target molecules in the candidate CSV. Defaults to excluding them.",
     )
+    parser.add_argument(
+        "--train-rows-per-property-count",
+        type=int,
+        default=0,
+        help="Optional additional zero-source train rows per property-count bucket.",
+    )
+    parser.add_argument(
+        "--train-output-csv",
+        type=Path,
+        default=None,
+        help="Optional train rows CSV. Defaults to output sibling denovo_2p7p_train_rows.csv.",
+    )
     return parser.parse_args(argv)
 
 
@@ -101,6 +113,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
 
     candidate_output = args.candidate_output_csv or args.output_csv.with_name("denovo_candidate_rows.csv")
+    train_rows: list[dict[str, object]] = []
+    train_output = args.train_output_csv
+    if args.train_rows_per_property_count > 0:
+        train_rows = build_train_rows(
+            molecules,
+            exclude_keys=selected_keys,
+            rows_per_property_count=args.train_rows_per_property_count,
+            min_properties=args.min_properties,
+            max_properties=args.max_properties,
+            rng=rng,
+        )
+        train_output = train_output or args.output_csv.with_name("denovo_2p7p_train_rows.csv")
+        write_rows(train_output, train_rows)
+
     write_rows(args.output_csv, eval_rows)
     write_rows(candidate_output, candidate_rows)
     summary = {
@@ -117,6 +143,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "property_count_distribution": dict(
             sorted(Counter(str(row["property_count"]) for row in eval_rows).items(), key=lambda item: int(item[0]))
         ),
+        "train_rows": len(train_rows),
+        "train_output_csv": str(train_output) if train_output else None,
+        "train_rows_per_property_count": int(args.train_rows_per_property_count),
     }
     args.output_csv.with_suffix(".summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
@@ -187,6 +216,35 @@ def build_eval_rows(
     return rows, selected_keys
 
 
+def build_train_rows(
+    molecules: list[dict[str, object]],
+    *,
+    exclude_keys: set[str],
+    rows_per_property_count: int,
+    min_properties: int,
+    max_properties: int,
+    rng: random.Random,
+) -> list[dict[str, object]]:
+    pool = [molecule for molecule in molecules if str(molecule["mol_key"]) not in exclude_keys]
+    if not pool:
+        pool = list(molecules)
+    rng.shuffle(pool)
+    rows: list[dict[str, object]] = []
+    cursor = 0
+    for property_count in range(min_properties, max_properties + 1):
+        combos = list(itertools.combinations(PROPERTY_COLUMNS, property_count))
+        rng.shuffle(combos)
+        for local_index in range(rows_per_property_count):
+            molecule = pool[(cursor + local_index) % len(pool)]
+            selected_props = list(combos[local_index % len(combos)])
+            condition_id = f"denovo_train_{property_count}p_{local_index:06d}"
+            row = make_condition_row(molecule, selected_props, condition_id=condition_id, role="train")
+            row["split"] = "train"
+            rows.append(row)
+        cursor += rows_per_property_count
+    return rows
+
+
 def build_candidate_rows(
     molecules: list[dict[str, object]],
     *,
@@ -223,7 +281,7 @@ def make_condition_row(
         "variant_id": f"{condition_id}:full",
         "variant": "full",
         "pair_id": "",
-        "split": "eval" if role == "eval" else "candidate",
+        "split": "train" if role == "train" else ("eval" if role == "eval" else "candidate"),
         "task_type": "de_novo_design",
         "benchmark_task": "denovo_2p7p_property_design",
         "source_smiles": "",
