@@ -8,6 +8,7 @@ import csv
 import json
 import sys
 from pathlib import Path
+from typing import Sequence
 
 import numpy as np
 import torch
@@ -22,6 +23,7 @@ from sketchmol_understanding_condition.unified_condition_dataset import (  # noq
     EDIT_GENERATION,
     PROPERTY_COLUMNS,
     TABLE1_TASK_KEYS,
+    UnifiedConditionSample,
     read_jsonl,
 )
 from sketchmol_understanding_condition.molecule_image_vae import (  # noqa: E402
@@ -46,7 +48,7 @@ class UniVideoMoleculeDataset(Dataset):
 
     def __init__(
         self,
-        jsonl: Path,
+        jsonl: Path | Sequence[Path],
         *,
         feature_store: FrozenConditionFeatureStore | None,
         fallback_token_dim: int,
@@ -59,11 +61,16 @@ class UniVideoMoleculeDataset(Dataset):
         limit: int | None = None,
         stats: dict[str, np.ndarray] | None = None,
     ) -> None:
-        samples = [sample for sample in read_jsonl(jsonl) if sample.task_type == EDIT_GENERATION]
-        if limit is not None:
-            samples = samples[:limit]
+        jsonl_paths = [jsonl] if isinstance(jsonl, Path) else list(jsonl)
+        samples = []
+        for path_index, jsonl_path in enumerate(jsonl_paths):
+            path_samples = [sample for sample in read_jsonl(jsonl_path) if sample.task_type == EDIT_GENERATION]
+            if limit is not None and (len(jsonl_paths) == 1 or path_index == 0):
+                path_samples = path_samples[:limit]
+            samples.extend(path_samples)
         if not samples:
-            raise ValueError(f"No edit_generation rows found in {jsonl}")
+            joined = ", ".join(str(path) for path in jsonl_paths)
+            raise ValueError(f"No edit_generation rows found in {joined}")
         if feature_store is not None:
             fallback_token_dim = feature_store.input_hidden_dim
 
@@ -125,10 +132,13 @@ class UniVideoMoleculeDataset(Dataset):
         *,
         table1_weight: float,
         property_weights: dict[str, float],
+        denovo_weight: float = 1.0,
     ) -> np.ndarray:
         weights = []
         for sample in self.samples:
             weight = 1.0
+            if _is_denovo_sample(sample):
+                weight *= max(float(denovo_weight), 0.0)
             if sample.metadata.get("moledit_task_key", "") in TABLE1_TASK_KEYS:
                 weight *= max(float(table1_weight), 0.0)
             active_props = [
@@ -148,6 +158,8 @@ class UniVideoMoleculeDataset(Dataset):
         target_latent = np.asarray(row["target_latent"], dtype=np.float32)
         target_properties = np.asarray(row["target_properties"], dtype=np.float32)
         property_deltas = np.asarray(row["property_deltas"], dtype=np.float32)
+        source_present = 0.0 if zero_source_condition(sample) or not sample.source_smiles else 1.0
+        generation_mode = 1 if _is_denovo_sample(sample) else 0
         return {
             "mllm_hidden": torch.from_numpy(np.asarray(row["mllm_hidden"], dtype=np.float32)),
             "source_latent": torch.from_numpy(self.normalize_latent(source_latent)).float(),
@@ -157,6 +169,8 @@ class UniVideoMoleculeDataset(Dataset):
             "active_mask": torch.from_numpy(np.asarray(row["active_mask"], dtype=np.float32)).float(),
             "direction_labels": torch.from_numpy(np.asarray(row["direction_labels"], dtype=np.int64)).long(),
             "similarity_bin": torch.tensor(int(row["similarity_bin"]), dtype=torch.long),
+            "source_present": torch.tensor(source_present, dtype=torch.float32),
+            "generation_mode": torch.tensor(generation_mode, dtype=torch.long),
             "sample_id": sample.sample_id,
             "condition_id": sample.metadata.get("condition_id", ""),
             "source_smiles": sample.source_smiles,
@@ -177,10 +191,36 @@ class UniVideoMoleculeDataset(Dataset):
         return ((value[None, :] - self.stats["delta_mean"]) / self.stats["delta_std"])[0].astype(np.float32)
 
 
+def _is_denovo_sample(sample: UnifiedConditionSample) -> bool:
+    benchmark_task = str(sample.metadata.get("benchmark_task", "") or "").lower()
+    source_mode = str(sample.metadata.get("source_condition_mode", "") or "").lower()
+    return (
+        zero_source_condition(sample)
+        or str(sample.metadata.get("denovo", "") or "").lower() in {"1", "true", "yes"}
+        or source_mode in {"zero", "none", "sourceless", "de_novo", "denovo"}
+        or "denovo" in benchmark_task
+        or "de_novo" in benchmark_task
+    )
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-jsonl", required=True, type=Path)
+    parser.add_argument(
+        "--extra-train-jsonl",
+        action="append",
+        type=Path,
+        default=[],
+        help="Additional training JSONL files, e.g. zero-source de novo rows.",
+    )
     parser.add_argument("--eval-jsonl", type=Path, default=None)
+    parser.add_argument(
+        "--extra-eval-jsonl",
+        action="append",
+        type=Path,
+        default=[],
+        help="Additional eval JSONL files evaluated with the primary eval set.",
+    )
     parser.add_argument("--condition-features-dir", type=Path, default=None)
     parser.add_argument("--condition-feature-array", choices=["query_tokens", "pooled"], default="query_tokens")
     parser.add_argument("--condition-feature-variant", default="full")
@@ -211,7 +251,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-decode-images", type=int, default=64)
     parser.add_argument("--timesteps", type=int, default=100)
     parser.add_argument("--diffusion-objective", choices=["pred_noise", "pred_x0"], default="pred_noise")
-    parser.add_argument("--latent-target-mode", choices=["absolute", "residual"], default="absolute")
+    parser.add_argument("--latent-target-mode", choices=["absolute", "residual", "mixed"], default="absolute")
     parser.add_argument("--residual-sample-scale", type=float, default=1.0)
     parser.add_argument("--connector-latent-blend", type=float, default=0.0)
     parser.add_argument("--stage1-epochs", type=int, default=2)
@@ -225,6 +265,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-dropout", type=float, default=0.05)
     parser.add_argument("--sampling-strategy", choices=["shuffle", "weighted"], default="shuffle")
     parser.add_argument("--table1-sample-weight", type=float, default=1.0)
+    parser.add_argument("--denovo-sample-weight", type=float, default=1.0)
+    parser.add_argument("--denovo-diversity-loss-weight", type=float, default=0.0)
+    parser.add_argument("--denovo-diversity-margin", type=float, default=0.85)
     parser.add_argument(
         "--train-property-sample-weights",
         default="",
@@ -298,8 +341,11 @@ def main() -> None:
         _run_eval_only(args, device=device, feature_store=feature_store, image_vae=image_vae)
         return
 
+    train_jsonls = [args.train_jsonl, *args.extra_train_jsonl]
+    eval_jsonls = [args.eval_jsonl, *args.extra_eval_jsonl] if args.eval_jsonl is not None else list(args.extra_eval_jsonl)
+
     train_data = UniVideoMoleculeDataset(
-        args.train_jsonl,
+        train_jsonls,
         feature_store=feature_store,
         fallback_token_dim=args.fallback_token_dim,
         fingerprint_dim=args.fingerprint_dim,
@@ -317,6 +363,7 @@ def main() -> None:
         sample_weights = train_data.sample_weights(
             table1_weight=args.table1_sample_weight,
             property_weights=train_property_sample_weights,
+            denovo_weight=args.denovo_sample_weight,
         )
         generator = torch.Generator()
         generator.manual_seed(args.seed)
@@ -372,6 +419,8 @@ def main() -> None:
                 latent_target_mode=args.latent_target_mode,
                 aux_property_weights=aux_property_weights,
                 aux_active_only=not args.aux_all_properties,
+                denovo_diversity_weight=args.denovo_diversity_loss_weight,
+                denovo_diversity_margin=args.denovo_diversity_margin,
             )
         )
     if args.stage2_epochs > 0:
@@ -390,6 +439,8 @@ def main() -> None:
                 latent_target_mode=args.latent_target_mode,
                 aux_property_weights=aux_property_weights,
                 aux_active_only=not args.aux_all_properties,
+                denovo_diversity_weight=args.denovo_diversity_loss_weight,
+                denovo_diversity_margin=args.denovo_diversity_margin,
             )
         )
     if args.stage3_epochs > 0:
@@ -408,12 +459,16 @@ def main() -> None:
                 latent_target_mode=args.latent_target_mode,
                 aux_property_weights=aux_property_weights,
                 aux_active_only=not args.aux_all_properties,
+                denovo_diversity_weight=args.denovo_diversity_loss_weight,
+                denovo_diversity_margin=args.denovo_diversity_margin,
             )
         )
 
     config = {
         "train_jsonl": str(args.train_jsonl),
+        "extra_train_jsonl": [str(path) for path in args.extra_train_jsonl],
         "eval_jsonl": str(args.eval_jsonl) if args.eval_jsonl else None,
+        "extra_eval_jsonl": [str(path) for path in args.extra_eval_jsonl],
         "condition_features_dir": str(args.condition_features_dir) if args.condition_features_dir else None,
         "condition_feature_array": args.condition_feature_array,
         "condition_feature_variant": args.condition_feature_variant,
@@ -442,6 +497,9 @@ def main() -> None:
         "source_dropout": args.source_dropout,
         "sampling_strategy": args.sampling_strategy,
         "table1_sample_weight": args.table1_sample_weight,
+        "denovo_sample_weight": args.denovo_sample_weight,
+        "denovo_diversity_loss_weight": args.denovo_diversity_loss_weight,
+        "denovo_diversity_margin": args.denovo_diversity_margin,
         "train_property_sample_weights": train_property_sample_weights,
         "aux_property_weights": _parse_property_weights(args.aux_property_weights),
         "aux_active_only": not args.aux_all_properties,
@@ -459,9 +517,9 @@ def main() -> None:
     if args.export_condition_tokens:
         _export_condition_tokens(connector, train_data, args.output_dir / "condition_tokens_train", device=device)
 
-    if args.eval_jsonl is not None and args.eval_jsonl.exists() and args.eval_limit != 0:
+    if eval_jsonls and all(path.exists() for path in eval_jsonls) and args.eval_limit != 0:
         eval_data = UniVideoMoleculeDataset(
-            args.eval_jsonl,
+            eval_jsonls,
             feature_store=feature_store,
             fallback_token_dim=args.fallback_token_dim,
             fingerprint_dim=args.fingerprint_dim,
@@ -537,7 +595,18 @@ def _run_eval_only(
         source_dropout=float(ckpt_config.get("source_dropout", args.source_dropout)),
     ).to(device)
     connector.load_state_dict(payload["connector_state"])
-    diffusion.load_state_dict(payload["diffusion_state"])
+    missing_keys, unexpected_keys = diffusion.load_state_dict(payload["diffusion_state"], strict=False)
+    if missing_keys or unexpected_keys:
+        print(
+            json.dumps(
+                {
+                    "checkpoint_load_warning": True,
+                    "missing_diffusion_keys": list(missing_keys),
+                    "unexpected_diffusion_keys": list(unexpected_keys),
+                },
+                sort_keys=True,
+            )
+        )
     connector.eval()
     diffusion.eval()
 
@@ -643,6 +712,8 @@ def _train_stage(
     latent_target_mode: str,
     aux_property_weights: torch.Tensor | None,
     aux_active_only: bool,
+    denovo_diversity_weight: float,
+    denovo_diversity_margin: float,
 ) -> list[dict[str, float | str | int]]:
     records = []
     for epoch in range(epochs):
@@ -651,6 +722,7 @@ def _train_stage(
         losses = []
         aux_losses = []
         diffusion_losses = []
+        diversity_losses = []
         for batch in loader:
             batch = _to_device(batch, device)
             optimizer.zero_grad()
@@ -682,24 +754,37 @@ def _train_stage(
                     batch["source_latent"],
                     condition.tokens,
                     condition.attention_mask,
+                    source_present=batch["source_present"],
+                    generation_mode=batch["generation_mode"],
                 )
             else:
                 diffusion_loss = torch.zeros((), device=device)
-            loss = aux_weight * aux_loss + diffusion_weight * diffusion_loss
+            if denovo_diversity_weight > 0:
+                diversity_loss = _denovo_diversity_loss(
+                    condition.target_latent,
+                    batch["generation_mode"],
+                    margin=denovo_diversity_margin,
+                )
+            else:
+                diversity_loss = torch.zeros((), device=device)
+            loss = aux_weight * aux_loss + diffusion_weight * diffusion_loss + denovo_diversity_weight * diversity_loss
             loss.backward()
             torch.nn.utils.clip_grad_norm_([param for group in optimizer.param_groups for param in group["params"]], 1.0)
             optimizer.step()
             losses.append(float(loss.item()))
             aux_losses.append(float(aux_loss.item()))
             diffusion_losses.append(float(diffusion_loss.item()))
+            diversity_losses.append(float(diversity_loss.item()))
         record = {
             "stage": stage,
             "epoch": epoch + 1,
             "loss": float(np.mean(losses)),
             "aux_loss": float(np.mean(aux_losses)),
             "diffusion_loss": float(np.mean(diffusion_losses)),
+            "denovo_diversity_loss": float(np.mean(diversity_losses)),
             "latent_target_mode": latent_target_mode,
             "aux_active_only": str(aux_active_only),
+            "denovo_diversity_weight": float(denovo_diversity_weight),
         }
         records.append(record)
         print(json.dumps(record, sort_keys=True))
@@ -757,6 +842,8 @@ def _evaluate(
             condition.attention_mask,
             negative_condition_tokens=negative_tokens,
             negative_condition_mask=negative_mask,
+            source_present=batch["source_present"],
+            generation_mode=batch["generation_mode"],
             guidance_scale=negative_guidance_scale,
             steps=sample_steps,
             eta=sample_eta,
@@ -767,10 +854,12 @@ def _evaluate(
                 (1.0 - connector_blend) * sampled_edit_or_target_norm
                 + connector_blend * condition.target_latent
             )
-        if latent_target_mode == "residual":
-            sampled_norm = batch["source_latent"] + float(residual_sample_scale) * sampled_edit_or_target_norm
-        else:
-            sampled_norm = sampled_edit_or_target_norm
+        sampled_norm = _restore_sampled_latent(
+            batch,
+            sampled_edit_or_target_norm,
+            latent_target_mode,
+            residual_sample_scale=residual_sample_scale,
+        )
         sampled = np.stack([dataset.denormalize_latent(row) for row in sampled_norm.cpu().numpy()])
         target = np.stack([dataset.denormalize_latent(row) for row in batch["target_latent"].cpu().numpy()])
         source = np.stack([dataset.denormalize_latent(row) for row in batch["source_latent"].cpu().numpy()])
@@ -824,6 +913,8 @@ def _evaluate(
     metrics.update(
         {
             "rows": len(rows),
+            "edit_rows": int(sum(1 for row in rows if str(row.get("generation_mode", "0")) == "0")),
+            "denovo_rows": int(sum(1 for row in rows if str(row.get("generation_mode", "0")) == "1")),
             "sample_steps": int(sample_steps),
             "sample_eta": float(sample_eta),
             "negative_guidance_scale": float(negative_guidance_scale),
@@ -904,6 +995,8 @@ def _collate(items: list[dict[str, object]]) -> dict[str, object]:
         "active_mask",
         "direction_labels",
         "similarity_bin",
+        "source_present",
+        "generation_mode",
     ]
     for row_idx, item in enumerate(items):
         cur = item["mllm_hidden"]  # type: ignore[index]
@@ -933,11 +1026,57 @@ def _diffusion_target_latent(batch: dict[str, object], latent_target_mode: str) 
         return target
     if latent_target_mode == "residual":
         return target - source
+    if latent_target_mode == "mixed":
+        residual_mask = _residual_mask(batch, target)
+        return residual_mask * (target - source) + (1.0 - residual_mask) * target
     raise ValueError(f"Unsupported latent_target_mode: {latent_target_mode}")
+
+
+def _restore_sampled_latent(
+    batch: dict[str, object],
+    sampled_edit_or_target_norm: torch.Tensor,
+    latent_target_mode: str,
+    *,
+    residual_sample_scale: float,
+) -> torch.Tensor:
+    if latent_target_mode == "absolute":
+        return sampled_edit_or_target_norm
+    if latent_target_mode == "residual":
+        return batch["source_latent"] + float(residual_sample_scale) * sampled_edit_or_target_norm
+    if latent_target_mode == "mixed":
+        residual_mask = _residual_mask(batch, sampled_edit_or_target_norm)
+        residual_sample = batch["source_latent"] + float(residual_sample_scale) * sampled_edit_or_target_norm
+        return residual_mask * residual_sample + (1.0 - residual_mask) * sampled_edit_or_target_norm
+    raise ValueError(f"Unsupported latent_target_mode: {latent_target_mode}")
+
+
+def _residual_mask(batch: dict[str, object], reference: torch.Tensor) -> torch.Tensor:
+    source_present = batch.get("source_present")
+    generation_mode = batch.get("generation_mode")
+    if torch.is_tensor(source_present):
+        mask = (source_present.to(device=reference.device, dtype=reference.dtype) > 0.5).to(reference.dtype)
+    elif torch.is_tensor(generation_mode):
+        mask = (generation_mode.to(device=reference.device).long() == 0).to(reference.dtype)
+    else:
+        mask = torch.ones(reference.shape[0], device=reference.device, dtype=reference.dtype)
+    return mask.view(-1, *([1] * (reference.ndim - 1)))
+
+
+def _denovo_diversity_loss(latents: torch.Tensor, generation_mode: torch.Tensor, *, margin: float) -> torch.Tensor:
+    denovo_mask = generation_mode.to(device=latents.device).long() == 1
+    denovo_latents = latents[denovo_mask]
+    if denovo_latents.shape[0] < 2:
+        return torch.zeros((), device=latents.device, dtype=latents.dtype)
+    normalized = torch.nn.functional.normalize(denovo_latents, dim=-1)
+    similarity = normalized @ normalized.T
+    off_diagonal = ~torch.eye(similarity.shape[0], device=similarity.device, dtype=torch.bool)
+    return torch.relu(similarity[off_diagonal] - float(margin)).mean()
 
 
 def _metadata_from_batch(batch: dict[str, object]) -> list[dict[str, str]]:
     size = len(batch["sample_id"])  # type: ignore[arg-type]
+    generation_mode = batch.get("generation_mode")
+    source_present = batch.get("source_present")
     return [
         {
             "sample_id": batch["sample_id"][idx],  # type: ignore[index]
@@ -945,6 +1084,8 @@ def _metadata_from_batch(batch: dict[str, object]) -> list[dict[str, str]]:
             "source_smiles": batch["source_smiles"][idx],  # type: ignore[index]
             "target_smiles": batch["target_smiles"][idx],  # type: ignore[index]
             "property_count": batch["property_count"][idx],  # type: ignore[index]
+            "generation_mode": str(int(generation_mode[idx].item())) if torch.is_tensor(generation_mode) else "0",
+            "source_present": f"{float(source_present[idx].item()):.1f}" if torch.is_tensor(source_present) else "1.0",
         }
         for idx in range(size)
     ]

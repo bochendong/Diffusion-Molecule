@@ -139,6 +139,20 @@ De novo 能力单独按 SketchMol 的 2p-7p continuous-property benchmark 口径
 MW/LogP/QED/TPSA/HBD/HBA/RB 的 property targets，评估报告会逐项列出 2p 到
 7p strict success，并附上 SketchMol structured reference 行。
 
+如果要重新训练一个同时支持 source-conditioned edit 和 zero-source de novo 的
+SUCC checkpoint，用 dual-mode 入口。它会把 MolEdit-Instruct enhanced_v1
+和 zero-source 2p-7p/OOD JSONL 混合训练，`latent_target_mode=mixed`。
+默认 OOD rows 覆盖 `forward_extreme`、`rare_combo` 和 `reverse_stimulation`，
+用于修复旧 checkpoint 在 rare combo 上 0% strict 的问题：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
+```
+
+训练完成后，再用下面的 `submit_denovo_*_ours_benchmark.sh` 测同一个 checkpoint。
+
 测我们的 SUCC / UniVideo 模型用下面这个入口。它会：
 
 1. 导出 de novo 2p-7p benchmark rows 和独立 candidate library；
@@ -210,7 +224,7 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_materialized_benchmark.sh
 ```
 
-### 0.4.1 Dual-mode 主训练（MolEdit + de novo + OOD）
+### 0.4.1 Dual-mode v2 guarded 主训练（MolEdit + de novo + OOD）
 
 旧 checkpoint 在 OOD benchmark 上 overall strict 只有 0.114，且几乎被
 `logp_high=0.750` 撑起；`rare_combo=0.000`，MW/TPSA/RB extreme 也都是 0。
@@ -222,7 +236,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_materialized_b
 - de novo 2p-7p train/eval rows（zero-source property design）
 - OOD train/eval rows：`forward_extreme`、`rare_combo`、`reverse_stimulation`
 
-下一轮主训练用这个入口：
+下一轮主训练用这个入口。默认会在训练后自动提交 Table1 guarded extension、
+OOD benchmark、de novo 2p-7p benchmark：
 
 ```bash
 export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
@@ -230,18 +245,32 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
 ```
 
-默认输出到 `outputs/univideo_molecule_generation_moledit_instruct_dualmode_v1/`，不会覆盖
-`v2_fix` / `v3_attack`。常用覆盖项：
+默认输出到 `outputs/univideo_molecule_generation_moledit_instruct_dualmode_v2_guarded/`，
+不会覆盖 `v2_fix` / `v3_attack`。核心改动是：
+
+- `SUCC_LATENT_TARGET_MODE=mixed`：source-conditioned edit 用 residual，zero-source de novo/OOD 用 absolute target。
+- `SUCC_SOURCE_DROPOUT=0.08`：比 v1 的 0.30 更保守，避免 Table1 edit 能力被冲掉。
+- `SUCC_DENOVO_SAMPLE_WEIGHT=2.0` + `SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT=0.02`：提高 zero-source 覆盖并抑制 mode collapse。
+- `SUCC_TABLE1_GUARD_MIN_ACC065=0.894`：完整 10-task Table1 `Acc_all(0.65)` mean 低于 v3 attack 基线则 guard job 失败。
+
+常用覆盖项：
 
 ```bash
 SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT=500 \
-SUCC_OOD_TRAIN_ROWS_PER_SPEC=200 \
-SUCC_SOURCE_DROPOUT=0.30 \
+SUCC_OOD_TRAIN_ROWS_PER_SPEC=400 \
+SUCC_SOURCE_DROPOUT=0.08 \
+SUCC_TABLE1_GUARD_MIN_ACC065=0.894 \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
 ```
 
-训练完成后，用 `submit_denovo_ood_ours_benchmark.sh` /
-`submit_denovo_2p7p_ours_benchmark.sh` 指向 dualmode checkpoint 复测 OOD 与 de novo。
+若只想提交训练、不自动排后续评估：
+
+```bash
+SUCC_SUBMIT_TABLE1_EXTENSION_AFTER=0 \
+SUCC_SUBMIT_OOD_BENCHMARK_AFTER=0 \
+SUCC_SUBMIT_DENOVO_BENCHMARK_AFTER=0 \
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
+```
 
 默认读取：
 
@@ -302,8 +331,10 @@ scripts/submit_univideo_moledit_pipeline.sh
 scripts/submit_univideo_moledit_v2_fix_pipeline.sh
 scripts/submit_univideo_moledit_dualmode_pipeline.sh
 scripts/export_univideo_dualmode_dataset.py
+scripts/submit_univideo_moledit_table1_extension.sh
 scripts/submit_univideo_moledit_benchmark.sh
 scripts/submit_univideo_moledit_table_metrics.sh
+scripts/check_moledit_table_guard.py
 scripts/submit_univideo_source_neighbor_v2_pipeline.sh
 scripts/export_univideo_benchmark_rows.py
 scripts/run_univideo_materialized_benchmark.sh

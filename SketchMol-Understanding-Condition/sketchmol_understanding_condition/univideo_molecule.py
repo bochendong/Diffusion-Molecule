@@ -145,6 +145,8 @@ class SourceConditionedEditDenoiser(nn.Module):
             nn.Linear(latent_dim, hidden_dim),
             nn.GELU(),
         )
+        self.mode_embedding = nn.Embedding(2, hidden_dim)
+        nn.init.zeros_(self.mode_embedding.weight)
         self.context_proj = nn.Sequential(
             nn.LayerNorm(context_dim),
             nn.Linear(context_dim, hidden_dim),
@@ -167,13 +169,23 @@ class SourceConditionedEditDenoiser(nn.Module):
         source_latent: torch.Tensor,
         condition_tokens: torch.Tensor,
         condition_mask: torch.Tensor | None = None,
+        source_present: torch.Tensor | None = None,
+        generation_mode: torch.Tensor | None = None,
     ) -> torch.Tensor:
         context = masked_mean(condition_tokens, condition_mask)
+        if source_present is None:
+            source_present = torch.ones(source_latent.shape[0], device=source_latent.device, dtype=source_latent.dtype)
+        if generation_mode is None:
+            generation_mode = torch.zeros(source_latent.shape[0], device=source_latent.device, dtype=torch.long)
+        source_present = source_present.to(device=source_latent.device, dtype=source_latent.dtype)
+        generation_mode = generation_mode.to(device=source_latent.device).long().clamp(0, 1)
+        source_context = self.source_proj(source_latent) * source_present.view(-1, 1)
+        source_context = source_context + self.mode_embedding(generation_mode)
         hidden = torch.cat(
             [
                 noisy_latent,
                 self.time_mlp(timesteps.float()),
-                self.source_proj(source_latent),
+                source_context,
                 self.context_proj(context),
             ],
             dim=-1,
@@ -234,8 +246,18 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
         source_latent: torch.Tensor,
         condition_tokens: torch.Tensor,
         condition_mask: torch.Tensor | None = None,
+        source_present: torch.Tensor | None = None,
+        generation_mode: torch.Tensor | None = None,
     ) -> UniVideoDiffusionPrediction:
-        model_out = self.denoiser(xt, timesteps, source_latent, condition_tokens, condition_mask)
+        model_out = self.denoiser(
+            xt,
+            timesteps,
+            source_latent,
+            condition_tokens,
+            condition_mask,
+            source_present=source_present,
+            generation_mode=generation_mode,
+        )
         if self.objective == "pred_noise":
             pred_noise = model_out
             pred_x0 = self.predict_x0_from_noise(xt, timesteps, pred_noise)
@@ -254,15 +276,27 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
         negative_condition_tokens: torch.Tensor,
         negative_condition_mask: torch.Tensor | None,
         *,
+        source_present: torch.Tensor | None = None,
+        generation_mode: torch.Tensor | None = None,
         guidance_scale: float,
     ) -> UniVideoDiffusionPrediction:
-        positive = self.model_predictions(xt, timesteps, source_latent, condition_tokens, condition_mask)
+        positive = self.model_predictions(
+            xt,
+            timesteps,
+            source_latent,
+            condition_tokens,
+            condition_mask,
+            source_present=source_present,
+            generation_mode=generation_mode,
+        )
         negative = self.model_predictions(
             xt,
             timesteps,
             source_latent,
             negative_condition_tokens,
             negative_condition_mask,
+            source_present=source_present,
+            generation_mode=generation_mode,
         )
         scale = float(guidance_scale)
         if self.objective == "pred_noise":
@@ -279,13 +313,28 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
         source_latent: torch.Tensor,
         condition_tokens: torch.Tensor,
         condition_mask: torch.Tensor | None = None,
+        source_present: torch.Tensor | None = None,
+        generation_mode: torch.Tensor | None = None,
     ) -> torch.Tensor:
         batch = target_latent.shape[0]
         timesteps = torch.randint(0, self.timesteps, (batch,), device=target_latent.device)
         noise = torch.randn_like(target_latent)
         xt = self.q_sample(target_latent, timesteps, noise)
-        source_latent, condition_tokens, condition_mask = self._apply_dropout(source_latent, condition_tokens, condition_mask)
-        predictions = self.model_predictions(xt, timesteps, source_latent, condition_tokens, condition_mask)
+        source_latent, condition_tokens, condition_mask, source_present = self._apply_dropout(
+            source_latent,
+            condition_tokens,
+            condition_mask,
+            source_present,
+        )
+        predictions = self.model_predictions(
+            xt,
+            timesteps,
+            source_latent,
+            condition_tokens,
+            condition_mask,
+            source_present=source_present,
+            generation_mode=generation_mode,
+        )
         target = noise if self.objective == "pred_noise" else target_latent
         pred = predictions.pred_noise if self.objective == "pred_noise" else predictions.pred_x0
         return F.mse_loss(pred, target)
@@ -299,6 +348,8 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
         *,
         negative_condition_tokens: torch.Tensor | None = None,
         negative_condition_mask: torch.Tensor | None = None,
+        source_present: torch.Tensor | None = None,
+        generation_mode: torch.Tensor | None = None,
         guidance_scale: float = 1.0,
         steps: int | None = None,
         eta: float = 0.0,
@@ -312,7 +363,15 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
         for timestep, next_timestep in time_pairs:
             t = torch.full((source_latent.shape[0],), int(timestep), device=source_latent.device, dtype=torch.long)
             if negative_condition_tokens is None:
-                predictions = self.model_predictions(latent, t, source_latent, condition_tokens, condition_mask)
+                predictions = self.model_predictions(
+                    latent,
+                    t,
+                    source_latent,
+                    condition_tokens,
+                    condition_mask,
+                    source_present=source_present,
+                    generation_mode=generation_mode,
+                )
             else:
                 predictions = self.guided_model_predictions(
                     latent,
@@ -322,6 +381,8 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
                     condition_mask,
                     negative_condition_tokens,
                     negative_condition_mask,
+                    source_present=source_present,
+                    generation_mode=generation_mode,
                     guidance_scale=guidance_scale,
                 )
             if int(next_timestep) < 0:
@@ -347,19 +408,24 @@ class SourceConditionedGaussianLatentDiffusion(nn.Module):
         source_latent: torch.Tensor,
         condition_tokens: torch.Tensor,
         condition_mask: torch.Tensor | None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None]:
+        source_present: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor | None]:
+        if source_present is not None:
+            source_present = source_present.to(device=source_latent.device, dtype=source_latent.dtype)
         if not self.training:
-            return source_latent, condition_tokens, condition_mask
+            return source_latent, condition_tokens, condition_mask, source_present
         if self.source_dropout > 0:
             keep = torch.rand(source_latent.shape[0], 1, device=source_latent.device) >= self.source_dropout
             source_latent = source_latent * keep.to(source_latent.dtype)
+            if source_present is not None:
+                source_present = source_present * keep.squeeze(-1).to(source_present.dtype)
         if self.condition_dropout > 0:
             keep = torch.rand(condition_tokens.shape[0], 1, 1, device=condition_tokens.device) >= self.condition_dropout
             condition_tokens = condition_tokens * keep.to(condition_tokens.dtype)
             if condition_mask is not None:
                 condition_keep = keep.squeeze(-1).to(dtype=torch.bool)
                 condition_mask = condition_mask & condition_keep
-        return source_latent, condition_tokens, condition_mask
+        return source_latent, condition_tokens, condition_mask, source_present
 
 
 def univideo_connector_alignment_loss(

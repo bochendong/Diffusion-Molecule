@@ -36,6 +36,7 @@ JOB_NAME="${SUCC_OOD_SLURM_JOB_NAME:-succ-denovo-ood-ours}"
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 PARTITION="${SUCC_OOD_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
 GPU_PROFILE="${SUCC_OOD_GPU_PROFILE:-${SUCC_GPU_PROFILE:-h100_40gb_mig}}"
+DEPENDENCY="${SUCC_OOD_SLURM_DEPENDENCY:-}"
 
 if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
   echo "ERROR: SUCC_PYTHON_BIN is not executable: $SUCC_PYTHON_BIN" >&2
@@ -45,7 +46,7 @@ if [[ ! -f "$SUCC_OOD_MOLECULE_DB_CSV" ]]; then
   echo "ERROR: missing molecule database: $SUCC_OOD_MOLECULE_DB_CSV" >&2
   exit 2
 fi
-if [[ ! -f "$SUCC_OOD_RESUME_CHECKPOINT" ]]; then
+if [[ ! -f "$SUCC_OOD_RESUME_CHECKPOINT" && -z "$DEPENDENCY" ]]; then
   echo "ERROR: missing trained SUCC checkpoint: $SUCC_OOD_RESUME_CHECKPOINT" >&2
   exit 2
 fi
@@ -86,6 +87,9 @@ echo "  rows_per_spec=$SUCC_OOD_ROWS_PER_SPEC"
 echo "  latent_backend=$SUCC_LATENT_BACKEND"
 echo "  guidance_scale=$SUCC_OOD_NEGATIVE_GUIDANCE_SCALE"
 echo "  gpu_candidates=${GPU_CANDIDATES[*]:-none}"
+if [[ -n "$DEPENDENCY" ]]; then
+  echo "  dependency=$DEPENDENCY"
+fi
 
 SBATCH_ARGS=(
   --account="$ACCOUNT"
@@ -98,6 +102,9 @@ SBATCH_ARGS=(
 )
 if [[ -n "$PARTITION" ]]; then
   SBATCH_ARGS+=(--partition="$PARTITION")
+fi
+if [[ -n "$DEPENDENCY" ]]; then
+  SBATCH_ARGS+=(--dependency="$DEPENDENCY")
 fi
 
 job_id=""

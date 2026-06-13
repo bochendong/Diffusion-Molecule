@@ -35,6 +35,7 @@ JOB_NAME="${SUCC_DENOVO_SLURM_JOB_NAME:-succ-denovo-2p7p-ours}"
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 PARTITION="${SUCC_DENOVO_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
 GPU_PROFILE="${SUCC_DENOVO_GPU_PROFILE:-${SUCC_GPU_PROFILE:-h100_40gb_mig}}"
+DEPENDENCY="${SUCC_DENOVO_SLURM_DEPENDENCY:-}"
 
 if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
   echo "ERROR: SUCC_PYTHON_BIN is not executable: $SUCC_PYTHON_BIN" >&2
@@ -44,7 +45,7 @@ if [[ ! -f "$SUCC_DENOVO_MOLECULE_DB_CSV" ]]; then
   echo "ERROR: missing molecule database: $SUCC_DENOVO_MOLECULE_DB_CSV" >&2
   exit 2
 fi
-if [[ ! -f "$SUCC_DENOVO_RESUME_CHECKPOINT" ]]; then
+if [[ ! -f "$SUCC_DENOVO_RESUME_CHECKPOINT" && -z "$DEPENDENCY" ]]; then
   echo "ERROR: missing trained SUCC checkpoint: $SUCC_DENOVO_RESUME_CHECKPOINT" >&2
   exit 2
 fi
@@ -85,6 +86,9 @@ echo "  rows_per_property_count=$SUCC_DENOVO_ROWS_PER_PROPERTY_COUNT"
 echo "  latent_backend=$SUCC_LATENT_BACKEND"
 echo "  methods=$SUCC_DENOVO_MATERIALIZED_METHODS"
 echo "  gpu_candidates=${GPU_CANDIDATES[*]:-none}"
+if [[ -n "$DEPENDENCY" ]]; then
+  echo "  dependency=$DEPENDENCY"
+fi
 
 SBATCH_ARGS=(
   --account="$ACCOUNT"
@@ -97,6 +101,9 @@ SBATCH_ARGS=(
 )
 if [[ -n "$PARTITION" ]]; then
   SBATCH_ARGS+=(--partition="$PARTITION")
+fi
+if [[ -n "$DEPENDENCY" ]]; then
+  SBATCH_ARGS+=(--dependency="$DEPENDENCY")
 fi
 
 job_id=""

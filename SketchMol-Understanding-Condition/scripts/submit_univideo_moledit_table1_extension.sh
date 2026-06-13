@@ -30,6 +30,10 @@ export SUCC_MOLEDIT_TABLE_MISSING_ORACLE_POLICY="${SUCC_MOLEDIT_TABLE_MISSING_OR
 TABLE1_BENCHMARK_OUTPUT_DIR="${SUCC_TABLE1_BENCHMARK_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/benchmark_materialized_table1_$SUCC_MATERIALIZED_BENCHMARK_PROFILE}"
 TABLE1_TABLE_OUTPUT_DIR="${SUCC_TABLE1_TABLE_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR/univideo_molecule/moledit_table_metrics_table1_$SUCC_MATERIALIZED_BENCHMARK_PROFILE}"
 TABLE1_REFERENCE="${SUCC_TABLE1_REFERENCE:-$SUCC_TABLE1_PACK_DIR/table1_moledit_rows.csv}"
+TABLE1_GUARD_AFTER="${SUCC_TABLE1_GUARD_AFTER:-0}"
+TABLE1_GUARD_MIN_ACC065="${SUCC_TABLE1_GUARD_MIN_ACC065:-0.894}"
+TABLE1_GUARD_REQUIRE_TASKS="${SUCC_TABLE1_GUARD_REQUIRE_TASKS:-10}"
+TABLE1_GUARD_METRIC="${SUCC_TABLE1_GUARD_METRIC:-Acc_all(0.65)}"
 
 SLURM_ACCOUNT="${SUCC_SLURM_ACCOUNT:-def-hup-ab_gpu}"
 SLURM_PARTITION="${SUCC_SLURM_PARTITION:-}"
@@ -48,6 +52,11 @@ echo "  eval_split=$SUCC_MOLEDIT_EVAL_SPLIT"
 echo "  per_task=$SUCC_TABLE1_PER_TASK"
 echo "  synthesize_missing_tasks=$SUCC_TABLE1_SYNTHESIZE_MISSING_TASKS"
 echo "  output_dir=$SUCC_TABLE1_PACK_DIR"
+echo "  guard_after=$TABLE1_GUARD_AFTER"
+if [[ "$TABLE1_GUARD_AFTER" == "1" ]]; then
+  echo "  guard_metric=$TABLE1_GUARD_METRIC"
+  echo "  guard_min_acc065=$TABLE1_GUARD_MIN_ACC065"
+fi
 
 EXPORT_ARGS=(
   "$SUCC_PYTHON_BIN"
@@ -141,17 +150,73 @@ echo "Submitting Table1 MolEdit table metrics"
 echo "  dependency=$table_dependency"
 echo "  reference=$TABLE1_REFERENCE"
 
-SUCC_MOLEDIT_TABLE_REFERENCE="$TABLE1_REFERENCE" \
-SUCC_MOLEDIT_TABLE_PREDICTIONS="$TABLE1_BENCHMARK_OUTPUT_DIR/benchmark_decoded.csv" \
-SUCC_MOLEDIT_TABLE_OUTPUT_DIR="$TABLE1_TABLE_OUTPUT_DIR" \
-SUCC_MOLEDIT_TABLE_SLURM_DEPENDENCY="$table_dependency" \
-SUCC_MOLEDIT_TABLE_SLURM_JOB_NAME="${SUCC_TABLE1_TABLE_SLURM_JOB_NAME:-succ-table1-table}" \
-SUCC_MOLEDIT_TABLE_MISSING_ORACLE_POLICY="$SUCC_MOLEDIT_TABLE_MISSING_ORACLE_POLICY" \
-bash "$SCRIPT_DIR/submit_univideo_moledit_table_metrics.sh"
+table_output="$(
+  SUCC_MOLEDIT_TABLE_REFERENCE="$TABLE1_REFERENCE" \
+  SUCC_MOLEDIT_TABLE_PREDICTIONS="$TABLE1_BENCHMARK_OUTPUT_DIR/benchmark_decoded.csv" \
+  SUCC_MOLEDIT_TABLE_OUTPUT_DIR="$TABLE1_TABLE_OUTPUT_DIR" \
+  SUCC_MOLEDIT_TABLE_SLURM_DEPENDENCY="$table_dependency" \
+  SUCC_MOLEDIT_TABLE_SLURM_JOB_NAME="${SUCC_TABLE1_TABLE_SLURM_JOB_NAME:-succ-table1-table}" \
+  SUCC_MOLEDIT_TABLE_MISSING_ORACLE_POLICY="$SUCC_MOLEDIT_TABLE_MISSING_ORACLE_POLICY" \
+  bash "$SCRIPT_DIR/submit_univideo_moledit_table_metrics.sh"
+)"
+echo "$table_output"
+table_job_id="$(echo "$table_output" | sed -n 's/.*job_id=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+if [[ -z "$table_job_id" ]]; then
+  table_job_id="$(echo "$table_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+fi
+if [[ -z "$table_job_id" ]]; then
+  echo "ERROR: failed to parse Table1 table metrics job id." >&2
+  exit 1
+fi
+
+guard_job_id=""
+if [[ "$TABLE1_GUARD_AFTER" == "1" ]]; then
+  guard_dependency="afterok:$table_job_id"
+  guard_output_json="$TABLE1_TABLE_OUTPUT_DIR/moledit_table_guard.json"
+  GUARD_CMD=(
+    "$SUCC_PYTHON_BIN"
+    "$PROJECT_DIR/scripts/check_moledit_table_guard.py"
+    --summary-csv "$TABLE1_TABLE_OUTPUT_DIR/moledit_table_summary.csv"
+    --metric "$TABLE1_GUARD_METRIC"
+    --min-mean "$TABLE1_GUARD_MIN_ACC065"
+    --require-tasks "$TABLE1_GUARD_REQUIRE_TASKS"
+    --output-json "$guard_output_json"
+  )
+  printf -v GUARD_WRAP_CMD "%q " "${GUARD_CMD[@]}"
+  guard_sbatch_args=(
+    --account="$SLURM_ACCOUNT"
+    --job-name="${SUCC_TABLE1_GUARD_SLURM_JOB_NAME:-succ-table1-guard}"
+    --time="${SUCC_TABLE1_GUARD_SLURM_TIME:-00:20:00}"
+    --mem="${SUCC_TABLE1_GUARD_SLURM_MEM:-4G}"
+    --cpus-per-task="${SUCC_TABLE1_GUARD_SLURM_CPUS:-1}"
+    --output="$LOG_DIR/%x-%j.log"
+    --export=ALL
+    --dependency="$guard_dependency"
+  )
+  if [[ -n "$SLURM_PARTITION" ]]; then
+    guard_sbatch_args+=(--partition="$SLURM_PARTITION")
+  fi
+  echo
+  echo "Submitting Table1 guard"
+  echo "  dependency=$guard_dependency"
+  echo "  min_mean=$TABLE1_GUARD_MIN_ACC065"
+  echo "  output_json=$guard_output_json"
+  guard_output="$(sbatch "${guard_sbatch_args[@]}" --wrap="$GUARD_WRAP_CMD")"
+  echo "$guard_output"
+  guard_job_id="$(echo "$guard_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
+  if [[ -z "$guard_job_id" ]]; then
+    echo "ERROR: failed to parse Table1 guard job id." >&2
+    exit 1
+  fi
+fi
 
 echo
 echo "Table1 extension workflow submitted."
 echo "  pack_dir=$SUCC_TABLE1_PACK_DIR"
 echo "  eval_job_id=$eval_job_id"
 echo "  benchmark_job_id=$bench_job_id"
+echo "  table_job_id=$table_job_id"
+if [[ -n "$guard_job_id" ]]; then
+  echo "  guard_job_id=$guard_job_id"
+fi
 echo "  table_summary=$TABLE1_TABLE_OUTPUT_DIR/moledit_table_summary.md"

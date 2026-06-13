@@ -84,6 +84,11 @@ SOURCE_DROPOUT="${SUCC_SOURCE_DROPOUT:-0.05}"
 AUX_LOSS_WEIGHT="${SUCC_AUX_LOSS_WEIGHT:-0.25}"
 SAMPLING_STRATEGY="${SUCC_SAMPLING_STRATEGY:-shuffle}"
 TABLE1_SAMPLE_WEIGHT="${SUCC_TABLE1_SAMPLE_WEIGHT:-1.0}"
+EXTRA_TRAIN_JSONL="${SUCC_EXTRA_TRAIN_JSONL:-}"
+EXTRA_EVAL_JSONL="${SUCC_EXTRA_EVAL_JSONL:-}"
+DENOVO_SAMPLE_WEIGHT="${SUCC_DENOVO_SAMPLE_WEIGHT:-1.0}"
+DENOVO_DIVERSITY_LOSS_WEIGHT="${SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT:-0.0}"
+DENOVO_DIVERSITY_MARGIN="${SUCC_DENOVO_DIVERSITY_MARGIN:-0.85}"
 TRAIN_PROPERTY_SAMPLE_WEIGHTS="${SUCC_TRAIN_PROPERTY_SAMPLE_WEIGHTS:-}"
 AUX_PROPERTY_WEIGHTS="${SUCC_AUX_PROPERTY_WEIGHTS:-}"
 AUX_ALL_PROPERTIES="${SUCC_AUX_ALL_PROPERTIES:-0}"
@@ -188,6 +193,11 @@ echo "  source_dropout=$SOURCE_DROPOUT"
 echo "  aux_loss_weight=$AUX_LOSS_WEIGHT"
 echo "  sampling_strategy=$SAMPLING_STRATEGY"
 echo "  table1_sample_weight=$TABLE1_SAMPLE_WEIGHT"
+echo "  extra_train_jsonl=${EXTRA_TRAIN_JSONL:-none}"
+echo "  extra_eval_jsonl=${EXTRA_EVAL_JSONL:-none}"
+echo "  denovo_sample_weight=$DENOVO_SAMPLE_WEIGHT"
+echo "  denovo_diversity_loss_weight=$DENOVO_DIVERSITY_LOSS_WEIGHT"
+echo "  denovo_diversity_margin=$DENOVO_DIVERSITY_MARGIN"
 echo "  train_property_sample_weights=${TRAIN_PROPERTY_SAMPLE_WEIGHTS:-none}"
 echo "  aux_property_weights=${AUX_PROPERTY_WEIGHTS:-none}"
 echo "  aux_all_properties=$AUX_ALL_PROPERTIES"
@@ -429,9 +439,28 @@ else
   exit 2
 fi
 
+EXTRA_JSONL_ARGS=()
+if [[ -n "$EXTRA_TRAIN_JSONL" ]]; then
+  IFS=',:' read -r -a EXTRA_TRAIN_JSONL_ITEMS <<< "$EXTRA_TRAIN_JSONL"
+  for extra_jsonl in "${EXTRA_TRAIN_JSONL_ITEMS[@]}"; do
+    if [[ -n "$extra_jsonl" ]]; then
+      EXTRA_JSONL_ARGS+=(--extra-train-jsonl "$extra_jsonl")
+    fi
+  done
+fi
+if [[ -n "$EXTRA_EVAL_JSONL" ]]; then
+  IFS=',:' read -r -a EXTRA_EVAL_JSONL_ITEMS <<< "$EXTRA_EVAL_JSONL"
+  for extra_jsonl in "${EXTRA_EVAL_JSONL_ITEMS[@]}"; do
+    if [[ -n "$extra_jsonl" ]]; then
+      EXTRA_JSONL_ARGS+=(--extra-eval-jsonl "$extra_jsonl")
+    fi
+  done
+fi
+
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_univideo_molecule_generation.py" \
   --train-jsonl "$DATASET_DIR/univideo_edit_train.jsonl" \
   --eval-jsonl "$DATASET_DIR/univideo_edit_eval.jsonl" \
+  "${EXTRA_JSONL_ARGS[@]}" \
   --condition-features-dir "$FEATURES_DIR" \
   --condition-feature-array query_tokens \
   --condition-feature-variant full \
@@ -455,6 +484,9 @@ fi
   --aux-loss-weight "$AUX_LOSS_WEIGHT" \
   --sampling-strategy "$SAMPLING_STRATEGY" \
   --table1-sample-weight "$TABLE1_SAMPLE_WEIGHT" \
+  --denovo-sample-weight "$DENOVO_SAMPLE_WEIGHT" \
+  --denovo-diversity-loss-weight "$DENOVO_DIVERSITY_LOSS_WEIGHT" \
+  --denovo-diversity-margin "$DENOVO_DIVERSITY_MARGIN" \
   --train-property-sample-weights "$TRAIN_PROPERTY_SAMPLE_WEIGHTS" \
   --aux-property-weights "$AUX_PROPERTY_WEIGHTS" \
   "${LATENT_BACKEND_ARGS[@]}" \
