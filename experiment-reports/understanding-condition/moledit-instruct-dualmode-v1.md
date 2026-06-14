@@ -133,7 +133,7 @@ In-distribution strict 略降，但 unique valid **0.4%→6.8%**（~21→~405 SM
 1. **Dual-mode 部分达成动机**：`rare_combo` 0%→1%；reverse stim 20%→45%；unique SMILES 数量级提升；target latent cos ~0.24（旧 ~0.09）。
 2. **未全面变好**：2p7p overall strict 5.5%→3.9%；forward_extreme 18.8%→8.3%；`logp_high` 75%→21%；`mw_high` / `seven_property_edge` 仍 0。
 3. **瓶颈可能在 materializer**：latent 更贴 target、输出更多样，但 `latent_nearest` strict 未同步提升；可试 hybrid rerank 或更大 candidate pool。
-4. **MolEdit Table1 尚未复测**：需确认 dualmode 未牺牲 edit 能力。
+5. **MolEdit Table1 尚未复测**：需确认 dualmode 未牺牲 edit 能力。v2 guarded 已测：Table1 持平 v3，见 [moledit-instruct-dualmode-v2-guarded.md](moledit-instruct-dualmode-v2-guarded.md)。
 5. **下一步**：加大 OOD/rare_combo train 权重；调高 negative guidance；Table1 extension on dualmode ckpt。
 
 详见 [denovo-ood-benchmark.md](denovo-ood-benchmark.md)、[denovo-2p7p-benchmark.md](denovo-2p7p-benchmark.md)。

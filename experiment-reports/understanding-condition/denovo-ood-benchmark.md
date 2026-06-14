@@ -68,13 +68,26 @@ Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v1`（job `
 
 Dual-mode 后 overall 由 **reverse_stimulation**（90/200）撑起，而非 `logp_high`。`rare_combo` 从全灭到 4/400。
 
+## Dual-Mode v2 Guarded（job `16019244`）
+
+Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v2_guarded`（job `16018414`，`source_dropout=0.08`，mixed latent）。
+
+| 指标 | v1 dualmode | v2 guarded |
+| --- | ---: | ---: |
+| Overall strict | **0.127** | 0.052 |
+| Unique valid | **0.199** | 0.008 |
+| rare_combo | **0.010** | 0.000 |
+| reverse_stimulation | **0.450** | 0.100 |
+
+v2 保守 dropout 保留了 Table1 edit，但 **OOD 全面退步**。完整分析见 [moledit-instruct-dualmode-v2-guarded.md](moledit-instruct-dualmode-v2-guarded.md)。
+
 ## 结论
 
 1. **Dual-mode 训练部分修复 OOD 盲区**：rare_combo 0%→1%；reverse stim 20%→45%；unique 14→199 SMILES。
 2. **forward_extreme 退步**：overall 内 `logp_high` 75%→21%；bucket 18.8%→8.3%；`mw_high` 仍 0。
 3. **Mode collapse 在 dualmode 上明显缓解**；v2_fix ckpt 1000 行仅 ~14 unique。
 4. **仍远低于可用线**（baseline 0.98）；完整训练分析见 [moledit-instruct-dualmode-v1.md](moledit-instruct-dualmode-v1.md)。
-5. **下一步**：加大 rare_combo train 权重；试更高 guidance scale；Table1 edit 复测 dualmode ckpt。
+5. **下一步**：加大 rare_combo train 权重；试更高 guidance scale；Table1 edit 复测 dualmode ckpt。v2 guarded 完整链见 [moledit-instruct-dualmode-v2-guarded.md](moledit-instruct-dualmode-v2-guarded.md)。
 
 ## 产出路径
 
@@ -84,8 +97,12 @@ SketchMol-Understanding-Condition/outputs/denovo_ood_ours_v1/
 
 SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v1/
   benchmark_ours/benchmark_report.md
+
+SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v2_guarded/
+  benchmark_ours/benchmark_report.md
 ```
 
 日志：
 - `logs/succ-denovo-ood-ours-15959891.log`
 - `logs/succ-denovo-ood-dualmode-16006990.log`
+- `logs/succ-denovo-ood-ours-16019244.log`

@@ -84,6 +84,21 @@ Strict 略降，但 **mode collapse 大幅缓解**（~21→~405 unique SMILES）
 
 产出：`outputs/denovo_2p7p_ours_dualmode_v1/benchmark_ours/benchmark_report.md`
 
+## SUCC Dual-Mode v2 Guarded（job `16019245`）
+
+Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v2_guarded`（`source_dropout=0.08`，mixed latent）。
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.048 | 0.012 | 0.007 | 0.002 | 0.000 | 0.000 | **0.0115** |
+
+| 指标 | v1 dualmode | v2 guarded |
+| --- | ---: | ---: |
+| overall strict | **0.039** | 0.0115 |
+| unique valid | **0.068** | 0.0015 |
+
+v2 在 2p7p 上 **显著劣于 v1**；Table1 持平 v3 但未换来 de novo 收益。见 [moledit-instruct-dualmode-v2-guarded.md](moledit-instruct-dualmode-v2-guarded.md)。
+
 ## 结论
 
 1. **Edit-only checkpoint 不适合 zero-source de novo**：v2_fix ckpt target cosine **0.095**，overall strict **5.5%**，unique **0.4%**。
@@ -103,9 +118,13 @@ SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_v1/
 
 SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v1/
   benchmark_ours/benchmark_report.md
+
+SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v2_guarded/
+  benchmark_ours/benchmark_report.md
 ```
 
 日志：
 - `logs/succ-denovo-2p7p-15958481.log`
 - `logs/succ-denovo-2p7p-ours-15959362.log`
 - `logs/succ-denovo-2p7p-dualmode-16006991.log`
+- `logs/succ-denovo-2p7p-ours-16019245.log`
