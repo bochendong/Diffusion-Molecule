@@ -91,10 +91,7 @@ Guard 产出：`univideo_molecule/moledit_table_metrics_table1_guarded/moledit_t
 
 1. **Table1 edit：持平 v3**（mean 0.794），guard fail 是阈值设置问题 + GSK3B 0%，不是训练 crash。
 2. **De novo/OOD：v2 劣于 v1** — 保守 dropout + mixed latent 未能复制 v1 的 OOD/reverse_stim 增益。
-3. **下一步方向**：
-   - 修正 guard 阈值为可达基线（0.794 或 exclude GSK3B）；
-   - 在保持 Table1 前提下，尝试 **中间 source_dropout（~0.15–0.20）** 或 **更高 denovo/OOD train 权重**；
-   - GSK3B 需单独数据/loss，不能指望 Table1-balanced train 自然学会。
+3. **下一步方向**：v3 已修正 guard 阈值并通过，见 [moledit-instruct-dualmode-v3-guarded.md](moledit-instruct-dualmode-v3-guarded.md)。
 
 ## 产出路径
 

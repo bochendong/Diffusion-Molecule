@@ -99,12 +99,28 @@ Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v2_guarded`
 
 v2 在 2p7p 上 **显著劣于 v1**；Table1 持平 v3 但未换来 de novo 收益。见 [moledit-instruct-dualmode-v2-guarded.md](moledit-instruct-dualmode-v2-guarded.md)。
 
+## SUCC Dual-Mode v3 Guarded（job `16028797`）
+
+Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v3_guarded`（Table1 guard passed）。
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.117 | 0.038 | 0.012 | 0.001 | 0.002 | 0.001 | **0.0285** |
+
+| 指标 | v1 | v2 | **v3** |
+| --- | ---: | ---: | ---: |
+| overall strict | **0.039** | 0.0115 | 0.0285 |
+| unique valid | **0.068** | 0.0015 | 0.0053 |
+| target latent cos | 0.242 | — | **0.580** |
+
+2p 接近 v1（0.117 vs 0.131），overall 仍低于 v1；latent 对齐最佳。见 [moledit-instruct-dualmode-v3-guarded.md](moledit-instruct-dualmode-v3-guarded.md)。
+
 ## 结论
 
 1. **Edit-only checkpoint 不适合 zero-source de novo**：v2_fix ckpt target cosine **0.095**，overall strict **5.5%**，unique **0.4%**。
 2. **Dual-mode 训练改善 latent 与多样性**，但 strict 仍仅 **3.9%**，远低于 `property_nearest`（0.98）和 SketchMol 参考（0.68–0.80）；瓶颈可能在 `latent_nearest` materializer。
 3. **Baseline `property_nearest` 可作为数据和 evaluator 上界**：证明 benchmark 管线与 6000 行目标定义正确。
-4. **OOD benchmark** 见 [denovo-ood-benchmark.md](denovo-ood-benchmark.md)；dualmode 训练动机与完整分析见 [moledit-instruct-dualmode-v1.md](moledit-instruct-dualmode-v1.md)。
+4. **OOD benchmark** 见 [denovo-ood-benchmark.md](denovo-ood-benchmark.md)；v3 见 [moledit-instruct-dualmode-v3-guarded.md](moledit-instruct-dualmode-v3-guarded.md)。
 
 ## 产出路径
 
@@ -121,6 +137,9 @@ SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v1/
 
 SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v2_guarded/
   benchmark_ours/benchmark_report.md
+
+SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v3_guarded/
+  benchmark_ours/benchmark_report.md
 ```
 
 日志：
@@ -128,3 +147,4 @@ SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v2_guarded/
 - `logs/succ-denovo-2p7p-ours-15959362.log`
 - `logs/succ-denovo-2p7p-dualmode-16006991.log`
 - `logs/succ-denovo-2p7p-ours-16019245.log`
+- `logs/succ-denovo-2p7p-ours-16028797.log`
