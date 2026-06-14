@@ -94,7 +94,22 @@ Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v3_guarded`
 | reverse_logp4 | 0.560 | 0.070 | **0.820** |
 | rare_combo | **0.010** | 0.000 | 0.000 |
 
-v3 **Table1 guard 通过**，latent 对齐与 `reverse_logp4` 显著提升，但 overall strict 仍略低于 v1。见 [moledit-instruct-dualmode-v3-guarded.md](moledit-instruct-dualmode-v3-guarded.md)。
+v3 **Table1 guard 通过**，latent 对齐与 `reverse_logp4` 显著提升，但 overall strict 仍略低于 v1。v4 warm-start 见 [moledit-instruct-dualmode-v4-warmstart-v1.md](moledit-instruct-dualmode-v4-warmstart-v1.md)。
+
+## Dual-Mode v4 Warmstart（job `16043206`）
+
+Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v4_warmstart_v1`（v1 warm-start，短 fine-tune）。
+
+| 指标 | v1 | v3 | **v4** |
+| --- | ---: | ---: | ---: |
+| Overall strict | **0.127** | 0.101 | 0.097 |
+| Unique valid | **0.199** | 0.020 | 0.012 |
+| Target latent cos | 0.238 | 0.571 | **0.574** |
+| reverse_logp4 | 0.560 | **0.820** | 0.060 |
+| reverse_mw300 | 0.340 | 0.030 | **0.500** |
+| forward_extreme bucket | 0.083 | 0.040 | **0.102** |
+
+Warm-start **未**恢复 v1 overall strict；spec 间 trade-off 加剧。
 
 ## 结论
 
@@ -118,6 +133,9 @@ SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v2_guarded/
 
 SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v3_guarded/
   benchmark_ours/benchmark_report.md
+
+SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v4_warmstart_v1/
+  benchmark_ours/benchmark_report.md
 ```
 
 日志：
@@ -125,3 +143,4 @@ SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v3_guarded/
 - `logs/succ-denovo-ood-dualmode-16006990.log`
 - `logs/succ-denovo-ood-ours-16019244.log`
 - `logs/succ-denovo-ood-ours-16028796.log`
+- `logs/succ-denovo-ood-ours-16043206.log`

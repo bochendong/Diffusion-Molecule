@@ -87,7 +87,7 @@
 2. **Latent 对齐大幅改善**：OOD/2p7p target cosine **~0.57–0.58**（v1 ~0.24），说明 mixed latent + source-free augment 有效。
 3. **Strict 仍不如 v1**：overall OOD **0.101 < 0.127**；2p7p **0.0285 < 0.039** — materializer（`latent_nearest`）是瓶颈。
 4. **reverse_logp4 突破**：**82%** strict（v1 56%）；但 `reverse_mw300` / `logp_high` / **rare_combo 仍弱**。
-5. **多样性未改善**：unique valid OOD **2%**、2p7p **0.5%**，diversity loss 需继续调。
+5. **多样性未改善**：unique valid OOD **2%**、2p7p **0.5%**，diversity loss 需继续调。v4 warm-start 亦未恢复 v1 diversity，见 [moledit-instruct-dualmode-v4-warmstart-v1.md](moledit-instruct-dualmode-v4-warmstart-v1.md)。
 
 ## 产出路径
 

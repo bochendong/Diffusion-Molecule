@@ -14,10 +14,21 @@
 | `understanding-condition/` | [moledit-instruct-v3-attack.md](understanding-condition/moledit-instruct-v3-attack.md) | **完成** SUCC v3 attack（`15901616`/`15902241`，10/10 Table1） |
 | `understanding-condition/` | [moledit-instruct-dualmode-v1.md](understanding-condition/moledit-instruct-dualmode-v1.md) | dual-mode v1（`15963804`/`16006990`/`16006991`） |
 | `understanding-condition/` | [moledit-instruct-dualmode-v2-guarded.md](understanding-condition/moledit-instruct-dualmode-v2-guarded.md) | dual-mode v2 guarded（`16018414` 链；guard failed） |
-| `understanding-condition/` | [moledit-instruct-dualmode-v3-guarded.md](understanding-condition/moledit-instruct-dualmode-v3-guarded.md) | **完成** dual-mode v3 guarded（`16027758` 链；guard passed） |
+| `understanding-condition/` | [moledit-instruct-dualmode-v3-guarded.md](understanding-condition/moledit-instruct-dualmode-v3-guarded.md) | dual-mode v3 guarded（`16027758` 链；guard passed） |
+| `understanding-condition/` | [moledit-instruct-dualmode-v4-warmstart-v1.md](understanding-condition/moledit-instruct-dualmode-v4-warmstart-v1.md) | **完成** dual-mode v4 warmstart（`16042564` 链；guard pass，strict 未达目标） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
 | `understanding-condition/` | [denovo-ood-benchmark.md](understanding-condition/denovo-ood-benchmark.md) | **完成** de novo OOD（v2_fix + dualmode） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
+
+## 近期 Slurm Job 一览（2026-06-14 晚）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16042564` | `succ-univideo-mol`（dualmode v4 warmstart） | 完成（52m00s） | [dualmode v4](understanding-condition/moledit-instruct-dualmode-v4-warmstart-v1.md) |
+| `16043202`–`16043204` | Table1 eval/bench/table | 完成 | [dualmode v4](understanding-condition/moledit-instruct-dualmode-v4-warmstart-v1.md) |
+| `16043205` | `succ-table1-guard` | **Passed** | [dualmode v4](understanding-condition/moledit-instruct-dualmode-v4-warmstart-v1.md) |
+| `16043206` | `succ-denovo-ood-ours`（v4 ckpt） | 完成（12m06s） | [denovo OOD](understanding-condition/denovo-ood-benchmark.md) |
+| `16043207` | `succ-denovo-2p7p-ours`（v4 ckpt） | 完成（13m48s） | [denovo 2p7p](understanding-condition/denovo-2p7p-benchmark.md) |
 
 ## 近期 Slurm Job 一览（2026-06-14）
 

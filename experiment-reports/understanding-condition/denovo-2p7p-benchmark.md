@@ -115,6 +115,22 @@ Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v3_guarded`
 
 2p 接近 v1（0.117 vs 0.131），overall 仍低于 v1；latent 对齐最佳。见 [moledit-instruct-dualmode-v3-guarded.md](moledit-instruct-dualmode-v3-guarded.md)。
 
+## SUCC Dual-Mode v4 Warmstart（job `16043207`）
+
+Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v4_warmstart_v1`。
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.052 | 0.015 | 0.003 | 0.001 | 0.000 | 0.000 | **0.0118** |
+
+| 指标 | v1 | v3 | **v4** |
+| --- | ---: | ---: | ---: |
+| overall strict | **0.039** | 0.0285 | 0.0118 |
+| unique valid | **0.068** | 0.0053 | 0.0037 |
+| target latent cos | 0.242 | 0.580 | **0.584** |
+
+v4 为三代 2p7p strict **最低**；见 [moledit-instruct-dualmode-v4-warmstart-v1.md](moledit-instruct-dualmode-v4-warmstart-v1.md)。
+
 ## 结论
 
 1. **Edit-only checkpoint 不适合 zero-source de novo**：v2_fix ckpt target cosine **0.095**，overall strict **5.5%**，unique **0.4%**。
@@ -140,6 +156,9 @@ SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v2_guarded/
 
 SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v3_guarded/
   benchmark_ours/benchmark_report.md
+
+SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v4_warmstart_v1/
+  benchmark_ours/benchmark_report.md
 ```
 
 日志：
@@ -148,3 +167,4 @@ SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v3_guarded/
 - `logs/succ-denovo-2p7p-dualmode-16006991.log`
 - `logs/succ-denovo-2p7p-ours-16019245.log`
 - `logs/succ-denovo-2p7p-ours-16028797.log`
+- `logs/succ-denovo-2p7p-ours-16043207.log`
