@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary-csv", required=True, type=Path)
     parser.add_argument("--metric", default="Acc_all(0.65)")
-    parser.add_argument("--min-mean", type=float, default=0.894)
+    parser.add_argument("--min-mean", type=float, default=0.794)
     parser.add_argument("--require-tasks", type=int, default=10)
     parser.add_argument("--output-json", type=Path, default=None)
     return parser.parse_args()

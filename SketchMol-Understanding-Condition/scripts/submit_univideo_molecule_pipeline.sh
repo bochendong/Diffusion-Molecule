@@ -97,6 +97,8 @@ echo "  extra_train_jsonl=${SUCC_EXTRA_TRAIN_JSONL:-none}"
 echo "  extra_eval_jsonl=${SUCC_EXTRA_EVAL_JSONL:-none}"
 echo "  denovo_sample_weight=${SUCC_DENOVO_SAMPLE_WEIGHT:-1.0}"
 echo "  denovo_diversity_loss_weight=${SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT:-0.0}"
+echo "  source_free_augment_weight=${SUCC_SOURCE_FREE_AUGMENT_WEIGHT:-0.0}"
+echo "  source_free_augment_prob=${SUCC_SOURCE_FREE_AUGMENT_PROB:-0.0}"
 echo "  run_image_structure_benchmark=${SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK:-auto}"
 echo "  submit_materialized_benchmark_after=$SUBMIT_MATERIALIZED_BENCHMARK"
 if [[ "${SUCC_RUN_IMAGE_STRUCTURE_BENCHMARK:-auto}" != "0" && "${SUCC_RUN_MOLSCRIBE_OCR:-auto}" != "0" ]]; then

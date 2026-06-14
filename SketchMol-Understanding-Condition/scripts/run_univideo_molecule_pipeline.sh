@@ -89,6 +89,8 @@ EXTRA_EVAL_JSONL="${SUCC_EXTRA_EVAL_JSONL:-}"
 DENOVO_SAMPLE_WEIGHT="${SUCC_DENOVO_SAMPLE_WEIGHT:-1.0}"
 DENOVO_DIVERSITY_LOSS_WEIGHT="${SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT:-0.0}"
 DENOVO_DIVERSITY_MARGIN="${SUCC_DENOVO_DIVERSITY_MARGIN:-0.85}"
+SOURCE_FREE_AUGMENT_WEIGHT="${SUCC_SOURCE_FREE_AUGMENT_WEIGHT:-0.0}"
+SOURCE_FREE_AUGMENT_PROB="${SUCC_SOURCE_FREE_AUGMENT_PROB:-0.0}"
 TRAIN_PROPERTY_SAMPLE_WEIGHTS="${SUCC_TRAIN_PROPERTY_SAMPLE_WEIGHTS:-}"
 AUX_PROPERTY_WEIGHTS="${SUCC_AUX_PROPERTY_WEIGHTS:-}"
 AUX_ALL_PROPERTIES="${SUCC_AUX_ALL_PROPERTIES:-0}"
@@ -198,6 +200,8 @@ echo "  extra_eval_jsonl=${EXTRA_EVAL_JSONL:-none}"
 echo "  denovo_sample_weight=$DENOVO_SAMPLE_WEIGHT"
 echo "  denovo_diversity_loss_weight=$DENOVO_DIVERSITY_LOSS_WEIGHT"
 echo "  denovo_diversity_margin=$DENOVO_DIVERSITY_MARGIN"
+echo "  source_free_augment_weight=$SOURCE_FREE_AUGMENT_WEIGHT"
+echo "  source_free_augment_prob=$SOURCE_FREE_AUGMENT_PROB"
 echo "  train_property_sample_weights=${TRAIN_PROPERTY_SAMPLE_WEIGHTS:-none}"
 echo "  aux_property_weights=${AUX_PROPERTY_WEIGHTS:-none}"
 echo "  aux_all_properties=$AUX_ALL_PROPERTIES"
@@ -487,6 +491,8 @@ fi
   --denovo-sample-weight "$DENOVO_SAMPLE_WEIGHT" \
   --denovo-diversity-loss-weight "$DENOVO_DIVERSITY_LOSS_WEIGHT" \
   --denovo-diversity-margin "$DENOVO_DIVERSITY_MARGIN" \
+  --source-free-augment-weight "$SOURCE_FREE_AUGMENT_WEIGHT" \
+  --source-free-augment-prob "$SOURCE_FREE_AUGMENT_PROB" \
   --train-property-sample-weights "$TRAIN_PROPERTY_SAMPLE_WEIGHTS" \
   --aux-property-weights "$AUX_PROPERTY_WEIGHTS" \
   "${LATENT_BACKEND_ARGS[@]}" \

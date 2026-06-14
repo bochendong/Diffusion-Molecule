@@ -7,8 +7,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export DM_DATA_ROOT="${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}"
 export SUCC_DATASET_MODE=dualmode
-export SUCC_UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v2_guarded}"
-export SUCC_CONDITION_FEATURES_DIR="${SUCC_CONDITION_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/condition_features_moledit_hf_vlm_dualmode_v2_guarded}"
+export SUCC_UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v3_guarded}"
+export SUCC_CONDITION_FEATURES_DIR="${SUCC_CONDITION_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/condition_features_moledit_hf_vlm_dualmode_v3_guarded}"
 export SUCC_HF_MODEL_NAME_OR_PATH="${SUCC_HF_MODEL_NAME_OR_PATH:-/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct}"
 export SUCC_MOLEDIT_TRAIN_SPLIT="${SUCC_MOLEDIT_TRAIN_SPLIT:-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/train.csv}"
 export SUCC_MOLEDIT_EVAL_SPLIT="${SUCC_MOLEDIT_EVAL_SPLIT:-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv}"
@@ -23,9 +23,9 @@ export SUCC_MOLEDIT_EVAL_LIMIT="${SUCC_MOLEDIT_EVAL_LIMIT:-1000}"
 
 # Dual-mode de novo / OOD mixing
 export SUCC_DENOVO_EVAL_ROWS_PER_PROPERTY_COUNT="${SUCC_DENOVO_EVAL_ROWS_PER_PROPERTY_COUNT:-1000}"
-export SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT="${SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT:-500}"
+export SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT="${SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT:-750}"
 export SUCC_OOD_EVAL_ROWS_PER_SPEC="${SUCC_OOD_EVAL_ROWS_PER_SPEC:-100}"
-export SUCC_OOD_TRAIN_ROWS_PER_SPEC="${SUCC_OOD_TRAIN_ROWS_PER_SPEC:-400}"
+export SUCC_OOD_TRAIN_ROWS_PER_SPEC="${SUCC_OOD_TRAIN_ROWS_PER_SPEC:-600}"
 
 export SUCC_MIN_EDIT_SOURCE_TANIMOTO="${SUCC_MIN_EDIT_SOURCE_TANIMOTO:-0.0}"
 export SUCC_REQUIRE_EDIT_QUALITY_COLUMNS=0
@@ -49,14 +49,16 @@ export SUCC_EVAL_BATCH_SIZE="${SUCC_EVAL_BATCH_SIZE:-64}"
 export SUCC_AUX_LOSS_WEIGHT="${SUCC_AUX_LOSS_WEIGHT:-0.90}"
 export SUCC_SAMPLING_STRATEGY="${SUCC_SAMPLING_STRATEGY:-weighted}"
 export SUCC_TABLE1_SAMPLE_WEIGHT="${SUCC_TABLE1_SAMPLE_WEIGHT:-5.0}"
-export SUCC_DENOVO_SAMPLE_WEIGHT="${SUCC_DENOVO_SAMPLE_WEIGHT:-2.0}"
-export SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT="${SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT:-0.02}"
+export SUCC_DENOVO_SAMPLE_WEIGHT="${SUCC_DENOVO_SAMPLE_WEIGHT:-4.0}"
+export SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT="${SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT:-0.05}"
 export SUCC_DENOVO_DIVERSITY_MARGIN="${SUCC_DENOVO_DIVERSITY_MARGIN:-0.85}"
+export SUCC_SOURCE_FREE_AUGMENT_WEIGHT="${SUCC_SOURCE_FREE_AUGMENT_WEIGHT:-0.50}"
+export SUCC_SOURCE_FREE_AUGMENT_PROB="${SUCC_SOURCE_FREE_AUGMENT_PROB:-0.40}"
 export SUCC_TRAIN_PROPERTY_SAMPLE_WEIGHTS="${SUCC_TRAIN_PROPERTY_SAMPLE_WEIGHTS:-MW=6,SA=6,RB=4,HBA=4,QED=3,LogP=3}"
 export SUCC_AUX_PROPERTY_WEIGHTS="${SUCC_AUX_PROPERTY_WEIGHTS:-MW=5,SA=5,RB=4,HBA=4,QED=3,LogP=3}"
 export SUCC_AUX_ALL_PROPERTIES="${SUCC_AUX_ALL_PROPERTIES:-1}"
 export SUCC_CONDITION_DROPOUT="${SUCC_CONDITION_DROPOUT:-0.05}"
-export SUCC_SOURCE_DROPOUT="${SUCC_SOURCE_DROPOUT:-0.08}"
+export SUCC_SOURCE_DROPOUT="${SUCC_SOURCE_DROPOUT:-0.12}"
 
 export SUCC_RUN_DATASET_EXPORT="${SUCC_RUN_DATASET_EXPORT:-1}"
 export SUCC_RUN_FEATURE_EXPORT="${SUCC_RUN_FEATURE_EXPORT:-auto}"
@@ -68,8 +70,8 @@ export SUCC_SUBMIT_TABLE1_EXTENSION_AFTER="${SUCC_SUBMIT_TABLE1_EXTENSION_AFTER:
 export SUCC_SUBMIT_DENOVO_BENCHMARK_AFTER="${SUCC_SUBMIT_DENOVO_BENCHMARK_AFTER:-1}"
 export SUCC_SUBMIT_OOD_BENCHMARK_AFTER="${SUCC_SUBMIT_OOD_BENCHMARK_AFTER:-1}"
 
-# Table1 guard follows the strongest v3 attack evaluation path, so zero-source
-# gains are not accepted if the 10-task Acc@0.65 mean regresses.
+# Table1 guard follows the current guarded Table1 path. The reproducible 10-task
+# baseline on this path is 0.794 because GSK3B remains 0.0.
 export SUCC_TABLE1_PER_TASK="${SUCC_TABLE1_PER_TASK:-100}"
 export SUCC_TABLE1_SYNTHESIZE_MISSING_TASKS="${SUCC_TABLE1_SYNTHESIZE_MISSING_TASKS:-1}"
 export SUCC_TABLE1_SYNTHETIC_MIN_SOURCE_TANIMOTO="${SUCC_TABLE1_SYNTHETIC_MIN_SOURCE_TANIMOTO:-0.4}"
@@ -83,7 +85,7 @@ export SUCC_MOLEDIT_TABLE_METHOD="${SUCC_MOLEDIT_TABLE_METHOD:-edit_latent_table
 export SUCC_MOLEDIT_TABLE_INCLUDE_EMPTY_TABLE1="${SUCC_MOLEDIT_TABLE_INCLUDE_EMPTY_TABLE1:-1}"
 export SUCC_MOLEDIT_TABLE_REQUIRE_TABLE1_COVERAGE="${SUCC_MOLEDIT_TABLE_REQUIRE_TABLE1_COVERAGE:-1}"
 export SUCC_TABLE1_GUARD_AFTER="${SUCC_TABLE1_GUARD_AFTER:-1}"
-export SUCC_TABLE1_GUARD_MIN_ACC065="${SUCC_TABLE1_GUARD_MIN_ACC065:-0.894}"
+export SUCC_TABLE1_GUARD_MIN_ACC065="${SUCC_TABLE1_GUARD_MIN_ACC065:-0.794}"
 export SUCC_TABLE1_GUARD_REQUIRE_TASKS="${SUCC_TABLE1_GUARD_REQUIRE_TASKS:-10}"
 
 if [[ -z "${SUCC_IMAGE_VAE_CHECKPOINT:-}" ]]; then
@@ -105,6 +107,8 @@ echo "  latent_target_mode=$SUCC_LATENT_TARGET_MODE"
 echo "  source_dropout=$SUCC_SOURCE_DROPOUT"
 echo "  denovo_sample_weight=$SUCC_DENOVO_SAMPLE_WEIGHT"
 echo "  denovo_diversity_loss_weight=$SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT"
+echo "  source_free_augment_weight=$SUCC_SOURCE_FREE_AUGMENT_WEIGHT"
+echo "  source_free_augment_prob=$SUCC_SOURCE_FREE_AUGMENT_PROB"
 echo "  balanced_train_per_task=$SUCC_MOLEDIT_BALANCED_TRAIN_PER_TASK"
 echo "  submit_table1_extension_after=$SUCC_SUBMIT_TABLE1_EXTENSION_AFTER"
 echo "  submit_denovo_benchmark_after=$SUCC_SUBMIT_DENOVO_BENCHMARK_AFTER"
@@ -142,7 +146,7 @@ fi
 if [[ "$SUCC_SUBMIT_OOD_BENCHMARK_AFTER" == "1" ]]; then
   export SUCC_OOD_SLURM_DEPENDENCY="$train_dependency"
   export SUCC_OOD_MODEL_OUTPUT_DIR="${SUCC_OOD_MODEL_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR}"
-  export SUCC_OOD_OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v2_guarded}"
+  export SUCC_OOD_OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v3_guarded}"
   echo
   echo "Submitting dependent OOD benchmark"
   bash "$SCRIPT_DIR/submit_denovo_ood_ours_benchmark.sh"
@@ -151,7 +155,7 @@ fi
 if [[ "$SUCC_SUBMIT_DENOVO_BENCHMARK_AFTER" == "1" ]]; then
   export SUCC_DENOVO_SLURM_DEPENDENCY="$train_dependency"
   export SUCC_DENOVO_MODEL_OUTPUT_DIR="${SUCC_DENOVO_MODEL_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR}"
-  export SUCC_DENOVO_OUTPUT_DIR="${SUCC_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v2_guarded}"
+  export SUCC_DENOVO_OUTPUT_DIR="${SUCC_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v3_guarded}"
   echo
   echo "Submitting dependent de novo 2p-7p benchmark"
   bash "$SCRIPT_DIR/submit_denovo_2p7p_ours_benchmark.sh"

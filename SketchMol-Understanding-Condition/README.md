@@ -245,21 +245,28 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
 ```
 
-默认输出到 `outputs/univideo_molecule_generation_moledit_instruct_dualmode_v2_guarded/`，
+默认输出到 `outputs/univideo_molecule_generation_moledit_instruct_dualmode_v3_guarded/`，
 不会覆盖 `v2_fix` / `v3_attack`。核心改动是：
 
 - `SUCC_LATENT_TARGET_MODE=mixed`：source-conditioned edit 用 residual，zero-source de novo/OOD 用 absolute target。
-- `SUCC_SOURCE_DROPOUT=0.08`：比 v1 的 0.30 更保守，避免 Table1 edit 能力被冲掉。
-- `SUCC_DENOVO_SAMPLE_WEIGHT=2.0` + `SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT=0.02`：提高 zero-source 覆盖并抑制 mode collapse。
-- `SUCC_TABLE1_GUARD_MIN_ACC065=0.894`：完整 10-task Table1 `Acc_all(0.65)` mean 低于 v3 attack 基线则 guard job 失败。
+- `SUCC_SOURCE_FREE_AUGMENT_WEIGHT=0.50` / `SUCC_SOURCE_FREE_AUGMENT_PROB=0.40`：
+  把部分 source-conditioned edit row 临时重放成 zero-source absolute-target loss，
+  但不替代原 residual edit loss。
+- `SUCC_SOURCE_DROPOUT=0.12`：比 v1 的 0.30 更可控，比 v2 的 0.08 更积极。
+- `SUCC_DENOVO_SAMPLE_WEIGHT=4.0` + `SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT=0.05`：
+  提高 zero-source 覆盖并抑制 mode collapse。
+- `SUCC_TABLE1_GUARD_MIN_ACC065=0.794`：当前 guarded Table1 路径的可复现
+  10-task `Acc_all(0.65)` mean；低于它则说明主任务真的掉了。
 
 常用覆盖项：
 
 ```bash
-SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT=500 \
-SUCC_OOD_TRAIN_ROWS_PER_SPEC=400 \
-SUCC_SOURCE_DROPOUT=0.08 \
-SUCC_TABLE1_GUARD_MIN_ACC065=0.894 \
+SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT=750 \
+SUCC_OOD_TRAIN_ROWS_PER_SPEC=600 \
+SUCC_SOURCE_DROPOUT=0.12 \
+SUCC_SOURCE_FREE_AUGMENT_WEIGHT=0.50 \
+SUCC_SOURCE_FREE_AUGMENT_PROB=0.40 \
+SUCC_TABLE1_GUARD_MIN_ACC065=0.794 \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
 ```
 

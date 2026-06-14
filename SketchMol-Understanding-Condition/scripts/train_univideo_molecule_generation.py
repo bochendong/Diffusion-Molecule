@@ -269,6 +269,18 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--denovo-diversity-loss-weight", type=float, default=0.0)
     parser.add_argument("--denovo-diversity-margin", type=float, default=0.85)
     parser.add_argument(
+        "--source-free-augment-weight",
+        type=float,
+        default=0.0,
+        help="Extra diffusion-loss weight for source-conditioned rows replayed as zero-source absolute targets.",
+    )
+    parser.add_argument(
+        "--source-free-augment-prob",
+        type=float,
+        default=0.0,
+        help="Per-row probability for the source-free augmentation loss.",
+    )
+    parser.add_argument(
         "--train-property-sample-weights",
         default="",
         help="Comma-separated property sampling weights, e.g. MW=4,RB=2,SA=2.",
@@ -421,6 +433,8 @@ def main() -> None:
                 aux_active_only=not args.aux_all_properties,
                 denovo_diversity_weight=args.denovo_diversity_loss_weight,
                 denovo_diversity_margin=args.denovo_diversity_margin,
+                source_free_augment_weight=args.source_free_augment_weight,
+                source_free_augment_prob=args.source_free_augment_prob,
             )
         )
     if args.stage2_epochs > 0:
@@ -441,6 +455,8 @@ def main() -> None:
                 aux_active_only=not args.aux_all_properties,
                 denovo_diversity_weight=args.denovo_diversity_loss_weight,
                 denovo_diversity_margin=args.denovo_diversity_margin,
+                source_free_augment_weight=args.source_free_augment_weight,
+                source_free_augment_prob=args.source_free_augment_prob,
             )
         )
     if args.stage3_epochs > 0:
@@ -461,6 +477,8 @@ def main() -> None:
                 aux_active_only=not args.aux_all_properties,
                 denovo_diversity_weight=args.denovo_diversity_loss_weight,
                 denovo_diversity_margin=args.denovo_diversity_margin,
+                source_free_augment_weight=args.source_free_augment_weight,
+                source_free_augment_prob=args.source_free_augment_prob,
             )
         )
 
@@ -500,6 +518,8 @@ def main() -> None:
         "denovo_sample_weight": args.denovo_sample_weight,
         "denovo_diversity_loss_weight": args.denovo_diversity_loss_weight,
         "denovo_diversity_margin": args.denovo_diversity_margin,
+        "source_free_augment_weight": args.source_free_augment_weight,
+        "source_free_augment_prob": args.source_free_augment_prob,
         "train_property_sample_weights": train_property_sample_weights,
         "aux_property_weights": _parse_property_weights(args.aux_property_weights),
         "aux_active_only": not args.aux_all_properties,
@@ -714,6 +734,8 @@ def _train_stage(
     aux_active_only: bool,
     denovo_diversity_weight: float,
     denovo_diversity_margin: float,
+    source_free_augment_weight: float,
+    source_free_augment_prob: float,
 ) -> list[dict[str, float | str | int]]:
     records = []
     for epoch in range(epochs):
@@ -723,6 +745,8 @@ def _train_stage(
         aux_losses = []
         diffusion_losses = []
         diversity_losses = []
+        source_free_losses = []
+        source_free_rows = []
         for batch in loader:
             batch = _to_device(batch, device)
             optimizer.zero_grad()
@@ -759,6 +783,16 @@ def _train_stage(
                 )
             else:
                 diffusion_loss = torch.zeros((), device=device)
+            if diffusion_weight > 0 and source_free_augment_weight > 0 and source_free_augment_prob > 0:
+                source_free_loss, source_free_count = _source_free_augmentation_loss(
+                    diffusion,
+                    batch,
+                    condition,
+                    probability=source_free_augment_prob,
+                )
+            else:
+                source_free_loss = torch.zeros((), device=device)
+                source_free_count = 0
             if denovo_diversity_weight > 0:
                 diversity_loss = _denovo_diversity_loss(
                     condition.target_latent,
@@ -767,7 +801,12 @@ def _train_stage(
                 )
             else:
                 diversity_loss = torch.zeros((), device=device)
-            loss = aux_weight * aux_loss + diffusion_weight * diffusion_loss + denovo_diversity_weight * diversity_loss
+            loss = (
+                aux_weight * aux_loss
+                + diffusion_weight * diffusion_loss
+                + diffusion_weight * source_free_augment_weight * source_free_loss
+                + denovo_diversity_weight * diversity_loss
+            )
             loss.backward()
             torch.nn.utils.clip_grad_norm_([param for group in optimizer.param_groups for param in group["params"]], 1.0)
             optimizer.step()
@@ -775,6 +814,8 @@ def _train_stage(
             aux_losses.append(float(aux_loss.item()))
             diffusion_losses.append(float(diffusion_loss.item()))
             diversity_losses.append(float(diversity_loss.item()))
+            source_free_losses.append(float(source_free_loss.item()))
+            source_free_rows.append(int(source_free_count))
         record = {
             "stage": stage,
             "epoch": epoch + 1,
@@ -782,9 +823,13 @@ def _train_stage(
             "aux_loss": float(np.mean(aux_losses)),
             "diffusion_loss": float(np.mean(diffusion_losses)),
             "denovo_diversity_loss": float(np.mean(diversity_losses)),
+            "source_free_augment_loss": float(np.mean(source_free_losses)),
+            "source_free_augmented_rows": float(np.mean(source_free_rows)),
             "latent_target_mode": latent_target_mode,
             "aux_active_only": str(aux_active_only),
             "denovo_diversity_weight": float(denovo_diversity_weight),
+            "source_free_augment_weight": float(source_free_augment_weight),
+            "source_free_augment_prob": float(source_free_augment_prob),
         }
         records.append(record)
         print(json.dumps(record, sort_keys=True))
@@ -1071,6 +1116,42 @@ def _denovo_diversity_loss(latents: torch.Tensor, generation_mode: torch.Tensor,
     similarity = normalized @ normalized.T
     off_diagonal = ~torch.eye(similarity.shape[0], device=similarity.device, dtype=torch.bool)
     return torch.relu(similarity[off_diagonal] - float(margin)).mean()
+
+
+def _source_free_augmentation_loss(
+    diffusion: SourceConditionedGaussianLatentDiffusion,
+    batch: dict[str, object],
+    condition,
+    *,
+    probability: float,
+) -> tuple[torch.Tensor, int]:
+    source_latent = batch["source_latent"]
+    target_latent = batch["target_latent"]
+    source_present = batch["source_present"]
+    generation_mode = batch["generation_mode"]
+    if not all(torch.is_tensor(value) for value in (source_latent, target_latent, source_present, generation_mode)):
+        raise TypeError("source-free augmentation expects tensor batch fields")
+
+    source_rows = (source_present > 0.5) & (generation_mode.long() == 0)
+    prob = max(0.0, min(1.0, float(probability)))
+    if prob < 1.0:
+        source_rows = source_rows & (torch.rand_like(source_present.float()) < prob)
+    selected = torch.nonzero(source_rows, as_tuple=False).flatten()
+    if selected.numel() == 0:
+        return torch.zeros((), device=target_latent.device, dtype=target_latent.dtype), 0
+
+    selected_source = torch.zeros_like(source_latent[selected])
+    selected_present = torch.zeros_like(source_present[selected])
+    selected_mode = torch.ones_like(generation_mode[selected]).long()
+    loss = diffusion.loss(
+        target_latent[selected],
+        selected_source,
+        condition.tokens[selected],
+        condition.attention_mask[selected],
+        source_present=selected_present,
+        generation_mode=selected_mode,
+    )
+    return loss, int(selected.numel())
 
 
 def _metadata_from_batch(batch: dict[str, object]) -> list[dict[str, str]]:
