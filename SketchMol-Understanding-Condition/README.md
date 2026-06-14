@@ -160,7 +160,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_
 1. 导出 de novo 2p-7p benchmark rows 和独立 candidate library；
 2. 用 HF VLM 导出当前 de novo prompt 的 condition tokens；
 3. 从已训练 checkpoint eval-only 生成 `generated_latents.npy`；
-4. 导出 candidate target latents，再用 `latent_nearest` materialize；
+4. 导出 candidate target latents，再用 `latent_nearest` 或 `latent_property_rerank` materialize；
 5. 写出 `benchmark_ours/benchmark_report.md`。
 
 ```bash
@@ -206,6 +206,19 @@ SUCC_OOD_ROWS_PER_SPEC=200 \
 SUCC_OOD_NEGATIVE_GUIDANCE_SCALE=2.5 \
 bash SketchMol-Understanding-Condition/scripts/submit_denovo_ood_ours_benchmark.sh
 ```
+
+如果要诊断 zero-source materializer 瓶颈，用 sweep 入口一次性比较 v1/v3/v4
+checkpoint 的 `latent_nearest`、`latent_property_rerank` 和 `property_nearest`：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_materializer_sweep.sh
+```
+
+`latent_property_rerank` 默认先取 latent top-4096，再按
+`100 * strict_fraction - 10 * normalized_property_distance + latent_score`
+重排；`property_nearest` 只作为候选库上界/诊断，不作为最终 claimed model result。
 
 如果要自定义 OOD preset，写一个 JSON list，并传
 `SUCC_OOD_SPEC_JSON=/path/to/ood_specs.json`：

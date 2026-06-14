@@ -12,6 +12,9 @@ Modes:
   source_identity Copy `source_smiles`; useful as a lower-bound diagnostic.
   latent_nearest  Retrieve the nearest candidate target molecule using saved
                   generated and candidate latent arrays.
+  latent_property_rerank
+                  Retrieve a latent-similarity shortlist, then rerank by
+                  absolute target-property strict success and distance.
   property_nearest Retrieve the nearest candidate target molecule using active
                   target property values from the CSV.
   source_tanimoto_property_oracle
@@ -49,6 +52,16 @@ PROPERTY_NORMALIZERS = {
     "MW": 50.0,
     "LogP": 0.5,
     "QED": 0.1,
+    "TPSA": 20.0,
+    "HBD": 1.0,
+    "HBA": 1.0,
+    "RB": 1.0,
+    "SA": 1.0,
+}
+SKETCHMOL_STRICT_TOLERANCE = {
+    "MW": 35.0,
+    "LogP": 1.0,
+    "QED": 0.10,
     "TPSA": 20.0,
     "HBD": 1.0,
     "HBA": 1.0,
@@ -105,6 +118,7 @@ METHODS = (
     "target_oracle",
     "source_identity",
     "latent_nearest",
+    "latent_property_rerank",
     "property_nearest",
     "source_tanimoto_property_oracle",
     "source_tanimoto_table_success_oracle",
@@ -158,6 +172,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--table-success-weight", type=float, default=100.0)
     parser.add_argument("--table-source-weight", type=float, default=5.0)
     parser.add_argument("--table-latent-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--property-rerank-candidates",
+        type=int,
+        default=4096,
+        help="Latent shortlist size for latent_property_rerank.",
+    )
+    parser.add_argument("--property-rerank-weight", type=float, default=10.0)
+    parser.add_argument("--strict-rerank-weight", type=float, default=100.0)
+    parser.add_argument("--latent-rerank-weight", type=float, default=1.0)
     return parser.parse_args(argv)
 
 
@@ -229,36 +252,54 @@ def materialize_method(
         "edit_latent_source_first_rerank",
         "edit_latent_source_similarity_rerank",
         "edit_latent_table_success_rerank",
+        "latent_property_rerank",
     }:
         generated_latents, candidate_latents = resolve_latents(args, len(source_rows), len(candidate_rows))
-        matches = nearest_latent_matches(
-            generated_latents,
-            candidate_latents,
-            source_rows=source_rows,
-            candidate_rows=candidate_rows,
-            metric=args.metric,
-            top_k=top_k,
-            chunk_size=max(1, int(args.chunk_size)),
-            exclude_self=bool(args.exclude_self),
-            source_first_min_tanimoto=(
-                float(args.source_first_min_tanimoto) if method == "edit_latent_source_first_rerank" else None
-            ),
-            source_first_candidates=int(args.source_first_candidates),
-            source_similarity_rerank_candidates=(
-                int(args.source_similarity_rerank_candidates)
-                if method == "edit_latent_source_similarity_rerank"
-                else 0
-            ),
-            source_similarity_weight=float(args.source_similarity_weight),
-            table_success_rerank_candidates=(
-                int(args.table_success_rerank_candidates)
-                if method == "edit_latent_table_success_rerank"
-                else 0
-            ),
-            table_success_weight=float(args.table_success_weight),
-            table_source_weight=float(args.table_source_weight),
-            table_latent_weight=float(args.table_latent_weight),
-        )
+        if method == "latent_property_rerank":
+            matches = latent_property_rerank_matches(
+                generated_latents,
+                candidate_latents,
+                source_rows=source_rows,
+                candidate_rows=candidate_rows,
+                metric=args.metric,
+                top_k=top_k,
+                chunk_size=max(1, int(args.chunk_size)),
+                exclude_self=bool(args.exclude_self),
+                rerank_candidates=int(args.property_rerank_candidates),
+                strict_weight=float(args.strict_rerank_weight),
+                property_weight=float(args.property_rerank_weight),
+                latent_weight=float(args.latent_rerank_weight),
+                candidate_smiles_column=args.candidate_smiles_column,
+            )
+        else:
+            matches = nearest_latent_matches(
+                generated_latents,
+                candidate_latents,
+                source_rows=source_rows,
+                candidate_rows=candidate_rows,
+                metric=args.metric,
+                top_k=top_k,
+                chunk_size=max(1, int(args.chunk_size)),
+                exclude_self=bool(args.exclude_self),
+                source_first_min_tanimoto=(
+                    float(args.source_first_min_tanimoto) if method == "edit_latent_source_first_rerank" else None
+                ),
+                source_first_candidates=int(args.source_first_candidates),
+                source_similarity_rerank_candidates=(
+                    int(args.source_similarity_rerank_candidates)
+                    if method == "edit_latent_source_similarity_rerank"
+                    else 0
+                ),
+                source_similarity_weight=float(args.source_similarity_weight),
+                table_success_rerank_candidates=(
+                    int(args.table_success_rerank_candidates)
+                    if method == "edit_latent_table_success_rerank"
+                    else 0
+                ),
+                table_success_weight=float(args.table_success_weight),
+                table_source_weight=float(args.table_source_weight),
+                table_latent_weight=float(args.table_latent_weight),
+            )
         out_rows = materialize_matches(
             source_rows,
             candidate_rows,
@@ -575,6 +616,134 @@ def nearest_latent_matches(
     return matches
 
 
+def latent_property_rerank_matches(
+    generated: np.ndarray,
+    candidates: np.ndarray,
+    *,
+    source_rows: list[dict[str, str]],
+    candidate_rows: list[dict[str, str]],
+    metric: str,
+    top_k: int,
+    chunk_size: int,
+    exclude_self: bool,
+    rerank_candidates: int,
+    strict_weight: float,
+    property_weight: float,
+    latent_weight: float,
+    candidate_smiles_column: str,
+) -> list[dict[str, object]]:
+    matches: list[dict[str, object]] = []
+    shortlist_size = max(top_k, int(rerank_candidates))
+    if metric == "cosine":
+        candidate_matrix = normalize_rows(candidates)
+        for start in range(0, generated.shape[0], chunk_size):
+            query = normalize_rows(generated[start : start + chunk_size])
+            sims = query @ candidate_matrix.T
+            for offset, latent_scores in enumerate(sims):
+                row_index = start + offset
+                if exclude_self:
+                    latent_scores = latent_scores.copy()
+                    mask_self(latent_scores, source_rows[row_index], candidate_rows, fill=-np.inf)
+                ranked = top_indices_desc(latent_scores, min(shortlist_size, latent_scores.shape[0]))
+                matches.append(
+                    rerank_property_shortlist(
+                        source_rows[row_index],
+                        candidate_rows,
+                        ranked,
+                        latent_scores,
+                        top_k=top_k,
+                        strict_weight=strict_weight,
+                        property_weight=property_weight,
+                        latent_weight=latent_weight,
+                        candidate_smiles_column=candidate_smiles_column,
+                    )
+                )
+        return matches
+
+    for start in range(0, generated.shape[0], chunk_size):
+        query = generated[start : start + chunk_size]
+        q_norm = np.sum(query * query, axis=1, keepdims=True)
+        c_norm = np.sum(candidates * candidates, axis=1, keepdims=True).T
+        distances = np.maximum(q_norm + c_norm - 2.0 * (query @ candidates.T), 0.0)
+        for offset, row_distances in enumerate(distances):
+            row_index = start + offset
+            if exclude_self:
+                row_distances = row_distances.copy()
+                mask_self(row_distances, source_rows[row_index], candidate_rows, fill=np.inf)
+            ranked = top_indices_asc(row_distances, min(shortlist_size, row_distances.shape[0]))
+            latent_scores = -np.sqrt(np.maximum(row_distances, 0.0))
+            matches.append(
+                rerank_property_shortlist(
+                    source_rows[row_index],
+                    candidate_rows,
+                    ranked,
+                    latent_scores,
+                    top_k=top_k,
+                    strict_weight=strict_weight,
+                    property_weight=property_weight,
+                    latent_weight=latent_weight,
+                    candidate_smiles_column=candidate_smiles_column,
+                )
+            )
+    return matches
+
+
+def rerank_property_shortlist(
+    row: Mapping[str, str],
+    candidate_rows: list[dict[str, str]],
+    shortlist_indices: np.ndarray,
+    latent_scores: np.ndarray,
+    *,
+    top_k: int,
+    strict_weight: float,
+    property_weight: float,
+    latent_weight: float,
+    candidate_smiles_column: str,
+) -> dict[str, object]:
+    reranked: list[tuple[float, float, float, int]] = []
+    for idx_value in shortlist_indices:
+        idx = int(idx_value)
+        property_score = absolute_property_candidate_score(
+            row,
+            candidate_rows[idx],
+            candidate_smiles_column=candidate_smiles_column,
+        )
+        normalized_distance = float(property_score["normalized_property_distance"])
+        strict_fraction = float(property_score["strict_fraction"])
+        latent_score = float(latent_scores[idx])
+        if not math.isfinite(latent_score):
+            continue
+        if not math.isfinite(normalized_distance):
+            normalized_distance = 1e6
+        final_score = (
+            float(strict_weight) * strict_fraction
+            - float(property_weight) * normalized_distance
+            + float(latent_weight) * latent_score
+        )
+        reranked.append((final_score, normalized_distance, latent_score, idx))
+    if not reranked:
+        fallback = int(shortlist_indices[0]) if len(shortlist_indices) else 0
+        fallback_score = float(latent_scores[fallback]) if fallback < latent_scores.shape[0] else math.nan
+        return {
+            "best_index": fallback,
+            "score": fallback_score,
+            "distance": math.nan,
+            "top_indices": [fallback],
+            "top_scores": [fallback_score],
+            "top_distances": [math.nan],
+        }
+    reranked.sort(key=lambda item: (-item[0], item[1], -item[2], item[3]))
+    selected = reranked[: max(1, top_k)]
+    return {
+        "best_index": int(selected[0][3]),
+        "score": float(selected[0][0]),
+        "distance": float(selected[0][1]),
+        "top_indices": [int(item[3]) for item in selected],
+        "top_scores": [float(item[0]) for item in selected],
+        "top_distances": [float(item[1]) for item in selected],
+    }
+
+
 def nearest_property_matches(
     source_rows: list[dict[str, str]],
     candidate_rows: list[dict[str, str]],
@@ -721,6 +890,71 @@ def table_success_candidate_score(
         "success_fraction": float(success_fraction),
         "source_tanimoto": float(source_tanimoto),
     }
+
+
+def absolute_property_candidate_score(
+    row: Mapping[str, str],
+    candidate: Mapping[str, str],
+    *,
+    candidate_smiles_column: str,
+) -> dict[str, float | bool]:
+    query_values, query_mask = property_vector(row, active_from_row=True)
+    if not np.any(query_mask):
+        return {
+            "valid": False,
+            "strict_fraction": 0.0,
+            "normalized_property_distance": math.inf,
+        }
+
+    successes = []
+    normalized_errors = []
+    for prop, query_value, keep in zip(PROPERTY_COLUMNS, query_values, query_mask):
+        if not keep:
+            continue
+        candidate_value = candidate_property_value(candidate, prop, candidate_smiles_column=candidate_smiles_column)
+        tolerance = float(SKETCHMOL_STRICT_TOLERANCE.get(prop, PROPERTY_NORMALIZERS.get(prop, 1.0)))
+        if not math.isfinite(float(query_value)) or candidate_value is None or not math.isfinite(float(candidate_value)):
+            successes.append(False)
+            normalized_errors.append(math.inf)
+            continue
+        error = abs(float(candidate_value) - float(query_value))
+        successes.append(error <= tolerance)
+        normalized_errors.append(error / max(tolerance, 1e-8))
+    finite_errors = [value for value in normalized_errors if math.isfinite(float(value))]
+    if not normalized_errors:
+        distance = math.inf
+    elif finite_errors:
+        missing_penalty = 1e6 * (len(normalized_errors) - len(finite_errors))
+        distance = (sum(finite_errors) + missing_penalty) / len(normalized_errors)
+    else:
+        distance = math.inf
+    return {
+        "valid": bool(successes),
+        "strict_fraction": fraction(successes),
+        "normalized_property_distance": float(distance),
+    }
+
+
+def candidate_property_value(
+    candidate: Mapping[str, str],
+    prop: str,
+    *,
+    candidate_smiles_column: str,
+) -> float | None:
+    prop = canonical_property(prop)
+    value = to_float(candidate.get(f"target_{prop}"))
+    if math.isfinite(value):
+        return float(value)
+    value = to_float(candidate.get(prop))
+    if math.isfinite(value):
+        return float(value)
+    smiles = str(
+        candidate.get(candidate_smiles_column, "")
+        or candidate.get("target_smiles", "")
+        or candidate.get("generated_smiles", "")
+        or ""
+    ).strip()
+    return property_value(smiles, prop)
 
 
 def task_specs_from_row(row: Mapping[str, str]) -> list[dict[str, str]]:
@@ -953,6 +1187,10 @@ def summarize(
         "source_identity_rate": fraction(source_identity),
         "top_k": int(args.top_k),
         "exclude_self": bool(args.exclude_self),
+        "property_rerank_candidates": int(args.property_rerank_candidates),
+        "property_rerank_weight": float(args.property_rerank_weight),
+        "strict_rerank_weight": float(args.strict_rerank_weight),
+        "latent_rerank_weight": float(args.latent_rerank_weight),
     }
 
 

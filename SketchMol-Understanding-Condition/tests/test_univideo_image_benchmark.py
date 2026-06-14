@@ -652,6 +652,266 @@ def test_materialize_univideo_target_molecules_property_nearest(tmp_path):
     assert rows[0]["matched_condition_id"] == "k1"
 
 
+def test_materialize_univideo_target_molecules_latent_property_rerank_zero_source(tmp_path):
+    source = tmp_path / "image_path.csv"
+    candidates = tmp_path / "candidates.csv"
+    output = tmp_path / "direct.csv"
+    generated = tmp_path / "generated_latents.npy"
+    targets = tmp_path / "target_latents.npy"
+    _write_simple_target_rows(
+        source,
+        [
+            {
+                "sample_id": "q0",
+                "condition_id": "q0",
+                "source_smiles": "",
+                "target_smiles": "",
+                "condition_properties": "MW,LogP",
+                "target_MW": "100",
+                "target_LogP": "2.0",
+                "MW_active": "True",
+                "LogP_active": "True",
+            }
+        ],
+    )
+    _write_simple_target_rows(
+        candidates,
+        [
+            {
+                "sample_id": "bad",
+                "condition_id": "bad",
+                "target_smiles": "CCCC",
+                "target_MW": "200",
+                "target_LogP": "6.0",
+            },
+            {
+                "sample_id": "good",
+                "condition_id": "good",
+                "target_smiles": "CCCO",
+                "target_MW": "101",
+                "target_LogP": "2.1",
+            },
+        ],
+    )
+    np.save(generated, np.asarray([[1.0, 0.0]], dtype=np.float32))
+    np.save(targets, np.asarray([[1.0, 0.0], [0.8, 0.2]], dtype=np.float32))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/materialize_univideo_target_molecules.py",
+            "--source-csv",
+            str(source),
+            "--candidate-csv",
+            str(candidates),
+            "--output-csv",
+            str(output),
+            "--mode",
+            "latent_property_rerank",
+            "--generated-latents-npy",
+            str(generated),
+            "--candidate-latents-npy",
+            str(targets),
+            "--property-rerank-candidates",
+            "2",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output.open(newline="", encoding="utf-8")))
+    assert rows[0]["generated_smiles"] == "CCCO"
+    assert rows[0]["matched_condition_id"] == "good"
+    assert rows[0]["source_smiles"] == ""
+
+
+def test_materialize_univideo_target_molecules_latent_property_rerank_distance_and_tiebreak(tmp_path):
+    source = tmp_path / "image_path.csv"
+    candidates = tmp_path / "candidates.csv"
+    output = tmp_path / "direct.csv"
+    generated = tmp_path / "generated_latents.npy"
+    targets = tmp_path / "target_latents.npy"
+    _write_simple_target_rows(
+        source,
+        [
+            {
+                "sample_id": "q0",
+                "condition_id": "q0",
+                "source_smiles": "",
+                "target_smiles": "",
+                "condition_properties": "LogP",
+                "target_LogP": "2.0",
+                "LogP_active": "True",
+            },
+            {
+                "sample_id": "q1",
+                "condition_id": "q1",
+                "source_smiles": "",
+                "target_smiles": "",
+                "condition_properties": "LogP",
+                "target_LogP": "2.0",
+                "LogP_active": "True",
+            },
+        ],
+    )
+    _write_simple_target_rows(
+        candidates,
+        [
+            {
+                "sample_id": "far_latent",
+                "condition_id": "far_latent",
+                "target_smiles": "CCCC",
+                "target_LogP": "4.0",
+            },
+            {
+                "sample_id": "close_a",
+                "condition_id": "close_a",
+                "target_smiles": "CCCO",
+                "target_LogP": "3.2",
+            },
+            {
+                "sample_id": "close_b",
+                "condition_id": "close_b",
+                "target_smiles": "CCN",
+                "target_LogP": "3.2",
+            },
+        ],
+    )
+    np.save(generated, np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32))
+    np.save(targets, np.asarray([[1.0, 0.0], [0.8, 0.2], [0.0, 1.0]], dtype=np.float32))
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/materialize_univideo_target_molecules.py",
+            "--source-csv",
+            str(source),
+            "--candidate-csv",
+            str(candidates),
+            "--output-csv",
+            str(output),
+            "--mode",
+            "latent_property_rerank",
+            "--generated-latents-npy",
+            str(generated),
+            "--candidate-latents-npy",
+            str(targets),
+            "--property-rerank-candidates",
+            "3",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output.open(newline="", encoding="utf-8")))
+    assert rows[0]["matched_condition_id"] == "close_a"
+    assert rows[1]["matched_condition_id"] == "close_b"
+
+
+@pytest.mark.skipif(RDKit_MISSING, reason="RDKit is required for direct-SMILES benchmark evaluation")
+def test_materialize_univideo_target_molecules_multi_method_evaluation_groups(tmp_path):
+    source = tmp_path / "image_path.csv"
+    candidates = tmp_path / "candidates.csv"
+    output = tmp_path / "direct.csv"
+    generated = tmp_path / "generated_latents.npy"
+    targets = tmp_path / "target_latents.npy"
+    benchmark_dir = tmp_path / "benchmark"
+    _write_simple_target_rows(
+        source,
+        [
+            {
+                "sample_id": "q0",
+                "condition_id": "q0",
+                "source_smiles": "",
+                "target_smiles": "",
+                "condition_properties": "MW,LogP",
+                "property_count": "2",
+                "target_MW": "46",
+                "target_LogP": "0.0",
+                "MW_active": "True",
+                "LogP_active": "True",
+            }
+        ],
+    )
+    _write_simple_target_rows(
+        candidates,
+        [
+            {
+                "sample_id": "k0",
+                "condition_id": "k0",
+                "target_smiles": "CCO",
+                "target_MW": "46",
+                "target_LogP": "0.0",
+            },
+            {
+                "sample_id": "k1",
+                "condition_id": "k1",
+                "target_smiles": "CCCC",
+                "target_MW": "120",
+                "target_LogP": "4.0",
+            },
+        ],
+    )
+    np.save(generated, np.asarray([[1.0, 0.0]], dtype=np.float32))
+    np.save(targets, np.asarray([[0.8, 0.2], [1.0, 0.0]], dtype=np.float32))
+
+    materialize_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/materialize_univideo_target_molecules.py",
+            "--source-csv",
+            str(source),
+            "--candidate-csv",
+            str(candidates),
+            "--output-csv",
+            str(output),
+            "--methods",
+            "latent_nearest,latent_property_rerank,property_nearest",
+            "--generated-latents-npy",
+            str(generated),
+            "--candidate-latents-npy",
+            str(targets),
+            "--property-rerank-candidates",
+            "2",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert materialize_result.returncode == 0, materialize_result.stderr
+
+    eval_result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/evaluate_univideo_image_benchmark.py",
+            "--image-csv",
+            str(output),
+            "--output-dir",
+            str(benchmark_dir),
+            "--method",
+            "fallback",
+            "--smiles-column",
+            "generated_smiles",
+            "--accept-direct-smiles",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert eval_result.returncode == 0, eval_result.stderr
+    summary_rows = list(csv.DictReader((benchmark_dir / "benchmark_summary.csv").open(newline="", encoding="utf-8")))
+    methods = {row["method"] for row in summary_rows}
+    assert {"latent_nearest", "latent_property_rerank", "property_nearest"} <= methods
+
+
 def _write_simple_target_rows(path: Path, rows: list[dict[str, str]]) -> None:
     fieldnames = [
         "sample_id",
@@ -661,6 +921,7 @@ def _write_simple_target_rows(path: Path, rows: list[dict[str, str]]) -> None:
         "source_smiles",
         "target_smiles",
         "condition_properties",
+        "property_count",
         "target_MW",
         "target_LogP",
         "target_QED",

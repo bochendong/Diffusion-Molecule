@@ -40,6 +40,10 @@ METHOD_LABEL="${SUCC_DENOVO_METHOD_LABEL:-denovo_2p7p_succ_univideo}"
 BENCHMARK_OUTPUT_DIR="${SUCC_DENOVO_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_ours}"
 DIRECT_CSV="${SUCC_DENOVO_TARGET_MOLECULES_DIRECT_CSV:-$BENCHMARK_OUTPUT_DIR/target_molecules_direct.csv}"
 TOP_K="${SUCC_DENOVO_TARGET_FINDER_TOP_K:-5}"
+PROPERTY_RERANK_CANDIDATES="${SUCC_DENOVO_PROPERTY_RERANK_CANDIDATES:-4096}"
+PROPERTY_RERANK_WEIGHT="${SUCC_DENOVO_PROPERTY_RERANK_WEIGHT:-10}"
+STRICT_RERANK_WEIGHT="${SUCC_DENOVO_STRICT_RERANK_WEIGHT:-100}"
+LATENT_RERANK_WEIGHT="${SUCC_DENOVO_LATENT_RERANK_WEIGHT:-1}"
 SOURCE_TANIMOTO_THRESHOLDS="${SUCC_DENOVO_SOURCE_TANIMOTO_THRESHOLDS:-}"
 FORCE_EXPORT="${SUCC_DENOVO_FORCE_EXPORT:-0}"
 RUN_FEATURE_EXPORT="${SUCC_DENOVO_RUN_FEATURE_EXPORT:-auto}"
@@ -82,6 +86,10 @@ echo "  candidate_jsonl=$CANDIDATE_JSONL"
 echo "  condition_features_dir=$FEATURES_DIR"
 echo "  latent_backend=$LATENT_BACKEND"
 echo "  methods=$METHODS"
+echo "  property_rerank_candidates=$PROPERTY_RERANK_CANDIDATES"
+echo "  property_rerank_weight=$PROPERTY_RERANK_WEIGHT"
+echo "  strict_rerank_weight=$STRICT_RERANK_WEIGHT"
+echo "  latent_rerank_weight=$LATENT_RERANK_WEIGHT"
 echo "  benchmark_output_dir=$BENCHMARK_OUTPUT_DIR"
 
 if [[ ! -f "$MOLECULE_DB" ]]; then
@@ -237,7 +245,11 @@ mkdir -p "$BENCHMARK_OUTPUT_DIR"
   --methods "$METHODS" \
   --generated-latents-npy "$OURS_EVAL_DIR/eval_latent/generated_latents.npy" \
   --candidate-latents-npy "$CANDIDATE_LATENTS" \
-  --top-k "$TOP_K"
+  --top-k "$TOP_K" \
+  --property-rerank-candidates "$PROPERTY_RERANK_CANDIDATES" \
+  --property-rerank-weight "$PROPERTY_RERANK_WEIGHT" \
+  --strict-rerank-weight "$STRICT_RERANK_WEIGHT" \
+  --latent-rerank-weight "$LATENT_RERANK_WEIGHT"
 
 if [[ -n "$METHOD_LABEL" && "$METHODS" == "latent_nearest" ]]; then
   "$PYTHON_BIN" - "$DIRECT_CSV" "$METHOD_LABEL" <<'PY'
