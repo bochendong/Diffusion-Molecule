@@ -72,6 +72,7 @@ EVAL_BATCH_SIZE="${SUCC_EVAL_BATCH_SIZE:-64}"
 STAGE1_EPOCHS="${SUCC_STAGE1_EPOCHS:-2}"
 STAGE2_EPOCHS="${SUCC_STAGE2_EPOCHS:-5}"
 STAGE3_EPOCHS="${SUCC_STAGE3_EPOCHS:-2}"
+LR="${SUCC_LR:-1e-3}"
 TIMESTEPS="${SUCC_TIMESTEPS:-100}"
 DIFFUSION_OBJECTIVE="${SUCC_DIFFUSION_OBJECTIVE:-pred_x0}"
 LATENT_TARGET_MODE="${SUCC_LATENT_TARGET_MODE:-}"
@@ -94,6 +95,8 @@ SOURCE_FREE_AUGMENT_PROB="${SUCC_SOURCE_FREE_AUGMENT_PROB:-0.0}"
 TRAIN_PROPERTY_SAMPLE_WEIGHTS="${SUCC_TRAIN_PROPERTY_SAMPLE_WEIGHTS:-}"
 AUX_PROPERTY_WEIGHTS="${SUCC_AUX_PROPERTY_WEIGHTS:-}"
 AUX_ALL_PROPERTIES="${SUCC_AUX_ALL_PROPERTIES:-0}"
+INIT_CHECKPOINT="${SUCC_INIT_CHECKPOINT:-}"
+INIT_STATS_FROM_CHECKPOINT="${SUCC_INIT_STATS_FROM_CHECKPOINT:-0}"
 LATENT_BACKEND="${SUCC_LATENT_BACKEND:-image_vae}"
 if [[ -z "$LATENT_TARGET_MODE" ]]; then
   if [[ "$LATENT_BACKEND" == "fingerprint_property_vector" ]]; then
@@ -195,6 +198,9 @@ echo "  source_dropout=$SOURCE_DROPOUT"
 echo "  aux_loss_weight=$AUX_LOSS_WEIGHT"
 echo "  sampling_strategy=$SAMPLING_STRATEGY"
 echo "  table1_sample_weight=$TABLE1_SAMPLE_WEIGHT"
+echo "  lr=$LR"
+echo "  init_checkpoint=${INIT_CHECKPOINT:-none}"
+echo "  init_stats_from_checkpoint=$INIT_STATS_FROM_CHECKPOINT"
 echo "  extra_train_jsonl=${EXTRA_TRAIN_JSONL:-none}"
 echo "  extra_eval_jsonl=${EXTRA_EVAL_JSONL:-none}"
 echo "  denovo_sample_weight=$DENOVO_SAMPLE_WEIGHT"
@@ -461,10 +467,19 @@ if [[ -n "$EXTRA_EVAL_JSONL" ]]; then
   done
 fi
 
+INIT_CHECKPOINT_ARGS=()
+if [[ -n "$INIT_CHECKPOINT" ]]; then
+  INIT_CHECKPOINT_ARGS=(--init-checkpoint "$INIT_CHECKPOINT")
+  if [[ "$INIT_STATS_FROM_CHECKPOINT" == "1" ]]; then
+    INIT_CHECKPOINT_ARGS+=(--init-stats-from-checkpoint)
+  fi
+fi
+
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_univideo_molecule_generation.py" \
   --train-jsonl "$DATASET_DIR/univideo_edit_train.jsonl" \
   --eval-jsonl "$DATASET_DIR/univideo_edit_eval.jsonl" \
   "${EXTRA_JSONL_ARGS[@]}" \
+  "${INIT_CHECKPOINT_ARGS[@]}" \
   --condition-features-dir "$FEATURES_DIR" \
   --condition-feature-array query_tokens \
   --condition-feature-variant full \
@@ -474,6 +489,7 @@ fi
   --stage1-epochs "$STAGE1_EPOCHS" \
   --stage2-epochs "$STAGE2_EPOCHS" \
   --stage3-epochs "$STAGE3_EPOCHS" \
+  --lr "$LR" \
   --timesteps "$TIMESTEPS" \
   --diffusion-objective "$DIFFUSION_OBJECTIVE" \
   --latent-target-mode "$LATENT_TARGET_MODE" \

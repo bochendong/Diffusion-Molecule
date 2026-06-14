@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # Submit dual-mode SUCC training: MolEdit Table1 edits + de novo 2p-7p + OOD rows.
+# v4 warm-starts from the high-diversity dualmode v1 checkpoint by default,
+# then fine-tunes with the guarded dual-mode recipe.
 
 set -euo pipefail
 
@@ -7,8 +9,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 export DM_DATA_ROOT="${DM_DATA_ROOT:-/scratch/bdong/datasets/Diffusion-Molecule}"
 export SUCC_DATASET_MODE=dualmode
-export SUCC_UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v3_guarded}"
-export SUCC_CONDITION_FEATURES_DIR="${SUCC_CONDITION_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/condition_features_moledit_hf_vlm_dualmode_v3_guarded}"
+export SUCC_UNIFIED_OUTPUT_DIR="${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v4_warmstart_v1}"
+export SUCC_CONDITION_FEATURES_DIR="${SUCC_CONDITION_FEATURES_DIR:-SketchMol-Understanding-Condition/outputs/condition_features_moledit_hf_vlm_dualmode_v4_warmstart_v1}"
 export SUCC_HF_MODEL_NAME_OR_PATH="${SUCC_HF_MODEL_NAME_OR_PATH:-/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct}"
 export SUCC_MOLEDIT_TRAIN_SPLIT="${SUCC_MOLEDIT_TRAIN_SPLIT:-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/train.csv}"
 export SUCC_MOLEDIT_EVAL_SPLIT="${SUCC_MOLEDIT_EVAL_SPLIT:-$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv}"
@@ -26,12 +28,14 @@ export SUCC_DENOVO_EVAL_ROWS_PER_PROPERTY_COUNT="${SUCC_DENOVO_EVAL_ROWS_PER_PRO
 export SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT="${SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT:-750}"
 export SUCC_OOD_EVAL_ROWS_PER_SPEC="${SUCC_OOD_EVAL_ROWS_PER_SPEC:-100}"
 export SUCC_OOD_TRAIN_ROWS_PER_SPEC="${SUCC_OOD_TRAIN_ROWS_PER_SPEC:-600}"
+export SUCC_INIT_CHECKPOINT="${SUCC_INIT_CHECKPOINT:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v1/univideo_molecule/univideo_molecule_generation.pt}"
+export SUCC_INIT_STATS_FROM_CHECKPOINT="${SUCC_INIT_STATS_FROM_CHECKPOINT:-1}"
 
 export SUCC_MIN_EDIT_SOURCE_TANIMOTO="${SUCC_MIN_EDIT_SOURCE_TANIMOTO:-0.0}"
 export SUCC_REQUIRE_EDIT_QUALITY_COLUMNS=0
 export SUCC_REQUIRE_EVAL_ORACLE_STRICT=0
 
-# Latent / optimization: inherit v3 attack defaults, tuned for broader coverage.
+# Latent / optimization: warm-start from v1, then fine-tune with guarded mixed-latent dual-mode data.
 export SUCC_LATENT_BACKEND="${SUCC_LATENT_BACKEND:-image_vae}"
 export SUCC_LATENT_TARGET_MODE="${SUCC_LATENT_TARGET_MODE:-mixed}"
 export SUCC_DIFFUSION_OBJECTIVE="${SUCC_DIFFUSION_OBJECTIVE:-pred_x0}"
@@ -41,19 +45,20 @@ export SUCC_SAMPLE_STEPS="${SUCC_SAMPLE_STEPS:-48}"
 export SUCC_SAMPLE_ETA="${SUCC_SAMPLE_ETA:-0.0}"
 export SUCC_IMAGE_VAE_INK_LOSS_WEIGHT="${SUCC_IMAGE_VAE_INK_LOSS_WEIGHT:-4.0}"
 
-export SUCC_STAGE1_EPOCHS="${SUCC_STAGE1_EPOCHS:-4}"
-export SUCC_STAGE2_EPOCHS="${SUCC_STAGE2_EPOCHS:-14}"
-export SUCC_STAGE3_EPOCHS="${SUCC_STAGE3_EPOCHS:-6}"
+export SUCC_STAGE1_EPOCHS="${SUCC_STAGE1_EPOCHS:-1}"
+export SUCC_STAGE2_EPOCHS="${SUCC_STAGE2_EPOCHS:-8}"
+export SUCC_STAGE3_EPOCHS="${SUCC_STAGE3_EPOCHS:-4}"
+export SUCC_LR="${SUCC_LR:-3e-4}"
 export SUCC_BATCH_SIZE="${SUCC_BATCH_SIZE:-48}"
 export SUCC_EVAL_BATCH_SIZE="${SUCC_EVAL_BATCH_SIZE:-64}"
 export SUCC_AUX_LOSS_WEIGHT="${SUCC_AUX_LOSS_WEIGHT:-0.90}"
 export SUCC_SAMPLING_STRATEGY="${SUCC_SAMPLING_STRATEGY:-weighted}"
 export SUCC_TABLE1_SAMPLE_WEIGHT="${SUCC_TABLE1_SAMPLE_WEIGHT:-5.0}"
-export SUCC_DENOVO_SAMPLE_WEIGHT="${SUCC_DENOVO_SAMPLE_WEIGHT:-4.0}"
-export SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT="${SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT:-0.05}"
+export SUCC_DENOVO_SAMPLE_WEIGHT="${SUCC_DENOVO_SAMPLE_WEIGHT:-3.0}"
+export SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT="${SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT:-0.08}"
 export SUCC_DENOVO_DIVERSITY_MARGIN="${SUCC_DENOVO_DIVERSITY_MARGIN:-0.85}"
-export SUCC_SOURCE_FREE_AUGMENT_WEIGHT="${SUCC_SOURCE_FREE_AUGMENT_WEIGHT:-0.50}"
-export SUCC_SOURCE_FREE_AUGMENT_PROB="${SUCC_SOURCE_FREE_AUGMENT_PROB:-0.40}"
+export SUCC_SOURCE_FREE_AUGMENT_WEIGHT="${SUCC_SOURCE_FREE_AUGMENT_WEIGHT:-0.30}"
+export SUCC_SOURCE_FREE_AUGMENT_PROB="${SUCC_SOURCE_FREE_AUGMENT_PROB:-0.35}"
 export SUCC_TRAIN_PROPERTY_SAMPLE_WEIGHTS="${SUCC_TRAIN_PROPERTY_SAMPLE_WEIGHTS:-MW=6,SA=6,RB=4,HBA=4,QED=3,LogP=3}"
 export SUCC_AUX_PROPERTY_WEIGHTS="${SUCC_AUX_PROPERTY_WEIGHTS:-MW=5,SA=5,RB=4,HBA=4,QED=3,LogP=3}"
 export SUCC_AUX_ALL_PROPERTIES="${SUCC_AUX_ALL_PROPERTIES:-1}"
@@ -103,8 +108,11 @@ echo "  output_dir=$SUCC_UNIFIED_OUTPUT_DIR"
 echo "  dataset_mode=$SUCC_DATASET_MODE"
 echo "  denovo_train_rows_per_property_count=$SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT"
 echo "  ood_train_rows_per_spec=$SUCC_OOD_TRAIN_ROWS_PER_SPEC"
+echo "  init_checkpoint=$SUCC_INIT_CHECKPOINT"
+echo "  init_stats_from_checkpoint=$SUCC_INIT_STATS_FROM_CHECKPOINT"
 echo "  latent_target_mode=$SUCC_LATENT_TARGET_MODE"
 echo "  source_dropout=$SUCC_SOURCE_DROPOUT"
+echo "  lr=$SUCC_LR"
 echo "  denovo_sample_weight=$SUCC_DENOVO_SAMPLE_WEIGHT"
 echo "  denovo_diversity_loss_weight=$SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT"
 echo "  source_free_augment_weight=$SUCC_SOURCE_FREE_AUGMENT_WEIGHT"
@@ -146,7 +154,7 @@ fi
 if [[ "$SUCC_SUBMIT_OOD_BENCHMARK_AFTER" == "1" ]]; then
   export SUCC_OOD_SLURM_DEPENDENCY="$train_dependency"
   export SUCC_OOD_MODEL_OUTPUT_DIR="${SUCC_OOD_MODEL_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR}"
-  export SUCC_OOD_OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v3_guarded}"
+  export SUCC_OOD_OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v4_warmstart_v1}"
   echo
   echo "Submitting dependent OOD benchmark"
   bash "$SCRIPT_DIR/submit_denovo_ood_ours_benchmark.sh"
@@ -155,7 +163,7 @@ fi
 if [[ "$SUCC_SUBMIT_DENOVO_BENCHMARK_AFTER" == "1" ]]; then
   export SUCC_DENOVO_SLURM_DEPENDENCY="$train_dependency"
   export SUCC_DENOVO_MODEL_OUTPUT_DIR="${SUCC_DENOVO_MODEL_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR}"
-  export SUCC_DENOVO_OUTPUT_DIR="${SUCC_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v3_guarded}"
+  export SUCC_DENOVO_OUTPUT_DIR="${SUCC_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v4_warmstart_v1}"
   echo
   echo "Submitting dependent de novo 2p-7p benchmark"
   bash "$SCRIPT_DIR/submit_denovo_2p7p_ours_benchmark.sh"

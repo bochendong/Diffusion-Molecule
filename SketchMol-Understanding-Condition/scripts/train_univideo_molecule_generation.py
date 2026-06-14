@@ -8,7 +8,7 @@ import csv
 import json
 import sys
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import torch
@@ -304,7 +304,69 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--export-condition-tokens", action="store_true")
     parser.add_argument("--eval-only", action="store_true", help="Load checkpoint and run eval without training.")
     parser.add_argument("--resume-checkpoint", type=Path, default=None)
+    parser.add_argument(
+        "--init-checkpoint",
+        type=Path,
+        default=None,
+        help="Warm-start training from a prior UniVideo molecule checkpoint with compatible connector/diffusion keys.",
+    )
+    parser.add_argument(
+        "--init-stats-from-checkpoint",
+        action="store_true",
+        help="When warm-starting, reuse latent/property normalization stats from --init-checkpoint.",
+    )
     return parser.parse_args()
+
+
+def _summarize_keys(keys: Sequence[str], *, max_keys: int = 20) -> dict[str, Any]:
+    sorted_keys = sorted(keys)
+    return {
+        "count": len(sorted_keys),
+        "keys": sorted_keys[:max_keys],
+        "truncated": len(sorted_keys) > max_keys,
+    }
+
+
+def _load_compatible_state(module: torch.nn.Module, state: Mapping[str, torch.Tensor]) -> dict[str, Any]:
+    current = module.state_dict()
+    compatible = {}
+    skipped = []
+    for key, value in state.items():
+        if key in current and tuple(current[key].shape) == tuple(value.shape):
+            compatible[key] = value
+        else:
+            skipped.append(key)
+    missing_keys, unexpected_keys = module.load_state_dict(compatible, strict=False)
+    return {
+        "loaded": _summarize_keys(list(compatible.keys())),
+        "missing": _summarize_keys(list(missing_keys)),
+        "unexpected": _summarize_keys(list(unexpected_keys)),
+        "skipped": _summarize_keys(skipped),
+    }
+
+
+def _load_training_init_checkpoint(
+    *,
+    connector: torch.nn.Module,
+    diffusion: torch.nn.Module,
+    checkpoint_path: Path,
+    device: torch.device,
+) -> dict[str, Any]:
+    if not checkpoint_path.exists():
+        raise FileNotFoundError(f"Missing init checkpoint: {checkpoint_path}")
+    payload = torch.load(checkpoint_path, map_location=device)
+    if not isinstance(payload, Mapping):
+        raise TypeError(f"Unsupported init checkpoint payload type: {type(payload).__name__}")
+    if "connector_state" not in payload or "diffusion_state" not in payload:
+        raise KeyError("Init checkpoint must contain connector_state and diffusion_state")
+
+    report = {
+        "checkpoint": str(checkpoint_path),
+        "connector": _load_compatible_state(connector, payload["connector_state"]),
+        "diffusion": _load_compatible_state(diffusion, payload["diffusion_state"]),
+    }
+    print(json.dumps({"training_init_checkpoint": report}, indent=2, sort_keys=True))
+    return report
 
 
 def main() -> None:
@@ -353,6 +415,26 @@ def main() -> None:
         _run_eval_only(args, device=device, feature_store=feature_store, image_vae=image_vae)
         return
 
+    init_stats = None
+    if args.init_stats_from_checkpoint:
+        if args.init_checkpoint is None:
+            raise ValueError("--init-stats-from-checkpoint requires --init-checkpoint")
+        payload = torch.load(args.init_checkpoint, map_location="cpu")
+        if not isinstance(payload, Mapping):
+            raise TypeError(f"Unsupported init checkpoint payload type: {type(payload).__name__}")
+        init_stats = _stats_from_checkpoint_config(payload.get("config", {}))
+        print(
+            json.dumps(
+                {
+                    "training_init_stats": {
+                        "checkpoint": str(args.init_checkpoint),
+                        "stats_keys": sorted(init_stats),
+                    }
+                },
+                sort_keys=True,
+            )
+        )
+
     train_jsonls = [args.train_jsonl, *args.extra_train_jsonl]
     eval_jsonls = [args.eval_jsonl, *args.extra_eval_jsonl] if args.eval_jsonl is not None else list(args.extra_eval_jsonl)
 
@@ -367,6 +449,7 @@ def main() -> None:
         image_size=args.image_size,
         vae_batch_size=args.vae_batch_size,
         limit=args.limit,
+        stats=init_stats,
     )
     train_property_sample_weights = _parse_property_weights(args.train_property_sample_weights)
     aux_property_weights = _property_weight_tensor(args.aux_property_weights, device=device)
@@ -413,6 +496,15 @@ def main() -> None:
         condition_dropout=args.condition_dropout,
         source_dropout=args.source_dropout,
     ).to(device)
+
+    init_checkpoint_load = None
+    if args.init_checkpoint is not None:
+        init_checkpoint_load = _load_training_init_checkpoint(
+            connector=connector,
+            diffusion=diffusion,
+            checkpoint_path=args.init_checkpoint,
+            device=device,
+        )
 
     history = []
     if args.stage1_epochs > 0:
@@ -520,6 +612,9 @@ def main() -> None:
         "denovo_diversity_margin": args.denovo_diversity_margin,
         "source_free_augment_weight": args.source_free_augment_weight,
         "source_free_augment_prob": args.source_free_augment_prob,
+        "init_checkpoint": str(args.init_checkpoint) if args.init_checkpoint else None,
+        "init_stats_from_checkpoint": bool(args.init_stats_from_checkpoint),
+        "init_checkpoint_load": init_checkpoint_load,
         "train_property_sample_weights": train_property_sample_weights,
         "aux_property_weights": _parse_property_weights(args.aux_property_weights),
         "aux_active_only": not args.aux_all_properties,

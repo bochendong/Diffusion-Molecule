@@ -143,7 +143,9 @@ MW/LogP/QED/TPSA/HBD/HBA/RB 的 property targets，评估报告会逐项列出 2
 SUCC checkpoint，用 dual-mode 入口。它会把 MolEdit-Instruct enhanced_v1
 和 zero-source 2p-7p/OOD JSONL 混合训练，`latent_target_mode=mixed`。
 默认 OOD rows 覆盖 `forward_extreme`、`rare_combo` 和 `reverse_stimulation`，
-用于修复旧 checkpoint 在 rare combo 上 0% strict 的问题：
+用于修复旧 checkpoint 在 rare combo 上 0% strict 的问题。当前默认是
+`v4_warmstart_v1`：从 dualmode v1 checkpoint 初始化，再用更小学习率继续训，
+以保留 v1 的 zero-source 多样性，同时吸收 v3 guarded 的 mixed-latent 对齐设置：
 
 ```bash
 export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
@@ -224,7 +226,7 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_materialized_benchmark.sh
 ```
 
-### 0.4.1 Dual-mode v2 guarded 主训练（MolEdit + de novo + OOD）
+### 0.4.1 Dual-mode v4 warm-start 主训练（MolEdit + de novo + OOD）
 
 旧 checkpoint 在 OOD benchmark 上 overall strict 只有 0.114，且几乎被
 `logp_high=0.750` 撑起；`rare_combo=0.000`，MW/TPSA/RB extreme 也都是 0。
@@ -245,15 +247,21 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
 ```
 
-默认输出到 `outputs/univideo_molecule_generation_moledit_instruct_dualmode_v3_guarded/`，
-不会覆盖 `v2_fix` / `v3_attack`。核心改动是：
+默认输出到 `outputs/univideo_molecule_generation_moledit_instruct_dualmode_v4_warmstart_v1/`，
+不会覆盖 `v2_fix` / `v3_attack` / `v3_guarded`。核心改动是：
 
+- `SUCC_INIT_CHECKPOINT=...dualmode_v1/.../univideo_molecule_generation.pt`：
+  从 v1 的高多样性 zero-source checkpoint 迁移，而不是随机初始化。
+- `SUCC_INIT_STATS_FROM_CHECKPOINT=1`：沿用 v1 的 latent/property 标准化坐标，
+  让 warm-start 更接近连续训练。
+- `SUCC_LR=3e-4` + `stage1/stage2/stage3=1/8/4`：用较小步长做连续训练，
+  降低 Table1 能力被大幅改写的风险。
 - `SUCC_LATENT_TARGET_MODE=mixed`：source-conditioned edit 用 residual，zero-source de novo/OOD 用 absolute target。
-- `SUCC_SOURCE_FREE_AUGMENT_WEIGHT=0.50` / `SUCC_SOURCE_FREE_AUGMENT_PROB=0.40`：
+- `SUCC_SOURCE_FREE_AUGMENT_WEIGHT=0.30` / `SUCC_SOURCE_FREE_AUGMENT_PROB=0.35`：
   把部分 source-conditioned edit row 临时重放成 zero-source absolute-target loss，
   但不替代原 residual edit loss。
 - `SUCC_SOURCE_DROPOUT=0.12`：比 v1 的 0.30 更可控，比 v2 的 0.08 更积极。
-- `SUCC_DENOVO_SAMPLE_WEIGHT=4.0` + `SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT=0.05`：
+- `SUCC_DENOVO_SAMPLE_WEIGHT=3.0` + `SUCC_DENOVO_DIVERSITY_LOSS_WEIGHT=0.08`：
   提高 zero-source 覆盖并抑制 mode collapse。
 - `SUCC_TABLE1_GUARD_MIN_ACC065=0.794`：当前 guarded Table1 路径的可复现
   10-task `Acc_all(0.65)` mean；低于它则说明主任务真的掉了。
@@ -263,9 +271,12 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_
 ```bash
 SUCC_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT=750 \
 SUCC_OOD_TRAIN_ROWS_PER_SPEC=600 \
+SUCC_INIT_CHECKPOINT=SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v1/univideo_molecule/univideo_molecule_generation.pt \
+SUCC_INIT_STATS_FROM_CHECKPOINT=1 \
+SUCC_LR=3e-4 \
 SUCC_SOURCE_DROPOUT=0.12 \
-SUCC_SOURCE_FREE_AUGMENT_WEIGHT=0.50 \
-SUCC_SOURCE_FREE_AUGMENT_PROB=0.40 \
+SUCC_SOURCE_FREE_AUGMENT_WEIGHT=0.30 \
+SUCC_SOURCE_FREE_AUGMENT_PROB=0.35 \
 SUCC_TABLE1_GUARD_MIN_ACC065=0.794 \
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_pipeline.sh
 ```
