@@ -18,10 +18,19 @@
 | `understanding-condition/` | [moledit-instruct-dualmode-v4-warmstart-v1.md](understanding-condition/moledit-instruct-dualmode-v4-warmstart-v1.md) | **完成** dual-mode v4 warmstart（`16042564` 链；guard pass，strict 未达目标） |
 | `understanding-condition/` | [materializer-hybrid-sweep.md](understanding-condition/materializer-hybrid-sweep.md) | **完成** zero-source hybrid materializer sweep（`16056226`–`16056231`） |
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
-| `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | 待运行 direct SMILES de novo v0（无 candidate retrieval） |
+| `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
 | `understanding-condition/` | [denovo-ood-benchmark.md](understanding-condition/denovo-ood-benchmark.md) | **完成** de novo OOD（v2_fix + dualmode） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
+
+## 近期 Slurm Job 一览（2026-06-15 direct SMILES v0）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16079256` | `succ-direct-smiles-2p7p` | 完成（9m51s） | [direct SMILES v0](understanding-condition/direct-smiles-denovo-v0.md) |
+| `16079257` | `succ-direct-smiles-ood` | 完成（4m19s） | [direct SMILES v0](understanding-condition/direct-smiles-denovo-v0.md) |
+
+2p7p strict **0.07%**（6000 行仅 1 个 unique SMILES）；OOD strict **0%**，validity **9.4%**。
 
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 
