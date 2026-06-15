@@ -242,6 +242,25 @@ bash SketchMol-Understanding-Condition/scripts/submit_denovo_materializer_sweep.
 `100 * strict_fraction - 10 * normalized_property_distance + latent_score`
 重排；`property_nearest` 只作为候选库上界/诊断，不作为最终 claimed model result。
 
+如果 hybrid 结果看起来过强，需要跑随机 shortlist sanity。这个入口固定用
+dualmode v1，按多个 shortlist size 比较
+`latent_property_rerank`、`random_property_rerank` 和 `property_nearest`。
+`random_property_rerank` 不使用 generated latent，只随机取同样数量的 candidate
+后用同一套 property rerank；如果它也接近 hybrid，就说明任务主要被候选库属性检索吃掉：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_materializer_sanity_sweep.sh
+```
+
+默认 shortlist size：`64 128 256 512 1024 4096`。可以覆盖：
+
+```bash
+SUCC_SANITY_PROPERTY_RERANK_CANDIDATES_LIST="64 256 4096" \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_materializer_sanity_sweep.sh
+```
+
 如果要自定义 OOD preset，写一个 JSON list，并传
 `SUCC_OOD_SPEC_JSON=/path/to/ood_specs.json`：
 

@@ -15,6 +15,9 @@ Modes:
   latent_property_rerank
                   Retrieve a latent-similarity shortlist, then rerank by
                   absolute target-property strict success and distance.
+  random_property_rerank
+                  Retrieve a same-size random candidate shortlist, then rerank
+                  with the same absolute target-property score. Diagnostic only.
   property_nearest Retrieve the nearest candidate target molecule using active
                   target property values from the CSV.
   source_tanimoto_property_oracle
@@ -119,6 +122,7 @@ METHODS = (
     "source_identity",
     "latent_nearest",
     "latent_property_rerank",
+    "random_property_rerank",
     "property_nearest",
     "source_tanimoto_property_oracle",
     "source_tanimoto_table_success_oracle",
@@ -181,6 +185,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--property-rerank-weight", type=float, default=10.0)
     parser.add_argument("--strict-rerank-weight", type=float, default=100.0)
     parser.add_argument("--latent-rerank-weight", type=float, default=1.0)
+    parser.add_argument(
+        "--random-rerank-seed",
+        type=int,
+        default=13,
+        help="Seed for random_property_rerank diagnostic shortlists.",
+    )
     return parser.parse_args(argv)
 
 
@@ -246,6 +256,25 @@ def materialize_method(
             candidate_rows=source_rows,
             generated_column="source_smiles",
             method=method,
+        )
+    elif method == "random_property_rerank":
+        matches = random_property_rerank_matches(
+            source_rows,
+            candidate_rows,
+            top_k=top_k,
+            exclude_self=bool(args.exclude_self),
+            rerank_candidates=int(args.property_rerank_candidates),
+            strict_weight=float(args.strict_rerank_weight),
+            property_weight=float(args.property_rerank_weight),
+            seed=int(args.random_rerank_seed),
+            candidate_smiles_column=args.candidate_smiles_column,
+        )
+        out_rows = materialize_matches(
+            source_rows,
+            candidate_rows,
+            matches,
+            method=method,
+            candidate_smiles_column=args.candidate_smiles_column,
         )
     elif method in {
         "latent_nearest",
@@ -744,6 +773,63 @@ def rerank_property_shortlist(
     }
 
 
+def random_property_rerank_matches(
+    source_rows: list[dict[str, str]],
+    candidate_rows: list[dict[str, str]],
+    *,
+    top_k: int,
+    exclude_self: bool,
+    rerank_candidates: int,
+    strict_weight: float,
+    property_weight: float,
+    seed: int,
+    candidate_smiles_column: str,
+) -> list[dict[str, object]]:
+    """Random shortlist baseline for diagnosing property-rerank leakage/strength."""
+
+    if not candidate_rows:
+        raise ValueError("random_property_rerank requires at least one candidate row")
+    rng = np.random.default_rng(int(seed))
+    all_indices = np.arange(len(candidate_rows), dtype=np.int64)
+    shortlist_size = max(top_k, int(rerank_candidates))
+    zero_scores = np.zeros(len(candidate_rows), dtype=np.float32)
+    matches: list[dict[str, object]] = []
+    for row in source_rows:
+        available = all_indices
+        if exclude_self:
+            keep = np.ones(len(candidate_rows), dtype=bool)
+            row_keys = {row.get("condition_id", ""), row.get("sample_id", "")}
+            row_keys.discard("")
+            if row_keys:
+                for idx, candidate in enumerate(candidate_rows):
+                    candidate_keys = {candidate.get("condition_id", ""), candidate.get("sample_id", "")}
+                    candidate_keys.discard("")
+                    if row_keys & candidate_keys:
+                        keep[idx] = False
+            filtered = all_indices[keep]
+            if filtered.size:
+                available = filtered
+        if available.size <= shortlist_size:
+            shortlist = np.array(available, copy=True)
+            rng.shuffle(shortlist)
+        else:
+            shortlist = rng.choice(available, size=shortlist_size, replace=False)
+        matches.append(
+            rerank_property_shortlist(
+                row,
+                candidate_rows,
+                shortlist,
+                zero_scores,
+                top_k=top_k,
+                strict_weight=strict_weight,
+                property_weight=property_weight,
+                latent_weight=0.0,
+                candidate_smiles_column=candidate_smiles_column,
+            )
+        )
+    return matches
+
+
 def nearest_property_matches(
     source_rows: list[dict[str, str]],
     candidate_rows: list[dict[str, str]],
@@ -1121,7 +1207,7 @@ def ensure_source_tanimoto_available() -> None:
     except RuntimeError as exc:
         raise RuntimeError(
             "RDKit is required for source-Tanimoto materialized benchmark methods. "
-            "Use --methods source_identity,target_oracle,latent_nearest,property_nearest "
+            "Use --methods source_identity,target_oracle,latent_nearest,property_nearest,random_property_rerank "
             "or load an RDKit environment."
         ) from exc
 
@@ -1191,6 +1277,7 @@ def summarize(
         "property_rerank_weight": float(args.property_rerank_weight),
         "strict_rerank_weight": float(args.strict_rerank_weight),
         "latent_rerank_weight": float(args.latent_rerank_weight),
+        "random_rerank_seed": int(args.random_rerank_seed),
     }
 
 

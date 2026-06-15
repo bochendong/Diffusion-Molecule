@@ -814,6 +814,76 @@ def test_materialize_univideo_target_molecules_latent_property_rerank_distance_a
     assert rows[1]["matched_condition_id"] == "close_b"
 
 
+def test_materialize_univideo_target_molecules_random_property_rerank_zero_source(tmp_path):
+    source = tmp_path / "image_path.csv"
+    candidates = tmp_path / "candidates.csv"
+    output = tmp_path / "direct.csv"
+    _write_simple_target_rows(
+        source,
+        [
+            {
+                "sample_id": "q0",
+                "condition_id": "q0",
+                "source_smiles": "",
+                "target_smiles": "",
+                "condition_properties": "MW,LogP",
+                "target_MW": "100",
+                "target_LogP": "2.0",
+                "MW_active": "True",
+                "LogP_active": "True",
+            }
+        ],
+    )
+    _write_simple_target_rows(
+        candidates,
+        [
+            {
+                "sample_id": "bad",
+                "condition_id": "bad",
+                "target_smiles": "CCCC",
+                "target_MW": "200",
+                "target_LogP": "6.0",
+            },
+            {
+                "sample_id": "good",
+                "condition_id": "good",
+                "target_smiles": "CCCO",
+                "target_MW": "101",
+                "target_LogP": "2.1",
+            },
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/materialize_univideo_target_molecules.py",
+            "--source-csv",
+            str(source),
+            "--candidate-csv",
+            str(candidates),
+            "--output-csv",
+            str(output),
+            "--mode",
+            "random_property_rerank",
+            "--property-rerank-candidates",
+            "2",
+            "--random-rerank-seed",
+            "7",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output.open(newline="", encoding="utf-8")))
+    assert rows[0]["generated_smiles"] == "CCCO"
+    assert rows[0]["matched_condition_id"] == "good"
+    assert rows[0]["source_smiles"] == ""
+
+
 @pytest.mark.skipif(RDKit_MISSING, reason="RDKit is required for direct-SMILES benchmark evaluation")
 def test_materialize_univideo_target_molecules_multi_method_evaluation_groups(tmp_path):
     source = tmp_path / "image_path.csv"
@@ -872,7 +942,7 @@ def test_materialize_univideo_target_molecules_multi_method_evaluation_groups(tm
             "--output-csv",
             str(output),
             "--methods",
-            "latent_nearest,latent_property_rerank,property_nearest",
+            "latent_nearest,latent_property_rerank,random_property_rerank,property_nearest",
             "--generated-latents-npy",
             str(generated),
             "--candidate-latents-npy",
@@ -909,7 +979,7 @@ def test_materialize_univideo_target_molecules_multi_method_evaluation_groups(tm
     assert eval_result.returncode == 0, eval_result.stderr
     summary_rows = list(csv.DictReader((benchmark_dir / "benchmark_summary.csv").open(newline="", encoding="utf-8")))
     methods = {row["method"] for row in summary_rows}
-    assert {"latent_nearest", "latent_property_rerank", "property_nearest"} <= methods
+    assert {"latent_nearest", "latent_property_rerank", "random_property_rerank", "property_nearest"} <= methods
 
 
 def _write_simple_target_rows(path: Path, rows: list[dict[str, str]]) -> None:
