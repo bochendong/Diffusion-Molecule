@@ -155,6 +155,45 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_
 
 训练完成后，再用下面的 `submit_denovo_*_ours_benchmark.sh` 测同一个 checkpoint。
 
+### 0.4.1 Direct SMILES de novo（无 candidate retrieval）
+
+如果要测试真正的 direct de novo generation，而不是 latent materializer /
+candidate-library assisted retrieval，用 direct SMILES 入口。它会：
+
+1. 导出 zero-source train/eval rows；
+2. 用 Qwen/HF VLM 导出 property prompt 的 `query_tokens.npy`；
+3. 训练 MLLM-conditioned Transformer SMILES decoder；
+4. 直接输出 `generated_smiles`；
+5. 用 direct-SMILES evaluator 评估 validity / strict success。
+
+2p-7p：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_2p7p_benchmark.sh
+```
+
+OOD：
+
+```bash
+export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_benchmark.sh
+```
+
+默认输出：
+
+```text
+SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v0/
+SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_ood_v0/
+```
+
+这条线不使用 `property_nearest`、`latent_property_rerank` 或候选库 materializer；
+它是用于论文/汇报 direct de novo claim 的主线 baseline。
+
+### 0.4.2 Latent materializer-assisted de novo（诊断 / assisted retrieval）
+
 测我们的 SUCC / UniVideo 模型用下面这个入口。它会：
 
 1. 导出 de novo 2p-7p benchmark rows 和独立 candidate library；
@@ -280,7 +319,7 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_materialized_benchmark.sh
 ```
 
-### 0.4.1 Dual-mode v4 warm-start 主训练（MolEdit + de novo + OOD）
+### 0.4.3 Dual-mode v4 warm-start 主训练（MolEdit + de novo + OOD）
 
 旧 checkpoint 在 OOD benchmark 上 overall strict 只有 0.114，且几乎被
 `logp_high=0.750` 撑起；`rare_combo=0.000`，MW/TPSA/RB extreme 也都是 0。
