@@ -16,10 +16,21 @@
 | `understanding-condition/` | [moledit-instruct-dualmode-v2-guarded.md](understanding-condition/moledit-instruct-dualmode-v2-guarded.md) | dual-mode v2 guarded（`16018414` 链；guard failed） |
 | `understanding-condition/` | [moledit-instruct-dualmode-v3-guarded.md](understanding-condition/moledit-instruct-dualmode-v3-guarded.md) | dual-mode v3 guarded（`16027758` 链；guard passed） |
 | `understanding-condition/` | [moledit-instruct-dualmode-v4-warmstart-v1.md](understanding-condition/moledit-instruct-dualmode-v4-warmstart-v1.md) | **完成** dual-mode v4 warmstart（`16042564` 链；guard pass，strict 未达目标） |
-| `understanding-condition/` | [materializer-hybrid-sweep.md](understanding-condition/materializer-hybrid-sweep.md) | zero-source hybrid materializer sweep（v1/v3/v4，ready to submit） |
+| `understanding-condition/` | [materializer-hybrid-sweep.md](understanding-condition/materializer-hybrid-sweep.md) | **完成** zero-source hybrid materializer sweep（`16056226`–`16056231`） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
 | `understanding-condition/` | [denovo-ood-benchmark.md](understanding-condition/denovo-ood-benchmark.md) | **完成** de novo OOD（v2_fix + dualmode） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
+
+## 近期 Slurm Job 一览（2026-06-14 materializer sweep）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16056226` | `succ-2p7p-mat-v1` | 完成（1h26m） | [materializer sweep](understanding-condition/materializer-hybrid-sweep.md) |
+| `16056227` | `succ-ood-mat-v1` | 完成（25m） | [materializer sweep](understanding-condition/materializer-hybrid-sweep.md) |
+| `16056228` | `succ-2p7p-mat-v3` | 完成（1h27m） | [materializer sweep](understanding-condition/materializer-hybrid-sweep.md) |
+| `16056229` | `succ-ood-mat-v3` | 完成（25m） | [materializer sweep](understanding-condition/materializer-hybrid-sweep.md) |
+| `16056230` | `succ-2p7p-mat-v4` | 完成（1h26m） | [materializer sweep](understanding-condition/materializer-hybrid-sweep.md) |
+| `16056231` | `succ-ood-mat-v4` | 完成（24m） | [materializer sweep](understanding-condition/materializer-hybrid-sweep.md) |
 
 ## 近期 Slurm Job 一览（2026-06-14 晚）
 
