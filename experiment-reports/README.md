@@ -21,6 +21,15 @@
 | `understanding-condition/` | [denovo-ood-benchmark.md](understanding-condition/denovo-ood-benchmark.md) | **完成** de novo OOD（v2_fix + dualmode） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
 
+## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16072912` | `succ-denovo-2p7p-ours`（standalone hybrid 默认） | 完成（18m49s） | [denovo 2p7p](understanding-condition/denovo-2p7p-benchmark.md) |
+| `16072913` | `succ-denovo-ood-ours`（standalone hybrid 默认） | 完成（12m42s） | [denovo OOD](understanding-condition/denovo-ood-benchmark.md) |
+
+与 materializer sweep `16056226`/`16056227` 数值一致，确认默认切换可复现。
+
 ## 近期 Slurm Job 一览（2026-06-14 materializer sweep）
 
 | Job ID | 名称 | 状态 | 报告 |

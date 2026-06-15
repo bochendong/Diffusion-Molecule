@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | completed（baseline + SUCC ours + dualmode） |
-| **最后更新** | 2026-06-13 |
+| **最后更新** | 2026-06-15 |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **任务** | 无 source 的 de novo 多属性分子设计（2–7 property） |
 | **数据** | `multiproperty_source_neighbor_v1/molecule_database.csv` |
@@ -16,6 +16,7 @@
 | `15959362` | `succ-denovo-2p7p-ours`（SUCC UniVideo，v2_fix ckpt） | **13m46s** | 0 |
 | `16006991` | `succ-denovo-2p7p-dualmode`（dualmode ckpt） | **17m55s** | 0 |
 | `16056226` | `succ-2p7p-mat-v1`（dualmode v1 + hybrid materializer） | **1h26m** | 0 |
+| `16072912` | `succ-denovo-2p7p-ours`（standalone 默认 hybrid 验证） | **18m49s** | 0 |
 
 Benchmark 规模：6 档 property count × 1000 行 = **6000 eval 行**；候选库 **87480** 分子（`property_nearest` / `latent_nearest` 各从中检索）。
 
@@ -151,6 +152,14 @@ Materializer：`latent_property_rerank`（latent top-4096 shortlist，再按 abs
 `dualmode_v1 + latent_property_rerank`，输出目录默认使用
 `outputs/denovo_2p7p_ours_dualmode_v1_hybrid/`。
 
+### Standalone 默认验证（job `16072912`）
+
+提交命令：`submit_denovo_2p7p_ours_benchmark.sh`（无额外 env 覆盖）。结果与 sweep `16056226` **完全一致**：
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict | unique valid |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.000 | 0.999 | 0.990 | 0.980 | 0.953 | 0.899 | **0.970** | 0.755 |
+
 ## 结论
 
 1. **Edit-only checkpoint 不适合 zero-source de novo**：v2_fix ckpt target cosine **0.095**，overall strict **5.5%**，unique **0.4%**。
@@ -192,3 +201,4 @@ SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v1_hybrid/
 - `logs/succ-denovo-2p7p-ours-16028797.log`
 - `logs/succ-denovo-2p7p-ours-16043207.log`
 - `logs/succ-2p7p-mat-v1-16056226.log`
+- `logs/succ-denovo-2p7p-ours-16072912.log`

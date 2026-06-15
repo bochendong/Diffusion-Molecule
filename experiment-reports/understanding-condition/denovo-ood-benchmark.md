@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | completed（v2_fix ckpt + dualmode ckpt） |
-| **最后更新** | 2026-06-13 |
+| **最后更新** | 2026-06-15 |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **Job** | `15959891`（v2_fix）；`16006990`（dualmode，16m09s） |
 | **入口** | `submit_denovo_ood_ours_benchmark.sh` |
@@ -126,6 +126,14 @@ Materializer：`latent_property_rerank`（latent top-4096 shortlist，再按 abs
 `dualmode_v1 + latent_property_rerank`，输出目录默认使用
 `outputs/denovo_ood_ours_dualmode_v1_hybrid/`。
 
+### Standalone 默认验证（job `16072913`）
+
+提交命令：`submit_denovo_ood_ours_benchmark.sh`（无额外 env 覆盖）。结果与 sweep `16056227` **完全一致**：
+
+| Overall strict | Unique valid | Target latent cos | 2p bucket | 7p bucket |
+| ---: | ---: | ---: | ---: | ---: |
+| **0.985** | 0.284 | 0.238 | 0.970 | 0.940 |
+
 ## 结论
 
 1. **Dual-mode 训练部分修复 OOD 盲区**：rare_combo 0%→1%；reverse stim 20%→45%；unique 14→199 SMILES。
@@ -163,3 +171,4 @@ SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v1_hybrid/
 - `logs/succ-denovo-ood-ours-16028796.log`
 - `logs/succ-denovo-ood-ours-16043206.log`
 - `logs/succ-ood-mat-v1-16056227.log`
+- `logs/succ-denovo-ood-ours-16072913.log`
