@@ -19,8 +19,8 @@ if command -v module >/dev/null 2>&1; then
 fi
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
-OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_v1}"
-MODEL_OUTPUT_DIR="${SUCC_OOD_MODEL_OUTPUT_DIR:-${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_v3_attack}}"
+OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v1_hybrid}"
+MODEL_OUTPUT_DIR="${SUCC_OOD_MODEL_OUTPUT_DIR:-${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v1}}"
 RESUME_CHECKPOINT="${SUCC_OOD_RESUME_CHECKPOINT:-${SUCC_RESUME_CHECKPOINT:-$MODEL_OUTPUT_DIR/univideo_molecule/univideo_molecule_generation.pt}}"
 MOLECULE_DB="${SUCC_OOD_MOLECULE_DB_CSV:-$SMMED_DEFAULT_MOLECULE_DB}"
 SPEC_JSON="${SUCC_OOD_SPEC_JSON:-}"
@@ -37,7 +37,7 @@ CANDIDATE_LATENTS="${SUCC_OOD_CANDIDATE_LATENTS_NPY:-$OUTPUT_DIR/denovo_ood_cand
 ROWS_PER_SPEC="${SUCC_OOD_ROWS_PER_SPEC:-100}"
 SEED="${SUCC_OOD_SEED:-17}"
 CANDIDATE_LIMIT="${SUCC_OOD_CANDIDATE_LIMIT:-0}"
-METHODS="${SUCC_OOD_MATERIALIZED_METHODS:-latent_nearest}"
+METHODS="${SUCC_OOD_MATERIALIZED_METHODS:-latent_property_rerank}"
 METHOD_LABEL="${SUCC_OOD_METHOD_LABEL:-denovo_ood_succ_univideo_guided}"
 GUIDANCE_SCALE="${SUCC_OOD_NEGATIVE_GUIDANCE_SCALE:-2.0}"
 BENCHMARK_OUTPUT_DIR="${SUCC_OOD_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_ours}"
@@ -275,7 +275,7 @@ mkdir -p "$BENCHMARK_OUTPUT_DIR"
   --strict-rerank-weight "$STRICT_RERANK_WEIGHT" \
   --latent-rerank-weight "$LATENT_RERANK_WEIGHT"
 
-if [[ -n "$METHOD_LABEL" && "$METHODS" == "latent_nearest" ]]; then
+if [[ -n "$METHOD_LABEL" && "$METHODS" != *,* ]]; then
   "$PYTHON_BIN" - "$DIRECT_CSV" "$METHOD_LABEL" <<'PY'
 import csv
 import sys

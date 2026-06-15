@@ -160,7 +160,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_dualmode_
 1. 导出 de novo 2p-7p benchmark rows 和独立 candidate library；
 2. 用 HF VLM 导出当前 de novo prompt 的 condition tokens；
 3. 从已训练 checkpoint eval-only 生成 `generated_latents.npy`；
-4. 导出 candidate target latents，再用 `latent_nearest` 或 `latent_property_rerank` materialize；
+4. 导出 candidate target latents，默认用 `latent_property_rerank` materialize；
 5. 写出 `benchmark_ours/benchmark_report.md`。
 
 ```bash
@@ -169,10 +169,16 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_ours_benchmark.sh
 ```
 
-默认会找：
+默认会找 sweep 里表现最好的 dualmode v1 checkpoint：
 
 ```text
-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_v3_attack/univideo_molecule/univideo_molecule_generation.pt
+SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v1/univideo_molecule/univideo_molecule_generation.pt
+```
+
+默认输出目录：
+
+```text
+SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v1_hybrid/
 ```
 
 如果要测另一个 checkpoint：
@@ -204,6 +210,22 @@ bash SketchMol-Understanding-Condition/scripts/submit_denovo_ood_ours_benchmark.
 SUCC_OOD_RESUME_CHECKPOINT=/path/to/univideo_molecule_generation.pt \
 SUCC_OOD_ROWS_PER_SPEC=200 \
 SUCC_OOD_NEGATIVE_GUIDANCE_SCALE=2.5 \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_ood_ours_benchmark.sh
+```
+
+默认 OOD 也使用 `latent_property_rerank`，输出到：
+
+```text
+SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v1_hybrid/
+```
+
+如果要复现旧 materializer 结果，可以显式覆盖：
+
+```bash
+SUCC_DENOVO_MATERIALIZED_METHODS=latent_nearest \
+bash SketchMol-Understanding-Condition/scripts/submit_denovo_2p7p_ours_benchmark.sh
+
+SUCC_OOD_MATERIALIZED_METHODS=latent_nearest \
 bash SketchMol-Understanding-Condition/scripts/submit_denovo_ood_ours_benchmark.sh
 ```
 

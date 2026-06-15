@@ -111,13 +111,28 @@ Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v4_warmstar
 
 Warm-start **未**恢复 v1 overall strict；spec 间 trade-off 加剧。
 
+## SUCC Hybrid Materializer Promotion（job `16056227`）
+
+Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v1`。<br>
+Materializer：`latent_property_rerank`（latent top-4096 shortlist，再按 absolute property strict/distance rerank）。
+
+| 方法 | Overall strict | Unique valid | Target latent cosine |
+| --- | ---: | ---: | ---: |
+| v1 `latent_nearest` | 0.127 | 0.198 | 0.238 |
+| v1 `latent_property_rerank` | **0.985** | 0.284 | 0.238 |
+| `property_nearest` 上界 | 0.959 | 0.150 | — |
+
+2026-06-15 起，standalone OOD ours benchmark 默认切到
+`dualmode_v1 + latent_property_rerank`，输出目录默认使用
+`outputs/denovo_ood_ours_dualmode_v1_hybrid/`。
+
 ## 结论
 
 1. **Dual-mode 训练部分修复 OOD 盲区**：rare_combo 0%→1%；reverse stim 20%→45%；unique 14→199 SMILES。
 2. **forward_extreme 退步**：overall 内 `logp_high` 75%→21%；bucket 18.8%→8.3%；`mw_high` 仍 0。
 3. **Mode collapse 在 dualmode 上明显缓解**；v2_fix ckpt 1000 行仅 ~14 unique。
-4. **仍远低于可用线**（baseline 0.98）；完整训练分析见 [moledit-instruct-dualmode-v1.md](moledit-instruct-dualmode-v1.md)。
-5. **下一步**：加大 rare_combo train 权重；试 hybrid materializer。v3 完整链见 [moledit-instruct-dualmode-v3-guarded.md](moledit-instruct-dualmode-v3-guarded.md)。
+4. **旧 latent materializer 远低于可用线**；hybrid 后 OOD strict 达 **0.985**，已接近/超过候选库属性上界（0.959）。完整训练分析见 [moledit-instruct-dualmode-v1.md](moledit-instruct-dualmode-v1.md)。
+5. **Hybrid materializer 已验证并设为默认**：v1 OOD strict 从 **0.127** 提升到 **0.985**，说明 OOD 主瓶颈同样在 materializer；下一步再做 shortlist/weight ablation。v3 完整链见 [moledit-instruct-dualmode-v3-guarded.md](moledit-instruct-dualmode-v3-guarded.md)。
 
 ## 产出路径
 
@@ -136,6 +151,9 @@ SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v3_guarded/
 
 SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v4_warmstart_v1/
   benchmark_ours/benchmark_report.md
+
+SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v1_hybrid/
+  benchmark_ours/benchmark_report.md
 ```
 
 日志：
@@ -144,3 +162,4 @@ SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v4_warmstart_
 - `logs/succ-denovo-ood-ours-16019244.log`
 - `logs/succ-denovo-ood-ours-16028796.log`
 - `logs/succ-denovo-ood-ours-16043206.log`
+- `logs/succ-ood-mat-v1-16056227.log`

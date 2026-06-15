@@ -15,6 +15,7 @@
 | `15958481` | `succ-denovo-2p7p`（baseline） | **1h08m** | 0 |
 | `15959362` | `succ-denovo-2p7p-ours`（SUCC UniVideo，v2_fix ckpt） | **13m46s** | 0 |
 | `16006991` | `succ-denovo-2p7p-dualmode`（dualmode ckpt） | **17m55s** | 0 |
+| `16056226` | `succ-2p7p-mat-v1`（dualmode v1 + hybrid materializer） | **1h26m** | 0 |
 
 Benchmark 规模：6 档 property count × 1000 行 = **6000 eval 行**；候选库 **87480** 分子（`property_nearest` / `latent_nearest` 各从中检索）。
 
@@ -131,10 +132,29 @@ Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v4_warmstar
 
 v4 为三代 2p7p strict **最低**；见 [moledit-instruct-dualmode-v4-warmstart-v1.md](moledit-instruct-dualmode-v4-warmstart-v1.md)。
 
+## SUCC Hybrid Materializer Promotion（job `16056226`）
+
+Checkpoint：`univideo_molecule_generation_moledit_instruct_dualmode_v1`。<br>
+Materializer：`latent_property_rerank`（latent top-4096 shortlist，再按 absolute property strict/distance rerank）。
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict | unique valid |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1.000 | 0.999 | 0.990 | 0.980 | 0.953 | 0.899 | **0.970** | 0.755 |
+
+| 对照 | overall strict | unique valid |
+| --- | ---: | ---: |
+| v1 `latent_nearest` | 0.039 | 0.068 |
+| v1 `latent_property_rerank` | **0.970** | 0.755 |
+| `property_nearest` 上界 | 0.980 | 0.953 |
+
+2026-06-15 起，standalone 2p7p ours benchmark 默认切到
+`dualmode_v1 + latent_property_rerank`，输出目录默认使用
+`outputs/denovo_2p7p_ours_dualmode_v1_hybrid/`。
+
 ## 结论
 
 1. **Edit-only checkpoint 不适合 zero-source de novo**：v2_fix ckpt target cosine **0.095**，overall strict **5.5%**，unique **0.4%**。
-2. **Dual-mode 训练改善 latent 与多样性**，但 strict 仍仅 **3.9%**，远低于 `property_nearest`（0.98）和 SketchMol 参考（0.68–0.80）；瓶颈可能在 `latent_nearest` materializer。
+2. **Dual-mode 训练改善 latent 与多样性**；旧 `latent_nearest` strict 仅 **3.9%**，但 hybrid materializer 后达到 **97.0%**，说明主要瓶颈在 latent-to-SMILES materialization。
 3. **Baseline `property_nearest` 可作为数据和 evaluator 上界**：证明 benchmark 管线与 6000 行目标定义正确。
 4. **OOD benchmark** 见 [denovo-ood-benchmark.md](denovo-ood-benchmark.md)；v3 见 [moledit-instruct-dualmode-v3-guarded.md](moledit-instruct-dualmode-v3-guarded.md)。
 
@@ -159,6 +179,9 @@ SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v3_guarded/
 
 SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v4_warmstart_v1/
   benchmark_ours/benchmark_report.md
+
+SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v1_hybrid/
+  benchmark_ours/benchmark_report.md
 ```
 
 日志：
@@ -168,3 +191,4 @@ SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v4_warmstart
 - `logs/succ-denovo-2p7p-ours-16019245.log`
 - `logs/succ-denovo-2p7p-ours-16028797.log`
 - `logs/succ-denovo-2p7p-ours-16043207.log`
+- `logs/succ-2p7p-mat-v1-16056226.log`

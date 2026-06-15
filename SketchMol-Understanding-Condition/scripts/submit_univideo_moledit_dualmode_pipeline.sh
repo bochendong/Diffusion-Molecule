@@ -154,7 +154,7 @@ fi
 if [[ "$SUCC_SUBMIT_OOD_BENCHMARK_AFTER" == "1" ]]; then
   export SUCC_OOD_SLURM_DEPENDENCY="$train_dependency"
   export SUCC_OOD_MODEL_OUTPUT_DIR="${SUCC_OOD_MODEL_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR}"
-  export SUCC_OOD_OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v4_warmstart_v1}"
+  export SUCC_OOD_OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v4_warmstart_v1_hybrid}"
   echo
   echo "Submitting dependent OOD benchmark"
   bash "$SCRIPT_DIR/submit_denovo_ood_ours_benchmark.sh"
@@ -163,7 +163,7 @@ fi
 if [[ "$SUCC_SUBMIT_DENOVO_BENCHMARK_AFTER" == "1" ]]; then
   export SUCC_DENOVO_SLURM_DEPENDENCY="$train_dependency"
   export SUCC_DENOVO_MODEL_OUTPUT_DIR="${SUCC_DENOVO_MODEL_OUTPUT_DIR:-$SUCC_UNIFIED_OUTPUT_DIR}"
-  export SUCC_DENOVO_OUTPUT_DIR="${SUCC_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v4_warmstart_v1}"
+  export SUCC_DENOVO_OUTPUT_DIR="${SUCC_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v4_warmstart_v1_hybrid}"
   echo
   echo "Submitting dependent de novo 2p-7p benchmark"
   bash "$SCRIPT_DIR/submit_denovo_2p7p_ours_benchmark.sh"

@@ -19,8 +19,8 @@ if command -v module >/dev/null 2>&1; then
 fi
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
-OUTPUT_DIR="${SUCC_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_v1}"
-MODEL_OUTPUT_DIR="${SUCC_DENOVO_MODEL_OUTPUT_DIR:-${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_v3_attack}}"
+OUTPUT_DIR="${SUCC_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_2p7p_ours_dualmode_v1_hybrid}"
+MODEL_OUTPUT_DIR="${SUCC_DENOVO_MODEL_OUTPUT_DIR:-${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v1}}"
 RESUME_CHECKPOINT="${SUCC_DENOVO_RESUME_CHECKPOINT:-${SUCC_RESUME_CHECKPOINT:-$MODEL_OUTPUT_DIR/univideo_molecule/univideo_molecule_generation.pt}}"
 MOLECULE_DB="${SUCC_DENOVO_MOLECULE_DB_CSV:-$SMMED_DEFAULT_MOLECULE_DB}"
 BENCHMARK_ROWS_CSV="${SUCC_DENOVO_BENCHMARK_ROWS_CSV:-$OUTPUT_DIR/denovo_2p7p_rows.csv}"
@@ -35,7 +35,7 @@ MIN_PROPERTIES="${SUCC_DENOVO_MIN_PROPERTIES:-2}"
 MAX_PROPERTIES="${SUCC_DENOVO_MAX_PROPERTIES:-7}"
 SEED="${SUCC_DENOVO_SEED:-13}"
 CANDIDATE_LIMIT="${SUCC_DENOVO_CANDIDATE_LIMIT:-0}"
-METHODS="${SUCC_DENOVO_MATERIALIZED_METHODS:-latent_nearest}"
+METHODS="${SUCC_DENOVO_MATERIALIZED_METHODS:-latent_property_rerank}"
 METHOD_LABEL="${SUCC_DENOVO_METHOD_LABEL:-denovo_2p7p_succ_univideo}"
 BENCHMARK_OUTPUT_DIR="${SUCC_DENOVO_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_ours}"
 DIRECT_CSV="${SUCC_DENOVO_TARGET_MOLECULES_DIRECT_CSV:-$BENCHMARK_OUTPUT_DIR/target_molecules_direct.csv}"
@@ -251,7 +251,7 @@ mkdir -p "$BENCHMARK_OUTPUT_DIR"
   --strict-rerank-weight "$STRICT_RERANK_WEIGHT" \
   --latent-rerank-weight "$LATENT_RERANK_WEIGHT"
 
-if [[ -n "$METHOD_LABEL" && "$METHODS" == "latent_nearest" ]]; then
+if [[ -n "$METHOD_LABEL" && "$METHODS" != *,* ]]; then
   "$PYTHON_BIN" - "$DIRECT_CSV" "$METHOD_LABEL" <<'PY'
 import csv
 import sys

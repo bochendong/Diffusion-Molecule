@@ -17,12 +17,12 @@ if ! command -v sbatch >/dev/null 2>&1; then
 fi
 
 export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
-export SUCC_OOD_OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_v1}"
-export SUCC_OOD_MODEL_OUTPUT_DIR="${SUCC_OOD_MODEL_OUTPUT_DIR:-${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_v3_attack}}"
+export SUCC_OOD_OUTPUT_DIR="${SUCC_OOD_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/denovo_ood_ours_dualmode_v1_hybrid}"
+export SUCC_OOD_MODEL_OUTPUT_DIR="${SUCC_OOD_MODEL_OUTPUT_DIR:-${SUCC_UNIFIED_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_instruct_dualmode_v1}}"
 export SUCC_OOD_RESUME_CHECKPOINT="${SUCC_OOD_RESUME_CHECKPOINT:-${SUCC_RESUME_CHECKPOINT:-$SUCC_OOD_MODEL_OUTPUT_DIR/univideo_molecule/univideo_molecule_generation.pt}}"
 export SUCC_OOD_MOLECULE_DB_CSV="${SUCC_OOD_MOLECULE_DB_CSV:-$SMMED_DEFAULT_MOLECULE_DB}"
 export SUCC_OOD_ROWS_PER_SPEC="${SUCC_OOD_ROWS_PER_SPEC:-100}"
-export SUCC_OOD_MATERIALIZED_METHODS="${SUCC_OOD_MATERIALIZED_METHODS:-latent_nearest}"
+export SUCC_OOD_MATERIALIZED_METHODS="${SUCC_OOD_MATERIALIZED_METHODS:-latent_property_rerank}"
 export SUCC_OOD_PROPERTY_RERANK_CANDIDATES="${SUCC_OOD_PROPERTY_RERANK_CANDIDATES:-4096}"
 export SUCC_OOD_PROPERTY_RERANK_WEIGHT="${SUCC_OOD_PROPERTY_RERANK_WEIGHT:-10}"
 export SUCC_OOD_STRICT_RERANK_WEIGHT="${SUCC_OOD_STRICT_RERANK_WEIGHT:-100}"
