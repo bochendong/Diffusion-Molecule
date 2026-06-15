@@ -163,8 +163,9 @@ candidate-library assisted retrieval，用 direct SMILES 入口。它会：
 1. 导出 zero-source train/eval rows；
 2. 用 Qwen/HF VLM 导出 property prompt 的 `query_tokens.npy`；
 3. 训练 MLLM-conditioned Transformer SMILES decoder；
-4. 直接输出 `generated_smiles`；
-5. 用 direct-SMILES evaluator 评估 validity / strict success。
+4. 每个 prompt 采样多条 decoder-generated SMILES；
+5. 只在这些 direct samples 内按目标 property rerank，输出 `generated_smiles`；
+6. 用 direct-SMILES evaluator 评估 validity / strict success。
 
 2p-7p：
 
@@ -182,15 +183,35 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_benchmark.sh
 ```
 
-默认输出：
+历史 v0 输出：
 
 ```text
 SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v0/
 SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_ood_v0/
 ```
 
+v1 默认输出：
+
+```text
+SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/
+SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_ood_v1_sampled_rerank/
+```
+
+v1 默认采样参数：
+
+```bash
+# 2p-7p uses SUCC_DIRECT_DENOVO_*; OOD uses the same names with SUCC_DIRECT_OOD_*.
+SUCC_DIRECT_DENOVO_NUM_SAMPLES=32
+SUCC_DIRECT_DENOVO_TEMPERATURE=0.85
+SUCC_DIRECT_DENOVO_TOP_K=40
+SUCC_DIRECT_DENOVO_TOP_P=0.95
+SUCC_DIRECT_DENOVO_REPETITION_PENALTY=1.15
+SUCC_DIRECT_DENOVO_NO_REPEAT_NGRAM_SIZE=6
+SUCC_DIRECT_DENOVO_MAX_NEW_TOKENS=96
+```
+
 这条线不使用 `property_nearest`、`latent_property_rerank` 或候选库 materializer；
-它是用于论文/汇报 direct de novo claim 的主线 baseline。
+v1 的 rerank 只选择 decoder 自己采样出的候选，因此仍然是 direct de novo 路线。
 
 ### 0.4.2 Latent materializer-assisted de novo（诊断 / assisted retrieval）
 

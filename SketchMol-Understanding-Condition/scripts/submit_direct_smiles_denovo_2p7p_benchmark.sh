@@ -50,7 +50,7 @@ echo "  time=$TIME"
 echo "  mem=$MEM"
 echo "  cpus=$CPUS"
 echo "  python=$SUCC_PYTHON_BIN"
-echo "  output_dir=${SUCC_DIRECT_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v0}"
+echo "  output_dir=${SUCC_DIRECT_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank}"
 echo "  gpu_candidates=${GPU_CANDIDATES[*]:-none}"
 
 SBATCH_ARGS=(

@@ -55,9 +55,52 @@ def test_conditioned_smiles_decoder_forward_and_generate():
     )
     logits = model(condition, decoder_input)
     assert logits.shape == (2, decoder_input.shape[1], len(vocab.token_to_id))
-    generated = model.generate(condition, bos_id=vocab.bos_id, eos_id=vocab.eos_id, max_new_tokens=5)
+    generated = model.generate(
+        condition,
+        bos_id=vocab.bos_id,
+        eos_id=vocab.eos_id,
+        max_new_tokens=5,
+        temperature=0.9,
+        top_k=4,
+        top_p=0.95,
+        repetition_penalty=1.1,
+        no_repeat_ngram_size=3,
+        min_new_tokens=1,
+        suppress_ids=[vocab.token_to_id["<unk>"]],
+    )
     assert generated.shape[0] == 2
     assert generated.shape[1] >= 2
+
+
+def test_direct_smiles_property_rerank_prefers_strict_candidate(monkeypatch):
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required to import the direct SMILES training script")
+
+    module = _load_train_module()
+    monkeypatch.setattr(module, "canonical_smiles", lambda value: str(value or "") or None)
+
+    def fake_properties(smiles: str):
+        if smiles == "far":
+            return {"MolWt": 200.0, "LogP": 5.0}
+        if smiles == "near":
+            return {"MolWt": 101.0, "LogP": 2.1}
+        return None
+
+    monkeypatch.setattr(module, "molecular_properties", fake_properties)
+    selected = module.select_generated_candidate(
+        {
+            "condition_properties": "MW,LogP",
+            "target_MW": "100",
+            "target_LogP": "2.0",
+            "MW_active": "True",
+            "LogP_active": "True",
+        },
+        ["far", "near"],
+    )
+
+    assert selected["generated_smiles"] == "near"
+    assert selected["valid_candidate_count"] == 2
+    assert selected["strict_fraction"] == 1.0
 
 
 def test_train_direct_smiles_generator_smoke(tmp_path):
@@ -125,6 +168,20 @@ def test_train_direct_smiles_generator_smoke(tmp_path):
             "16",
             "--max-new-tokens",
             "8",
+            "--num-samples",
+            "2",
+            "--temperature",
+            "0.9",
+            "--top-k",
+            "4",
+            "--top-p",
+            "0.95",
+            "--repetition-penalty",
+            "1.1",
+            "--no-repeat-ngram-size",
+            "3",
+            "--min-new-tokens",
+            "1",
             "--device",
             "cpu",
         ],
@@ -139,7 +196,8 @@ def test_train_direct_smiles_generator_smoke(tmp_path):
     prediction_rows = list(csv.DictReader(prediction_csv.open(newline="", encoding="utf-8")))
     assert len(prediction_rows) == 2
     assert "generated_smiles" in prediction_rows[0]
-    assert prediction_rows[0]["method"] == "direct_smiles_mllm"
+    assert prediction_rows[0]["method"] == "direct_smiles_mllm_sampled_rerank"
+    assert "direct_valid_candidate_count" in prediction_rows[0]
 
 
 def _write_rows(path: Path, rows: list[dict[str, str]]) -> None:
@@ -154,3 +212,14 @@ def _write_rows(path: Path, rows: list[dict[str, str]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _load_train_module():
+    path = Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator.py")
+    spec = importlib.util.spec_from_file_location("train_direct_smiles_generator", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module

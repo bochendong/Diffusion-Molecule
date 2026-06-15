@@ -19,6 +19,7 @@
 | `understanding-condition/` | [materializer-hybrid-sweep.md](understanding-condition/materializer-hybrid-sweep.md) | **完成** zero-source hybrid materializer sweep（`16056226`–`16056231`） |
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
+| `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | direct SMILES de novo v1 sampled rerank（待运行；无 candidate library） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
 | `understanding-condition/` | [denovo-ood-benchmark.md](understanding-condition/denovo-ood-benchmark.md) | **完成** de novo OOD（v2_fix + dualmode） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |

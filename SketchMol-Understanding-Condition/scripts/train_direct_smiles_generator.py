@@ -22,12 +22,14 @@ if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
 from sketchmol_understanding_condition.direct_smiles_generation import (  # noqa: E402
+    UNK,
     ConditionedSmilesDecoder,
     SmilesVocabulary,
     build_vocabulary,
     detokenize_smiles,
     tokenize_smiles,
 )
+from sketchmol_understanding_condition.chem import canonical_smiles, molecular_properties  # noqa: E402
 from sketchmol_understanding_condition.unified_condition_dataset import PROPERTY_COLUMNS  # noqa: E402
 from sketchmol_understanding_condition.univideo_molecule import FrozenConditionFeatureStore  # noqa: E402
 
@@ -41,6 +43,26 @@ PROPERTY_NORMALIZERS = {
     "HBA": 12.0,
     "RB": 12.0,
     "SA": 8.0,
+}
+SKETCHMOL_STRICT_TOLERANCE = {
+    "MW": 35.0,
+    "LogP": 1.0,
+    "QED": 0.10,
+    "TPSA": 20.0,
+    "HBD": 1.0,
+    "HBA": 1.0,
+    "RB": 1.0,
+    "SA": 1.0,
+}
+PROPERTY_VALUE_KEYS = {
+    "MW": "MolWt",
+    "LogP": "LogP",
+    "QED": "QED",
+    "TPSA": "TPSA",
+    "HBD": "HBD",
+    "HBA": "HBA",
+    "RB": "rotatable",
+    "SA": "SA",
 }
 
 
@@ -72,6 +94,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-new-tokens", type=int, default=160)
     parser.add_argument("--temperature", type=float, default=0.0)
     parser.add_argument("--top-k", type=int, default=0)
+    parser.add_argument("--top-p", type=float, default=1.0)
+    parser.add_argument("--num-samples", type=int, default=1)
+    parser.add_argument("--repetition-penalty", type=float, default=1.0)
+    parser.add_argument("--no-repeat-ngram-size", type=int, default=0)
+    parser.add_argument("--min-new-tokens", type=int, default=0)
+    parser.add_argument("--disable-property-rerank", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--prediction-csv", type=Path, default=None)
@@ -180,6 +208,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_new_tokens=int(args.max_new_tokens),
             temperature=float(args.temperature),
             top_k=int(args.top_k),
+            top_p=float(args.top_p),
+            num_samples=int(args.num_samples),
+            repetition_penalty=float(args.repetition_penalty),
+            no_repeat_ngram_size=int(args.no_repeat_ngram_size),
+            min_new_tokens=int(args.min_new_tokens),
+            property_rerank=not bool(args.disable_property_rerank),
         )
 
     summary = {
@@ -378,30 +412,70 @@ def write_predictions(
     max_new_tokens: int,
     temperature: float,
     top_k: int,
+    top_p: float,
+    num_samples: int,
+    repetition_penalty: float,
+    no_repeat_ngram_size: int,
+    min_new_tokens: int,
+    property_rerank: bool,
 ) -> dict[str, object]:
     model.eval()
     output_csv.parent.mkdir(parents=True, exist_ok=True)
     out_rows = []
     generated_values = []
+    candidate_counts = []
+    valid_candidate_counts = []
+    unique_valid_candidate_counts = []
+    unique_candidate_counts = []
+    strict_fractions = []
+    property_distances = []
     dataset_index = 0
+    sample_count = max(1, int(num_samples))
+    suppress_ids = [vocab.token_to_id[UNK]] if UNK in vocab.token_to_id else []
     for batch_rows in batches(dataset, batch_size):
         batch = collate(batch_rows, pad_id=model.pad_id, device=device)
-        generated = model.generate(
-            batch["condition"],
-            bos_id=vocab.bos_id,
-            eos_id=vocab.eos_id,
-            max_new_tokens=max_new_tokens,
-            condition_mask=batch["condition_mask"],
-            temperature=temperature,
-            top_k=top_k,
-        ).cpu()
-        for ids in generated:
+        batch_candidates: list[list[str]] = [[] for _ in batch_rows]
+        for _ in range(sample_count):
+            generated = model.generate(
+                batch["condition"],
+                bos_id=vocab.bos_id,
+                eos_id=vocab.eos_id,
+                max_new_tokens=max_new_tokens,
+                condition_mask=batch["condition_mask"],
+                temperature=temperature,
+                top_k=top_k,
+                top_p=top_p,
+                repetition_penalty=repetition_penalty,
+                no_repeat_ngram_size=no_repeat_ngram_size,
+                min_new_tokens=min_new_tokens,
+                suppress_ids=suppress_ids,
+            ).cpu()
+            for row_offset, ids in enumerate(generated):
+                tokens = vocab.decode(ids.tolist()[1:])
+                batch_candidates[row_offset].append(detokenize_smiles(tokens))
+        for candidates in batch_candidates:
             source_row = dict(rows[dataset_index])
-            tokens = vocab.decode(ids.tolist()[1:])
-            smiles = detokenize_smiles(tokens)
+            selected = select_generated_candidate(source_row, candidates, property_rerank=property_rerank)
+            smiles = selected["generated_smiles"]
             source_row["generated_smiles"] = smiles
-            source_row["method"] = "direct_smiles_mllm"
+            source_row["method"] = "direct_smiles_mllm_sampled_rerank" if sample_count > 1 else "direct_smiles_mllm"
+            source_row["direct_candidate_count"] = selected["candidate_count"]
+            source_row["direct_unique_candidate_count"] = selected["unique_candidate_count"]
+            source_row["direct_valid_candidate_count"] = selected["valid_candidate_count"]
+            source_row["direct_unique_valid_candidate_count"] = selected["unique_valid_candidate_count"]
+            source_row["direct_best_candidate_rank"] = selected["best_candidate_rank"]
+            source_row["direct_best_score"] = selected["score"]
+            source_row["direct_best_strict_fraction"] = selected["strict_fraction"]
+            source_row["direct_best_property_distance"] = selected["normalized_property_distance"]
             generated_values.append(smiles)
+            candidate_counts.append(int(selected["candidate_count"]))
+            valid_candidate_counts.append(int(selected["valid_candidate_count"]))
+            unique_valid_candidate_counts.append(int(selected["unique_valid_candidate_count"]))
+            unique_candidate_counts.append(int(selected["unique_candidate_count"]))
+            strict_fractions.append(float(selected["strict_fraction"]))
+            distance = float(selected["normalized_property_distance"])
+            if math.isfinite(distance):
+                property_distances.append(distance)
             out_rows.append(source_row)
             dataset_index += 1
     write_csv(output_csv, out_rows)
@@ -409,7 +483,141 @@ def write_predictions(
         "rows": len(out_rows),
         "nonempty_rate": sum(1 for value in generated_values if str(value).strip()) / max(len(generated_values), 1),
         "unique_generated": len({value for value in generated_values if str(value).strip()}),
+        "num_samples": sample_count,
+        "property_rerank": bool(property_rerank),
+        "mean_candidate_count": _mean(candidate_counts),
+        "mean_valid_candidate_count": _mean(valid_candidate_counts),
+        "mean_unique_valid_candidate_count": _mean(unique_valid_candidate_counts),
+        "mean_unique_candidate_count": _mean(unique_candidate_counts),
+        "mean_selected_strict_fraction": _mean(strict_fractions),
+        "mean_selected_property_distance": _mean(property_distances),
     }
+
+
+def select_generated_candidate(
+    row: Mapping[str, str],
+    candidates: Sequence[str],
+    *,
+    property_rerank: bool = True,
+) -> dict[str, object]:
+    scored = [
+        score_generated_candidate(row, candidate, rank=rank, property_rerank=property_rerank)
+        for rank, candidate in enumerate(candidates)
+    ]
+    if not scored:
+        return {
+            "generated_smiles": "",
+            "candidate_count": 0,
+            "unique_candidate_count": 0,
+            "valid_candidate_count": 0,
+            "unique_valid_candidate_count": 0,
+            "best_candidate_rank": -1,
+            "score": -math.inf,
+            "strict_fraction": 0.0,
+            "normalized_property_distance": math.inf,
+        }
+    best = max(scored, key=lambda item: float(item["score"]))
+    raw_unique = {str(value).strip() for value in candidates if str(value).strip()}
+    valid_unique = {str(item["canonical_smiles"]) for item in scored if item.get("canonical_smiles")}
+    return {
+        "generated_smiles": str(best.get("canonical_smiles") or best.get("raw_smiles") or ""),
+        "candidate_count": len(candidates),
+        "unique_candidate_count": len(raw_unique),
+        "valid_candidate_count": sum(1 for item in scored if item.get("canonical_smiles")),
+        "unique_valid_candidate_count": len(valid_unique),
+        "best_candidate_rank": int(best["rank"]),
+        "score": float(best["score"]),
+        "strict_fraction": float(best["strict_fraction"]),
+        "normalized_property_distance": float(best["normalized_property_distance"]),
+    }
+
+
+def score_generated_candidate(
+    row: Mapping[str, str],
+    smiles: str,
+    *,
+    rank: int = 0,
+    property_rerank: bool = True,
+) -> dict[str, object]:
+    raw = str(smiles or "").strip()
+    canonical = _safe_canonical_smiles(raw)
+    if not canonical:
+        return {
+            "raw_smiles": raw,
+            "canonical_smiles": "",
+            "rank": int(rank),
+            "score": -1_000_000.0 - float(rank) * 1e-6,
+            "strict_fraction": 0.0,
+            "normalized_property_distance": math.inf,
+        }
+    strict_fraction = 0.0
+    distance = 0.0
+    if property_rerank:
+        strict_fraction, distance = property_score_components(row, canonical)
+    score = 10.0 + 100.0 * strict_fraction - 10.0 * distance - float(rank) * 1e-6
+    return {
+        "raw_smiles": raw,
+        "canonical_smiles": canonical,
+        "rank": int(rank),
+        "score": float(score),
+        "strict_fraction": float(strict_fraction),
+        "normalized_property_distance": float(distance),
+    }
+
+
+def property_score_components(row: Mapping[str, str], smiles: str) -> tuple[float, float]:
+    props = _safe_normalized_properties(smiles)
+    selected = selected_properties(row)
+    if not props or not selected:
+        return 0.0, 0.0
+    successes = []
+    distances = []
+    for prop in selected:
+        target = parse_float(row.get(f"target_{prop}"))
+        actual = parse_float(props.get(prop))
+        tolerance = float(SKETCHMOL_STRICT_TOLERANCE.get(prop, PROPERTY_NORMALIZERS.get(prop, 1.0)))
+        if math.isnan(target) or math.isnan(actual):
+            successes.append(False)
+            distances.append(1e6)
+            continue
+        error = abs(actual - target)
+        successes.append(error <= tolerance)
+        distances.append(error / max(tolerance, 1e-8))
+    return sum(1 for value in successes if value) / max(len(successes), 1), sum(distances) / max(len(distances), 1)
+
+
+def selected_properties(row: Mapping[str, str]) -> list[str]:
+    selected = [item.strip() for item in str(row.get("condition_properties", "") or "").split(",") if item.strip()]
+    selected = [prop for prop in selected if prop in PROPERTY_COLUMNS]
+    if selected:
+        return selected
+    return [prop for prop in PROPERTY_COLUMNS if truthy(row.get(f"{prop}_active"))]
+
+
+def _safe_canonical_smiles(smiles: str) -> str:
+    if not smiles:
+        return ""
+    try:
+        return canonical_smiles(smiles) or ""
+    except RuntimeError:
+        return ""
+
+
+def _safe_normalized_properties(smiles: str) -> dict[str, float]:
+    try:
+        props = molecular_properties(smiles) or {}
+    except RuntimeError:
+        return {}
+    return {
+        prop: float(props.get(key, math.nan))
+        for prop, key in PROPERTY_VALUE_KEYS.items()
+        if key in props
+    }
+
+
+def _mean(values: Sequence[float | int]) -> float:
+    items = [float(value) for value in values if math.isfinite(float(value))]
+    return sum(items) / len(items) if items else 0.0
 
 
 def collate(rows: list[dict[str, object]], *, pad_id: int, device: torch.device) -> dict[str, torch.Tensor]:

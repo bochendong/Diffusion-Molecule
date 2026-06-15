@@ -19,7 +19,7 @@ if command -v module >/dev/null 2>&1; then
 fi
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
-OUTPUT_DIR="${SUCC_DIRECT_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v0}"
+OUTPUT_DIR="${SUCC_DIRECT_DENOVO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank}"
 MOLECULE_DB="${SUCC_DIRECT_DENOVO_MOLECULE_DB_CSV:-$SMMED_DEFAULT_MOLECULE_DB}"
 EVAL_ROWS_CSV="${SUCC_DIRECT_DENOVO_EVAL_ROWS_CSV:-$OUTPUT_DIR/denovo_2p7p_eval_rows.csv}"
 TRAIN_ROWS_CSV="${SUCC_DIRECT_DENOVO_TRAIN_ROWS_CSV:-$OUTPUT_DIR/denovo_2p7p_train_rows.csv}"
@@ -46,9 +46,14 @@ D_MODEL="${SUCC_DIRECT_DENOVO_D_MODEL:-256}"
 NUM_LAYERS="${SUCC_DIRECT_DENOVO_NUM_LAYERS:-4}"
 NUM_HEADS="${SUCC_DIRECT_DENOVO_NUM_HEADS:-8}"
 MAX_SMILES_LENGTH="${SUCC_DIRECT_DENOVO_MAX_SMILES_LENGTH:-160}"
-MAX_NEW_TOKENS="${SUCC_DIRECT_DENOVO_MAX_NEW_TOKENS:-160}"
-TEMPERATURE="${SUCC_DIRECT_DENOVO_TEMPERATURE:-0.0}"
-TOP_K="${SUCC_DIRECT_DENOVO_TOP_K:-0}"
+MAX_NEW_TOKENS="${SUCC_DIRECT_DENOVO_MAX_NEW_TOKENS:-96}"
+TEMPERATURE="${SUCC_DIRECT_DENOVO_TEMPERATURE:-0.85}"
+TOP_K="${SUCC_DIRECT_DENOVO_TOP_K:-40}"
+TOP_P="${SUCC_DIRECT_DENOVO_TOP_P:-0.95}"
+NUM_SAMPLES="${SUCC_DIRECT_DENOVO_NUM_SAMPLES:-32}"
+REPETITION_PENALTY="${SUCC_DIRECT_DENOVO_REPETITION_PENALTY:-1.15}"
+NO_REPEAT_NGRAM_SIZE="${SUCC_DIRECT_DENOVO_NO_REPEAT_NGRAM_SIZE:-6}"
+MIN_NEW_TOKENS="${SUCC_DIRECT_DENOVO_MIN_NEW_TOKENS:-6}"
 DEVICE="${SUCC_DEVICE:-auto}"
 HF_MODEL_NAME_OR_PATH="${SUCC_HF_MODEL_NAME_OR_PATH:-/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct}"
 HF_DEVICE_MAP="${SUCC_HF_DEVICE_MAP:-auto}"
@@ -72,6 +77,8 @@ echo "  model_dir=$MODEL_DIR"
 echo "  prediction_csv=$PREDICTION_CSV"
 echo "  train_rows_per_property_count=$TRAIN_ROWS_PER_PROPERTY_COUNT"
 echo "  eval_rows_per_property_count=$ROWS_PER_PROPERTY_COUNT"
+echo "  num_samples=$NUM_SAMPLES"
+echo "  decoding=temperature:$TEMPERATURE top_k:$TOP_K top_p:$TOP_P repetition_penalty:$REPETITION_PENALTY no_repeat_ngram:$NO_REPEAT_NGRAM_SIZE"
 
 if [[ ! -f "$MOLECULE_DB" ]]; then
   echo "ERROR: missing molecule database: $MOLECULE_DB" >&2
@@ -150,6 +157,11 @@ fi
   --max-new-tokens "$MAX_NEW_TOKENS" \
   --temperature "$TEMPERATURE" \
   --top-k "$TOP_K" \
+  --top-p "$TOP_P" \
+  --num-samples "$NUM_SAMPLES" \
+  --repetition-penalty "$REPETITION_PENALTY" \
+  --no-repeat-ngram-size "$NO_REPEAT_NGRAM_SIZE" \
+  --min-new-tokens "$MIN_NEW_TOKENS" \
   --seed "$SEED" \
   --device "$DEVICE"
 

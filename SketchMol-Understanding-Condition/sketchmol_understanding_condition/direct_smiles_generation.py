@@ -192,19 +192,42 @@ class ConditionedSmilesDecoder(nn.Module):
         condition_mask: torch.Tensor | None = None,
         temperature: float = 1.0,
         top_k: int = 0,
+        top_p: float = 1.0,
+        repetition_penalty: float = 1.0,
+        no_repeat_ngram_size: int = 0,
+        min_new_tokens: int = 0,
+        suppress_ids: Sequence[int] | None = None,
     ) -> torch.Tensor:
         batch = condition_tokens.shape[0]
         device = condition_tokens.device
         generated = torch.full((batch, 1), int(bos_id), dtype=torch.long, device=device)
         finished = torch.zeros(batch, dtype=torch.bool, device=device)
-        for _ in range(max(1, int(max_new_tokens))):
+        blocked_ids = {int(bos_id), self.pad_id}
+        if suppress_ids:
+            blocked_ids.update(int(value) for value in suppress_ids)
+        for step in range(max(1, int(max_new_tokens))):
             logits = self(condition_tokens, generated, condition_mask=condition_mask)[:, -1, :]
+            logits[:, list(blocked_ids)] = -torch.inf
+            if step < max(0, int(min_new_tokens)):
+                logits[:, int(eos_id)] = -torch.inf
+            if repetition_penalty and repetition_penalty > 1.0:
+                _apply_repetition_penalty_(logits, generated, float(repetition_penalty))
+            if no_repeat_ngram_size and no_repeat_ngram_size > 0:
+                _mask_repeated_ngrams_(logits, generated, int(no_repeat_ngram_size))
             if temperature and temperature > 0:
                 logits = logits / float(temperature)
                 if top_k > 0 and top_k < logits.shape[-1]:
                     threshold = torch.topk(logits, int(top_k), dim=-1).values[:, -1:]
                     logits = logits.masked_fill(logits < threshold, -torch.inf)
-                next_ids = torch.multinomial(torch.softmax(logits, dim=-1), num_samples=1).squeeze(1)
+                logits = _top_p_filter(logits, top_p=float(top_p))
+                probs = torch.softmax(logits, dim=-1)
+                probs = torch.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
+                zero_rows = probs.sum(dim=-1).le(0)
+                if bool(zero_rows.any()):
+                    fallback = torch.zeros_like(probs)
+                    fallback[:, int(eos_id)] = 1.0
+                    probs = torch.where(zero_rows[:, None], fallback, probs)
+                next_ids = torch.multinomial(probs, num_samples=1).squeeze(1)
             else:
                 next_ids = logits.argmax(dim=-1)
             next_ids = torch.where(finished, torch.full_like(next_ids, int(eos_id)), next_ids)
@@ -219,3 +242,49 @@ def build_vocabulary(smiles_values: Sequence[str]) -> SmilesVocabulary:
     vocab = SmilesVocabulary()
     vocab.update(tokenize_smiles(value) for value in smiles_values)
     return vocab
+
+
+def _apply_repetition_penalty_(logits: torch.Tensor, generated: torch.Tensor, penalty: float) -> None:
+    for row_idx in range(generated.shape[0]):
+        for token_id in set(int(value) for value in generated[row_idx].tolist()):
+            value = logits[row_idx, token_id]
+            logits[row_idx, token_id] = value / penalty if value > 0 else value * penalty
+
+
+def _mask_repeated_ngrams_(logits: torch.Tensor, generated: torch.Tensor, ngram_size: int) -> None:
+    if ngram_size <= 0:
+        return
+    for row_idx in range(generated.shape[0]):
+        banned = _banned_ngram_tokens(generated[row_idx].tolist(), ngram_size)
+        if banned:
+            logits[row_idx, sorted(banned)] = -torch.inf
+
+
+def _banned_ngram_tokens(sequence: Sequence[int], ngram_size: int) -> set[int]:
+    if ngram_size <= 1:
+        return set(int(value) for value in sequence)
+    if len(sequence) + 1 < ngram_size:
+        return set()
+    prefix = tuple(int(value) for value in sequence[-(ngram_size - 1) :])
+    banned: set[int] = set()
+    for start in range(0, len(sequence) - ngram_size + 1):
+        ngram = tuple(int(value) for value in sequence[start : start + ngram_size])
+        if ngram[:-1] == prefix:
+            banned.add(ngram[-1])
+    return banned
+
+
+def _top_p_filter(logits: torch.Tensor, *, top_p: float) -> torch.Tensor:
+    if not top_p or top_p >= 1.0:
+        return logits
+    top_p = max(0.0, min(float(top_p), 1.0))
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+    probs = torch.softmax(sorted_logits, dim=-1)
+    cumulative = probs.cumsum(dim=-1)
+    sorted_mask = cumulative > top_p
+    sorted_mask[:, 1:] = sorted_mask[:, :-1].clone()
+    sorted_mask[:, 0] = False
+    sorted_logits = sorted_logits.masked_fill(sorted_mask, -torch.inf)
+    filtered = torch.full_like(logits, -torch.inf)
+    filtered.scatter_(dim=-1, index=sorted_indices, src=sorted_logits)
+    return filtered
