@@ -260,7 +260,7 @@ def load_store(path: Path | None, args: argparse.Namespace) -> FrozenConditionFe
 def load_checkpoint(path: Path | None) -> dict[str, object] | None:
     if path is None:
         return None
-    return torch.load(path, map_location="cpu")
+    return torch.load(path, map_location="cpu", weights_only=False)
 
 
 def infer_condition_dim(*stores: FrozenConditionFeatureStore | None) -> int:
