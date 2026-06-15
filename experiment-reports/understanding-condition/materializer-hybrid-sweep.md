@@ -86,7 +86,8 @@ score = 100 * strict_fraction - 10 * normalized_property_distance + 1 * latent_s
 3. **更高 latent cos 不等于更好 hybrid**：v3/v4 target cos ~0.57–0.58，但 2p7p hybrid 仅 **~89%**，低于 v1 的 97%；latent shortlist 质量与属性 rerank 的 trade-off 需单独分析。
 4. **多样性**：hybrid unique valid 仍低于 `property_nearest`（2p7p ~43–76% vs 95%），但远高于 `latent_nearest`（v3/v4 仅 0.4–0.5%）。
 5. **工程落地**：2026-06-15 已将 standalone de novo 2p7p/OOD benchmark 默认切到 `dualmode_v1 + latent_property_rerank`；训练 pipeline 的下游 de novo/OOD 评测也默认使用 hybrid materializer，并写入 `_hybrid` 输出目录，避免覆盖旧 `latent_nearest` 结果。Standalone 验证 job `16072912`/`16072913` 与 sweep `16056226`/`16056227` 数值完全一致（2p7p **0.970**、OOD **0.985**）。
-6. **下一步**：训练侧可暂缓 contrastive/RL，优先调 shortlist 大小与 rerank 权重；v3/v4 2p7p hybrid 落后 v1 的原因值得 ablation（shortlist 4096 vs latent 分布）。
+6. **Random shortlist sanity**（见 [materializer-random-sanity-sweep.md](materializer-random-sanity-sweep.md)）：`random_property_rerank@k=4096` 已达 2p7p **0.978**、OOD **0.980**，与 latent hybrid 几乎重合；小 k 下 random 反而更高。高分主要来自候选库 + property rerank，generated latent shortlist 未证明优于随机。
+7. **下一步**：收紧 benchmark 声称；或改任务定义（更小候选库、禁止全库 rerank）；ablation rerank 权重。
 
 ## 提交命令（归档）
 
