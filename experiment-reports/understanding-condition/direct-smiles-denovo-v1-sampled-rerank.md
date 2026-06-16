@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | **完成**（2026-06-15） |
-| **最后更新** | 2026-06-15 |
+| **最后更新** | 2026-06-15（n=64 推理复用） |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **入口** | `submit_direct_smiles_denovo_2p7p_benchmark.sh` / `submit_direct_smiles_denovo_ood_benchmark.sh` |
 | **目的** | 修复 direct SMILES v0 的 autoregressive mode collapse，同时保持无 candidate-library retrieval |
@@ -12,8 +12,10 @@
 
 | Job | 名称 | 墙钟 | Exit | 输出 |
 | --- | --- | --- | --- | --- |
-| `16079726` | `succ-direct-smiles-2p7p` | 1h50m | 0 | `direct_smiles_denovo_2p7p_v1_sampled_rerank/` |
-| `16079727` | `succ-direct-smiles-ood` | 23m | 0 | `direct_smiles_denovo_ood_v1_sampled_rerank/` |
+| `16079726` | `succ-direct-smiles-2p7p`（n=32 训练+推理） | 1h50m | 0 | `direct_smiles_denovo_2p7p_v1_sampled_rerank/` |
+| `16079727` | `succ-direct-smiles-ood`（n=32 训练+推理） | 23m | 0 | `direct_smiles_denovo_ood_v1_sampled_rerank/` |
+| `16104381` | `succ-direct-smiles-2p7p-n64`（n=64 推理-only，复用 v1 ckpt） | 3h21m | 0 | `direct_smiles_denovo_2p7p_v1_sampled_rerank_n64/` |
+| `16104383` | `succ-direct-smiles-ood-n64`（n=64 推理-only，复用 v1 ckpt） | 38m | 0 | `direct_smiles_denovo_ood_v1_sampled_rerank_n64/` |
 
 ## 背景
 
@@ -30,48 +32,66 @@ v0 在 teacher forcing 下 loss/perplexity 正常下降，但推理阶段严重�
 
 默认推理：temperature 0.85、top-k 40、top-p 0.95、repetition penalty 1.15、no-repeat ngram 6、max_new_tokens 96。
 
-## 2p7p 结果（job `16079726`）
+## 2p7p 结果（n=32，job `16079726`）
 
 | 2p | 3p | 4p | 5p | 6p | 7p | overall strict | validity | unique valid |
 | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | 0.624 | 0.358 | 0.230 | 0.133 | 0.071 | 0.048 | **0.244** | 1.000 | **5967 / 6000** |
 
-采样诊断（每 prompt 32 candidates）：
+采样诊断（每 prompt 32 candidates）：mean valid **11.4**；mean selected strict fraction **0.696**。
 
-| 指标 | 值 |
-| --- | ---: |
-| mean valid candidates | 11.4 |
-| mean unique valid candidates | 11.4 |
-| mean selected strict fraction | 0.696 |
-| unique generated (final) | 5967 |
+## 2p7p 结果（n=64，job `16104381`，推理-only）
 
-## OOD 结果（job `16079727`）
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict | validity | unique valid |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **0.759** | 0.556 | 0.363 | 0.233 | 0.128 | 0.084 | **0.354** | 1.000 | **5970 / 6000** |
+
+| vs n=32 | Δ overall strict | mean valid candidates |
+| --- | ---: | ---: |
+| n=64 | **+11.0pp**（0.244→0.354） | **22.8**（was 11.4） |
+
+2p strict **75.9%** 已接近 SketchMol ref **80.4%**。
+
+## OOD 结果（n=32，job `16079727`）
 
 | Overall strict | validity | unique valid | 2p bucket strict | 7p bucket strict |
 | ---: | ---: | ---: | ---: | ---: |
 | **0.390** | **0.954** | **954 / 1000** | 0.243 | 0.050 |
 
-采样诊断：mean valid candidates **3.3** / 32；final unique **1000**。
+采样诊断：mean valid candidates **3.3** / 32。
+
+## OOD 结果（n=64，job `16104383`，推理-only）
+
+| Overall strict | validity | unique valid | 2p bucket strict | 7p bucket strict |
+| ---: | ---: | ---: | ---: | ---: |
+| **0.545** | **0.998** | **998 / 1000** | 0.413 | 0.070 |
+
+| vs n=32 | Δ overall strict | mean valid candidates |
+| --- | ---: | ---: |
+| n=64 | **+15.5pp**（0.390→0.545） | **6.8**（was 3.3） |
 
 ## 与 v0 / hybrid 对照
 
 | 方法 | 2p7p strict | OOD strict | retrieval? |
 | --- | ---: | ---: | --- |
 | direct v0 greedy | 0.0007 | 0.000 | 否 |
-| **direct v1 sampled rerank** | **0.244** | **0.390** | 否 |
+| direct v1 n=32 | 0.244 | 0.390 | 否 |
+| **direct v1 n=64** | **0.354** | **0.545** | 否 |
 | dualmode latent_nearest | 0.039 | 0.127 | 是 |
 | hybrid latent_property_rerank | 0.970 | 0.985 | 是 |
 | SketchMol ref（2p） | 0.804 | — | — |
 
 ## 结论
 
-1. **Collapse 已打破**：v1 将 unique valid 从 1 提升到 5967/6000（2p7p）和 954/1000（OOD）；validity 从 9.4% 提升到 95.4%（OOD）。
-2. **Real direct generation 已可用但仍弱于 retrieval hybrid**：2p7p strict **24.4%**、OOD **39%**，约为 hybrid 的 1/4–1/3；property count 越高 strict 越低（7p 仅 4.8%）。
-3. **采样 rerank 是关键**：decoder 每 prompt 平均能产出 ~11（2p7p）/ ~3（OOD）个有效候选，rerank 从中选出相对满足属性的分子；无此步骤 v0 完全失败。
-4. **仍远低于 SketchMol structured ref**（2p 62.4% vs 80.4%），说明条件→SMILES 对齐仍有较大空间。
-5. **下一步**：增大 `num_samples`（64/128）；reward fine-tuning / SELFIES decoder；OOD rare_combo 专项；与 hybrid 差距需靠更强 decoder 而非 candidate DB。
+1. **Collapse 已打破**（n=32 即证实）；增大采样数可继续提升 strict，无需重训。
+2. **n=64 显著提升**：2p7p **24.4%→35.4%**（+11pp）；OOD **39.0%→54.5%**（+15.5pp）；有效候选池约翻倍（2p7p 11→23，OOD 3→7 / prompt）。
+3. **Real direct generation 仍弱于 retrieval hybrid**（35% vs 97%），但已可作为 honest de novo baseline；2p strict 接近 SketchMol ref。
+4. **下一步**：试 n=128；reward fine-tuning；OOD rare_combo / 7p 仍弱（7p strict 8.4%）。
+5. **运维备注**：首次 n=64 提交（`16102594`/`16102596`）因 PyTorch 2.6 `weights_only` 加载失败；`8167eef` 修复后 `16104381`/`16104383` 成功。
 
 ## 提交命令（归档）
+
+### n=32 全量（训练+推理，默认）
 
 ```bash
 export DM_DATA_ROOT=/scratch/bdong/datasets/Diffusion-Molecule
@@ -83,6 +103,24 @@ SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_benchmark.sh
 ```
 
+### n=64 推理-only（复用 v1 checkpoint）
+
+```bash
+SUCC_DIRECT_DENOVO_RUN_TRAIN=0 \
+SUCC_DIRECT_DENOVO_NUM_SAMPLES=64 \
+SUCC_DIRECT_DENOVO_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank_n64 \
+SUCC_DIRECT_DENOVO_RESUME_CHECKPOINT=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/direct_smiles_model/direct_smiles_generator.pt \
+SUCC_DIRECT_DENOVO_TRAIN_ROWS_CSV=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/denovo_2p7p_train_rows.csv \
+SUCC_DIRECT_DENOVO_EVAL_ROWS_CSV=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/denovo_2p7p_eval_rows.csv \
+SUCC_DIRECT_DENOVO_TRAIN_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/train_condition_features_hf_vlm \
+SUCC_DIRECT_DENOVO_EVAL_FEATURES_DIR=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/eval_condition_features_hf_vlm \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_2p7p_benchmark.sh
+```
+
+OOD 侧将 `SUCC_DIRECT_DENOVO_*` 换为 `SUCC_DIRECT_OOD_*`，路径指向 `*_ood_*`。
+
 产出：
-- `outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/benchmark_direct_smiles/benchmark_report.md`
-- `outputs/direct_smiles_denovo_ood_v1_sampled_rerank/benchmark_direct_smiles/benchmark_report.md`
+- `outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/`（n=32）
+- `outputs/direct_smiles_denovo_ood_v1_sampled_rerank/`（n=32）
+- `outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank_n64/`
+- `outputs/direct_smiles_denovo_ood_v1_sampled_rerank_n64/`
