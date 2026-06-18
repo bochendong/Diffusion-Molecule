@@ -19,7 +19,7 @@
 | `understanding-condition/` | [materializer-hybrid-sweep.md](understanding-condition/materializer-hybrid-sweep.md) | **完成** zero-source hybrid materializer sweep（`16056226`–`16056231`） |
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
-| `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（n=128：2p7p **45.9%** / OOD **70.9%**） |
+| `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（n=256：2p7p **56.2%** / OOD **80.1%**） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
 | `understanding-condition/` | [denovo-ood-benchmark.md](understanding-condition/denovo-ood-benchmark.md) | **完成** de novo OOD（v2_fix + dualmode） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
@@ -59,6 +59,15 @@ n=64 推理-only（复用 v1 ckpt）：2p7p **35.4%**（+11pp vs n=32）；OOD *
 | `16143575` | `succ-direct-smiles-ood-n128` | 完成（1h17m） | [direct SMILES v1](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) |
 
 n=128 推理-only：2p7p **45.9%**（2p **85%** > SketchMol ref）；OOD **70.9%**。
+
+## 近期 Slurm Job 一览（2026-06-17 direct SMILES v1 n=256）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16245062` | `succ-direct-smiles-2p7p-n256` | 完成（13h45m） | [direct SMILES v1](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) |
+| `16245063` | `succ-direct-smiles-ood-n256` | 完成（2h35m） | [direct SMILES v1](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) |
+
+n=256 推理-only（time=20h/8h）：2p7p **56.2%**（+10.3pp vs n=128）；OOD **80.1%**（+9.2pp）。
 
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 
