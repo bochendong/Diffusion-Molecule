@@ -15,6 +15,7 @@ if TORCH_AVAILABLE:
 
 def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_rl.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
 
 
@@ -200,6 +201,69 @@ def test_train_direct_smiles_generator_smoke(tmp_path):
     assert "direct_valid_candidate_count" in prediction_rows[0]
 
 
+def test_rl_sample_rollouts_preserves_prompt_grouping():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required for the RL rollout test")
+
+    module = _load_rl_module()
+
+    class FakeModel:
+        def __init__(self) -> None:
+            self.call_index = 0
+
+        def generate(self, condition_tokens, **_: object):
+            self.call_index += 1
+            row_ids = condition_tokens[:, 0, 0].to(dtype=torch.long).cpu()
+            call_ids = torch.full_like(row_ids, self.call_index)
+            bos = torch.zeros_like(row_ids)
+            return torch.stack([bos, row_ids, call_ids], dim=1)
+
+    batch = {
+        "condition": torch.tensor([[[1.0]], [[2.0]]], dtype=torch.float32),
+        "condition_mask": torch.tensor([[True], [True]]),
+    }
+    generated = module.sample_rollouts(
+        FakeModel(),
+        batch,
+        bos_id=0,
+        eos_id=99,
+        rollouts_per_prompt=3,
+        parallel_samples=2,
+        max_parallel_sequences=8,
+        max_new_tokens=4,
+        temperature=0.9,
+        top_k=4,
+        top_p=0.95,
+        repetition_penalty=1.1,
+        no_repeat_ngram_size=3,
+        min_new_tokens=1,
+        suppress_ids=[],
+    )
+
+    assert generated[:, 1].tolist() == [1, 1, 1, 2, 2, 2]
+    assert generated[:, 2].tolist() == [1, 1, 2, 1, 1, 2]
+
+
+def test_rl_reward_prefers_strict_and_valid_candidates(monkeypatch):
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required for the RL reward test")
+
+    module = _load_rl_module()
+    monkeypatch.setattr(module, "_safe_canonical_smiles", lambda smiles: "" if smiles == "bad" else smiles)
+    monkeypatch.setattr(
+        module,
+        "property_score_components",
+        lambda _row, smiles: (1.0, 0.2) if smiles == "good" else (0.0, 0.1),
+    )
+
+    good = module.reward_for_smiles({}, "good", reward_valid_weight=1.0, reward_strict_weight=1.0, reward_distance_weight=0.1, reward_distance_clip=10.0)
+    weak = module.reward_for_smiles({}, "weak", reward_valid_weight=1.0, reward_strict_weight=1.0, reward_distance_weight=0.1, reward_distance_clip=10.0)
+    bad = module.reward_for_smiles({}, "bad", reward_valid_weight=1.0, reward_strict_weight=1.0, reward_distance_weight=0.1, reward_distance_clip=10.0)
+
+    assert good > weak
+    assert bad == -1.0
+
+
 def _write_rows(path: Path, rows: list[dict[str, str]]) -> None:
     fieldnames: list[str] = []
     seen = set()
@@ -217,6 +281,17 @@ def _write_rows(path: Path, rows: list[dict[str, str]]) -> None:
 def _load_train_module():
     path = Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator.py")
     spec = importlib.util.spec_from_file_location("train_direct_smiles_generator", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_rl_module():
+    path = Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_rl.py")
+    spec = importlib.util.spec_from_file_location("train_direct_smiles_generator_rl", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

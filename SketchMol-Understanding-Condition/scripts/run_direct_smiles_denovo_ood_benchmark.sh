@@ -51,6 +51,8 @@ TEMPERATURE="${SUCC_DIRECT_OOD_TEMPERATURE:-0.85}"
 TOP_K="${SUCC_DIRECT_OOD_TOP_K:-40}"
 TOP_P="${SUCC_DIRECT_OOD_TOP_P:-0.95}"
 NUM_SAMPLES="${SUCC_DIRECT_OOD_NUM_SAMPLES:-32}"
+PARALLEL_SAMPLES="${SUCC_DIRECT_OOD_PARALLEL_SAMPLES:-8}"
+MAX_PARALLEL_SEQUENCES="${SUCC_DIRECT_OOD_MAX_PARALLEL_SEQUENCES:-1024}"
 REPETITION_PENALTY="${SUCC_DIRECT_OOD_REPETITION_PENALTY:-1.15}"
 NO_REPEAT_NGRAM_SIZE="${SUCC_DIRECT_OOD_NO_REPEAT_NGRAM_SIZE:-6}"
 MIN_NEW_TOKENS="${SUCC_DIRECT_OOD_MIN_NEW_TOKENS:-6}"
@@ -78,6 +80,8 @@ echo "  prediction_csv=$PREDICTION_CSV"
 echo "  train_rows_per_spec=$TRAIN_ROWS_PER_SPEC"
 echo "  eval_rows_per_spec=$ROWS_PER_SPEC"
 echo "  num_samples=$NUM_SAMPLES"
+echo "  parallel_samples=$PARALLEL_SAMPLES"
+echo "  max_parallel_sequences=$MAX_PARALLEL_SEQUENCES"
 echo "  decoding=temperature:$TEMPERATURE top_k:$TOP_K top_p:$TOP_P repetition_penalty:$REPETITION_PENALTY no_repeat_ngram:$NO_REPEAT_NGRAM_SIZE"
 
 if [[ ! -f "$MOLECULE_DB" ]]; then
@@ -163,6 +167,8 @@ fi
   --top-k "$TOP_K" \
   --top-p "$TOP_P" \
   --num-samples "$NUM_SAMPLES" \
+  --parallel-samples "$PARALLEL_SAMPLES" \
+  --max-parallel-sequences "$MAX_PARALLEL_SEQUENCES" \
   --repetition-penalty "$REPETITION_PENALTY" \
   --no-repeat-ngram-size "$NO_REPEAT_NGRAM_SIZE" \
   --min-new-tokens "$MIN_NEW_TOKENS" \

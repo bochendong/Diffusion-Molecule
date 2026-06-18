@@ -9,6 +9,7 @@ import json
 import math
 import random
 import sys
+from functools import lru_cache
 from pathlib import Path
 from typing import Iterable, Mapping, Sequence
 
@@ -99,6 +100,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repetition-penalty", type=float, default=1.0)
     parser.add_argument("--no-repeat-ngram-size", type=int, default=0)
     parser.add_argument("--min-new-tokens", type=int, default=0)
+    parser.add_argument("--parallel-samples", type=int, default=1)
+    parser.add_argument("--max-parallel-sequences", type=int, default=1024)
     parser.add_argument("--disable-property-rerank", action="store_true")
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="auto")
@@ -213,6 +216,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             repetition_penalty=float(args.repetition_penalty),
             no_repeat_ngram_size=int(args.no_repeat_ngram_size),
             min_new_tokens=int(args.min_new_tokens),
+            parallel_samples=int(args.parallel_samples),
+            max_parallel_sequences=int(args.max_parallel_sequences),
             property_rerank=not bool(args.disable_property_rerank),
         )
 
@@ -417,6 +422,8 @@ def write_predictions(
     repetition_penalty: float,
     no_repeat_ngram_size: int,
     min_new_tokens: int,
+    parallel_samples: int,
+    max_parallel_sequences: int,
     property_rerank: bool,
 ) -> dict[str, object]:
     model.eval()
@@ -431,17 +438,24 @@ def write_predictions(
     property_distances = []
     dataset_index = 0
     sample_count = max(1, int(num_samples))
+    sample_parallel = max(1, int(parallel_samples))
+    max_parallel_sequences = max(1, int(max_parallel_sequences))
     suppress_ids = [vocab.token_to_id[UNK]] if UNK in vocab.token_to_id else []
     for batch_rows in batches(dataset, batch_size):
         batch = collate(batch_rows, pad_id=model.pad_id, device=device)
         batch_candidates: list[list[str]] = [[] for _ in batch_rows]
-        for _ in range(sample_count):
+        prompt_count = len(batch_rows)
+        remaining = sample_count
+        while remaining > 0:
+            chunk_limit = max(1, max_parallel_sequences // max(prompt_count, 1))
+            chunk = min(remaining, sample_parallel, chunk_limit)
+            expanded = _repeat_generation_batch(batch, repeats=chunk)
             generated = model.generate(
-                batch["condition"],
+                expanded["condition"],
                 bos_id=vocab.bos_id,
                 eos_id=vocab.eos_id,
                 max_new_tokens=max_new_tokens,
-                condition_mask=batch["condition_mask"],
+                condition_mask=expanded["condition_mask"],
                 temperature=temperature,
                 top_k=top_k,
                 top_p=top_p,
@@ -450,9 +464,13 @@ def write_predictions(
                 min_new_tokens=min_new_tokens,
                 suppress_ids=suppress_ids,
             ).cpu()
-            for row_offset, ids in enumerate(generated):
-                tokens = vocab.decode(ids.tolist()[1:])
-                batch_candidates[row_offset].append(detokenize_smiles(tokens))
+            for row_offset in range(prompt_count):
+                start = row_offset * chunk
+                end = start + chunk
+                for ids in generated[start:end]:
+                    tokens = vocab.decode(ids.tolist()[1:])
+                    batch_candidates[row_offset].append(detokenize_smiles(tokens))
+            remaining -= chunk
         for candidates in batch_candidates:
             source_row = dict(rows[dataset_index])
             selected = select_generated_candidate(source_row, candidates, property_rerank=property_rerank)
@@ -484,6 +502,8 @@ def write_predictions(
         "nonempty_rate": sum(1 for value in generated_values if str(value).strip()) / max(len(generated_values), 1),
         "unique_generated": len({value for value in generated_values if str(value).strip()}),
         "num_samples": sample_count,
+        "parallel_samples": sample_parallel,
+        "max_parallel_sequences": max_parallel_sequences,
         "property_rerank": bool(property_rerank),
         "mean_candidate_count": _mean(candidate_counts),
         "mean_valid_candidate_count": _mean(valid_candidate_counts),
@@ -595,24 +615,11 @@ def selected_properties(row: Mapping[str, str]) -> list[str]:
 
 
 def _safe_canonical_smiles(smiles: str) -> str:
-    if not smiles:
-        return ""
-    try:
-        return canonical_smiles(smiles) or ""
-    except RuntimeError:
-        return ""
+    return _cached_canonical_smiles(str(smiles or ""))
 
 
 def _safe_normalized_properties(smiles: str) -> dict[str, float]:
-    try:
-        props = molecular_properties(smiles) or {}
-    except RuntimeError:
-        return {}
-    return {
-        prop: float(props.get(key, math.nan))
-        for prop, key in PROPERTY_VALUE_KEYS.items()
-        if key in props
-    }
+    return dict(_cached_normalized_properties(str(smiles or "")))
 
 
 def _mean(values: Sequence[float | int]) -> float:
@@ -641,6 +648,14 @@ def collate(rows: list[dict[str, object]], *, pad_id: int, device: torch.device)
         "condition_mask": torch.from_numpy(condition_mask).to(device),
         "decoder_input_ids": torch.from_numpy(decoder_input_ids).to(device),
         "target_ids": torch.from_numpy(target_ids).to(device),
+    }
+
+
+def _repeat_generation_batch(batch: Mapping[str, torch.Tensor], *, repeats: int) -> dict[str, torch.Tensor]:
+    repeats = max(1, int(repeats))
+    return {
+        "condition": batch["condition"].repeat_interleave(repeats, dim=0),
+        "condition_mask": batch["condition_mask"].repeat_interleave(repeats, dim=0),
     }
 
 
@@ -715,6 +730,30 @@ def resolve_device(value: str) -> torch.device:
     if value == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(value)
+
+
+@lru_cache(maxsize=200000)
+def _cached_canonical_smiles(smiles: str) -> str:
+    if not smiles:
+        return ""
+    try:
+        return canonical_smiles(smiles) or ""
+    except RuntimeError:
+        return ""
+
+
+@lru_cache(maxsize=200000)
+def _cached_normalized_properties(smiles: str) -> tuple[tuple[str, float], ...]:
+    try:
+        props = molecular_properties(smiles) or {}
+    except RuntimeError:
+        return tuple()
+    normalized = {
+        prop: float(props.get(key, math.nan))
+        for prop, key in PROPERTY_VALUE_KEYS.items()
+        if key in props
+    }
+    return tuple(sorted(normalized.items()))
 
 
 if __name__ == "__main__":
