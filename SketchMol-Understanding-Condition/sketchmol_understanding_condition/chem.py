@@ -23,7 +23,11 @@ def _rdkit():
             "RDKit is required for chemistry operations. Install rdkit or run "
             "only the encoder utilities."
         ) from exc
-    RDLogger.DisableLog("rdApp.warning")
+    # Direct-SMILES de novo can intentionally probe a large invalid-string space.
+    # Suppress RDKit parser logging here so invalid candidates do not flood Slurm
+    # logs and dominate wall-clock with log I/O.
+    for channel in ("rdApp.error", "rdApp.warning", "rdApp.info", "rdApp.debug"):
+        RDLogger.DisableLog(channel)
     return Chem, DataStructs, AllChem, Crippen, Descriptors, Draw, Lipinski, QED, rdMolDescriptors, MurckoScaffold
 
 

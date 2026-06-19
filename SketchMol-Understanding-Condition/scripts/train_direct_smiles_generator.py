@@ -428,7 +428,6 @@ def write_predictions(
 ) -> dict[str, object]:
     model.eval()
     output_csv.parent.mkdir(parents=True, exist_ok=True)
-    out_rows = []
     generated_values = []
     candidate_counts = []
     valid_candidate_counts = []
@@ -437,6 +436,8 @@ def write_predictions(
     strict_fractions = []
     property_distances = []
     dataset_index = 0
+    written_rows = 0
+    csv_initialized = False
     sample_count = max(1, int(num_samples))
     sample_parallel = max(1, int(parallel_samples))
     max_parallel_sequences = max(1, int(max_parallel_sequences))
@@ -444,6 +445,7 @@ def write_predictions(
     for batch_rows in batches(dataset, batch_size):
         batch = collate(batch_rows, pad_id=model.pad_id, device=device)
         batch_candidates: list[list[str]] = [[] for _ in batch_rows]
+        batch_output_rows: list[dict[str, object]] = []
         prompt_count = len(batch_rows)
         remaining = sample_count
         while remaining > 0:
@@ -494,11 +496,18 @@ def write_predictions(
             distance = float(selected["normalized_property_distance"])
             if math.isfinite(distance):
                 property_distances.append(distance)
-            out_rows.append(source_row)
+            batch_output_rows.append(source_row)
             dataset_index += 1
-    write_csv(output_csv, out_rows)
+        append_csv_rows(output_csv, batch_output_rows, overwrite=not csv_initialized)
+        csv_initialized = True
+        written_rows += len(batch_output_rows)
+        print(
+            f"[direct-smiles] wrote {written_rows}/{len(rows)} rows "
+            f"(num_samples={sample_count}, parallel_samples={sample_parallel}, max_parallel_sequences={max_parallel_sequences})",
+            flush=True,
+        )
     return {
-        "rows": len(out_rows),
+        "rows": written_rows,
         "nonempty_rate": sum(1 for value in generated_values if str(value).strip()) / max(len(generated_values), 1),
         "unique_generated": len({value for value in generated_values if str(value).strip()}),
         "num_samples": sample_count,
@@ -699,6 +708,24 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
+        writer.writerows(rows)
+
+
+def append_csv_rows(path: Path, rows: list[dict[str, object]], *, overwrite: bool = False) -> None:
+    if not rows:
+        return
+    fieldnames: list[str] = []
+    seen = set()
+    for row in rows:
+        for key in row:
+            if key not in seen:
+                seen.add(key)
+                fieldnames.append(key)
+    mode = "w" if overwrite or not path.exists() else "a"
+    with path.open(mode, newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        if mode == "w":
+            writer.writeheader()
         writer.writerows(rows)
 
 
