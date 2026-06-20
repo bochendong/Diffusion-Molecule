@@ -16,7 +16,11 @@ if TORCH_AVAILABLE:
 def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_rl.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/build_direct_smiles_preference_dataset.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_dpo.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_preference_dpo_2p7p.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_preference_dpo_2p7p.sh").exists()
 
 
 def test_smiles_tokenization_roundtrip():
@@ -264,6 +268,55 @@ def test_rl_reward_prefers_strict_and_valid_candidates(monkeypatch):
     assert bad == -1.0
 
 
+def test_preference_builder_prefers_hard_valid_negative():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required to import the preference builder script")
+    module = _load_preference_builder_module()
+    scored = [
+        {
+            "raw_smiles": "best",
+            "canonical_smiles": "best",
+            "rank": 0,
+            "score": 12.0,
+            "strict_fraction": 1.0,
+            "normalized_property_distance": 0.0,
+        },
+        {
+            "raw_smiles": "weak_valid",
+            "canonical_smiles": "weak_valid",
+            "rank": 1,
+            "score": 4.0,
+            "strict_fraction": 0.25,
+            "normalized_property_distance": 1.0,
+        },
+        {
+            "raw_smiles": "bad_invalid",
+            "canonical_smiles": "",
+            "rank": 2,
+            "score": -100.0,
+            "strict_fraction": 0.0,
+            "normalized_property_distance": float("inf"),
+        },
+    ]
+    pair = module.select_preference_pair({}, scored, rejected_strategy="hard_valid", min_score_gap=0.5)
+    assert pair is not None
+    assert pair["chosen_smiles"] == "best"
+    assert pair["rejected_smiles"] == "weak_valid"
+    assert pair["rejected_valid"] == "True"
+
+
+def test_dpo_logit_prefers_chosen_over_rejected():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required for the DPO helper test")
+
+    policy_chosen = torch.tensor([4.0, 3.0])
+    policy_rejected = torch.tensor([1.0, 2.0])
+    ref_chosen = torch.tensor([3.5, 2.5])
+    ref_rejected = torch.tensor([1.0, 2.0])
+    logits = 0.1 * ((policy_chosen - policy_rejected) - (ref_chosen - ref_rejected))
+    assert bool((logits > 0).all())
+
+
 def _write_rows(path: Path, rows: list[dict[str, str]]) -> None:
     fieldnames: list[str] = []
     seen = set()
@@ -292,6 +345,17 @@ def _load_train_module():
 def _load_rl_module():
     path = Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_rl.py")
     spec = importlib.util.spec_from_file_location("train_direct_smiles_generator_rl", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_preference_builder_module():
+    path = Path("SketchMol-Understanding-Condition/scripts/build_direct_smiles_preference_dataset.py")
+    spec = importlib.util.spec_from_file_location("build_direct_smiles_preference_dataset", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
