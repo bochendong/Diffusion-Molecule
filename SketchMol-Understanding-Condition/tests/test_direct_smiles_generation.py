@@ -19,7 +19,12 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/build_direct_smiles_preference_dataset.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_dpo.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_v2_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_preference_dpo_2p7p.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_preference_dpo_2p7p.sh").exists()
 
 
@@ -106,6 +111,48 @@ def test_direct_smiles_property_rerank_prefers_strict_candidate(monkeypatch):
     assert selected["generated_smiles"] == "near"
     assert selected["valid_candidate_count"] == 2
     assert selected["strict_fraction"] == 1.0
+
+
+def test_mixed_condition_appends_property_program_tokens():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required to import the direct SMILES training script")
+
+    module = _load_train_module()
+
+    class DummyStore:
+        input_hidden_dim = 4
+
+        def get(self, _condition_id):
+            return [[1.0, 2.0, 3.0, 4.0]]
+
+    row = {
+        "condition_id": "a",
+        "condition_properties": "MW,LogP",
+        "property_count": "2",
+        "target_MW": "46",
+        "target_LogP": "0.0",
+        "MW_active": "True",
+        "LogP_active": "True",
+    }
+    condition = module.condition_array_for_row(
+        row,
+        DummyStore(),
+        4,
+        condition_mixing_mode="append_property_program",
+    )
+
+    assert condition.shape == (10, 4)
+    assert condition[0].tolist() == [1.0, 2.0, 3.0, 4.0]
+    assert any(abs(float(value)) > 0 for value in condition[1].tolist())
+
+
+def test_property_count_curriculum_weight_prefers_high_count():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required to import the direct SMILES training script")
+
+    module = _load_train_module()
+    assert module.property_count_curriculum_weight(2, power=1.0, baseline=2.0) == pytest.approx(1.0)
+    assert module.property_count_curriculum_weight(7, power=1.0, baseline=2.0) == pytest.approx(3.5)
 
 
 def test_train_direct_smiles_generator_smoke(tmp_path):

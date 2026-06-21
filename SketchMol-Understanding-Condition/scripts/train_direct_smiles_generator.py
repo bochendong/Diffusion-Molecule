@@ -76,6 +76,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--eval-condition-features-dir", type=Path, default=None)
     parser.add_argument("--condition-feature-array", default="query_tokens")
     parser.add_argument("--condition-feature-variant", default="full")
+    parser.add_argument(
+        "--condition-mixing-mode",
+        choices=("features_only", "append_property_program", "property_program_only"),
+        default="features_only",
+    )
     parser.add_argument("--resume-checkpoint", type=Path, default=None)
     parser.add_argument("--eval-only", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
@@ -103,6 +108,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--parallel-samples", type=int, default=1)
     parser.add_argument("--max-parallel-sequences", type=int, default=1024)
     parser.add_argument("--disable-property-rerank", action="store_true")
+    parser.add_argument("--property-count-curriculum-sampling", action="store_true")
+    parser.add_argument("--property-count-curriculum-loss", action="store_true")
+    parser.add_argument("--property-count-curriculum-power", type=float, default=1.0)
+    parser.add_argument("--property-count-curriculum-baseline", type=float, default=2.0)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--prediction-csv", type=Path, default=None)
@@ -126,6 +135,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     eval_store = load_store(args.eval_condition_features_dir or args.condition_features_dir, args)
 
     checkpoint = load_checkpoint(args.resume_checkpoint) if args.resume_checkpoint else None
+    checkpoint_args = dict(checkpoint.get("args", {})) if checkpoint else {}
+    condition_mixing_mode = resolve_condition_mixing_mode(args, checkpoint_args)
     if checkpoint is not None:
         vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
         config = dict(checkpoint["model_config"])
@@ -149,8 +160,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     if checkpoint is not None:
         model.load_state_dict(checkpoint["model_state"])
 
-    train_dataset = build_dataset(train_rows, vocab, train_store, condition_dim, max_smiles_length=args.max_smiles_length)
-    eval_dataset = build_dataset(eval_rows, vocab, eval_store, condition_dim, max_smiles_length=args.max_smiles_length)
+    train_dataset = build_dataset(
+        train_rows,
+        vocab,
+        train_store,
+        condition_dim,
+        max_smiles_length=args.max_smiles_length,
+        condition_mixing_mode=condition_mixing_mode,
+    )
+    eval_dataset = build_dataset(
+        eval_rows,
+        vocab,
+        eval_store,
+        condition_dim,
+        max_smiles_length=args.max_smiles_length,
+        condition_mixing_mode=condition_mixing_mode,
+    )
 
     history: list[dict[str, object]] = list(checkpoint.get("history", [])) if checkpoint else []
     start_epoch = int(checkpoint.get("epoch", 0)) + 1 if checkpoint and not args.eval_only else 1
@@ -168,6 +193,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 device=device,
                 seed=int(args.seed) + epoch,
                 grad_clip=float(args.grad_clip),
+                property_count_curriculum_sampling=bool(args.property_count_curriculum_sampling),
+                property_count_curriculum_loss=bool(args.property_count_curriculum_loss),
+                property_count_curriculum_power=float(args.property_count_curriculum_power),
+                property_count_curriculum_baseline=float(args.property_count_curriculum_baseline),
             )
             record["epoch"] = epoch
             if eval_dataset:
@@ -219,6 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             parallel_samples=int(args.parallel_samples),
             max_parallel_sequences=int(args.max_parallel_sequences),
             property_rerank=not bool(args.disable_property_rerank),
+            condition_mixing_mode=condition_mixing_mode,
         )
 
     summary = {
@@ -237,6 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "condition_dim": int(config["condition_dim"]),
         "history": history,
         "prediction_summary": prediction_summary,
+        "condition_mixing_mode": condition_mixing_mode,
         "device": str(device),
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -275,6 +306,14 @@ def infer_condition_dim(*stores: FrozenConditionFeatureStore | None) -> int:
     return 32
 
 
+def resolve_condition_mixing_mode(args: argparse.Namespace, checkpoint_args: Mapping[str, object]) -> str:
+    current = str(getattr(args, "condition_mixing_mode", "features_only") or "features_only")
+    saved = str(checkpoint_args.get("condition_mixing_mode", "") or "").strip()
+    if current == "features_only" and saved:
+        return saved
+    return current
+
+
 def build_dataset(
     rows: list[dict[str, str]],
     vocab: SmilesVocabulary,
@@ -282,6 +321,7 @@ def build_dataset(
     condition_dim: int,
     *,
     max_smiles_length: int,
+    condition_mixing_mode: str = "features_only",
 ) -> list[dict[str, object]]:
     dataset = []
     for row in rows:
@@ -291,12 +331,13 @@ def build_dataset(
         tokens = tokenize_smiles(target)[: max(1, int(max_smiles_length))]
         decoder_input = vocab.encode(tokens, add_bos=True, add_eos=False)
         target_ids = vocab.encode(tokens, add_bos=False, add_eos=True)
-        condition = condition_array_for_row(row, store, condition_dim)
+        condition = condition_array_for_row(row, store, condition_dim, condition_mixing_mode=condition_mixing_mode)
         dataset.append(
             {
                 "condition": condition.astype(np.float32),
                 "decoder_input_ids": np.asarray(decoder_input, dtype=np.int64),
                 "target_ids": np.asarray(target_ids, dtype=np.int64),
+                "property_count": row_property_count(row),
             }
         )
     return dataset
@@ -306,15 +347,25 @@ def condition_array_for_row(
     row: Mapping[str, str],
     store: FrozenConditionFeatureStore | None,
     condition_dim: int,
+    *,
+    condition_mixing_mode: str = "features_only",
 ) -> np.ndarray:
     condition_id = str(row.get("condition_id", "") or row.get("sample_id", "") or "").strip()
     value = store.get(condition_id) if store is not None and condition_id else None
+    base = None
     if value is not None:
         arr = np.asarray(value, dtype=np.float32)
         if arr.shape[-1] != condition_dim:
             raise ValueError(f"Condition feature dim mismatch for {condition_id}: {arr.shape[-1]} != {condition_dim}")
-        return arr
-    return fallback_condition_features(row, condition_dim)
+        base = arr
+    else:
+        base = fallback_condition_features(row, condition_dim)
+    program = property_program_tokens(row, condition_dim)
+    if condition_mixing_mode == "property_program_only":
+        return program
+    if condition_mixing_mode == "append_property_program":
+        return np.concatenate([base, program], axis=0)
+    return base
 
 
 def fallback_condition_features(row: Mapping[str, str], condition_dim: int) -> np.ndarray:
@@ -337,6 +388,85 @@ def fallback_condition_features(row: Mapping[str, str], condition_dim: int) -> n
     return vec[None, :]
 
 
+def property_program_tokens(row: Mapping[str, str], condition_dim: int) -> np.ndarray:
+    selected = selected_properties(row)
+    selected_set = set(selected)
+    count = row_property_count(row)
+    count_norm = float(count) / max(len(PROPERTY_COLUMNS), 1)
+    directions = [parse_direction_value(row.get(f"{prop}_direction")) for prop in PROPERTY_COLUMNS]
+    positive_direction_fraction = sum(1 for value in directions if value > 0) / max(len(PROPERTY_COLUMNS), 1)
+    negative_direction_fraction = sum(1 for value in directions if value < 0) / max(len(PROPERTY_COLUMNS), 1)
+    normalized_targets = []
+    for prop in PROPERTY_COLUMNS:
+        target = parse_float(row.get(f"target_{prop}"))
+        normalizer = PROPERTY_NORMALIZERS.get(prop, 1.0)
+        if not math.isnan(target):
+            normalized_targets.append(float(target) / max(normalizer, 1e-8))
+    tokens = [
+        _expand_condition_token(
+            [
+                0.25,
+                count_norm,
+                float(len(selected_set)) / max(len(PROPERTY_COLUMNS), 1),
+                sum(normalized_targets) / len(normalized_targets) if normalized_targets else 0.0,
+                max(normalized_targets) if normalized_targets else 0.0,
+                min(normalized_targets) if normalized_targets else 0.0,
+                positive_direction_fraction,
+                negative_direction_fraction,
+            ],
+            condition_dim,
+        )
+    ]
+    for idx, prop in enumerate(PROPERTY_COLUMNS):
+        target = parse_float(row.get(f"target_{prop}"))
+        normalizer = PROPERTY_NORMALIZERS.get(prop, 1.0)
+        tolerance = float(SKETCHMOL_STRICT_TOLERANCE.get(prop, normalizer))
+        tokens.append(
+            _expand_condition_token(
+                [
+                    1.0,
+                    float(idx + 1) / max(len(PROPERTY_COLUMNS), 1),
+                    0.0 if math.isnan(target) else float(target) / max(normalizer, 1e-8),
+                    1.0 if prop in selected_set else 0.0,
+                    float(parse_direction_value(row.get(f"{prop}_direction"))),
+                    tolerance / max(normalizer, 1e-8),
+                    count_norm,
+                    0.0 if math.isnan(target) else 1.0,
+                ],
+                condition_dim,
+            )
+        )
+    return np.stack(tokens, axis=0).astype(np.float32)
+
+
+def _expand_condition_token(values: Sequence[float], condition_dim: int) -> np.ndarray:
+    source = np.asarray(list(values), dtype=np.float32)
+    if source.size == 0:
+        return np.zeros(max(1, int(condition_dim)), dtype=np.float32)
+    repeats = int(math.ceil(max(1, int(condition_dim)) / max(source.size, 1)))
+    tiled = np.tile(source, repeats)[: max(1, int(condition_dim))]
+    return tiled.astype(np.float32)
+
+
+def row_property_count(row: Mapping[str, str]) -> int:
+    explicit = parse_float(row.get("property_count"))
+    if not math.isnan(explicit) and explicit > 0:
+        return max(1, int(round(explicit)))
+    selected = selected_properties(row)
+    if selected:
+        return len(selected)
+    return 1
+
+
+def parse_direction_value(value: object) -> int:
+    text = str(value or "").strip().lower()
+    if text in {"increase", "up", "+", "higher"}:
+        return 1
+    if text in {"decrease", "down", "-", "lower"}:
+        return -1
+    return 0
+
+
 def train_epoch(
     model: ConditionedSmilesDecoder,
     dataset: list[dict[str, object]],
@@ -346,20 +476,52 @@ def train_epoch(
     device: torch.device,
     seed: int,
     grad_clip: float,
+    property_count_curriculum_sampling: bool,
+    property_count_curriculum_loss: bool,
+    property_count_curriculum_power: float,
+    property_count_curriculum_baseline: float,
 ) -> dict[str, object]:
     model.train()
     rows = list(dataset)
-    random.Random(seed).shuffle(rows)
+    rng = random.Random(seed)
+    if property_count_curriculum_sampling and rows:
+        weights = [
+            property_count_curriculum_weight(
+                int(row.get("property_count", 1)),
+                power=property_count_curriculum_power,
+                baseline=property_count_curriculum_baseline,
+            )
+            for row in rows
+        ]
+        sampled_indices = rng.choices(range(len(rows)), weights=weights, k=len(rows))
+        rows = [rows[idx] for idx in sampled_indices]
+    else:
+        rng.shuffle(rows)
     total_loss = 0.0
     total_tokens = 0
+    sampled_property_counts: list[float] = []
+    sampled_curriculum_weights: list[float] = []
     for batch_rows in batches(rows, batch_size):
         batch = collate(batch_rows, pad_id=model.pad_id, device=device)
         logits = model(batch["condition"], batch["decoder_input_ids"], condition_mask=batch["condition_mask"])
-        loss = F.cross_entropy(
+        token_loss = F.cross_entropy(
             logits.reshape(-1, logits.shape[-1]),
             batch["target_ids"].reshape(-1),
             ignore_index=model.pad_id,
+            reduction="none",
+        ).reshape(batch["target_ids"].shape)
+        token_mask = batch["target_ids"].ne(model.pad_id)
+        sample_token_count = token_mask.sum(dim=1).clamp_min(1)
+        sample_loss = (token_loss * token_mask).sum(dim=1) / sample_token_count
+        sample_weights = property_count_curriculum_weight_tensor(
+            batch["property_count"],
+            power=property_count_curriculum_power,
+            baseline=property_count_curriculum_baseline,
         )
+        if property_count_curriculum_loss:
+            loss = (sample_loss * sample_weights).sum() / sample_weights.sum().clamp_min(1e-8)
+        else:
+            loss = sample_loss.mean()
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         if grad_clip and grad_clip > 0:
@@ -368,10 +530,14 @@ def train_epoch(
         token_count = int(batch["target_ids"].ne(model.pad_id).sum().item())
         total_loss += float(loss.detach().cpu()) * max(token_count, 1)
         total_tokens += token_count
+        sampled_property_counts.extend(float(value) for value in batch["property_count"].detach().cpu().tolist())
+        sampled_curriculum_weights.extend(float(value) for value in sample_weights.detach().cpu().tolist())
     return {
         "loss": total_loss / max(total_tokens, 1),
         "tokens": total_tokens,
         "batches": math.ceil(len(rows) / max(1, int(batch_size))),
+        "mean_property_count": _mean(sampled_property_counts),
+        "mean_curriculum_weight": _mean(sampled_curriculum_weights),
     }
 
 
@@ -425,6 +591,7 @@ def write_predictions(
     parallel_samples: int,
     max_parallel_sequences: int,
     property_rerank: bool,
+    condition_mixing_mode: str = "features_only",
 ) -> dict[str, object]:
     model.eval()
     output_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -478,7 +645,7 @@ def write_predictions(
             selected = select_generated_candidate(source_row, candidates, property_rerank=property_rerank)
             smiles = selected["generated_smiles"]
             source_row["generated_smiles"] = smiles
-            source_row["method"] = "direct_smiles_mllm_sampled_rerank" if sample_count > 1 else "direct_smiles_mllm"
+            source_row["method"] = direct_smiles_method_name(sample_count, condition_mixing_mode)
             source_row["direct_candidate_count"] = selected["candidate_count"]
             source_row["direct_unique_candidate_count"] = selected["unique_candidate_count"]
             source_row["direct_valid_candidate_count"] = selected["valid_candidate_count"]
@@ -521,6 +688,15 @@ def write_predictions(
         "mean_selected_strict_fraction": _mean(strict_fractions),
         "mean_selected_property_distance": _mean(property_distances),
     }
+
+
+def direct_smiles_method_name(sample_count: int, condition_mixing_mode: str) -> str:
+    base = "direct_smiles_mllm"
+    if condition_mixing_mode != "features_only":
+        base += "_mixed_condition"
+    if sample_count > 1:
+        base += "_sampled_rerank"
+    return base
 
 
 def select_generated_candidate(
@@ -636,6 +812,24 @@ def _mean(values: Sequence[float | int]) -> float:
     return sum(items) / len(items) if items else 0.0
 
 
+def property_count_curriculum_weight(count: int, *, power: float, baseline: float) -> float:
+    base = max(float(baseline), 1e-8)
+    normalized = max(float(count), 1.0) / base
+    return max(1.0, normalized**float(power))
+
+
+def property_count_curriculum_weight_tensor(
+    property_count: torch.Tensor,
+    *,
+    power: float,
+    baseline: float,
+) -> torch.Tensor:
+    base = max(float(baseline), 1e-8)
+    normalized = torch.clamp(property_count.to(dtype=torch.float32), min=1.0) / base
+    weights = torch.pow(normalized, float(power))
+    return torch.clamp(weights, min=1.0)
+
+
 def collate(rows: list[dict[str, object]], *, pad_id: int, device: torch.device) -> dict[str, torch.Tensor]:
     max_condition_len = max(np.asarray(row["condition"]).shape[0] for row in rows)
     condition_dim = np.asarray(rows[0]["condition"]).shape[-1]
@@ -644,6 +838,7 @@ def collate(rows: list[dict[str, object]], *, pad_id: int, device: torch.device)
     condition_mask = np.zeros((len(rows), max_condition_len), dtype=bool)
     decoder_input_ids = np.full((len(rows), max_seq_len), int(pad_id), dtype=np.int64)
     target_ids = np.full((len(rows), max_seq_len), int(pad_id), dtype=np.int64)
+    property_count = np.ones((len(rows),), dtype=np.float32)
     for idx, row in enumerate(rows):
         cond = np.asarray(row["condition"], dtype=np.float32)
         condition[idx, : cond.shape[0], :] = cond
@@ -652,11 +847,13 @@ def collate(rows: list[dict[str, object]], *, pad_id: int, device: torch.device)
         tgt = np.asarray(row["target_ids"], dtype=np.int64)
         decoder_input_ids[idx, : dec.shape[0]] = dec
         target_ids[idx, : tgt.shape[0]] = tgt
+        property_count[idx] = float(row.get("property_count", 1))
     return {
         "condition": torch.from_numpy(condition).to(device),
         "condition_mask": torch.from_numpy(condition_mask).to(device),
         "decoder_input_ids": torch.from_numpy(decoder_input_ids).to(device),
         "target_ids": torch.from_numpy(target_ids).to(device),
+        "property_count": torch.from_numpy(property_count).to(device),
     }
 
 

@@ -29,6 +29,7 @@ EVAL_FEATURES_DIR="${SUCC_DIRECT_DENOVO_EVAL_FEATURES_DIR:-$OUTPUT_DIR/eval_cond
 MODEL_DIR="${SUCC_DIRECT_DENOVO_MODEL_DIR:-$OUTPUT_DIR/direct_smiles_model}"
 BENCHMARK_OUTPUT_DIR="${SUCC_DIRECT_DENOVO_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_direct_smiles}"
 PREDICTION_CSV="${SUCC_DIRECT_DENOVO_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_predictions.csv}"
+REPORT_TITLE="${SUCC_DIRECT_DENOVO_REPORT_TITLE:-SUCC Direct SMILES De Novo 2p-7p Benchmark}"
 ROWS_PER_PROPERTY_COUNT="${SUCC_DIRECT_DENOVO_EVAL_ROWS_PER_PROPERTY_COUNT:-1000}"
 TRAIN_ROWS_PER_PROPERTY_COUNT="${SUCC_DIRECT_DENOVO_TRAIN_ROWS_PER_PROPERTY_COUNT:-2000}"
 MIN_PROPERTIES="${SUCC_DIRECT_DENOVO_MIN_PROPERTIES:-2}"
@@ -56,6 +57,11 @@ MAX_PARALLEL_SEQUENCES="${SUCC_DIRECT_DENOVO_MAX_PARALLEL_SEQUENCES:-1024}"
 REPETITION_PENALTY="${SUCC_DIRECT_DENOVO_REPETITION_PENALTY:-1.15}"
 NO_REPEAT_NGRAM_SIZE="${SUCC_DIRECT_DENOVO_NO_REPEAT_NGRAM_SIZE:-6}"
 MIN_NEW_TOKENS="${SUCC_DIRECT_DENOVO_MIN_NEW_TOKENS:-6}"
+CONDITION_MIXING_MODE="${SUCC_DIRECT_DENOVO_CONDITION_MIXING_MODE:-features_only}"
+PROPERTY_COUNT_CURRICULUM_SAMPLING="${SUCC_DIRECT_DENOVO_PROPERTY_COUNT_CURRICULUM_SAMPLING:-0}"
+PROPERTY_COUNT_CURRICULUM_LOSS="${SUCC_DIRECT_DENOVO_PROPERTY_COUNT_CURRICULUM_LOSS:-0}"
+PROPERTY_COUNT_CURRICULUM_POWER="${SUCC_DIRECT_DENOVO_PROPERTY_COUNT_CURRICULUM_POWER:-1.0}"
+PROPERTY_COUNT_CURRICULUM_BASELINE="${SUCC_DIRECT_DENOVO_PROPERTY_COUNT_CURRICULUM_BASELINE:-2.0}"
 DEVICE="${SUCC_DEVICE:-auto}"
 HF_MODEL_NAME_OR_PATH="${SUCC_HF_MODEL_NAME_OR_PATH:-/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct}"
 HF_DEVICE_MAP="${SUCC_HF_DEVICE_MAP:-auto}"
@@ -82,6 +88,9 @@ echo "  eval_rows_per_property_count=$ROWS_PER_PROPERTY_COUNT"
 echo "  num_samples=$NUM_SAMPLES"
 echo "  parallel_samples=$PARALLEL_SAMPLES"
 echo "  max_parallel_sequences=$MAX_PARALLEL_SEQUENCES"
+echo "  condition_mixing_mode=$CONDITION_MIXING_MODE"
+echo "  property_count_curriculum_sampling=$PROPERTY_COUNT_CURRICULUM_SAMPLING"
+echo "  property_count_curriculum_loss=$PROPERTY_COUNT_CURRICULUM_LOSS"
 echo "  decoding=temperature:$TEMPERATURE top_k:$TOP_K top_p:$TOP_P repetition_penalty:$REPETITION_PENALTY no_repeat_ngram:$NO_REPEAT_NGRAM_SIZE"
 
 if [[ ! -f "$MOLECULE_DB" ]]; then
@@ -143,40 +152,52 @@ if [[ -n "$RESUME_CHECKPOINT" ]]; then
   TRAIN_ARGS+=(--resume-checkpoint "$RESUME_CHECKPOINT")
 fi
 
-"$PYTHON_BIN" "$PROJECT_DIR/scripts/train_direct_smiles_generator.py" \
-  "${TRAIN_ARGS[@]}" \
-  --eval-csv "$EVAL_ROWS_CSV" \
-  --condition-features-dir "$TRAIN_FEATURES_DIR" \
-  --eval-condition-features-dir "$EVAL_FEATURES_DIR" \
-  --output-dir "$MODEL_DIR" \
-  --prediction-csv "$PREDICTION_CSV" \
-  --epochs "$EPOCHS" \
-  --batch-size "$BATCH_SIZE" \
-  --eval-batch-size "$EVAL_BATCH_SIZE" \
-  --lr "$LR" \
-  --d-model "$D_MODEL" \
-  --num-layers "$NUM_LAYERS" \
-  --num-heads "$NUM_HEADS" \
-  --max-smiles-length "$MAX_SMILES_LENGTH" \
-  --max-new-tokens "$MAX_NEW_TOKENS" \
-  --temperature "$TEMPERATURE" \
-  --top-k "$TOP_K" \
-  --top-p "$TOP_P" \
-  --num-samples "$NUM_SAMPLES" \
-  --parallel-samples "$PARALLEL_SAMPLES" \
-  --max-parallel-sequences "$MAX_PARALLEL_SEQUENCES" \
-  --repetition-penalty "$REPETITION_PENALTY" \
-  --no-repeat-ngram-size "$NO_REPEAT_NGRAM_SIZE" \
-  --min-new-tokens "$MIN_NEW_TOKENS" \
-  --seed "$SEED" \
+TRAIN_CMD=(
+  "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_direct_smiles_generator.py"
+  "${TRAIN_ARGS[@]}"
+  --eval-csv "$EVAL_ROWS_CSV"
+  --condition-features-dir "$TRAIN_FEATURES_DIR"
+  --eval-condition-features-dir "$EVAL_FEATURES_DIR"
+  --output-dir "$MODEL_DIR"
+  --prediction-csv "$PREDICTION_CSV"
+  --epochs "$EPOCHS"
+  --batch-size "$BATCH_SIZE"
+  --eval-batch-size "$EVAL_BATCH_SIZE"
+  --lr "$LR"
+  --d-model "$D_MODEL"
+  --num-layers "$NUM_LAYERS"
+  --num-heads "$NUM_HEADS"
+  --max-smiles-length "$MAX_SMILES_LENGTH"
+  --max-new-tokens "$MAX_NEW_TOKENS"
+  --temperature "$TEMPERATURE"
+  --top-k "$TOP_K"
+  --top-p "$TOP_P"
+  --num-samples "$NUM_SAMPLES"
+  --parallel-samples "$PARALLEL_SAMPLES"
+  --max-parallel-sequences "$MAX_PARALLEL_SEQUENCES"
+  --repetition-penalty "$REPETITION_PENALTY"
+  --no-repeat-ngram-size "$NO_REPEAT_NGRAM_SIZE"
+  --min-new-tokens "$MIN_NEW_TOKENS"
+  --condition-mixing-mode "$CONDITION_MIXING_MODE"
+  --property-count-curriculum-power "$PROPERTY_COUNT_CURRICULUM_POWER"
+  --property-count-curriculum-baseline "$PROPERTY_COUNT_CURRICULUM_BASELINE"
+  --seed "$SEED"
   --device "$DEVICE"
+)
+if [[ "$PROPERTY_COUNT_CURRICULUM_SAMPLING" == "1" ]]; then
+  TRAIN_CMD+=(--property-count-curriculum-sampling)
+fi
+if [[ "$PROPERTY_COUNT_CURRICULUM_LOSS" == "1" ]]; then
+  TRAIN_CMD+=(--property-count-curriculum-loss)
+fi
+"${TRAIN_CMD[@]}"
 
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_univideo_image_benchmark.py" \
   --image-csv "$PREDICTION_CSV" \
   --output-dir "$BENCHMARK_OUTPUT_DIR" \
   --method direct_smiles_mllm \
   --smiles-column generated_smiles \
-  --report-title "SUCC Direct SMILES De Novo 2p-7p Benchmark" \
+  --report-title "$REPORT_TITLE" \
   --benchmark-family "direct_smiles_denovo_property_design" \
   --benchmark-task "direct_smiles_denovo_2p7p_property_design" \
   --accept-direct-smiles \

@@ -28,6 +28,7 @@ from train_direct_smiles_generator import (  # noqa: E402
     load_store,
     read_rows,
     resolve_device,
+    resolve_condition_mixing_mode,
     save_checkpoint,
     seed_everything,
 )
@@ -71,6 +72,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     checkpoint = load_checkpoint(args.resume_checkpoint)
     if checkpoint is None:
         raise ValueError("--resume-checkpoint is required")
+    checkpoint_args = dict(checkpoint.get("args", {}))
+    condition_mixing_mode = resolve_condition_mixing_mode(args, checkpoint_args)
     vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
     config = dict(checkpoint["model_config"])
 
@@ -85,6 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         train_store,
         int(config["condition_dim"]),
         max_smiles_length=int(args.max_smiles_length),
+        condition_mixing_mode=condition_mixing_mode,
     )
     eval_dataset = build_preference_dataset(
         eval_rows,
@@ -92,6 +96,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         eval_store,
         int(config["condition_dim"]),
         max_smiles_length=int(args.max_smiles_length),
+        condition_mixing_mode=condition_mixing_mode,
     )
 
     policy_model = ConditionedSmilesDecoder(**config).to(device)
@@ -155,6 +160,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "train_pairs": len(train_dataset),
         "eval_pairs": len(eval_dataset),
         "history": history,
+        "condition_mixing_mode": condition_mixing_mode,
         "device": str(device),
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -169,6 +175,7 @@ def build_preference_dataset(
     condition_dim: int,
     *,
     max_smiles_length: int,
+    condition_mixing_mode: str = "features_only",
 ) -> list[dict[str, object]]:
     dataset = []
     for row in rows:
@@ -180,7 +187,12 @@ def build_preference_dataset(
         rejected_tokens = tokenize_smiles(rejected)[: max(1, int(max_smiles_length))]
         if not chosen_tokens or not rejected_tokens:
             continue
-        condition = condition_array_for_row(row, store, condition_dim)
+        condition = condition_array_for_row(
+            row,
+            store,
+            condition_dim,
+            condition_mixing_mode=condition_mixing_mode,
+        )
         dataset.append(
             {
                 "condition": np.asarray(condition, dtype=np.float32),

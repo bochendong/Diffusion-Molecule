@@ -30,6 +30,7 @@ from train_direct_smiles_generator import (  # noqa: E402
     load_store,
     read_rows,
     resolve_device,
+    resolve_condition_mixing_mode,
     score_generated_candidate,
     seed_everything,
 )
@@ -77,6 +78,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     checkpoint = load_checkpoint(args.resume_checkpoint)
     if checkpoint is None:
         raise ValueError("--resume-checkpoint is required")
+    checkpoint_args = dict(checkpoint.get("args", {}))
+    condition_mixing_mode = resolve_condition_mixing_mode(args, checkpoint_args)
     vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
     config = dict(checkpoint["model_config"])
 
@@ -88,6 +91,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         store,
         int(config["condition_dim"]),
         max_smiles_length=int(config["max_length"]) - 8,
+        condition_mixing_mode=condition_mixing_mode,
     )
     rows = [row for row in rows if str(row.get("target_smiles", "") or "").strip()]
 
@@ -121,6 +125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "output_csv": str(args.output_csv),
         "checkpoint": str(args.resume_checkpoint),
         "condition_features_dir": str(args.condition_features_dir) if args.condition_features_dir else None,
+        "condition_mixing_mode": condition_mixing_mode,
         "summary": summary,
         "device": str(device),
     }
