@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | **完成**（2026-06-19） |
-| **最后更新** | 2026-06-19（n=256 并行 fast2 + RL 初探） |
+| **最后更新** | 2026-06-20（preference DPO v1 初探） |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **入口** | `submit_direct_smiles_denovo_2p7p_benchmark.sh` / `submit_direct_smiles_denovo_ood_benchmark.sh` |
 | **目的** | 修复 direct SMILES v0 的 autoregressive mode collapse，同时保持无 candidate-library retrieval |
@@ -26,6 +26,7 @@
 | `16303783` | `succ-direct-smiles-2p7p-rl-n256`（RL ckpt 评测） | 3h07m | 0 | `direct_smiles_denovo_2p7p_v1_sampled_rerank_rl_n256/` |
 | `16338557` | `succ-direct-smiles-2p7p-n256-fast2`（`11c6fc3` 诊断加速，time=20h） | 15h39m | 0 | `direct_smiles_denovo_2p7p_v1_sampled_rerank_n256_fast2/` |
 | `16338559` | `succ-direct-smiles-ood-n256-fast2` | 2h47m | 0 | `direct_smiles_denovo_ood_v1_sampled_rerank_n256_fast2/` |
+| `16406939` | `succ-direct-smiles-dpo-2p7p`（preference 构建 + 1 epoch DPO + n=256 评测） | 16h08m | 0 | `direct_smiles_denovo_2p7p_v1_dpo_v1/` |
 
 ## 背景
 
@@ -164,6 +165,31 @@ OOD 1000 行，并行收益可忽略；数值与 fast1（`16303778`，78.8%）�
 
 相对 SFT n=256（56.2%）：**-33pp**，严重 mode collapse；reward 上升但 strict 崩溃，当前 RL 配置不可用。
 
+## Preference DPO 初探（job `16406939`）
+
+入口：`submit_direct_smiles_preference_dpo_2p7p.sh`。从 v1 SFT ckpt warm-start，先构建 preference pairs（每 prompt 采样 16 条，`hard_valid` rejected），再 1 epoch DPO（`lr=5e-6`，`beta=0.1`，`sft_weight=0.5`），最后 n=256 sampled rerank 评测。
+
+Preference 构建：
+
+| split | rows | valid negative | skipped |
+| --- | ---: | ---: | ---: |
+| train | 11965 | 11887 | 26 |
+| eval | 5992 | 5963 | 4 |
+
+训练（1 epoch）：`eval_dpo_loss` **0.582**；`eval_policy_pref_rate` **0.496**（≈随机）；`eval_mean_margin` **0.335**；`eval_sft_loss` **0.826**。
+
+2p7p 评测 n=256：
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict | validity | unique valid | mean valid |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.891 | 0.755 | 0.587 | 0.432 | 0.275 | 0.188 | **0.521** | 1.000 | **5924 / 6000** | **80.1** |
+
+| vs SFT n=256 | Δ overall strict | 7p strict | mean valid |
+| --- | ---: | ---: | ---: |
+| DPO v1 | **-4.1pp**（0.562→0.521） | **-7.0pp**（0.258→0.188） | **-11.7**（91.8→80.1） |
+
+未 mode collapse（优于 RL 23.2%），但 **strict 全面低于 SFT**；`policy_pref_rate≈50%` 表明 preference 信号几乎未学到。高 property count（6p/7p）回落最明显。
+
 ## num_samples 缩放（同一 v1 ckpt，推理-only）
 
 | num_samples | 2p7p strict | OOD strict | mean valid（2p7p / OOD） |
@@ -186,6 +212,7 @@ strict 随采样数单调上升；每翻倍约 +9–16pp，边际收益开始放
 | **direct v1 n=256** | **0.562** | **0.801** | 否 |
 | direct v1 n=256 并行 fast2 | 0.561 | 0.788 | 否 |
 | direct v1 RL n=256 | 0.232 | — | 否 |
+| direct v1 DPO n=256 | 0.521 | — | 否 |
 | dualmode latent_nearest | 0.039 | 0.127 | 是 |
 | hybrid latent_property_rerank | 0.970 | 0.985 | 是 |
 | SketchMol ref（2p） | 0.804 | — | — |
@@ -198,8 +225,9 @@ strict 随采样数单调上升；每翻倍约 +9–16pp，边际收益开始放
 4. **仍低于 retrieval hybrid**（97%/98.5%），但 OOD **80.1%** 已显著高于 random_property_rerank@k=64（66%），证明是真实 decoder 采样而非 DB 检索。
 5. **并行 fast2**：strict 与串行 n=256 一致；`16303776`（10h，旧 log 洪水）超时，`16338557`（20h + `11c6fc3`）成功，墙钟 15h39m。
 6. **RL 初探失败**：2 epoch REINFORCE strict **23.2%**（vs SFT 56.2%）；需对齐 reward / 加强 SFT anchor 后再试。
-7. **下一步**：不再堆采样；改 decoder 质量（RL 重设计或 SFT 增强）；7p / rare_combo 专项。
-8. **运维备注**：n=64 首次提交 PyTorch 2.6 `weights_only` 失败（`8167eef`）；n=256 2p7p 需 `SLURM_TIME=20:00:00`。
+7. **DPO v1 未提升**：1 epoch preference DPO strict **52.1%**（vs SFT 56.2%）；无 collapse 但 6p/7p 回落；`policy_pref_rate≈50%` 需更强 preference 对或更多 epoch。
+8. **下一步**：DPO 重设计（strict-positive pairs、更长训练）；或 SFT 增强；7p / rare_combo 专项。
+9. **运维备注**：n=64 首次提交 PyTorch 2.6 `weights_only` 失败（`8167eef`）；n=256 2p7p 需 `SLURM_TIME=20:00:00`；DPO 全链路（pref build + train + bench）墙钟 **16h08m**。
 
 ## 提交命令（归档）
 
@@ -249,6 +277,13 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_2p7p_
 
 OOD 侧：`SUCC_DIRECT_OOD_SLURM_TIME=08:00:00`，其余 `SUCC_DIRECT_DENOVO_*` → `SUCC_DIRECT_OOD_*`。
 
+### preference DPO 2p7p（构建 + 训练 + n=256 评测）
+
+```bash
+SUCC_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_preference_dpo_2p7p.sh
+```
+
 产出：
 - `outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/`（n=32）
 - `outputs/direct_smiles_denovo_ood_v1_sampled_rerank/`（n=32）
@@ -262,3 +297,4 @@ OOD 侧：`SUCC_DIRECT_OOD_SLURM_TIME=08:00:00`，其余 `SUCC_DIRECT_DENOVO_*` 
 - `outputs/direct_smiles_denovo_ood_v1_sampled_rerank_n256_fast2/`
 - `outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank_rl_n256/`
 - `outputs/direct_smiles_denovo_2p7p_v1_sampled_rerank/direct_smiles_model_rl/`
+- `outputs/direct_smiles_denovo_2p7p_v1_dpo_v1/`（preference CSV + DPO ckpt + benchmark）
