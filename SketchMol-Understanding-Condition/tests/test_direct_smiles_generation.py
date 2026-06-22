@@ -22,6 +22,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_n128_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_conservative_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_v2_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_v2_n128_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_v2_validity_repair_benchmark.sh").exists()
@@ -29,6 +30,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_preference_dpo_2p7p.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_2p7p_v2_n128_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_2p7p_v2_conservative_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_n128_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_validity_repair_benchmark.sh").exists()
@@ -44,7 +46,7 @@ def test_collect_direct_smiles_v2_suite_results(tmp_path):
     csv_path = tmp_path / "suite_summary.csv"
 
     _write_rows(
-        suite_root / "2p7p_n128" / "benchmark_direct_smiles" / "benchmark_summary.csv",
+        suite_root / "2p7p_default_n128" / "benchmark_direct_smiles" / "benchmark_summary.csv",
         [
             {"method": "direct_smiles_mllm", "property_count": "2", "strict_success_rate": "0.965"},
             {"method": "direct_smiles_mllm", "property_count": "7", "strict_success_rate": "0.584"},
@@ -60,7 +62,23 @@ def test_collect_direct_smiles_v2_suite_results(tmp_path):
         ],
     )
     _write_rows(
-        suite_root / "ood_validity_repair_n128" / "benchmark_direct_smiles" / "benchmark_summary.csv",
+        suite_root / "2p7p_conservative_n128" / "benchmark_direct_smiles" / "benchmark_summary.csv",
+        [
+            {"method": "direct_smiles_mllm", "property_count": "2", "strict_success_rate": "0.972"},
+            {"method": "direct_smiles_mllm", "property_count": "7", "strict_success_rate": "0.601"},
+            {
+                "method": "direct_smiles_mllm",
+                "property_count": "all",
+                "strict_success_rate": "0.812",
+                "validity": "0.998",
+                "success_rate_strict_in_valid_mols": "0.814",
+                "unique_valid_smiles": "5988",
+                "uniqueness_in_valid_mols": "0.999",
+            },
+        ],
+    )
+    _write_rows(
+        suite_root / "ood_conservative_n128" / "benchmark_direct_smiles" / "benchmark_summary.csv",
         [
             {"method": "direct_smiles_mllm", "property_count": "2", "strict_success_rate": "0.633"},
             {"method": "direct_smiles_mllm", "property_count": "7", "strict_success_rate": "0.720"},
@@ -92,16 +110,18 @@ def test_collect_direct_smiles_v2_suite_results(tmp_path):
     )
 
     report_text = report_path.read_text(encoding="utf-8")
-    assert "2p7p v2 n=128" in report_text
-    assert "OOD v2 validity-repair n=128" in report_text
+    assert "2p7p v2 default n=128" in report_text
+    assert "2p7p v2 conservative n=128" in report_text
+    assert "OOD v2 conservative n=128" in report_text
     assert "missing" in report_text
 
     summary_rows = list(csv.DictReader(csv_path.open(newline="", encoding="utf-8")))
     assert len(summary_rows) == 4
     by_variant = {row["variant"]: row for row in summary_rows}
-    assert by_variant["2p7p_n128"]["overall_strict"] == "0.791"
-    assert by_variant["ood_validity_repair_n128"]["strict_7p"] == "0.720"
-    assert by_variant["ood_n128"]["status"] == "missing"
+    assert by_variant["2p7p_default_n128"]["overall_strict"] == "0.791"
+    assert by_variant["2p7p_conservative_n128"]["strict_7p"] == "0.601"
+    assert by_variant["ood_conservative_n128"]["strict_7p"] == "0.720"
+    assert by_variant["ood_default_n128"]["status"] == "missing"
 
 
 def test_smiles_tokenization_roundtrip():

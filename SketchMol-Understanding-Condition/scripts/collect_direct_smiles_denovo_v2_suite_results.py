@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect direct-SMILES v2 rerun-suite benchmark summaries into one table."""
+"""Collect direct-SMILES v2 main-pipeline suite benchmark summaries into one table."""
 
 from __future__ import annotations
 
@@ -19,14 +19,22 @@ class SuiteVariant:
 
 
 VARIANTS = (
-    SuiteVariant("2p7p_n128", "2p7p v2 n=128", "2p7p_n128/benchmark_direct_smiles/benchmark_summary.csv"),
-    SuiteVariant("ood_n128", "OOD v2 n=128", "ood_n128/benchmark_direct_smiles/benchmark_summary.csv"),
     SuiteVariant(
-        "ood_validity_repair_n128",
-        "OOD v2 validity-repair n=128",
-        "ood_validity_repair_n128/benchmark_direct_smiles/benchmark_summary.csv",
+        "2p7p_default_n128",
+        "2p7p v2 default n=128",
+        "2p7p_default_n128/benchmark_direct_smiles/benchmark_summary.csv",
     ),
-    SuiteVariant("ood_balanced", "OOD v2 balanced retrain", "ood_balanced/benchmark_direct_smiles/benchmark_summary.csv"),
+    SuiteVariant(
+        "2p7p_conservative_n128",
+        "2p7p v2 conservative n=128",
+        "2p7p_conservative_n128/benchmark_direct_smiles/benchmark_summary.csv",
+    ),
+    SuiteVariant("ood_default_n128", "OOD v2 default n=128", "ood_default_n128/benchmark_direct_smiles/benchmark_summary.csv"),
+    SuiteVariant(
+        "ood_conservative_n128",
+        "OOD v2 conservative n=128",
+        "ood_conservative_n128/benchmark_direct_smiles/benchmark_summary.csv",
+    ),
 )
 
 
@@ -136,7 +144,7 @@ def write_report(path: Path, suite_root: Path, rows: list[dict[str, object]]) ->
     path.parent.mkdir(parents=True, exist_ok=True)
     generated_at = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     lines = [
-        "# SUCC Direct SMILES De Novo v2 Rerun Suite",
+        "# SUCC Direct SMILES De Novo v2 Main Pipeline Suite",
         "",
         f"- suite root: `{suite_root}`",
         f"- generated at: `{generated_at}`",
