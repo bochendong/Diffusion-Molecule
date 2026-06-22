@@ -7,6 +7,7 @@
 | 文件夹 | 报告文件 | 说明 |
 | --- | --- | --- |
 | `.` | [moleditrl-baseline-comparison.md](moleditrl-baseline-comparison.md) | MolEditRL vs SUCC v1/v2/v3 / Unified 对照 |
+| `understanding-condition/` | [benchmark-roadmap-rl-agentic.md](understanding-condition/benchmark-roadmap-rl-agentic.md) | **新增** benchmark 地图 + RL/agentic 论文主线规划 |
 | `unified-3m/` | [moledit-instruct-v1.md](unified-3m/moledit-instruct-v1.md) | Unified 3M MolEdit v1（`15810199`/`15837897`） |
 | `unified-3m/` | [moledit-sourceanchored-v2.md](unified-3m/moledit-sourceanchored-v2.md) | **完成** source-anchored v2（`15866599`/`15884514-21`/`15884578`） |
 | `understanding-condition/` | [moledit-instruct-v1.md](understanding-condition/moledit-instruct-v1.md) | SUCC MolEdit v1（`15838733`/`15838734`） |
