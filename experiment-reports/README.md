@@ -112,6 +112,17 @@ v2（`append_property_program` + property-count curriculum，n=64 推理）：2p
 
 2p7p n=128 **79.1%**（+11pp vs n=64）；OOD n=128 **67.3%**；validity-repair **74.1%**（7p **72%**）；balanced retrain 7p 崩塌至 **23%**。
 
+## 近期 Slurm Job 一览（2026-06-22 direct SMILES v2 main pipeline suite）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16509026` | `succ-dsm-v2-main-2p7p-default` | 完成（6h38m） | [direct SMILES v2](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) |
+| `16509027` | `succ-dsm-v2-main-2p7p-conservative` | 完成（6h26m） | [direct SMILES v2](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) |
+| `16509028` | `succ-dsm-v2-main-ood-default` | 完成（1h12m） | [direct SMILES v2](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) |
+| `16509029` | `succ-dsm-v2-main-ood-conservative` | 完成（1h12m） | [direct SMILES v2](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) |
+
+Suite `direct_v2_main_pipeline_0622`：2p7p default **79.1%** / conservative **77.6%**；OOD default **67.3%** / conservative **74.1%**（与首轮 follow-up 可复现）。
+
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 
 | Job ID | 名称 | 状态 | 报告 |

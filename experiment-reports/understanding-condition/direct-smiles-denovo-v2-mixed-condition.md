@@ -3,9 +3,8 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | **完成**（2026-06-21） |
-| **最后更新** | 2026-06-21（v2 follow-up：n=128 / validity-repair / balanced） |
-| **项目** | `SketchMol-Understanding-Condition` |
-| **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` |
+| **最后更新** | 2026-06-22（main pipeline suite `direct_v2_main_pipeline_0622`） |
+| **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` |
 | **目的** | 在 direct SMILES decoder 上引入 mixed conditioning + property-count curriculum，提升高 property count（6p/7p）strict |
 
 ## Slurm 运行记录
@@ -19,6 +18,10 @@
 | `16484027` | `succ-direct-smiles-ood-v2-n128`（推理-only，复用 v2 ckpt） | 1h12m | 0 | `direct_smiles_denovo_ood_v2_mixed_condition_n128/` |
 | `16484028` | `succ-direct-smiles-ood-v2-validity`（保守 decoding，不重训） | 1h12m | 0 | `direct_smiles_denovo_ood_v2_mixed_condition_validity_repair_n128/` |
 | `16484029` | `succ-direct-smiles-ood-v2-balanced`（curriculum 只开 sampling） | 42m | 0 | `direct_smiles_denovo_ood_v2_mixed_condition_balanced/` |
+| `16509026` | `succ-dsm-v2-main-2p7p-default`（suite `direct_v2_main_pipeline_0622`） | 6h38m | 0 | `.../direct_v2_main_pipeline_0622/2p7p_default_n128/` |
+| `16509027` | `succ-dsm-v2-main-2p7p-conservative` | 6h26m | 0 | `.../2p7p_conservative_n128/` |
+| `16509028` | `succ-dsm-v2-main-ood-default` | 1h12m | 0 | `.../ood_default_n128/` |
+| `16509029` | `succ-dsm-v2-main-ood-conservative` | 1h12m | 0 | `.../ood_conservative_n128/` |
 
 ## v2 方法（相对 v1）
 
@@ -119,12 +122,33 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 
 放软 loss curriculum 提升 overall / 2p，但 **7p bucket 崩塌**（51%→23%）；full loss 加权对 rare 7p combo 必要。
 
+## Main pipeline suite（`direct_v2_main_pipeline_0622`，jobs `16509026`–`16509029`）
+
+一键提交 4 变体（`submit_direct_smiles_denovo_v2_rerun_suite.sh`）；复用 v2 base ckpt，n=128 推理-only。总表：`outputs/direct_smiles_denovo_direct_v2_main_pipeline_0622/suite_report.md`。
+
+| Variant | Job | overall strict | validity | 2p | 3p | 4p | 5p | 6p | 7p / 7p bucket |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2p7p default n=128 | `16509026` | **0.791** | 0.997 | 0.965 | 0.914 | 0.857 | 0.775 | 0.648 | 0.584 |
+| 2p7p conservative n=128 | `16509027` | **0.776** | 0.993 | 0.952 | 0.898 | 0.848 | 0.735 | 0.652 | 0.571 |
+| OOD default n=128 | `16509028` | **0.673** | 0.958 | 0.517 | — | — | — | — | 0.590 |
+| OOD conservative n=128 | `16509029` | **0.741** | 0.979 | 0.633 | — | — | — | — | 0.720 |
+
+与首轮 follow-up（`16484026`–`16484028`）**数值一致**（可复现）。
+
+| 对比 | Δ overall strict | 说明 |
+| --- | ---: | --- |
+| 2p7p conservative vs default | **-1.5pp**（0.791→0.776） | 保守 decoding 对 2p7p **无益**（OOD 则 +6.8pp） |
+| OOD conservative vs default | **+6.8pp**（0.673→0.741） | 2p bucket +11.7pp，7p +13.0pp |
+
+**当前 main pipeline best**：2p7p default n=128 **79.1%**；OOD conservative n=128 **74.1%**。
+
 ## num_samples 缩放（v2 ckpt，推理-only）
 
 | variant | 2p7p strict | OOD strict | OOD validity | OOD 7p bucket |
 | --- | ---: | ---: | ---: | ---: |
 | v2 n=64（重训评测） | 0.681 | 0.531 | 0.888 | 0.510 |
-| v2 2p7p n=128 | **0.791** | — | — | — |
+| v2 2p7p n=128 default | **0.791** | — | — | — |
+| v2 2p7p n=128 conservative | 0.776 | — | — | — |
 | v2 OOD n=128 | — | 0.673 | 0.958 | 0.590 |
 | v2 OOD validity-repair n=128 | — | **0.741** | **0.979** | **0.720** |
 | v2 OOD balanced n=64（重训） | — | 0.651 | 0.908 | 0.230 |
@@ -149,7 +173,8 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 3. **validity-repair 是当前 OOD best**：不重训，T=0.70/top-k=24；validity **97.9%**，7p bucket **72%**。
 4. **balanced curriculum 不可行**：关 loss 加权后 7p bucket **23%**（vs full 51%）；rare combo 依赖 loss curriculum。
 5. **Node Fail 可恢复**：`16472651` epoch 9 中断后 resume 补完。
-6. **下一步**：2p7p 试 n=256；OOD 结合 validity-repair decoding + n=128/256；preference DPO on v2 ckpt。
+6. **main pipeline suite 可复现**：`direct_v2_main_pipeline_0622` 四变体与首轮 follow-up 一致；2p7p 用 default decoding，OOD 用 conservative。
+7. **下一步**：2p7p 试 n=256；OOD conservative + n=256；preference DPO on v2 ckpt。
 
 ## 提交命令（归档）
 
@@ -175,6 +200,14 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v
 
 # OOD v2 balanced retrain（curriculum 只开 sampling）
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_balanced_benchmark.sh
+
+# main pipeline suite（4 变体一键提交）
+SUCC_DIRECT_V2_SUITE_TAG=direct_v2_main_pipeline_0622 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_rerun_suite.sh
+
+# 收 suite 总表
+python3 SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_v2_suite_results.py \
+  --suite-root SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_direct_v2_main_pipeline_0622
 ```
 
 产出：
@@ -184,3 +217,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v
 - `outputs/direct_smiles_denovo_ood_v2_mixed_condition_n128/`
 - `outputs/direct_smiles_denovo_ood_v2_mixed_condition_validity_repair_n128/`
 - `outputs/direct_smiles_denovo_ood_v2_mixed_condition_balanced/`
+- `outputs/direct_smiles_denovo_direct_v2_main_pipeline_0622/`（suite：`suite_report.md` / `suite_summary.csv`）
