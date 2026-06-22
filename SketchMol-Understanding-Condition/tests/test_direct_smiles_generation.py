@@ -33,7 +33,75 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_n128_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_validity_repair_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_balanced_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_rerun_suite.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_v2_suite_results.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_preference_dpo_2p7p.sh").exists()
+
+
+def test_collect_direct_smiles_v2_suite_results(tmp_path):
+    suite_root = tmp_path / "suite"
+    report_path = tmp_path / "suite_report.md"
+    csv_path = tmp_path / "suite_summary.csv"
+
+    _write_rows(
+        suite_root / "2p7p_n128" / "benchmark_direct_smiles" / "benchmark_summary.csv",
+        [
+            {"method": "direct_smiles_mllm", "property_count": "2", "strict_success_rate": "0.965"},
+            {"method": "direct_smiles_mllm", "property_count": "7", "strict_success_rate": "0.584"},
+            {
+                "method": "direct_smiles_mllm",
+                "property_count": "all",
+                "strict_success_rate": "0.791",
+                "validity": "0.997",
+                "success_rate_strict_in_valid_mols": "0.793",
+                "unique_valid_smiles": "5981",
+                "uniqueness_in_valid_mols": "0.999",
+            },
+        ],
+    )
+    _write_rows(
+        suite_root / "ood_validity_repair_n128" / "benchmark_direct_smiles" / "benchmark_summary.csv",
+        [
+            {"method": "direct_smiles_mllm", "property_count": "2", "strict_success_rate": "0.633"},
+            {"method": "direct_smiles_mllm", "property_count": "7", "strict_success_rate": "0.720"},
+            {
+                "method": "direct_smiles_mllm",
+                "property_count": "all",
+                "strict_success_rate": "0.741",
+                "validity": "0.979",
+                "success_rate_strict_in_valid_mols": "0.757",
+                "unique_valid_smiles": "944",
+                "uniqueness_in_valid_mols": "0.964",
+            },
+        ],
+    )
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/collect_direct_smiles_denovo_v2_suite_results.py",
+            "--suite-root",
+            str(suite_root),
+            "--report-path",
+            str(report_path),
+            "--csv-path",
+            str(csv_path),
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        check=True,
+    )
+
+    report_text = report_path.read_text(encoding="utf-8")
+    assert "2p7p v2 n=128" in report_text
+    assert "OOD v2 validity-repair n=128" in report_text
+    assert "missing" in report_text
+
+    summary_rows = list(csv.DictReader(csv_path.open(newline="", encoding="utf-8")))
+    assert len(summary_rows) == 4
+    by_variant = {row["variant"]: row for row in summary_rows}
+    assert by_variant["2p7p_n128"]["overall_strict"] == "0.791"
+    assert by_variant["ood_validity_repair_n128"]["strict_7p"] == "0.720"
+    assert by_variant["ood_n128"]["status"] == "missing"
 
 
 def test_smiles_tokenization_roundtrip():
@@ -380,6 +448,7 @@ def _write_rows(path: Path, rows: list[dict[str, str]]) -> None:
             if key not in seen:
                 seen.add(key)
                 fieldnames.append(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
