@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | **完成**（2026-06-21） |
-| **最后更新** | 2026-06-22（v2 conservative RL v1 初探） |
+| **最后更新** | 2026-06-22（RL condfix rerun `16547785`） |
 | **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` / `submit_direct_smiles_rl_2p7p_v2.sh` |
 | **目的** | 在 direct SMILES decoder 上引入 mixed conditioning + property-count curriculum，提升高 property count（6p/7p）strict |
 
@@ -23,6 +23,7 @@
 | `16509028` | `succ-dsm-v2-main-ood-default` | 1h12m | 0 | `.../ood_default_n128/` |
 | `16509029` | `succ-dsm-v2-main-ood-conservative` | 1h12m | 0 | `.../ood_conservative_n128/` |
 | `16532803` | `succ-direct-smiles-2p7p-v2-rl`（保守 REINFORCE + bench n=128） | ~4h | 0 | `direct_smiles_denovo_2p7p_v2_rl_v1/` |
+| `16547785` | `succ-direct-smiles-2p7p-v2-rl-condfix`（conditioning fix 后 rerun） | ~4h | 0 | `direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix/` |
 
 ## v2 方法（相对 v1）
 
@@ -161,7 +162,27 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 
 优于 v1 RL collapse（23.2%，1642 unique），但 **strict 全面低于 SFT**；reward 上升、strict 崩溃模式仍在。
 
-**运维备注**：评测日志显示 `condition_mixing_mode=features_only`，而 v2 base 为 `append_property_program`；`run_direct_smiles_rl_2p7p_v2.sh` / `train_direct_smiles_generator_rl.py` 未传 mixed-conditioning flag，结果可能部分低估，但 RL 仍明显伤 ckpt。下一步按 [roadmap](benchmark-roadmap-rl-agentic.md) 转 group-relative RL，并先修 conditioning 对齐。
+**运维备注**：评测日志显示 `condition_mixing_mode=features_only`（pipeline bug，已在 `6974f20` 修复）。
+
+## RL v2 condfix rerun（job `16547785`）
+
+`6974f20` 后：`train_direct_smiles_generator_rl.py` 支持 `--condition-mixing-mode` 并从 ckpt 恢复；train + bench 均显式 `append_property_program`。输出目录 `direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix`。
+
+训练：`eval_mean_reward` **1.094**；`sft_loss` **0.947**；评测 `condition_mixing_mode` **append_property_program** ✓。
+
+2p7p 评测 n=128：
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict | validity | unique valid |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.968 | 0.913 | 0.841 | 0.737 | 0.606 | 0.525 | **0.765** | 1.000 | **5741 / 6000** |
+
+| 对比 | overall strict | Δ vs 上次 RL | 说明 |
+| --- | ---: | ---: | --- |
+| RL v1（`16532803`，cond bug） | 0.374 | — | 严重低估 |
+| **RL condfix（`16547785`）** | **0.765** | **+39.1pp** | conditioning 对齐后恢复 |
+| v2 SFT n=128 | 0.791 | — | 仍 best（**-2.6pp** vs RL） |
+
+**结论**：上次 37.4% 的 **绝大部分（~39pp）来自 conditioning mismatch**；对齐后 RL 仅略低于 SFT（-2.6pp），未 collapse，但 **REINFORCE 仍无正向增益**。SFT **79.1%** 保持 best；下一步转 group-relative RL（见 [roadmap](benchmark-roadmap-rl-agentic.md)）。
 
 ## num_samples 缩放（v2 ckpt，推理-only）
 
@@ -173,7 +194,8 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | v2 OOD n=128 | — | 0.673 | 0.958 | 0.590 |
 | v2 OOD validity-repair n=128 | — | **0.741** | **0.979** | **0.720** |
 | v2 OOD balanced n=64（重训） | — | 0.651 | 0.908 | 0.230 |
-| v2 RL n=128（重训后评测） | 0.374 | — | — | — |
+| v2 RL n=128（cond bug，`16532803`） | 0.374 | — | — | — |
+| v2 RL n=128 condfix（`16547785`） | 0.765 | — | — | — |
 
 ## 与 v1 / hybrid 对照
 
@@ -185,7 +207,8 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | **direct v2 2p7p n=128** | **0.791** | — | 否 |
 | **direct v2 OOD validity-repair n=128** | — | **0.741** | 否 |
 | direct v2 OOD balanced n=64 | — | 0.651 | 否 |
-| direct v2 RL n=128 | 0.374 | — | 否 |
+| direct v2 RL n=128（cond bug） | 0.374 | — | 否 |
+| direct v2 RL n=128 condfix | 0.765 | — | 否 |
 | direct v1 RL n=256 | 0.232 | — | 否 |
 | hybrid latent_property_rerank | 0.970 | 0.985 | 是 |
 | SketchMol ref（2p） | 0.804 | — | — |
@@ -198,8 +221,8 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 4. **balanced curriculum 不可行**：关 loss 加权后 7p bucket **23%**（vs full 51%）；rare combo 依赖 loss curriculum。
 5. **Node Fail 可恢复**：`16472651` epoch 9 中断后 resume 补完。
 6. **main pipeline suite 可复现**：`direct_v2_main_pipeline_0622` 四变体与首轮 follow-up 一致；2p7p 用 default decoding，OOD 用 conservative。
-7. **RL v2 仍失败**：保守 REINFORCE strict **37.4%**（vs SFT 79.1%）；需修 mixed-conditioning 对齐 + 转 group-relative RL。
-8. **下一步**：2p7p 试 n=256；OOD conservative + n=256；group-relative / preference RL on v2 ckpt。
+7. **RL condfix 验证 conditioning bug**：对齐后 strict **76.5%**（vs 错误 pipeline 37.4%，**+39.1pp**）；仍略低于 SFT 79.1%（-2.6pp），REINFORCE 无增益。
+8. **下一步**：group-relative RL；2p7p n=256 SFT；OOD conservative + n=256。
 
 ## 提交命令（归档）
 
@@ -247,3 +270,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_rl_2p7p_v2.s
 - `outputs/direct_smiles_denovo_ood_v2_mixed_condition_balanced/`
 - `outputs/direct_smiles_denovo_direct_v2_main_pipeline_0622/`（suite：`suite_report.md` / `suite_summary.csv`）
 - `outputs/direct_smiles_denovo_2p7p_v2_rl_v1/`
+- `outputs/direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix/`
