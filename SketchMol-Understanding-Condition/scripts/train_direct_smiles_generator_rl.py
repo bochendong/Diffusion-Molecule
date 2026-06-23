@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""REINFORCE fine-tuning for the MLLM-conditioned direct SMILES generator."""
+"""Policy fine-tuning for the MLLM-conditioned direct SMILES generator."""
 
 from __future__ import annotations
 
@@ -76,6 +76,18 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--no-repeat-ngram-size", type=int, default=6)
     parser.add_argument("--min-new-tokens", type=int, default=6)
     parser.add_argument("--sft-weight", type=float, default=0.25)
+    parser.add_argument(
+        "--advantage-mode",
+        choices=("group_center", "group_zscore"),
+        default="group_center",
+    )
+    parser.add_argument("--advantage-clip", type=float, default=0.0)
+    parser.add_argument(
+        "--sequence-logprob-reduction",
+        choices=("sum", "mean"),
+        default="sum",
+    )
+    parser.add_argument("--reference-kl-weight", type=float, default=0.0)
     parser.add_argument("--reward-valid-weight", type=float, default=1.0)
     parser.add_argument("--reward-strict-weight", type=float, default=1.0)
     parser.add_argument("--reward-distance-weight", type=float, default=0.1)
@@ -125,12 +137,20 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     model = ConditionedSmilesDecoder(**config).to(device)
     model.load_state_dict(checkpoint["model_state"])
+    reference_model = None
+    if float(args.reference_kl_weight) > 0:
+        reference_model = ConditionedSmilesDecoder(**config).to(device)
+        reference_model.load_state_dict(checkpoint["model_state"])
+        reference_model.eval()
+        for param in reference_model.parameters():
+            param.requires_grad_(False)
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
     history: list[dict[str, object]] = []
     for epoch in range(1, int(args.epochs) + 1):
         record = train_epoch_rl(
             model,
+            reference_model,
             train_dataset,
             train_rows,
             vocab,
@@ -148,6 +168,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             no_repeat_ngram_size=int(args.no_repeat_ngram_size),
             min_new_tokens=int(args.min_new_tokens),
             sft_weight=float(args.sft_weight),
+            advantage_mode=str(args.advantage_mode),
+            advantage_clip=float(args.advantage_clip),
+            sequence_logprob_reduction=str(args.sequence_logprob_reduction),
+            reference_kl_weight=float(args.reference_kl_weight),
             reward_valid_weight=float(args.reward_valid_weight),
             reward_strict_weight=float(args.reward_strict_weight),
             reward_distance_weight=float(args.reward_distance_weight),
@@ -205,6 +229,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "eval_rows": len(eval_dataset),
         "history": history,
         "condition_mixing_mode": condition_mixing_mode,
+        "advantage_mode": str(args.advantage_mode),
+        "sequence_logprob_reduction": str(args.sequence_logprob_reduction),
+        "reference_kl_weight": float(args.reference_kl_weight),
         "device": str(device),
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -214,6 +241,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
 def train_epoch_rl(
     model: ConditionedSmilesDecoder,
+    reference_model: ConditionedSmilesDecoder | None,
     dataset: list[dict[str, object]],
     rows: list[dict[str, str]],
     vocab: SmilesVocabulary,
@@ -232,6 +260,10 @@ def train_epoch_rl(
     no_repeat_ngram_size: int,
     min_new_tokens: int,
     sft_weight: float,
+    advantage_mode: str,
+    advantage_clip: float,
+    sequence_logprob_reduction: str,
+    reference_kl_weight: float,
     reward_valid_weight: float,
     reward_strict_weight: float,
     reward_distance_weight: float,
@@ -245,6 +277,7 @@ def train_epoch_rl(
     total_loss = 0.0
     total_pg_loss = 0.0
     total_sft_loss = 0.0
+    total_kl_loss = 0.0
     total_reward = 0.0
     total_batches = 0
     suppress_ids = [vocab.token_to_id[UNK]] if UNK in vocab.token_to_id else []
@@ -276,6 +309,7 @@ def train_epoch_rl(
             expanded["condition_mask"],
             generated.to(device),
             eos_id=vocab.eos_id,
+            reduction=sequence_logprob_reduction,
         )
         rewards = compute_rewards(
             batch_meta,
@@ -287,8 +321,24 @@ def train_epoch_rl(
             reward_distance_clip=reward_distance_clip,
         ).to(device)
         rewards_2d = rewards.view(len(batch_rows), rollouts_per_prompt)
-        advantages = (rewards_2d - rewards_2d.mean(dim=1, keepdim=True)).reshape(-1)
+        advantages = group_relative_advantages(
+            rewards_2d,
+            mode=advantage_mode,
+            clip=advantage_clip,
+        ).reshape(-1)
         pg_loss = -(advantages.detach() * seq_logprob).mean()
+        kl_loss = torch.zeros((), dtype=pg_loss.dtype, device=device)
+        if reference_model is not None and float(reference_kl_weight) > 0:
+            ref_seq_logprob = sequence_logprobs(
+                reference_model,
+                expanded["condition"],
+                expanded["condition_mask"],
+                generated.to(device),
+                eos_id=vocab.eos_id,
+                reduction=sequence_logprob_reduction,
+            )
+            kl_gap = seq_logprob - ref_seq_logprob
+            kl_loss = float(reference_kl_weight) * kl_gap.mean()
 
         logits = model(batch["condition"], batch["decoder_input_ids"], condition_mask=batch["condition_mask"])
         sft_loss = F.cross_entropy(
@@ -296,7 +346,7 @@ def train_epoch_rl(
             batch["target_ids"].reshape(-1),
             ignore_index=vocab.pad_id,
         )
-        loss = pg_loss + float(sft_weight) * sft_loss
+        loss = pg_loss + float(sft_weight) * sft_loss + kl_loss
         optimizer.zero_grad(set_to_none=True)
         loss.backward()
         if grad_clip and grad_clip > 0:
@@ -306,6 +356,7 @@ def train_epoch_rl(
         total_loss += float(loss.detach().cpu())
         total_pg_loss += float(pg_loss.detach().cpu())
         total_sft_loss += float(sft_loss.detach().cpu())
+        total_kl_loss += float(kl_loss.detach().cpu())
         total_reward += float(rewards.mean().detach().cpu())
         total_batches += 1
     denom = max(total_batches, 1)
@@ -313,6 +364,7 @@ def train_epoch_rl(
         "loss": total_loss / denom,
         "pg_loss": total_pg_loss / denom,
         "sft_loss": total_sft_loss / denom,
+        "kl_loss": total_kl_loss / denom,
         "mean_reward": total_reward / denom,
         "batches": total_batches,
     }
@@ -447,6 +499,7 @@ def sequence_logprobs(
     generated: torch.Tensor,
     *,
     eos_id: int,
+    reduction: str = "sum",
 ) -> torch.Tensor:
     decoder_input = generated[:, :-1]
     target_ids = generated[:, 1:]
@@ -455,7 +508,26 @@ def sequence_logprobs(
     token_log_probs = log_probs.gather(dim=-1, index=target_ids.unsqueeze(-1)).squeeze(-1)
     eos_hits = target_ids.eq(int(eos_id)).cumsum(dim=1)
     token_mask = eos_hits.le(1).to(token_log_probs.dtype)
-    return (token_log_probs * token_mask).sum(dim=1)
+    seq_logprob = (token_log_probs * token_mask).sum(dim=1)
+    if reduction == "mean":
+        token_count = token_mask.sum(dim=1).clamp_min(1.0)
+        seq_logprob = seq_logprob / token_count
+    return seq_logprob
+
+
+def group_relative_advantages(
+    rewards_2d: torch.Tensor,
+    *,
+    mode: str,
+    clip: float,
+) -> torch.Tensor:
+    centered = rewards_2d - rewards_2d.mean(dim=1, keepdim=True)
+    if mode == "group_zscore":
+        std = rewards_2d.std(dim=1, keepdim=True, unbiased=False).clamp_min(1e-6)
+        centered = centered / std
+    if clip and clip > 0:
+        centered = torch.clamp(centered, min=-float(clip), max=float(clip))
+    return centered
 
 
 def compute_rewards(

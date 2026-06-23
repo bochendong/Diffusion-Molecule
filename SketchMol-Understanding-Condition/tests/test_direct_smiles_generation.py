@@ -28,6 +28,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_v2_validity_repair_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_v2_balanced_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_rl_2p7p_v2.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_group_rl_2p7p_v2.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_preference_dpo_2p7p.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_2p7p_v2_n128_benchmark.sh").exists()
@@ -37,6 +38,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_validity_repair_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_ood_v2_balanced_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_rl_2p7p_v2.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_2p7p_v2.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_rerun_suite.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_v2_suite_results.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_preference_dpo_2p7p.sh").exists()
@@ -436,6 +438,20 @@ def test_rl_restores_mixed_condition_mode_from_checkpoint_args():
     )
 
     assert restored == "append_property_program"
+
+
+def test_group_relative_advantages_zero_mean_and_respects_clipping():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required for the group-relative advantage test")
+    module = _load_rl_module()
+    rewards = torch.tensor([[1.0, 2.0, 3.0], [5.0, 5.0, 5.0]], dtype=torch.float32)
+
+    centered = module.group_relative_advantages(rewards, mode="group_center", clip=0.0)
+    zscore = module.group_relative_advantages(rewards, mode="group_zscore", clip=1.0)
+
+    assert torch.allclose(centered[0], torch.tensor([-1.0, 0.0, 1.0]))
+    assert torch.allclose(centered[1], torch.zeros(3))
+    assert bool(torch.all(zscore.abs() <= 1.0 + 1e-6))
 
 
 def test_preference_builder_prefers_hard_valid_negative():
