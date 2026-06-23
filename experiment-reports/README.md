@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p n=128 **79.1%**；OOD validity-repair **74.1%**） |
+| `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p n=128 **79.1%**；OOD conservative **74.1%**；RL **37.4%** 失败） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
 | `understanding-condition/` | [denovo-ood-benchmark.md](understanding-condition/denovo-ood-benchmark.md) | **完成** de novo OOD（v2_fix + dualmode） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
@@ -123,6 +123,14 @@ v2（`append_property_program` + property-count curriculum，n=64 推理）：2p
 | `16509029` | `succ-dsm-v2-main-ood-conservative` | 完成（1h12m） | [direct SMILES v2](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) |
 
 Suite `direct_v2_main_pipeline_0622`：2p7p default **79.1%** / conservative **77.6%**；OOD default **67.3%** / conservative **74.1%**（与首轮 follow-up 可复现）。
+
+## 近期 Slurm Job 一览（2026-06-22 direct SMILES v2 RL）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16532803` | `succ-direct-smiles-2p7p-v2-rl` | 完成（~4h） | [direct SMILES v2](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) |
+
+保守 REINFORCE（1 epoch，rollouts=8，sft_weight=1.0，bench n=128）：2p7p strict **37.4%**（vs SFT 79.1%，**-41.7pp**）；未完全 collapse（4736 unique）但不可用；评测疑未对齐 `append_property_program`。
 
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 

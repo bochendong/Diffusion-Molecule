@@ -3,8 +3,8 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | **完成**（2026-06-21） |
-| **最后更新** | 2026-06-22（main pipeline suite `direct_v2_main_pipeline_0622`） |
-| **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` |
+| **最后更新** | 2026-06-22（v2 conservative RL v1 初探） |
+| **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` / `submit_direct_smiles_rl_2p7p_v2.sh` |
 | **目的** | 在 direct SMILES decoder 上引入 mixed conditioning + property-count curriculum，提升高 property count（6p/7p）strict |
 
 ## Slurm 运行记录
@@ -22,6 +22,7 @@
 | `16509027` | `succ-dsm-v2-main-2p7p-conservative` | 6h26m | 0 | `.../2p7p_conservative_n128/` |
 | `16509028` | `succ-dsm-v2-main-ood-default` | 1h12m | 0 | `.../ood_default_n128/` |
 | `16509029` | `succ-dsm-v2-main-ood-conservative` | 1h12m | 0 | `.../ood_conservative_n128/` |
+| `16532803` | `succ-direct-smiles-2p7p-v2-rl`（保守 REINFORCE + bench n=128） | ~4h | 0 | `direct_smiles_denovo_2p7p_v2_rl_v1/` |
 
 ## v2 方法（相对 v1）
 
@@ -142,6 +143,26 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 
 **当前 main pipeline best**：2p7p default n=128 **79.1%**；OOD conservative n=128 **74.1%**。
 
+## RL v2 初探（job `16532803`）
+
+入口：`submit_direct_smiles_rl_2p7p_v2.sh`。从 v2 SFT ckpt warm-start；1 epoch REINFORCE（rollouts=8，lr=2e-6，sft_weight=1.0）；训练后 n=128 benchmark。
+
+训练：`eval_mean_reward` **0.853**；`mean_reward` 0.399；`sft_loss` 1.23。
+
+2p7p 评测 n=128：
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict | validity | unique valid |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.718 | 0.534 | 0.391 | 0.266 | 0.195 | 0.139 | **0.374** | 1.000 | **4736 / 6000** |
+
+| vs v2 SFT n=128 | Δ overall strict | 7p strict | unique valid |
+| --- | ---: | ---: | ---: |
+| RL v1 | **-41.7pp**（0.791→0.374） | **-44.5pp**（0.584→0.139） | 4736（vs 5981） |
+
+优于 v1 RL collapse（23.2%，1642 unique），但 **strict 全面低于 SFT**；reward 上升、strict 崩溃模式仍在。
+
+**运维备注**：评测日志显示 `condition_mixing_mode=features_only`，而 v2 base 为 `append_property_program`；`run_direct_smiles_rl_2p7p_v2.sh` / `train_direct_smiles_generator_rl.py` 未传 mixed-conditioning flag，结果可能部分低估，但 RL 仍明显伤 ckpt。下一步按 [roadmap](benchmark-roadmap-rl-agentic.md) 转 group-relative RL，并先修 conditioning 对齐。
+
 ## num_samples 缩放（v2 ckpt，推理-only）
 
 | variant | 2p7p strict | OOD strict | OOD validity | OOD 7p bucket |
@@ -152,6 +173,7 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | v2 OOD n=128 | — | 0.673 | 0.958 | 0.590 |
 | v2 OOD validity-repair n=128 | — | **0.741** | **0.979** | **0.720** |
 | v2 OOD balanced n=64（重训） | — | 0.651 | 0.908 | 0.230 |
+| v2 RL n=128（重训后评测） | 0.374 | — | — | — |
 
 ## 与 v1 / hybrid 对照
 
@@ -163,6 +185,8 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | **direct v2 2p7p n=128** | **0.791** | — | 否 |
 | **direct v2 OOD validity-repair n=128** | — | **0.741** | 否 |
 | direct v2 OOD balanced n=64 | — | 0.651 | 否 |
+| direct v2 RL n=128 | 0.374 | — | 否 |
+| direct v1 RL n=256 | 0.232 | — | 否 |
 | hybrid latent_property_rerank | 0.970 | 0.985 | 是 |
 | SketchMol ref（2p） | 0.804 | — | — |
 
@@ -174,7 +198,8 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 4. **balanced curriculum 不可行**：关 loss 加权后 7p bucket **23%**（vs full 51%）；rare combo 依赖 loss curriculum。
 5. **Node Fail 可恢复**：`16472651` epoch 9 中断后 resume 补完。
 6. **main pipeline suite 可复现**：`direct_v2_main_pipeline_0622` 四变体与首轮 follow-up 一致；2p7p 用 default decoding，OOD 用 conservative。
-7. **下一步**：2p7p 试 n=256；OOD conservative + n=256；preference DPO on v2 ckpt。
+7. **RL v2 仍失败**：保守 REINFORCE strict **37.4%**（vs SFT 79.1%）；需修 mixed-conditioning 对齐 + 转 group-relative RL。
+8. **下一步**：2p7p 试 n=256；OOD conservative + n=256；group-relative / preference RL on v2 ckpt。
 
 ## 提交命令（归档）
 
@@ -208,6 +233,9 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_re
 # 收 suite 总表
 python3 SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_v2_suite_results.py \
   --suite-root SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_direct_v2_main_pipeline_0622
+
+# v2 conservative RL 2p7p（1 epoch + bench n=128）
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_rl_2p7p_v2.sh
 ```
 
 产出：
@@ -218,3 +246,4 @@ python3 SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_v
 - `outputs/direct_smiles_denovo_ood_v2_mixed_condition_validity_repair_n128/`
 - `outputs/direct_smiles_denovo_ood_v2_mixed_condition_balanced/`
 - `outputs/direct_smiles_denovo_direct_v2_main_pipeline_0622/`（suite：`suite_report.md` / `suite_summary.csv`）
+- `outputs/direct_smiles_denovo_2p7p_v2_rl_v1/`
