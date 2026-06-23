@@ -33,6 +33,7 @@ from train_direct_smiles_generator import (  # noqa: E402
     property_score_components,
     read_rows,
     resolve_device,
+    resolve_condition_mixing_mode,
     save_checkpoint,
     seed_everything,
 )
@@ -53,6 +54,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--eval-condition-features-dir", type=Path, default=None)
     parser.add_argument("--condition-feature-array", default="query_tokens")
     parser.add_argument("--condition-feature-variant", default="full")
+    parser.add_argument(
+        "--condition-mixing-mode",
+        choices=("features_only", "append_property_program", "property_program_only"),
+        default="features_only",
+    )
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--batch-size", type=int, default=16)
     parser.add_argument("--eval-batch-size", type=int, default=64)
@@ -90,6 +96,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("--resume-checkpoint is required")
     vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
     config = dict(checkpoint["model_config"])
+    checkpoint_args = dict(checkpoint.get("args", {}))
+    condition_mixing_mode = resolve_condition_mixing_mode(args, checkpoint_args)
 
     train_rows = read_rows(args.train_csv)
     eval_rows = read_rows(args.eval_csv) if args.eval_csv else []
@@ -102,6 +110,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         train_store,
         int(config["condition_dim"]),
         max_smiles_length=int(config["max_length"]) - 8,
+        condition_mixing_mode=condition_mixing_mode,
     )
     eval_dataset = build_dataset(
         eval_rows,
@@ -109,6 +118,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         eval_store,
         int(config["condition_dim"]),
         max_smiles_length=int(config["max_length"]) - 8,
+        condition_mixing_mode=condition_mixing_mode,
     )
     train_rows = [row for row in train_rows if str(row.get("target_smiles", "") or "").strip()]
     eval_rows = [row for row in eval_rows if str(row.get("target_smiles", "") or "").strip()]
@@ -194,6 +204,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "train_rows": len(train_dataset),
         "eval_rows": len(eval_dataset),
         "history": history,
+        "condition_mixing_mode": condition_mixing_mode,
         "device": str(device),
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")

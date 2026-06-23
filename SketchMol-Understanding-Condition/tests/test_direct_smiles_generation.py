@@ -413,6 +413,31 @@ def test_rl_reward_prefers_strict_and_valid_candidates(monkeypatch):
     assert bad == -1.0
 
 
+def test_rl_restores_mixed_condition_mode_from_checkpoint_args():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required for the RL condition-mode restore test")
+    module = _load_rl_module()
+    args = module.parse_args(
+        [
+            "--train-csv",
+            "train.csv",
+            "--eval-csv",
+            "eval.csv",
+            "--output-dir",
+            "out",
+            "--resume-checkpoint",
+            "resume.pt",
+        ]
+    )
+
+    restored = module.resolve_condition_mixing_mode(
+        args,
+        {"condition_mixing_mode": "append_property_program"},
+    )
+
+    assert restored == "append_property_program"
+
+
 def test_preference_builder_prefers_hard_valid_negative():
     if not TORCH_AVAILABLE:
         pytest.skip("torch is required to import the preference builder script")

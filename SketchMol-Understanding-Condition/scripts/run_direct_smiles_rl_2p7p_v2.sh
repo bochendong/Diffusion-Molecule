@@ -17,7 +17,7 @@ fi
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 BASE_OUTPUT_DIR="${SUCC_DIRECT_RL_BASE_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_mixed_condition}"
-OUTPUT_DIR="${SUCC_DIRECT_RL_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_rl_v1}"
+OUTPUT_DIR="${SUCC_DIRECT_RL_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix}"
 TRAIN_ROWS_CSV="${SUCC_DIRECT_RL_TRAIN_ROWS_CSV:-$BASE_OUTPUT_DIR/denovo_2p7p_train_rows.csv}"
 EVAL_ROWS_CSV="${SUCC_DIRECT_RL_EVAL_ROWS_CSV:-$BASE_OUTPUT_DIR/denovo_2p7p_eval_rows.csv}"
 TRAIN_FEATURES_DIR="${SUCC_DIRECT_RL_TRAIN_FEATURES_DIR:-$BASE_OUTPUT_DIR/train_condition_features_hf_vlm}"
@@ -28,6 +28,7 @@ RUN_BENCHMARK_AFTER_TRAIN="${SUCC_DIRECT_RL_RUN_BENCHMARK_AFTER_TRAIN:-1}"
 BENCHMARK_OUTPUT_DIR="${SUCC_DIRECT_RL_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_direct_smiles_rl}"
 BENCHMARK_MODEL_DIR="${SUCC_DIRECT_RL_BENCHMARK_MODEL_DIR:-$OUTPUT_DIR/direct_smiles_model_rl_eval}"
 BENCHMARK_PREDICTION_CSV="${SUCC_DIRECT_RL_BENCHMARK_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_predictions.csv}"
+CONDITION_MIXING_MODE="${SUCC_DIRECT_RL_CONDITION_MIXING_MODE:-append_property_program}"
 
 RL_EPOCHS="${SUCC_DIRECT_RL_EPOCHS:-1}"
 RL_BATCH_SIZE="${SUCC_DIRECT_RL_BATCH_SIZE:-8}"
@@ -71,6 +72,7 @@ echo "  python=$PYTHON_BIN"
 echo "  base_output_dir=$BASE_OUTPUT_DIR"
 echo "  output_dir=$OUTPUT_DIR"
 echo "  resume_checkpoint=$RESUME_CHECKPOINT"
+echo "  condition_mixing_mode=$CONDITION_MIXING_MODE"
 echo "  rl_epochs=$RL_EPOCHS"
 echo "  rl_rollouts_per_prompt=$RL_ROLLOUTS_PER_PROMPT"
 echo "  rl_lr=$RL_LR"
@@ -88,6 +90,7 @@ echo "  benchmark_num_samples=$BENCHMARK_NUM_SAMPLES"
   --resume-checkpoint "$RESUME_CHECKPOINT" \
   --condition-features-dir "$TRAIN_FEATURES_DIR" \
   --eval-condition-features-dir "$EVAL_FEATURES_DIR" \
+  --condition-mixing-mode "$CONDITION_MIXING_MODE" \
   --epochs "$RL_EPOCHS" \
   --batch-size "$RL_BATCH_SIZE" \
   --eval-batch-size "$RL_EVAL_BATCH_SIZE" \
@@ -120,6 +123,7 @@ if [[ "$RUN_BENCHMARK_AFTER_TRAIN" == "1" ]]; then
     --resume-checkpoint "$RL_CHECKPOINT" \
     --condition-features-dir "$TRAIN_FEATURES_DIR" \
     --eval-condition-features-dir "$EVAL_FEATURES_DIR" \
+    --condition-mixing-mode "$CONDITION_MIXING_MODE" \
     --output-dir "$BENCHMARK_MODEL_DIR" \
     --prediction-csv "$BENCHMARK_PREDICTION_CSV" \
     --eval-batch-size "$RL_EVAL_BATCH_SIZE" \
