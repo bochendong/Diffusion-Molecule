@@ -58,6 +58,7 @@ echo "  rollouts=${SUCC_DIRECT_GROUP_RL_ROLLOUTS_PER_PROMPT:-16}"
 echo "  advantage_mode=${SUCC_DIRECT_GROUP_RL_ADVANTAGE_MODE:-group_zscore}"
 echo "  reference_kl_weight=${SUCC_DIRECT_GROUP_RL_REFERENCE_KL_WEIGHT:-0.05}"
 echo "  benchmark_num_samples=${SUCC_DIRECT_GROUP_RL_BENCHMARK_NUM_SAMPLES:-128}"
+echo "  run_train=${SUCC_DIRECT_GROUP_RL_RUN_TRAIN:-1}"
 echo "  gpu_candidates=${GPU_CANDIDATES[*]:-none}"
 
 SBATCH_ARGS=(

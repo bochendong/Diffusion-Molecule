@@ -24,6 +24,7 @@ TRAIN_FEATURES_DIR="${SUCC_DIRECT_GROUP_RL_TRAIN_FEATURES_DIR:-$BASE_OUTPUT_DIR/
 EVAL_FEATURES_DIR="${SUCC_DIRECT_GROUP_RL_EVAL_FEATURES_DIR:-$BASE_OUTPUT_DIR/eval_condition_features_hf_vlm}"
 RESUME_CHECKPOINT="${SUCC_DIRECT_GROUP_RL_RESUME_CHECKPOINT:-$BASE_OUTPUT_DIR/direct_smiles_model/direct_smiles_generator.pt}"
 MODEL_DIR="${SUCC_DIRECT_GROUP_RL_MODEL_DIR:-$OUTPUT_DIR/direct_smiles_model_group_rl}"
+RUN_TRAIN="${SUCC_DIRECT_GROUP_RL_RUN_TRAIN:-1}"
 RUN_BENCHMARK_AFTER_TRAIN="${SUCC_DIRECT_GROUP_RL_RUN_BENCHMARK_AFTER_TRAIN:-1}"
 BENCHMARK_OUTPUT_DIR="${SUCC_DIRECT_GROUP_RL_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_direct_smiles_group_rl}"
 BENCHMARK_MODEL_DIR="${SUCC_DIRECT_GROUP_RL_BENCHMARK_MODEL_DIR:-$OUTPUT_DIR/direct_smiles_model_group_rl_eval}"
@@ -88,9 +89,11 @@ echo "  rl_reference_kl_weight=$RL_REFERENCE_KL_WEIGHT"
 echo "  reward_valid_weight=$RL_REWARD_VALID_WEIGHT"
 echo "  reward_strict_weight=$RL_REWARD_STRICT_WEIGHT"
 echo "  reward_distance_weight=$RL_REWARD_DISTANCE_WEIGHT"
+echo "  run_train=$RUN_TRAIN"
 echo "  run_benchmark_after_train=$RUN_BENCHMARK_AFTER_TRAIN"
 echo "  benchmark_num_samples=$BENCHMARK_NUM_SAMPLES"
 
+if [[ "$RUN_TRAIN" == "1" ]]; then
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_direct_smiles_generator_rl.py" \
   --train-csv "$TRAIN_ROWS_CSV" \
   --eval-csv "$EVAL_ROWS_CSV" \
@@ -127,7 +130,17 @@ echo "  benchmark_num_samples=$BENCHMARK_NUM_SAMPLES"
   --seed "$SEED" \
   --device "$DEVICE"
 
-RL_CHECKPOINT="$MODEL_DIR/direct_smiles_generator_rl.pt"
+else
+  echo "Skipping RL training (SUCC_DIRECT_GROUP_RL_RUN_TRAIN=0)"
+fi
+
+RL_CHECKPOINT="${SUCC_DIRECT_GROUP_RL_RL_CHECKPOINT:-$MODEL_DIR/direct_smiles_generator_rl.pt}"
+if [[ ! -f "$RL_CHECKPOINT" ]]; then
+  echo "ERROR: RL checkpoint not found: $RL_CHECKPOINT" >&2
+  exit 1
+fi
+echo "  rl_checkpoint=$RL_CHECKPOINT"
+
 if [[ "$RUN_BENCHMARK_AFTER_TRAIN" == "1" ]]; then
   "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_direct_smiles_generator.py" \
     --eval-only \
