@@ -3,8 +3,8 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | **完成**（2026-06-21） |
-| **最后更新** | 2026-06-22（RL condfix rerun `16547785`） |
-| **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` / `submit_direct_smiles_rl_2p7p_v2.sh` |
+| **最后更新** | 2026-06-24（group-relative RL `16583941`） |
+| **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` / `submit_direct_smiles_rl_2p7p_v2.sh` / `submit_direct_smiles_group_rl_2p7p_v2.sh` |
 | **目的** | 在 direct SMILES decoder 上引入 mixed conditioning + property-count curriculum，提升高 property count（6p/7p）strict |
 
 ## Slurm 运行记录
@@ -24,6 +24,7 @@
 | `16509029` | `succ-dsm-v2-main-ood-conservative` | 1h12m | 0 | `.../ood_conservative_n128/` |
 | `16532803` | `succ-direct-smiles-2p7p-v2-rl`（保守 REINFORCE + bench n=128） | ~4h | 0 | `direct_smiles_denovo_2p7p_v2_rl_v1/` |
 | `16547785` | `succ-direct-smiles-2p7p-v2-rl-condfix`（conditioning fix 后 rerun） | ~4h | 0 | `direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix/` |
+| `16583941` | `succ-direct-smiles-2p7p-v2-group-rl`（group-relative RL + bench n=128） | ~8h55m | 0 | `direct_smiles_denovo_2p7p_v2_group_rl_v1/` |
 
 ## v2 方法（相对 v1）
 
@@ -142,7 +143,7 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | 2p7p conservative vs default | **-1.5pp**（0.791→0.776） | 保守 decoding 对 2p7p **无益**（OOD 则 +6.8pp） |
 | OOD conservative vs default | **+6.8pp**（0.673→0.741） | 2p bucket +11.7pp，7p +13.0pp |
 
-**当前 main pipeline best**：2p7p default n=128 **79.1%**；OOD conservative n=128 **74.1%**。
+**当前 2p7p best**：group RL n=128 **84.5%**（SFT **79.1%**；OOD conservative n=128 **74.1%**）。
 
 ## RL v2 初探（job `16532803`）
 
@@ -182,7 +183,28 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | **RL condfix（`16547785`）** | **0.765** | **+39.1pp** | conditioning 对齐后恢复 |
 | v2 SFT n=128 | 0.791 | — | 仍 best（**-2.6pp** vs RL） |
 
-**结论**：上次 37.4% 的 **绝大部分（~39pp）来自 conditioning mismatch**；对齐后 RL 仅略低于 SFT（-2.6pp），未 collapse，但 **REINFORCE 仍无正向增益**。SFT **79.1%** 保持 best；下一步转 group-relative RL（见 [roadmap](benchmark-roadmap-rl-agentic.md)）。
+**结论**：上次 37.4% 的 **绝大部分（~39pp）来自 conditioning mismatch**；对齐后 RL 仅略低于 SFT（-2.6pp），未 collapse，但 **REINFORCE 仍无正向增益**。下一步转 group-relative RL（见 [roadmap](benchmark-roadmap-rl-agentic.md)）。
+
+## Group-relative RL v1（job `16583941`）
+
+入口：`submit_direct_smiles_group_rl_2p7p_v2.sh`（`724e72b`）。从 v2 SFT ckpt warm-start；1 epoch group-relative RL（rollouts=16，`group_zscore`，`reference_kl_weight=0.05`，`sft_weight=1.0`）；`append_property_program`；训练后 n=128 benchmark。输出 `direct_smiles_denovo_2p7p_v2_group_rl_v1/`。
+
+训练：`eval_mean_reward` **-0.176**；`mean_reward` **-0.449**；`sft_loss` **0.808**；`kl_loss` **-0.003**（reward 为负但 strict 仍上升）。
+
+2p7p 评测 n=128：
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict | validity | unique valid |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.981 | 0.950 | 0.909 | 0.826 | 0.744 | 0.661 | **0.845** | 0.996 | **5970 / 6000** |
+
+| 对比 | overall strict | Δ vs SFT n=128 | 6p / 7p strict | 说明 |
+| --- | ---: | ---: | --- | --- |
+| v2 SFT n=128 | 0.791 | — | 0.648 / 0.584 | 原 best |
+| RL condfix（`16547785`） | 0.765 | -2.6pp | 0.606 / 0.525 | REINFORCE 无增益 |
+| **group RL（`16583941`）** | **0.845** | **+5.4pp** | **0.744 / 0.661** | **首次 RL 超 SFT** |
+| SketchMol ref | — | — | 0.678 / 0.685 | 6p 已超 ref；7p 仍 -2.4pp |
+
+**结论**：group-relative advantage + reference KL 在 conditioning 对齐前提下 **首次带来正向 strict 增益**（**84.5%**，+5.4pp vs SFT）；高 property bucket（6p/7p）提升最大（+9.6pp / +7.7pp）。**当前 2p7p best**：group RL n=128 **84.5%**。可选 follow-up：n=256 benchmark、多 epoch、调 `reference_kl_weight`。
 
 ## num_samples 缩放（v2 ckpt，推理-only）
 
@@ -196,6 +218,7 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | v2 OOD balanced n=64（重训） | — | 0.651 | 0.908 | 0.230 |
 | v2 RL n=128（cond bug，`16532803`） | 0.374 | — | — | — |
 | v2 RL n=128 condfix（`16547785`） | 0.765 | — | — | — |
+| v2 group RL n=128（`16583941`） | **0.845** | — | — | — |
 
 ## 与 v1 / hybrid 对照
 
@@ -204,7 +227,8 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | direct v1 n=256 | 0.562 | 0.801 | 否 |
 | direct v1 DPO n=256 | 0.521 | — | 否 |
 | direct v2 n=64 | 0.681 | 0.531 | 否 |
-| **direct v2 2p7p n=128** | **0.791** | — | 否 |
+| **direct v2 2p7p n=128 SFT** | 0.791 | — | 否 |
+| **direct v2 group RL n=128** | **0.845** | — | 否 |
 | **direct v2 OOD validity-repair n=128** | — | **0.741** | 否 |
 | direct v2 OOD balanced n=64 | — | 0.651 | 否 |
 | direct v2 RL n=128（cond bug） | 0.374 | — | 否 |
@@ -222,7 +246,8 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 5. **Node Fail 可恢复**：`16472651` epoch 9 中断后 resume 补完。
 6. **main pipeline suite 可复现**：`direct_v2_main_pipeline_0622` 四变体与首轮 follow-up 一致；2p7p 用 default decoding，OOD 用 conservative。
 7. **RL condfix 验证 conditioning bug**：对齐后 strict **76.5%**（vs 错误 pipeline 37.4%，**+39.1pp**）；仍略低于 SFT 79.1%（-2.6pp），REINFORCE 无增益。
-8. **下一步**：group-relative RL；2p7p n=256 SFT；OOD conservative + n=256。
+8. **group-relative RL 首次超 SFT**：`16583941` strict **84.5%**（**+5.4pp** vs SFT）；6p/7p +9.6pp/+7.7pp；6p 已超 SketchMol ref。
+9. **下一步**：group RL n=256 benchmark；多 epoch / 调 KL；OOD conservative + n=256。
 
 ## 提交命令（归档）
 
@@ -259,6 +284,14 @@ python3 SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_v
 
 # v2 conservative RL 2p7p（1 epoch + bench n=128）
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_rl_2p7p_v2.sh
+
+# v2 group-relative RL 2p7p（1 epoch rollouts=16 + bench n=128）
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_2p7p_v2.sh
+
+# group RL n=256 benchmark（更激进）
+SUCC_DIRECT_GROUP_RL_BENCHMARK_NUM_SAMPLES=256 \
+SUCC_DIRECT_GROUP_RL_SLURM_TIME=20:00:00 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_2p7p_v2.sh
 ```
 
 产出：
@@ -271,3 +304,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_rl_2p7p_v2.s
 - `outputs/direct_smiles_denovo_direct_v2_main_pipeline_0622/`（suite：`suite_report.md` / `suite_summary.csv`）
 - `outputs/direct_smiles_denovo_2p7p_v2_rl_v1/`
 - `outputs/direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix/`
+- `outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/`
