@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | **完成**（2026-06-21） |
-| **最后更新** | 2026-06-24（group-relative RL `16583941`） |
+| **最后更新** | 2026-06-24（group RL n=256 benchmark `16612814`） |
 | **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` / `submit_direct_smiles_rl_2p7p_v2.sh` / `submit_direct_smiles_group_rl_2p7p_v2.sh` |
 | **目的** | 在 direct SMILES decoder 上引入 mixed conditioning + property-count curriculum，提升高 property count（6p/7p）strict |
 
@@ -25,6 +25,7 @@
 | `16532803` | `succ-direct-smiles-2p7p-v2-rl`（保守 REINFORCE + bench n=128） | ~4h | 0 | `direct_smiles_denovo_2p7p_v2_rl_v1/` |
 | `16547785` | `succ-direct-smiles-2p7p-v2-rl-condfix`（conditioning fix 后 rerun） | ~4h | 0 | `direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix/` |
 | `16583941` | `succ-direct-smiles-2p7p-v2-group-rl`（group-relative RL + bench n=128） | ~8h55m | 0 | `direct_smiles_denovo_2p7p_v2_group_rl_v1/` |
+| `16612814` | `succ-direct-smiles-2p7p-v2-group-rl-n256`（group RL ckpt，推理-only n=256） | benchmark-only | 0 | `.../benchmark_direct_smiles_group_rl_n256/` |
 
 ## v2 方法（相对 v1）
 
@@ -143,7 +144,7 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | 2p7p conservative vs default | **-1.5pp**（0.791→0.776） | 保守 decoding 对 2p7p **无益**（OOD 则 +6.8pp） |
 | OOD conservative vs default | **+6.8pp**（0.673→0.741） | 2p bucket +11.7pp，7p +13.0pp |
 
-**当前 2p7p best**：group RL n=128 **84.5%**（SFT **79.1%**；OOD conservative n=128 **74.1%**）。
+**当前 2p7p best**：group RL n=256 **90.9%**（n=128 **84.5%**；SFT n=128 **79.1%**；OOD conservative n=128 **74.1%**）。
 
 ## RL v2 初探（job `16532803`）
 
@@ -204,7 +205,28 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | **group RL（`16583941`）** | **0.845** | **+5.4pp** | **0.744 / 0.661** | **首次 RL 超 SFT** |
 | SketchMol ref | — | — | 0.678 / 0.685 | 6p 已超 ref；7p 仍 -2.4pp |
 
-**结论**：group-relative advantage + reference KL 在 conditioning 对齐前提下 **首次带来正向 strict 增益**（**84.5%**，+5.4pp vs SFT）；高 property bucket（6p/7p）提升最大（+9.6pp / +7.7pp）。**当前 2p7p best**：group RL n=128 **84.5%**。可选 follow-up：n=256 benchmark、多 epoch、调 `reference_kl_weight`。
+**结论**：group-relative advantage + reference KL 在 conditioning 对齐前提下 **首次带来正向 strict 增益**（**84.5%**，+5.4pp vs SFT）；高 property bucket（6p/7p）提升最大（+9.6pp / +7.7pp）。
+
+## Group RL n=256 推理缩放（job `16612814`）
+
+复用 `16583941` group RL ckpt；`RUN_TRAIN=0` 推理-only（`8ba87ea`）；`benchmark_num_samples=256`。输出 `benchmark_direct_smiles_group_rl_n256/`。
+
+2p7p 评测 n=256：
+
+| 2p | 3p | 4p | 5p | 6p | 7p | overall strict | validity | unique valid |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.992 | 0.982 | 0.955 | 0.905 | 0.838 | 0.783 | **0.909** | 0.999 | **5991 / 6000** |
+
+| 对比 | overall strict | Δ vs group RL n=128 | 7p strict | 说明 |
+| --- | ---: | ---: | ---: | --- |
+| v2 SFT n=128 | 0.791 | — | 0.584 | — |
+| group RL n=128（`16583941`） | 0.845 | — | 0.661 | 训练后默认 bench |
+| **group RL n=256（`16612814`）** | **0.909** | **+6.4pp** | **0.783** | **当前 best** |
+| SketchMol ref | — | — | 0.685 | 7p 已超 ref（**+9.8pp**） |
+
+n=128→n=256 对 group RL ckpt 仍有 **+6.4pp** overall；7p bucket **+12.2pp**（0.661→0.783），**全面超过 SketchMol ref**。SFT n=128→n=256 曾 +11pp（68.1%→79.1%），group RL 缩放增益略小但绝对值更高。
+
+**当前 2p7p best**：group RL n=256 **90.9%**（+11.8pp vs SFT n=128）。可选 follow-up：多 epoch group RL、OOD group RL、调 `reference_kl_weight`。
 
 ## num_samples 缩放（v2 ckpt，推理-only）
 
@@ -219,6 +241,7 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | v2 RL n=128（cond bug，`16532803`） | 0.374 | — | — | — |
 | v2 RL n=128 condfix（`16547785`） | 0.765 | — | — | — |
 | v2 group RL n=128（`16583941`） | **0.845** | — | — | — |
+| v2 group RL n=256（`16612814`） | **0.909** | — | — | — |
 
 ## 与 v1 / hybrid 对照
 
@@ -228,7 +251,8 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | direct v1 DPO n=256 | 0.521 | — | 否 |
 | direct v2 n=64 | 0.681 | 0.531 | 否 |
 | **direct v2 2p7p n=128 SFT** | 0.791 | — | 否 |
-| **direct v2 group RL n=128** | **0.845** | — | 否 |
+| **direct v2 group RL n=128** | 0.845 | — | 否 |
+| **direct v2 group RL n=256** | **0.909** | — | 否 |
 | **direct v2 OOD validity-repair n=128** | — | **0.741** | 否 |
 | direct v2 OOD balanced n=64 | — | 0.651 | 否 |
 | direct v2 RL n=128（cond bug） | 0.374 | — | 否 |
@@ -246,8 +270,9 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 5. **Node Fail 可恢复**：`16472651` epoch 9 中断后 resume 补完。
 6. **main pipeline suite 可复现**：`direct_v2_main_pipeline_0622` 四变体与首轮 follow-up 一致；2p7p 用 default decoding，OOD 用 conservative。
 7. **RL condfix 验证 conditioning bug**：对齐后 strict **76.5%**（vs 错误 pipeline 37.4%，**+39.1pp**）；仍略低于 SFT 79.1%（-2.6pp），REINFORCE 无增益。
-8. **group-relative RL 首次超 SFT**：`16583941` strict **84.5%**（**+5.4pp** vs SFT）；6p/7p +9.6pp/+7.7pp；6p 已超 SketchMol ref。
-9. **下一步**：group RL n=256 benchmark；多 epoch / 调 KL；OOD conservative + n=256。
+8. **group-relative RL 首次超 SFT**：`16583941` strict **84.5%**（**+5.4pp** vs SFT）；6p/7p +9.6pp/+7.7pp。
+9. **group RL n=256 达 90.9%**：`16612814` 推理-only（+6.4pp vs n=128）；7p **78.3%** 超 SketchMol ref；**当前 2p7p best**。
+10. **下一步**：多 epoch group RL；OOD group RL + n=256；调 `reference_kl_weight`。
 
 ## 提交命令（归档）
 
@@ -288,9 +313,13 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_rl_2p7p_v2.s
 # v2 group-relative RL 2p7p（1 epoch rollouts=16 + bench n=128）
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_2p7p_v2.sh
 
-# group RL n=256 benchmark（更激进）
+# group RL n=256 benchmark（复用 ckpt，不重训）
+SUCC_DIRECT_GROUP_RL_RUN_TRAIN=0 \
+SUCC_DIRECT_GROUP_RL_BENCHMARK_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/benchmark_direct_smiles_group_rl_n256 \
+SUCC_DIRECT_GROUP_RL_BENCHMARK_MODEL_DIR=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/direct_smiles_model_group_rl_eval_n256 \
 SUCC_DIRECT_GROUP_RL_BENCHMARK_NUM_SAMPLES=256 \
-SUCC_DIRECT_GROUP_RL_SLURM_TIME=20:00:00 \
+SUCC_DIRECT_GROUP_RL_SLURM_TIME=16:00:00 \
+SUCC_DIRECT_GROUP_RL_SLURM_JOB_NAME=succ-direct-smiles-2p7p-v2-group-rl-n256 \
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_2p7p_v2.sh
 ```
 
@@ -305,3 +334,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_2p7
 - `outputs/direct_smiles_denovo_2p7p_v2_rl_v1/`
 - `outputs/direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix/`
 - `outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/`
+- `outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/benchmark_direct_smiles_group_rl_n256/`
