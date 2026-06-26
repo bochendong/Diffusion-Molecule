@@ -3,8 +3,8 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | **完成**（2026-06-21） |
-| **最后更新** | 2026-06-24（group RL n=256 benchmark `16612814`） |
-| **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` / `submit_direct_smiles_rl_2p7p_v2.sh` / `submit_direct_smiles_group_rl_2p7p_v2.sh` |
+| **最后更新** | 2026-06-24（OOD group RL `16742519`） |
+| **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` / `submit_direct_smiles_rl_2p7p_v2.sh` / `submit_direct_smiles_group_rl_2p7p_v2.sh` / `submit_direct_smiles_group_rl_ood_v2.sh` |
 | **目的** | 在 direct SMILES decoder 上引入 mixed conditioning + property-count curriculum，提升高 property count（6p/7p）strict |
 
 ## Slurm 运行记录
@@ -26,6 +26,7 @@
 | `16547785` | `succ-direct-smiles-2p7p-v2-rl-condfix`（conditioning fix 后 rerun） | ~4h | 0 | `direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix/` |
 | `16583941` | `succ-direct-smiles-2p7p-v2-group-rl`（group-relative RL + bench n=128） | ~8h55m | 0 | `direct_smiles_denovo_2p7p_v2_group_rl_v1/` |
 | `16612814` | `succ-direct-smiles-2p7p-v2-group-rl-n256`（group RL ckpt，推理-only n=256） | benchmark-only | 0 | `.../benchmark_direct_smiles_group_rl_n256/` |
+| `16742519` | `succ-direct-smiles-ood-v2-group-rl`（OOD group-relative RL + bench n=128） | ~train+bench | 0 | `direct_smiles_denovo_ood_v2_group_rl_v1/` |
 
 ## v2 方法（相对 v1）
 
@@ -144,7 +145,7 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 | 2p7p conservative vs default | **-1.5pp**（0.791→0.776） | 保守 decoding 对 2p7p **无益**（OOD 则 +6.8pp） |
 | OOD conservative vs default | **+6.8pp**（0.673→0.741） | 2p bucket +11.7pp，7p +13.0pp |
 
-**当前 2p7p best**：group RL n=256 **90.9%**（n=128 **84.5%**；SFT n=128 **79.1%**；OOD conservative n=128 **74.1%**）。
+**当前 best**：2p7p group RL n=256 **90.9%**；OOD group RL n=128 **75.6%**（conservative SFT **74.1%**）。
 
 ## RL v2 初探（job `16532803`）
 
@@ -226,7 +227,27 @@ mixed condition 保持；`property_count_curriculum_loss=0`（只开 sampling �
 
 n=128→n=256 对 group RL ckpt 仍有 **+6.4pp** overall；7p bucket **+12.2pp**（0.661→0.783），**全面超过 SketchMol ref**。SFT n=128→n=256 曾 +11pp（68.1%→79.1%），group RL 缩放增益略小但绝对值更高。
 
-**当前 2p7p best**：group RL n=256 **90.9%**（+11.8pp vs SFT n=128）。可选 follow-up：多 epoch group RL、OOD group RL、调 `reference_kl_weight`。
+**当前 2p7p best**：group RL n=256 **90.9%**（+11.8pp vs SFT n=128）。可选 follow-up：多 epoch group RL、调 `reference_kl_weight`。
+
+## OOD group-relative RL v1（job `16742519`）
+
+入口：`submit_direct_smiles_group_rl_ood_v2.sh`（`166e969`）。从 OOD v2 SFT ckpt warm-start；1 epoch group-relative RL（rollouts=16，`group_zscore`，`reference_kl_weight=0.05`）；`append_property_program`；训练后 n=128 benchmark。输出 `direct_smiles_denovo_ood_v2_group_rl_v1/`。
+
+训练：`eval_mean_reward` **-0.821**；`mean_reward` **-0.889**；`sft_loss` **0.907**。
+
+OOD 评测 n=128：
+
+| 2p bucket | 7p bucket | overall strict | validity | unique valid |
+| ---: | ---: | ---: | ---: | ---: |
+| 0.620 | 0.590 | **0.756** | 0.952 | **944 / 1000** |
+
+| 对比 | overall strict | 2p bucket | 7p bucket | validity |
+| --- | ---: | ---: | ---: | ---: |
+| OOD SFT n=128 default | 0.673 | 0.517 | 0.590 | 0.958 |
+| OOD conservative n=128 | 0.741 | 0.633 | **0.720** | **0.979** |
+| **OOD group RL（`16742519`）** | **0.756** | 0.620 | 0.590 | 0.952 |
+
+**结论**：group RL 将 OOD overall strict 提升至 **75.6%**（**+8.3pp** vs SFT default，**+1.5pp** vs conservative），**首次超过 conservative decoding**；但 7p bucket **59.0%** 仍低于 conservative **72.0%**（-13.0pp），validity 亦略降。**当前 OOD overall best**：group RL **75.6%**；7p bucket best 仍为 conservative **72.0%**。可选 follow-up：OOD group RL + conservative decoding、n=256 benchmark。
 
 ## num_samples 缩放（v2 ckpt，推理-only）
 
@@ -236,7 +257,8 @@ n=128→n=256 对 group RL ckpt 仍有 **+6.4pp** overall；7p bucket **+12.2pp*
 | v2 2p7p n=128 default | **0.791** | — | — | — |
 | v2 2p7p n=128 conservative | 0.776 | — | — | — |
 | v2 OOD n=128 | — | 0.673 | 0.958 | 0.590 |
-| v2 OOD validity-repair n=128 | — | **0.741** | **0.979** | **0.720** |
+| v2 OOD validity-repair n=128 | — | 0.741 | 0.979 | 0.720 |
+| v2 OOD group RL n=128（`16742519`） | — | **0.756** | 0.952 | 0.590 |
 | v2 OOD balanced n=64（重训） | — | 0.651 | 0.908 | 0.230 |
 | v2 RL n=128（cond bug，`16532803`） | 0.374 | — | — | — |
 | v2 RL n=128 condfix（`16547785`） | 0.765 | — | — | — |
@@ -253,7 +275,8 @@ n=128→n=256 对 group RL ckpt 仍有 **+6.4pp** overall；7p bucket **+12.2pp*
 | **direct v2 2p7p n=128 SFT** | 0.791 | — | 否 |
 | **direct v2 group RL n=128** | 0.845 | — | 否 |
 | **direct v2 group RL n=256** | **0.909** | — | 否 |
-| **direct v2 OOD validity-repair n=128** | — | **0.741** | 否 |
+| **direct v2 OOD group RL n=128** | — | **0.756** | 否 |
+| direct v2 OOD validity-repair n=128 | — | 0.741 | 否 |
 | direct v2 OOD balanced n=64 | — | 0.651 | 否 |
 | direct v2 RL n=128（cond bug） | 0.374 | — | 否 |
 | direct v2 RL n=128 condfix | 0.765 | — | 否 |
@@ -265,14 +288,15 @@ n=128→n=256 对 group RL ckpt 仍有 **+6.4pp** overall；7p bucket **+12.2pp*
 
 1. **mixed condition + curriculum 有效**：2p7p n=64 **68.1%**；n=128 推理-only 达 **79.1%**（+11pp），显著优于 v1 全部规模。
 2. **OOD sample budget 不够是主因之一**：n=64→128 overall **+14.2pp**（53.1%→67.3%）；validity-repair decoding 进一步到 **74.1%**。
-3. **validity-repair 是当前 OOD best**：不重训，T=0.70/top-k=24；validity **97.9%**，7p bucket **72%**。
+3. **validity-repair 曾是 OOD overall best（74.1%）**；group RL 现以 **75.6%** 略超（+1.5pp），但 7p bucket 仍低于 conservative **72.0%**。
 4. **balanced curriculum 不可行**：关 loss 加权后 7p bucket **23%**（vs full 51%）；rare combo 依赖 loss curriculum。
 5. **Node Fail 可恢复**：`16472651` epoch 9 中断后 resume 补完。
 6. **main pipeline suite 可复现**：`direct_v2_main_pipeline_0622` 四变体与首轮 follow-up 一致；2p7p 用 default decoding，OOD 用 conservative。
 7. **RL condfix 验证 conditioning bug**：对齐后 strict **76.5%**（vs 错误 pipeline 37.4%，**+39.1pp**）；仍略低于 SFT 79.1%（-2.6pp），REINFORCE 无增益。
 8. **group-relative RL 首次超 SFT**：`16583941` strict **84.5%**（**+5.4pp** vs SFT）；6p/7p +9.6pp/+7.7pp。
 9. **group RL n=256 达 90.9%**：`16612814` 推理-only（+6.4pp vs n=128）；7p **78.3%** 超 SketchMol ref；**当前 2p7p best**。
-10. **下一步**：多 epoch group RL；OOD group RL + n=256；调 `reference_kl_weight`。
+10. **OOD group RL overall 75.6%**：`16742519`（+8.3pp vs SFT，+1.5pp vs conservative）；7p bucket 仍弱（59.0% vs 72.0%）。
+11. **下一步**：OOD group RL + conservative decoding / n=256；多 epoch group RL；调 `reference_kl_weight`。
 
 ## 提交命令（归档）
 
@@ -313,6 +337,14 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_rl_2p7p_v2.s
 # v2 group-relative RL 2p7p（1 epoch rollouts=16 + bench n=128）
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_2p7p_v2.sh
 
+# v2 group-relative RL OOD（1 epoch rollouts=16 + bench n=128）
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood_v2.sh
+
+# OOD group RL benchmark-only 复跑
+SUCC_DIRECT_OOD_GROUP_RL_RUN_TRAIN=0 \
+SUCC_DIRECT_OOD_GROUP_RL_RL_CHECKPOINT=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_ood_v2_group_rl_v1/direct_smiles_model_group_rl/direct_smiles_generator_rl.pt \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood_v2.sh
+
 # group RL n=256 benchmark（复用 ckpt，不重训）
 SUCC_DIRECT_GROUP_RL_RUN_TRAIN=0 \
 SUCC_DIRECT_GROUP_RL_BENCHMARK_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/benchmark_direct_smiles_group_rl_n256 \
@@ -335,3 +367,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_2p7
 - `outputs/direct_smiles_denovo_2p7p_v2_rl_v2_conditionfix/`
 - `outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/`
 - `outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/benchmark_direct_smiles_group_rl_n256/`
+- `outputs/direct_smiles_denovo_ood_v2_group_rl_v1/`
