@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Evaluate the OOD group-RL checkpoint at n=256 without retraining.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+GROUP_RL_OUTPUT_DIR="${SUCC_DIRECT_OOD_GROUP_RL_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_ood_v2_group_rl_v1}"
+
+export SUCC_DIRECT_OOD_GROUP_RL_RUN_TRAIN="${SUCC_DIRECT_OOD_GROUP_RL_RUN_TRAIN:-0}"
+export SUCC_DIRECT_OOD_GROUP_RL_RL_CHECKPOINT="${SUCC_DIRECT_OOD_GROUP_RL_RL_CHECKPOINT:-$GROUP_RL_OUTPUT_DIR/direct_smiles_model_group_rl/direct_smiles_generator_rl.pt}"
+export SUCC_DIRECT_OOD_GROUP_RL_BENCHMARK_OUTPUT_DIR="${SUCC_DIRECT_OOD_GROUP_RL_BENCHMARK_OUTPUT_DIR:-$GROUP_RL_OUTPUT_DIR/benchmark_direct_smiles_group_rl_n256}"
+export SUCC_DIRECT_OOD_GROUP_RL_BENCHMARK_MODEL_DIR="${SUCC_DIRECT_OOD_GROUP_RL_BENCHMARK_MODEL_DIR:-$GROUP_RL_OUTPUT_DIR/direct_smiles_model_group_rl_eval_n256}"
+export SUCC_DIRECT_OOD_GROUP_RL_BENCHMARK_NUM_SAMPLES="${SUCC_DIRECT_OOD_GROUP_RL_BENCHMARK_NUM_SAMPLES:-256}"
+
+bash "$SCRIPT_DIR/run_direct_smiles_group_rl_ood_v2.sh"
