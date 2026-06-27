@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **diagnostics 完成** MuMO（source-copy Sim **100%**；one-shot proxy **42.5%**；RL 无增益） |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **source-edit SFT** MuMO（validity **97.3%**；proxy **45.4%**；Sim 仍 0） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
@@ -193,6 +193,14 @@ MuMO official train/test；10 tasks × 200；group-RL warm-start 2p7p ckpt；n=2
 | `16779361` | `succ-external-mumo-one-shot` | 完成（~32m） | 同上 |
 
 source-copy sanity：Sim@0.4 **100%**（eval 链路正常）。one-shot baseline：proxy **42.5%**，Sim=0；≈ group-RL **40.7%**，确认 **source-edit 能力** 是主瓶颈。
+
+## 近期 Slurm Job 一览（2026-06-27 MuMO source-edit SFT）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16800837` | `succ-external-mumo-source-edit-sft` | 完成 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+
+`append_source_property_program` + 1 epoch MuMO SFT：validity **97.3%**（+6.6pp vs one-shot）；proxy **45.4%**（+2.9pp）；Sim@0.4 仍 **0** → 待 source-edit group-RL。
 
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 

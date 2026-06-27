@@ -125,15 +125,16 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
-**MuMO 三方对照**（见 [external-multiproperty-benchmark.md](external-multiproperty-benchmark.md)）：
+**MuMO 对照（含 source-edit SFT `16800837`）**：
 
-| 变体 | Job | Proxy eval prop frac | Sim ≥0.4 | Valid |
-| --- | --- | ---: | ---: | ---: |
-| source-copy sanity | `16779362` | 46.7% | **100%** | 100% |
-| one-shot baseline | `16779361` | **42.5%** | 0 | 90.7% |
-| group-RL | `16774795` | 40.7% | 0 | 85.1% |
+| 变体 | Valid | Proxy | Sim ≥0.4 |
+| --- | ---: | ---: | ---: |
+| source-copy sanity | 100% | 46.7% | **100%** |
+| one-shot | 90.7% | 42.5% | 0 |
+| de novo group-RL | 85.1% | 40.7% | 0 |
+| **source-edit SFT** | **97.3%** | **45.4%** | **0** |
 
-**结论**：source-copy Sim=100% 排除 eval 链路 bug；one-shot ≈ group-RL，RL 无增益；瓶颈是 **source-edit 能力**（de novo ckpt），非数据/评估问题。因此下一版不再继续调旧 group-RL，而是先做 source-aware SFT warm-start，再接 source-edit group-RL。
+SFT 提升 validity/proxy 但 **Sim 仍为 0**；下一步 source-edit group-RL（`source_similarity_weight=2.0`）。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -235,4 +236,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ **MuMO pipeline 跑通**；source-copy 排除 eval bug；**source-edit 能力是主瓶颈**（需 SFT/agentic，非 RL 调参）。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ SFT **16800837** 提升 validity/proxy 但 Sim 仍 0；待 source-edit group-RL。
