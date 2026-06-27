@@ -58,7 +58,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--condition-feature-variant", default="full")
     parser.add_argument(
         "--condition-mixing-mode",
-        choices=("features_only", "append_property_program", "property_program_only"),
+        choices=("features_only", "append_property_program", "append_source_property_program", "property_program_only"),
         default="features_only",
     )
     parser.add_argument("--epochs", type=int, default=1)

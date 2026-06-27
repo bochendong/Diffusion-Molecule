@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO diagnostics 完成**（group-RL + one-shot + source-copy）；oracle CSV 待回填 |
-| **最后更新** | 2026-06-27（MuMO one-shot `16779361` + source-copy `16779362`） |
+| **状态** | **MuMO diagnostics 完成**；source-edit SFT/Group-RL 修复入口已加入；oracle CSV 待回填 |
+| **最后更新** | 2026-06-27（source-edit repair v1） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -52,6 +52,9 @@ SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multipro
 SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_group_rl.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_one_shot_baseline.sh
+SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_source_edit_sft.sh
+SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft.sh
+SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh
 SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh
 SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh
 ```
@@ -127,7 +130,17 @@ group-RL 入口默认：
 1. **source-copy Sim@0.4 = 100%** → `source_smiles` 字段与 Tanimoto evaluator **正常**；group-RL / one-shot 的 Sim=0 **不是数据或评估链路 bug**。
 2. **one-shot proxy 42.5% ≈ group-RL 40.7%** → 短 RL 未带来增益，validity 还略降（90.7% vs 85.1%）；瓶颈在 **de novo ckpt 不具备 source-conditioned edit 能力**，而非 RL 超参。
 3. **strict 全为 0**（三方一致）→ 仍需 ADMET/TDC generated-property CSV 才能报 official strict；source-copy strict=0 也符合预期（复制 source 不改善性质）。
-4. **下一步**：source-edit SFT warm-start 或 agentic revise loop；ADMET oracle 回填；C-MuMO 复跑。
+4. **下一步**：先跑 source-edit SFT warm-start，再用该 checkpoint 接 source-edit group-RL；ADMET oracle 回填；C-MuMO 复跑。
+
+## Source-edit repair v1
+
+当前 direct-SMILES checkpoint 是 zero-source de novo 训练出来的；MuMO/C-MuMO 则要求输入 source molecule 后做小改动。因此这版先修生成主干，而不是继续调 rerank：
+
+1. 新增 `append_source_property_program` condition mode：在原 MLLM feature / fallback numeric feature 后，显式追加 source-SMILES token features，再追加 property program tokens。模型结构不变，旧 checkpoint 可 warm start。
+2. 新增 source-edit SFT warm-start：默认从最强 2p7p group-RL checkpoint 起步，使用 MuMO train/test rows，关闭 property rerank，先把 Sim≥0.4 拉回来。
+3. 新增 SFT checkpoint 上的 source-edit group-RL：使用同一 source-aware condition mode，加大 source-similarity reward，仍关闭 property rerank，目标是同时提升 source similarity 与 proxy property success。
+
+这条线和 de novo 2p-7p/OOD 主线互不覆盖；Table1 edit 主链也不改。
 
 ## 服务器命令
 
@@ -180,6 +193,20 @@ SUCC_EXTERNAL_MULTIPROP_GROUP_RL_OUTPUT_DIR=SketchMol-Understanding-Condition/ou
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
 ```
 
+MuMO source-edit SFT warm-start（推荐下一条先跑）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft.sh
+```
+
+MuMO source-edit SFT + group-RL（等上一条完成后跑）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh
+```
+
 只跑 MuMO OOD：
 
 ```bash
@@ -217,7 +244,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 1. ~~跑 external group-RL P1 pilot~~ → **`16774795` 完成**；proxy **40.7%**，Sim=0。
 2. ~~one-shot baseline~~ → **`16779361` 完成**；proxy **42.5%**，Sim=0；≈ group-RL，RL 无增益。
 3. ~~source-copy sanity~~ → **`16779362` 完成**；Sim@0.4 **100%**；排除 eval 链路 bug。
-4. **source-edit SFT warm-start** 或 **agentic revise loop**（当前 de novo ckpt 不适配 MuMO）。
+4. **source-edit SFT warm-start + source-edit group-RL** → 入口已加入；下一步跑 `direct_smiles_external_mumo_source_edit_sft_v1/` 和 `direct_smiles_external_mumo_source_edit_sft_group_rl_v1/`。
 5. ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源

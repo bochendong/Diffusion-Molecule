@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import random
@@ -78,10 +79,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--condition-feature-variant", default="full")
     parser.add_argument(
         "--condition-mixing-mode",
-        choices=("features_only", "append_property_program", "property_program_only"),
+        choices=("features_only", "append_property_program", "append_source_property_program", "property_program_only"),
         default="features_only",
     )
     parser.add_argument("--resume-checkpoint", type=Path, default=None)
+    parser.add_argument(
+        "--reset-training-state",
+        action="store_true",
+        help="Load model/vocab weights from --resume-checkpoint but restart epoch, history, and optimizer state.",
+    )
     parser.add_argument("--eval-only", action="store_true")
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--eval-limit", type=int, default=0)
@@ -177,10 +183,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         condition_mixing_mode=condition_mixing_mode,
     )
 
-    history: list[dict[str, object]] = list(checkpoint.get("history", [])) if checkpoint else []
-    start_epoch = int(checkpoint.get("epoch", 0)) + 1 if checkpoint and not args.eval_only else 1
+    warm_start = bool(args.reset_training_state) and checkpoint is not None and not args.eval_only
+    history: list[dict[str, object]] = [] if warm_start else (list(checkpoint.get("history", [])) if checkpoint else [])
+    start_epoch = 1 if warm_start else (int(checkpoint.get("epoch", 0)) + 1 if checkpoint and not args.eval_only else 1)
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
-    if checkpoint is not None and checkpoint.get("optimizer_state") and not args.eval_only:
+    if checkpoint is not None and checkpoint.get("optimizer_state") and not args.eval_only and not warm_start:
         optimizer.load_state_dict(checkpoint["optimizer_state"])
 
     if not args.eval_only:
@@ -268,6 +275,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "history": history,
         "prediction_summary": prediction_summary,
         "condition_mixing_mode": condition_mixing_mode,
+        "reset_training_state": bool(args.reset_training_state),
         "device": str(device),
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -361,8 +369,11 @@ def condition_array_for_row(
     else:
         base = fallback_condition_features(row, condition_dim)
     program = property_program_tokens(row, condition_dim)
+    source = source_smiles_condition_tokens(row, condition_dim)
     if condition_mixing_mode == "property_program_only":
         return program
+    if condition_mixing_mode == "append_source_property_program":
+        return np.concatenate([base, source, program], axis=0)
     if condition_mixing_mode == "append_property_program":
         return np.concatenate([base, program], axis=0)
     return base
@@ -437,6 +448,73 @@ def property_program_tokens(row: Mapping[str, str], condition_dim: int) -> np.nd
             )
         )
     return np.stack(tokens, axis=0).astype(np.float32)
+
+
+def source_smiles_condition_tokens(
+    row: Mapping[str, str],
+    condition_dim: int,
+    *,
+    max_source_tokens: int = 96,
+) -> np.ndarray:
+    source_smiles = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
+    if not source_smiles:
+        return np.zeros((1, max(1, int(condition_dim))), dtype=np.float32)
+    tokens = tokenize_smiles(source_smiles)[: max(1, int(max_source_tokens))]
+    if not tokens:
+        return np.zeros((1, max(1, int(condition_dim))), dtype=np.float32)
+    source_length = max(len(tokens), 1)
+    rows = [
+        _source_token_feature(token, idx, source_length, condition_dim)
+        for idx, token in enumerate(tokens)
+    ]
+    return np.stack(rows, axis=0).astype(np.float32)
+
+
+def _source_token_feature(token: str, index: int, source_length: int, condition_dim: int) -> np.ndarray:
+    dim = max(1, int(condition_dim))
+    vec = np.zeros(dim, dtype=np.float32)
+    _safe_set(vec, 0, 2.0)
+    _safe_set(vec, 1, float(index + 1) / max(float(source_length), 1.0))
+    _safe_set(vec, 2, float(source_length) / 160.0)
+    _safe_set(vec, 3, float(len(str(token))) / 16.0)
+    _safe_set(vec, 4, 1.0 if _is_atom_token(token) else 0.0)
+    _safe_set(vec, 5, 1.0 if str(token).islower() else 0.0)
+    _safe_set(vec, 6, 1.0 if _is_bond_token(token) else 0.0)
+    _safe_set(vec, 7, 1.0 if str(token).isdigit() or str(token).startswith("%") else 0.0)
+    _safe_set(vec, 8, 1.0 if str(token) in {"(", ")"} else 0.0)
+    _safe_set(vec, 9, 1.0 if str(token).startswith("[") and str(token).endswith("]") else 0.0)
+    bucket_space = max(dim - 16, 1)
+    token_hash = _stable_token_hash(str(token))
+    bucket = 16 + (token_hash % bucket_space)
+    if bucket < dim:
+        vec[bucket] = 1.0
+    second_bucket = 16 + ((token_hash // max(bucket_space, 1)) % bucket_space)
+    if second_bucket < dim:
+        vec[second_bucket] = max(vec[second_bucket], 0.5)
+    return vec
+
+
+def _stable_token_hash(token: str) -> int:
+    digest = hashlib.sha1(token.encode("utf-8")).hexdigest()
+    return int(digest[:12], 16)
+
+
+def _safe_set(vec: np.ndarray, index: int, value: float) -> None:
+    if 0 <= int(index) < vec.shape[0]:
+        vec[int(index)] = float(value)
+
+
+def _is_atom_token(token: str) -> bool:
+    text = str(token)
+    if not text:
+        return False
+    if text.startswith("[") and text.endswith("]"):
+        return True
+    return any(ch.isalpha() for ch in text)
+
+
+def _is_bond_token(token: str) -> bool:
+    return str(token) in {"=", "#", "-", "/", "\\", ":", "~", "."}
 
 
 def _expand_condition_token(values: Sequence[float], condition_dim: int) -> np.ndarray:

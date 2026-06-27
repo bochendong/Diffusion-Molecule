@@ -27,6 +27,9 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_group_rl.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_one_shot_baseline.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_source_edit_sft.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
@@ -455,6 +458,40 @@ def test_mixed_condition_appends_property_program_tokens():
     assert any(abs(float(value)) > 0 for value in condition[1].tolist())
 
 
+def test_source_mixed_condition_appends_source_and_property_program_tokens():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required to import the direct SMILES training script")
+
+    module = _load_train_module()
+
+    class DummyStore:
+        input_hidden_dim = 8
+
+        def get(self, _condition_id):
+            return [[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]]
+
+    row = {
+        "condition_id": "source_edit",
+        "source_smiles": "CCO",
+        "condition_properties": "MW",
+        "property_count": "1",
+        "target_MW": "52",
+        "MW_active": "True",
+    }
+    condition = module.condition_array_for_row(
+        row,
+        DummyStore(),
+        8,
+        condition_mixing_mode="append_source_property_program",
+    )
+
+    assert condition.shape == (13, 8)
+    assert condition[0].tolist() == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    assert condition[1, 0] == pytest.approx(2.0)
+    assert condition[1, 1] == pytest.approx(1.0 / 3.0)
+    assert condition[4, 0] == pytest.approx(0.25)
+
+
 def test_property_count_curriculum_weight_prefers_high_count():
     if not TORCH_AVAILABLE:
         pytest.skip("torch is required to import the direct SMILES training script")
@@ -698,6 +735,25 @@ def test_rl_restores_mixed_condition_mode_from_checkpoint_args():
     )
 
     assert restored == "append_property_program"
+
+
+def test_sft_warm_start_reset_flag_parses():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required to import the direct SMILES training script")
+    module = _load_train_module()
+    args = module.parse_args(
+        [
+            "--train-csv",
+            "train.csv",
+            "--output-dir",
+            "out",
+            "--resume-checkpoint",
+            "resume.pt",
+            "--reset-training-state",
+        ]
+    )
+
+    assert args.reset_training_state is True
 
 
 def test_group_relative_advantages_zero_mean_and_respects_clipping():

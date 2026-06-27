@@ -121,7 +121,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ diagnostics 完成（`16774795` / `16779361` / `16779362`）
+### 5. MuMO / C-MuMO benchmark port ✅ diagnostics 完成；source-edit repair v1 已加入
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
@@ -133,7 +133,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | one-shot baseline | `16779361` | **42.5%** | 0 | 90.7% |
 | group-RL | `16774795` | 40.7% | 0 | 85.1% |
 
-**结论**：source-copy Sim=100% 排除 eval 链路 bug；one-shot ≈ group-RL，RL 无增益；瓶颈是 **source-edit 能力**（de novo ckpt），非数据/评估问题。
+**结论**：source-copy Sim=100% 排除 eval 链路 bug；one-shot ≈ group-RL，RL 无增益；瓶颈是 **source-edit 能力**（de novo ckpt），非数据/评估问题。因此下一版不再继续调旧 group-RL，而是先做 source-aware SFT warm-start，再接 source-edit group-RL。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -144,6 +144,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 3. 已新增 source-conditioned CSV exporter、external generated-property evaluator、one-shot server submit 入口。
 4. 默认 pilot 关闭 output-side property rerank，避免把外部 benchmark 第一版做成 assisted result。
 5. 已新增 external source-conditioned group-RL 入口；reward 加 source Tanimoto 项，默认 `DISABLE_PROPERTY_RERANK=1`，用于主文 `ours-group-rl` 候选。
+6. 已新增 `append_source_property_program` condition mode 和 MuMO source-edit SFT / SFT+group-RL 入口；生成主干显式看到 source SMILES，不依赖 output-side rerank。
 
 预期产出：
 
@@ -186,6 +187,16 @@ SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SUITE=mumo \
 SUCC_EXTERNAL_MULTIPROP_GROUP_RL_TASK_SPLIT=all \
 SUCC_EXTERNAL_MULTIPROP_GROUP_RL_MAX_ROWS_PER_TASK=200 \
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
+```
+
+source-edit repair v1 提交命令（先 SFT，完成后再 RL）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft.sh
+
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh
 ```
 
 注意：BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要 external generated-property CSV 才能公平评估；没有 oracle CSV 时只作为 coverage / plumbing pilot。
