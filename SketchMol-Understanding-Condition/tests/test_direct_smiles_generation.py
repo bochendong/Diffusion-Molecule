@@ -23,6 +23,8 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/evaluate_external_multiproperty_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_group_rl.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
@@ -192,6 +194,47 @@ def test_external_multiproperty_exporter_preserves_official_task_properties(tmp_
     assert row["property_count"] == "3"
     assert row["target_QED"] == "0.62"
     assert row["external_target_placeholder"] == "True"
+
+
+def test_external_multiproperty_exporter_filters_input_split(tmp_path):
+    source_csv = tmp_path / "sources.csv"
+    output_csv = tmp_path / "external_rows.csv"
+    _write_rows(
+        source_csv,
+        [
+            {"sample_id": "train_a", "split": "train", "source_smiles": "CCO", "qed": "0.4"},
+            {"sample_id": "test_a", "split": "test", "source_smiles": "CCN", "qed": "0.4"},
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_external_multiproperty_benchmark_rows.py",
+            "--source-file",
+            str(source_csv),
+            "--output-csv",
+            str(output_csv),
+            "--suite",
+            "mumo",
+            "--tasks",
+            "DPQ",
+            "--input-split",
+            "test",
+            "--max-rows-per-task",
+            "10",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    assert len(rows) == 1
+    assert rows[0]["molecule_id"] == "test_a"
+    assert rows[0]["source_smiles"] == "CCN"
 
 
 def test_external_multiproperty_evaluator_uses_generated_properties_csv(tmp_path):
@@ -518,6 +561,57 @@ def test_rl_sample_rollouts_preserves_prompt_grouping():
 
     assert generated[:, 1].tolist() == [1, 1, 1, 2, 2, 2]
     assert generated[:, 2].tolist() == [1, 1, 2, 1, 1, 2]
+
+
+def test_rl_source_similarity_reward_is_optional_and_source_conditioned(monkeypatch):
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required for the RL reward test")
+
+    module = _load_rl_module()
+    monkeypatch.setattr(module, "_safe_canonical_smiles", lambda value: str(value or "") or "")
+    monkeypatch.setattr(module, "property_score_components", lambda _row, _smiles: (0.0, 0.0))
+    monkeypatch.setattr(module, "morgan_tanimoto", lambda _source, smiles: 1.0 if smiles == "near" else 0.0)
+    row = {"source_smiles": "CCO"}
+
+    base_near = module.reward_for_smiles(
+        row,
+        "near",
+        reward_valid_weight=0.25,
+        reward_strict_weight=0.0,
+        reward_distance_weight=0.0,
+        reward_distance_clip=10.0,
+    )
+    base_far = module.reward_for_smiles(
+        row,
+        "far",
+        reward_valid_weight=0.25,
+        reward_strict_weight=0.0,
+        reward_distance_weight=0.0,
+        reward_distance_clip=10.0,
+    )
+    source_near = module.reward_for_smiles(
+        row,
+        "near",
+        reward_valid_weight=0.25,
+        reward_strict_weight=0.0,
+        reward_distance_weight=0.0,
+        reward_distance_clip=10.0,
+        reward_source_similarity_weight=1.0,
+        reward_source_similarity_threshold=0.4,
+    )
+    source_far = module.reward_for_smiles(
+        row,
+        "far",
+        reward_valid_weight=0.25,
+        reward_strict_weight=0.0,
+        reward_distance_weight=0.0,
+        reward_distance_clip=10.0,
+        reward_source_similarity_weight=1.0,
+        reward_source_similarity_threshold=0.4,
+    )
+
+    assert base_near == pytest.approx(base_far)
+    assert source_near > source_far
 
 
 def test_rl_reward_prefers_strict_and_valid_candidates(monkeypatch):

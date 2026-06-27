@@ -129,15 +129,17 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 1. `adapter v1` 已实现，记录见 [external-multiproperty-benchmark.md](external-multiproperty-benchmark.md)。
 2. 已覆盖 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 的 5 IND + 5 OOD task specs。
-3. 已新增 source-conditioned CSV exporter、external generated-property evaluator、server submit 入口。
+3. 已新增 source-conditioned CSV exporter、external generated-property evaluator、one-shot server submit 入口。
 4. 默认 pilot 关闭 output-side property rerank，避免把外部 benchmark 第一版做成 assisted result。
+5. 已新增 external source-conditioned group-RL 入口；reward 加 source Tanimoto 项，默认 `DISABLE_PROPERTY_RERANK=1`，用于主文 `ours-group-rl` 候选。
 
 预期产出：
 
 - `outputs/mumo_port_v1/`
 - `outputs/cmumo_port_v1/`
+- `outputs/direct_smiles_external_multiproperty_group_rl_v1/`
 
-提交命令：
+one-shot 提交命令：
 
 ```bash
 git pull --ff-only
@@ -146,6 +148,29 @@ SUCC_EXTERNAL_MULTIPROP_SUITE=mumo \
 SUCC_EXTERNAL_MULTIPROP_TASK_SPLIT=all \
 SUCC_EXTERNAL_MULTIPROP_MAX_ROWS_PER_TASK=200 \
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh
+```
+
+group-RL 提交命令（官方文件里含 train/test split）：
+
+```bash
+git pull --ff-only
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SOURCE_FILE=/path/to/mumo_or_cmumo_all_splits.json \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SUITE=mumo \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_TASK_SPLIT=all \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_MAX_ROWS_PER_TASK=200 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
+```
+
+group-RL 提交命令（train/test 独立文件）：
+
+```bash
+git pull --ff-only
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_TRAIN_SOURCE_FILE=/path/to/mumo_train.json \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_EVAL_SOURCE_FILE=/path/to/mumo_test.json \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SUITE=mumo \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_TASK_SPLIT=all \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_MAX_ROWS_PER_TASK=200 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
 ```
 
 注意：BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要 external generated-property CSV 才能公平评估；没有 oracle CSV 时只作为 coverage / plumbing pilot。

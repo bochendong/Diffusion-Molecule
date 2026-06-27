@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | adapter v1 implemented |
-| **最后更新** | 2026-06-26 |
+| **状态** | adapter v1 + source-conditioned group-RL entrypoints implemented |
+| **最后更新** | 2026-06-27 |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -49,9 +49,11 @@ SketchMol-Understanding-Condition/scripts/evaluate_external_multiproperty_predic
 ```bash
 SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_benchmark.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh
+SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_group_rl.sh
+SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
 ```
 
-默认是 pilot/diagnostic：
+one-shot 默认是 pilot/diagnostic：
 
 - `RUN_TRAIN=0`
 - 使用现有 direct-SMILES checkpoint。
@@ -59,9 +61,17 @@ SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multipro
 - `DISABLE_PROPERTY_RERANK=1`，避免第一版变成 output-side rerank。
 - 如果没有 generated-property CSV，报告会把 missing oracle properties 明确列出来。
 
+group-RL 入口默认：
+
+- 从当前最强的 direct-SMILES group-RL checkpoint warm start。
+- 使用 source-conditioned external rows 训练；`SFT_WEIGHT=0.15`，避免 target placeholder 过度鼓励复制 source。
+- reward 仍使用本地可算 proxy strict/distance，同时新增可关闭的 source Tanimoto reward（默认权重 `0.5`，阈值 `0.4`）。
+- benchmark 阶段默认 `NUM_SAMPLES=20`、`DISABLE_PROPERTY_RERANK=1`。
+- ADMET/oracle 性质仍需要 generated-property CSV 才能公平报告；没有 oracle CSV 时，group-RL 只优化 proxy subset + source conservation。
+
 ## 服务器命令
 
-最小 pilot：
+最小 one-shot pilot：
 
 ```bash
 git pull --ff-only
@@ -70,6 +80,29 @@ SUCC_EXTERNAL_MULTIPROP_SUITE=mumo \
 SUCC_EXTERNAL_MULTIPROP_TASK_SPLIT=all \
 SUCC_EXTERNAL_MULTIPROP_MAX_ROWS_PER_TASK=200 \
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh
+```
+
+group-RL 公平版（同一个官方文件里含 train/test split）：
+
+```bash
+git pull --ff-only
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SOURCE_FILE=/path/to/mumo_or_cmumo_all_splits.json \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SUITE=mumo \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_TASK_SPLIT=all \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_MAX_ROWS_PER_TASK=200 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
+```
+
+group-RL 公平版（train/test 是两个独立文件）：
+
+```bash
+git pull --ff-only
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_TRAIN_SOURCE_FILE=/path/to/mumo_train.json \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_EVAL_SOURCE_FILE=/path/to/mumo_test.json \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SUITE=mumo \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_TASK_SPLIT=all \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_MAX_ROWS_PER_TASK=200 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
 ```
 
 只跑 MuMO OOD：
@@ -102,12 +135,14 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 1. BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要外部 generated-property CSV 才能公平评估。
 2. `plogp` 当前给 SUCC numeric token 的本地 proxy 是 LogP；正式报告需要用外部/官方 pLogP scorer。
 3. direct-SMILES 现有 checkpoint 主要是 zero-source de novo 训练出来的。source-conditioned external benchmark 最终应该接一版 source-edit SFT/RL 或 agentic revise loop。
+4. 当前 external group-RL 的训练 reward 只能直接优化本地 proxy subset（QED / pLogP proxy / SA when available）和 source similarity；BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等 oracle 性质需要后续 predictor-in-loop / agentic oracle loop。
 
 ## 接下来
 
-1. 先用官方 HF test split 或本地转换后的 CSV 跑 pilot，确认行数、task coverage 和生成速度。
-2. 跑一遍 generated molecules 的 ADMET/TDC oracle，回填 generated-property CSV。
-3. 再决定是否把 source-conditioned external rows 接到 group RL。
+1. 先跑 one-shot pilot，确认官方数据字段、task coverage 和生成速度。
+2. 跑 external group-RL P1，得到 `ours-one-shot` vs `ours-group-rl` 的同口径对照。
+3. 跑 generated molecules 的 ADMET/TDC oracle，回填 generated-property CSV。
+4. 如果 oracle-heavy tasks 仍弱，下一步接 predictor-in-loop / agentic revise loop，而不是继续只调 decoding。
 
 ## 外部来源
 

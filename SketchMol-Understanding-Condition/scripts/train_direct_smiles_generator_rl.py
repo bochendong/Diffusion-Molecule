@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import random
 import sys
 from pathlib import Path
@@ -42,6 +43,7 @@ from sketchmol_understanding_condition.direct_smiles_generation import (  # noqa
     SmilesVocabulary,
     detokenize_smiles,
 )
+from sketchmol_understanding_condition.chem import morgan_tanimoto  # noqa: E402
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -92,6 +94,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--reward-strict-weight", type=float, default=1.0)
     parser.add_argument("--reward-distance-weight", type=float, default=0.1)
     parser.add_argument("--reward-distance-clip", type=float, default=10.0)
+    parser.add_argument("--reward-source-similarity-weight", type=float, default=0.0)
+    parser.add_argument("--reward-source-similarity-threshold", type=float, default=0.4)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="auto")
     return parser.parse_args(argv)
@@ -176,6 +180,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             reward_strict_weight=float(args.reward_strict_weight),
             reward_distance_weight=float(args.reward_distance_weight),
             reward_distance_clip=float(args.reward_distance_clip),
+            reward_source_similarity_weight=float(args.reward_source_similarity_weight),
+            reward_source_similarity_threshold=float(args.reward_source_similarity_threshold),
             grad_clip=float(args.grad_clip),
             seed=int(args.seed) + epoch,
         )
@@ -205,6 +211,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                         reward_strict_weight=float(args.reward_strict_weight),
                         reward_distance_weight=float(args.reward_distance_weight),
                         reward_distance_clip=float(args.reward_distance_clip),
+                        reward_source_similarity_weight=float(args.reward_source_similarity_weight),
+                        reward_source_similarity_threshold=float(args.reward_source_similarity_threshold),
                     ).items()
                 }
             )
@@ -232,6 +240,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "advantage_mode": str(args.advantage_mode),
         "sequence_logprob_reduction": str(args.sequence_logprob_reduction),
         "reference_kl_weight": float(args.reference_kl_weight),
+        "reward_source_similarity_weight": float(args.reward_source_similarity_weight),
+        "reward_source_similarity_threshold": float(args.reward_source_similarity_threshold),
         "device": str(device),
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -268,6 +278,8 @@ def train_epoch_rl(
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
+    reward_source_similarity_weight: float,
+    reward_source_similarity_threshold: float,
     grad_clip: float,
     seed: int,
 ) -> dict[str, object]:
@@ -319,6 +331,8 @@ def train_epoch_rl(
             reward_strict_weight=reward_strict_weight,
             reward_distance_weight=reward_distance_weight,
             reward_distance_clip=reward_distance_clip,
+            reward_source_similarity_weight=reward_source_similarity_weight,
+            reward_source_similarity_threshold=reward_source_similarity_threshold,
         ).to(device)
         rewards_2d = rewards.view(len(batch_rows), rollouts_per_prompt)
         advantages = group_relative_advantages(
@@ -393,6 +407,8 @@ def evaluate_rl(
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
+    reward_source_similarity_weight: float,
+    reward_source_similarity_threshold: float,
 ) -> dict[str, float]:
     model.eval()
     rewards = []
@@ -426,6 +442,8 @@ def evaluate_rl(
             reward_strict_weight=reward_strict_weight,
             reward_distance_weight=reward_distance_weight,
             reward_distance_clip=reward_distance_clip,
+            reward_source_similarity_weight=reward_source_similarity_weight,
+            reward_source_similarity_threshold=reward_source_similarity_threshold,
         )
         rewards.append(float(reward.mean()))
         dataset_index += len(batch_rows)
@@ -539,6 +557,8 @@ def compute_rewards(
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
+    reward_source_similarity_weight: float,
+    reward_source_similarity_threshold: float,
 ) -> torch.Tensor:
     rewards = []
     rollout_count = max(1, int(generated.shape[0] // max(len(rows), 1)))
@@ -555,6 +575,8 @@ def compute_rewards(
                     reward_strict_weight=reward_strict_weight,
                     reward_distance_weight=reward_distance_weight,
                     reward_distance_clip=reward_distance_clip,
+                    reward_source_similarity_weight=reward_source_similarity_weight,
+                    reward_source_similarity_threshold=reward_source_similarity_threshold,
                 )
             )
     return torch.as_tensor(rewards, dtype=torch.float32)
@@ -568,6 +590,8 @@ def reward_for_smiles(
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
+    reward_source_similarity_weight: float = 0.0,
+    reward_source_similarity_threshold: float = 0.4,
 ) -> float:
     canonical = _safe_canonical_smiles(smiles)
     if not canonical:
@@ -577,7 +601,29 @@ def reward_for_smiles(
     valid_reward = float(reward_valid_weight)
     strict_reward = float(reward_strict_weight) * float(strict_fraction)
     distance_penalty = float(reward_distance_weight) * float(distance)
-    return valid_reward + strict_reward - distance_penalty
+    source_similarity_reward = float(reward_source_similarity_weight) * source_similarity_component(
+        row,
+        canonical,
+        threshold=float(reward_source_similarity_threshold),
+    )
+    return valid_reward + strict_reward - distance_penalty + source_similarity_reward
+
+
+def source_similarity_component(row: Mapping[str, str], smiles: str, *, threshold: float) -> float:
+    source_smiles = str(row.get("source_smiles", "") or "").strip()
+    if not source_smiles:
+        return 0.0
+    try:
+        similarity = morgan_tanimoto(source_smiles, smiles)
+    except RuntimeError:
+        return 0.0
+    if similarity is None or not math.isfinite(float(similarity)):
+        return 0.0
+    value = max(0.0, min(1.0, float(similarity)))
+    threshold = max(0.0, min(0.999, float(threshold)))
+    if threshold <= 0:
+        return value
+    return (value - threshold) / max(1.0 - threshold, 1e-6)
 
 
 if __name__ == "__main__":

@@ -235,6 +235,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--tasks", default="", help="Comma-separated task ids or task keys to keep.")
     parser.add_argument("--max-rows-per-task", type=int, default=0, help="0 keeps all rows.")
     parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument(
+        "--input-split",
+        default="all",
+        help="Comma-separated raw dataset splits to keep, e.g. train,test,eval. Default keeps all input rows.",
+    )
     parser.add_argument("--source-smiles-column", default=None)
     parser.add_argument("--target-smiles-column", default=None)
     parser.add_argument("--id-column", default=None)
@@ -249,8 +254,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     source_rows = read_source_rows(args.source_file)
+    source_rows = filter_source_rows_by_input_split(source_rows, args.input_split)
     if not source_rows:
-        raise ValueError(f"No rows found in {args.source_file}")
+        raise ValueError(f"No rows found in {args.source_file} for input split {args.input_split!r}")
     specs = select_specs(args.suite, args.task_split, args.tasks)
     if not specs:
         raise ValueError("No external task specs selected")
@@ -320,6 +326,32 @@ def read_source_rows(path: Path) -> list[dict[str, object]]:
     if suffix == ".json":
         return flatten_json_payload(json.loads(path.read_text(encoding="utf-8")))
     raise ValueError(f"Unsupported source file suffix: {path.suffix}")
+
+
+def filter_source_rows_by_input_split(rows: list[dict[str, object]], input_split: str) -> list[dict[str, object]]:
+    filters = {normalize_input_split(item) for item in str(input_split or "all").split(",") if item.strip()}
+    if not filters or "all" in filters:
+        return rows
+    return [row for row in rows if input_split_matches(row, filters)]
+
+
+def input_split_matches(row: Mapping[str, object], filters: set[str]) -> bool:
+    raw_split = normalize_input_split(
+        first_value(row, ("split", "dataset_split", "data_split", "set", "subset", "partition"))
+    )
+    if not raw_split:
+        return False
+    aliases = {
+        raw_split,
+        "eval" if raw_split in {"test", "valid", "validation", "eval"} else raw_split,
+        "test" if raw_split in {"test", "eval"} else raw_split,
+        "valid" if raw_split in {"valid", "validation"} else raw_split,
+    }
+    return bool(aliases & filters)
+
+
+def normalize_input_split(value: object) -> str:
+    return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
 
 
 def flatten_json_payload(value: object) -> list[dict[str, object]]:
@@ -682,6 +714,7 @@ def summarize_rows(
         "output_csv": str(args.output_csv),
         "suite": args.suite,
         "task_split": args.task_split,
+        "input_split": args.input_split,
         "tasks": args.tasks or "all",
         "source_rows": source_row_count,
         "exported_rows": len(rows),
