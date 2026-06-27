@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | active planning |
-| **最后更新** | 2026-06-26 |
+| **最后更新** | 2026-06-27 |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **目标** | 把当前结果整理成可投顶会的 benchmark 结构，并提供可直接提交到服务器的命令 |
 
@@ -25,9 +25,9 @@
 | Table 3 | direct de novo 2p-7p | SketchMol ref + repo baselines | `SFT n128`, `group RL n128`, `group RL n256` |
 | Table 4 | direct OOD | repo baselines + future external OOD rows | `default`, `conservative`, `group RL`, `group RL + conservative` |
 
-## P0: 立刻要跑的实验
+## P0: 立刻要跑的实验（2026-06-27 已完成）
 
-### 1. Table1 公平版重跑
+### 1. Table1 公平版重跑 ✅（jobs `16768165`–`16768167`）
 
 目的：给当前最强的 v3 MolEdit 线补一条**不依赖 table-success rerank**的公平版结果。
 
@@ -37,6 +37,18 @@
 - eval latent: `.../univideo_molecule/table1_eval_latent_fair/`
 - benchmark: `.../univideo_molecule/benchmark_materialized_table1_fair/`
 - metrics: `.../univideo_molecule/moledit_table_metrics_table1_fair/`
+
+**结果**（`edit_latent_source_similarity_rerank`，10 tasks × 100，primary_fast）：
+
+| 指标 | 值 |
+| --- | ---: |
+| mean `Acc_all(0.65)` | **0.286** |
+| mean `Acc_all(0.15)` | **0.569** |
+| Validity | 1.000（全 task） |
+| 最差 task | GSK3B↑ `Acc_all(0.65)=0.000` |
+| 最好 task | DRD2↓ MW↓ SA↓ `Acc_all(0.65)=0.490` |
+
+与 `table_success_rerank` attack 线并排可量化 **selection gain**；公平版本体增益偏低，GSK3B↑ 仍为零。
 
 提交命令：
 
@@ -51,9 +63,11 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_v3_fair_t
 - 给出 `Acc_all(0.65)` / `Acc_all(0.15)` 的公平版
 - 能和 `table_success_rerank` 结果并排，量化 selection gain
 
-### 2. OOD group RL + conservative decoding（n=128）
+### 2. OOD group RL + conservative decoding（n=128）✅（job `16768168`）
 
 目的：检验 group RL checkpoint 在 conservative decoding 下，是否能同时保持 OOD overall 提升并修复 7p bucket。
+
+**结果**：overall strict **80.2%**（+4.6pp vs group RL default n=128）；7p **78.0%**（+19.0pp）；validity **97.0%**。**同时超过 conservative SFT**（74.1% / 72.0%）。✅ 全部成功标准达成。
 
 提交命令：
 
@@ -68,9 +82,11 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 - 7p bucket > `0.590`
 - 最理想是同时超过 conservative SFT 的 `0.741 / 0.720`
 
-### 3. OOD group RL n=256（default decoding）
+### 3. OOD group RL n=256（default decoding）✅（job `16768169`）
 
 目的：测试 OOD 线的 sample-budget ceiling。
+
+**结果**：overall strict **89.0%**（+13.4pp vs n=128 group RL）；7p **90.0%**；validity **99.0%**。sample budget 是 OOD 主瓶颈之一。✅
 
 提交命令：
 
@@ -85,9 +101,11 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 - validity 不显著掉
 - 判断 OOD 的瓶颈更像 training 还是 decoding/sample budget
 
-### 4. OOD group RL n=256 + conservative decoding
+### 4. OOD group RL n=256 + conservative decoding ✅（job `16768170`）
 
 目的：测试当前最有机会成为 OOD 主结果的组合。
+
+**结果**：overall strict **89.4%**（**OOD overall best**）；7p **87.0%**；validity **98.9%**；2p **82.7%**。✅ 同时刷新 overall 与 7p（相对 n=128 baseline）。
 
 提交命令：
 
@@ -164,6 +182,6 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 
 ## 当前最值得优先回答的问题
 
-1. OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？
-2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？
+1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
+2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ **P1 下一步**。

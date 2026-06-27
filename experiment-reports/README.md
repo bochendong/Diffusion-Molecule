@@ -21,7 +21,8 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD group RL **75.6%**） |
+| `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
+| `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
 | `understanding-condition/` | [denovo-ood-benchmark.md](understanding-condition/denovo-ood-benchmark.md) | **完成** de novo OOD（v2_fix + dualmode） |
 | `understanding-condition/` | [source-neighbor-v2-residual-ink.md](understanding-condition/source-neighbor-v2-residual-ink.md) | source-neighbor 对照（`15821981`/`15821983`） |
@@ -162,7 +163,18 @@ group-relative RL（rollouts=16，`group_zscore`，`reference_kl_weight=0.05`，
 | --- | --- | --- | --- |
 | `16742519` | `succ-direct-smiles-ood-v2-group-rl` | 完成 | [direct SMILES v2](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) |
 
-OOD group-relative RL（rollouts=16，`group_zscore`，bench n=128）：OOD overall strict **75.6%**（vs SFT 67.3%，**+8.3pp**；vs conservative 74.1%，**+1.5pp**）；7p bucket 59.0% 仍低于 conservative 72.0%。
+OOD group-relative RL（rollouts=16，`group_zscore`，bench n=128）：OOD overall strict **75.6%**（vs SFT 67.3%，**+8.3pp**）；7p 59.0% 弱于 conservative 主因是 default decoding（P0 follow-up 已修复）。
+
+## 近期 Slurm Job 一览（2026-06-27 P0 paper benchmark batch）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16768165`–`16768167` | Table1 fair（eval→bench→table 链） | 完成 | [paper benchmark plan](understanding-condition/paper-benchmark-plan.md) |
+| `16768168` | `succ-direct-smiles-ood-v2-group-rl-conservative` | 完成 | [direct SMILES v2](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) |
+| `16768169` | `succ-direct-smiles-ood-v2-group-rl-n256` | 完成 | 同上 |
+| `16768170` | `succ-direct-smiles-ood-v2-group-rl-conservative-n256` | 完成 | 同上 |
+
+Table1 fair：mean `Acc_all(0.65)` **28.6%**（`edit_latent_source_similarity_rerank`，10 tasks）。OOD follow-up：conservative n=128 **80.2%/78.0%** 7p；n=256 **89.0%/90.0%** 7p；conservative n=256 **89.4%** overall best。
 
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 

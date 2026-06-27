@@ -74,16 +74,19 @@ if [[ -n "$PARTITION" ]]; then
   SBATCH_ARGS+=(--partition="$PARTITION")
 fi
 
+RUN_SCRIPT="${SUCC_DIRECT_OOD_GROUP_RL_RUN_SCRIPT:-$PROJECT_DIR/scripts/run_direct_smiles_group_rl_ood_v2.sh}"
+echo "  run_script=$RUN_SCRIPT"
+
 job_id=""
 for GPU_REQUEST in "${GPU_CANDIDATES[@]}"; do
   if [[ -n "$GPU_REQUEST" ]]; then
     echo "Trying sbatch with --gpus=$GPU_REQUEST"
-    if ! output="$(sbatch "${SBATCH_ARGS[@]}" --gpus="$GPU_REQUEST" --wrap="bash '$PROJECT_DIR/scripts/run_direct_smiles_group_rl_ood_v2.sh'")"; then
+    if ! output="$(sbatch "${SBATCH_ARGS[@]}" --gpus="$GPU_REQUEST" --wrap="bash '$RUN_SCRIPT'")"; then
       continue
     fi
   else
     echo "Trying sbatch without GPU request"
-    if ! output="$(sbatch "${SBATCH_ARGS[@]}" --wrap="bash '$PROJECT_DIR/scripts/run_direct_smiles_group_rl_ood_v2.sh'")"; then
+    if ! output="$(sbatch "${SBATCH_ARGS[@]}" --wrap="bash '$RUN_SCRIPT'")"; then
       continue
     fi
   fi
