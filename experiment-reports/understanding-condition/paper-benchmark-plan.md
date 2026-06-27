@@ -107,17 +107,30 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
-需要做的工程：
+当前状态：
 
-1. 梳理 5 IND + 5 OOD task 定义
-2. 写 task-to-condition exporter
-3. 先跑一个 pilot split
-4. 跑 `ours-one-shot` 与 `ours-group-rl`
+1. `adapter v1` 已实现，记录见 [external-multiproperty-benchmark.md](external-multiproperty-benchmark.md)。
+2. 已覆盖 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 的 5 IND + 5 OOD task specs。
+3. 已新增 source-conditioned CSV exporter、external generated-property evaluator、server submit 入口。
+4. 默认 pilot 关闭 output-side property rerank，避免把外部 benchmark 第一版做成 assisted result。
 
 预期产出：
 
 - `outputs/mumo_port_v1/`
 - `outputs/cmumo_port_v1/`
+
+提交命令：
+
+```bash
+git pull --ff-only
+SUCC_EXTERNAL_MULTIPROP_SOURCE_FILE=/path/to/mumo_or_cmumo_test.json \
+SUCC_EXTERNAL_MULTIPROP_SUITE=mumo \
+SUCC_EXTERNAL_MULTIPROP_TASK_SPLIT=all \
+SUCC_EXTERNAL_MULTIPROP_MAX_ROWS_PER_TASK=200 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh
+```
+
+注意：BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要 external generated-property CSV 才能公平评估；没有 oracle CSV 时只作为 coverage / plumbing pilot。
 
 ### 6. PMO small-budget pilot
 

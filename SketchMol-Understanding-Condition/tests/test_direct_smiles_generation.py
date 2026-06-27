@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import importlib.util
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,10 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_rl.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/build_direct_smiles_preference_dataset.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_dpo.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/export_external_multiproperty_benchmark_rows.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/evaluate_external_multiproperty_predictions.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_benchmark.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
@@ -135,6 +140,117 @@ def test_collect_direct_smiles_v2_suite_results(tmp_path):
     assert by_variant["2p7p_conservative_n128"]["strict_7p"] == "0.601"
     assert by_variant["ood_conservative_n128"]["strict_7p"] == "0.720"
     assert by_variant["ood_default_n128"]["status"] == "missing"
+
+
+def test_external_multiproperty_exporter_preserves_official_task_properties(tmp_path):
+    source_csv = tmp_path / "sources.csv"
+    output_csv = tmp_path / "external_rows.csv"
+    _write_rows(
+        source_csv,
+        [
+            {
+                "sample_id": "mol_a",
+                "source_smiles": "CCO",
+                "bbbp": "0.2",
+                "drd2": "0.1",
+                "qed": "0.4",
+                "target_qed": "0.62",
+            }
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_external_multiproperty_benchmark_rows.py",
+            "--source-file",
+            str(source_csv),
+            "--output-csv",
+            str(output_csv),
+            "--suite",
+            "mumo",
+            "--tasks",
+            "BDQ",
+            "--max-rows-per-task",
+            "1",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["external_suite"] == "mumo"
+    assert row["external_task_id"] == "BDQ"
+    assert row["external_task_properties"] == "bbbp,drd2,qed"
+    assert row["external_unsupported_properties"] == "bbbp,drd2"
+    assert row["condition_properties"] == "QED"
+    assert row["property_count"] == "3"
+    assert row["target_QED"] == "0.62"
+    assert row["external_target_placeholder"] == "True"
+
+
+def test_external_multiproperty_evaluator_uses_generated_properties_csv(tmp_path):
+    predictions_csv = tmp_path / "predictions.csv"
+    generated_props_csv = tmp_path / "generated_props.csv"
+    output_dir = tmp_path / "eval"
+    _write_rows(
+        predictions_csv,
+        [
+            {
+                "condition_id": "external_mumo_bdq_000000",
+                "source_smiles": "CCO",
+                "generated_smiles": "CCN",
+                "external_suite": "mumo",
+                "external_task_split": "ind",
+                "external_task_id": "BDQ",
+                "external_task_properties": "bbbp,qed",
+                "external_property_directions_json": json.dumps({"bbbp": "increase", "qed": "increase"}),
+                "external_property_thresholds_json": json.dumps({"bbbp": 0.2, "qed": 0.1}),
+                "external_source_bbbp": "0.2",
+                "external_source_qed": "0.4",
+            }
+        ],
+    )
+    _write_rows(
+        generated_props_csv,
+        [
+            {
+                "smiles": "CCN",
+                "bbbp": "0.45",
+                "qed": "0.62",
+            }
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/evaluate_external_multiproperty_predictions.py",
+            "--prediction-csv",
+            str(predictions_csv),
+            "--generated-properties-csv",
+            str(generated_props_csv),
+            "--output-dir",
+            str(output_dir),
+            "--min-source-tanimoto",
+            "0",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    summary_rows = list(csv.DictReader((output_dir / "external_multiproperty_summary.csv").open(newline="", encoding="utf-8")))
+    overall = [row for row in summary_rows if row["external_suite"] == "all"][0]
+    assert overall["strict_success_rate"] == "1"
+    assert overall["missing_oracle_properties"] == ""
 
 
 def test_smiles_tokenization_roundtrip():
