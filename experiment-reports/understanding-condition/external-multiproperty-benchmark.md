@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO diagnostics 完成**；source-edit SFT/Group-RL 修复入口已加入；oracle CSV 待回填 |
-| **最后更新** | 2026-06-27（source-edit SFT `16800837`） |
+| **状态** | **MuMO source-edit SFT+RL 完成**；Sim@0.4 仍为 0；oracle CSV 待回填 |
+| **最后更新** | 2026-06-27（source-edit group-RL `16806903`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -83,6 +83,7 @@ group-RL 入口默认：
 | `16779361` | `succ-external-mumo-one-shot` | MuMO test（one-shot baseline） | `direct_smiles_external_mumo_one_shot_v1/` |
 | `16779362` | `succ-external-mumo-source-copy` | MuMO test（source-copy sanity） | `external_mumo_source_copy_sanity/` |
 | `16800837` | `succ-external-mumo-source-edit-sft` | MuMO train/test（source-edit SFT warm-start） | `direct_smiles_external_mumo_source_edit_sft_v1/` |
+| `16806903` | `succ-external-mumo-source-edit-rl` | MuMO train/test（source-edit SFT → group-RL） | `direct_smiles_external_mumo_source_edit_sft_group_rl_v1/` |
 
 集群数据路径（已下载）：
 
@@ -159,6 +160,31 @@ group-RL 入口默认：
 | source-copy sanity（`16779362`） | 100% | 46.7% | **100%** | 0 |
 
 **结论**：source-aware conditioning + 1 epoch MuMO SFT **提升了 validity（+6.6pp vs one-shot）和 proxy（+2.9pp）**，但 **Sim@0.4 仍为 0**——模型仍未学会保持 source scaffold。1 epoch / 2000 rows 可能不够；下一步接 **source-edit group-RL**（加大 `source_similarity_weight=2.0`）验证 RL 能否拉回 Sim。
+
+## MuMO source-edit group-RL（job `16806903`）
+
+入口：`submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh`。从 source-edit SFT ckpt（`16800837`）warm-start；`append_source_property_program`；MuMO train 2000 / eval 1992 rows；1 epoch group-relative RL（`SFT_WEIGHT=0.5`，`source_similarity_weight=2.0`，`source_similarity_threshold=0.4`）；benchmark n=20，无 rerank，无 oracle CSV。输出 `direct_smiles_external_mumo_source_edit_sft_group_rl_v1/`。
+
+训练：`eval_mean_reward` **-0.791**；`mean_reward` **-0.874**；`sft_loss` **0.992**；`pg_loss` **-0.058**。
+
+评测（同 diagnostics 口径）：
+
+| 变体 | Valid | Proxy eval prop frac | Sim ≥0.4 | Strict |
+| --- | ---: | ---: | ---: | ---: |
+| one-shot（`16779361`） | 90.7% | 42.5% | 0 | 0 |
+| group-RL de novo（`16774795`） | 85.1% | 40.7% | 0 | 0 |
+| source-edit SFT（`16800837`） | 97.3% | 45.4% | 0 | 0 |
+| **source-edit group-RL（`16806903`）** | **96.4%** | **45.0%** | **0** | **0** |
+| source-copy sanity（`16779362`） | 100% | 46.7% | **100%** | 0 |
+
+分 split：
+
+| Split | Valid | Proxy eval prop frac | Sim ≥0.4 |
+| --- | ---: | ---: | ---: |
+| IND（5 tasks） | 95.1% | 41.3% | 0 |
+| OOD（5 tasks） | 97.7% | 48.9% | 0 |
+
+**结论**：在 SFT 基础上加大 source-similarity reward（权重 2.0）**未能拉回 Sim@0.4**；validity 略降（-0.9pp），proxy 基本持平（-0.4pp）。说明瓶颈不在 RL 超参，而在 **source-edit 监督/数据量不足**（1 epoch × 2000 rows）或 **生成范式**（direct SMILES 从零解码 vs 显式 edit/revise）。下一步优先：**加长 SFT epoch / 扩大 train rows**、ADMET oracle CSV 回填 strict、或接 **agentic revise loop**。
 
 ## 服务器命令
 
@@ -263,8 +289,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 2. ~~one-shot baseline~~ → **`16779361` 完成**；proxy **42.5%**，Sim=0；≈ group-RL，RL 无增益。
 3. ~~source-copy sanity~~ → **`16779362` 完成**；Sim@0.4 **100%**；排除 eval 链路 bug。
 4. ~~**source-edit SFT warm-start**~~ → **`16800837` 完成**；validity **97.3%**，proxy **45.4%**，Sim 仍 **0**。
-5. **source-edit group-RL**（`submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh`）→ 已提交或待跑。
-6. ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑；考虑加长 SFT epoch。
+5. ~~**source-edit group-RL**~~ → **`16806903` 完成**；validity **96.4%**，proxy **45.0%**，Sim 仍 **0**；RL 无 Sim 增益。
+6. **加长 source-edit SFT**（更多 epoch / rows）或 **agentic revise loop**；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源
 
