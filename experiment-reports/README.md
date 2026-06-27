@@ -21,6 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **pilot 完成** MuMO group-RL（proxy **40.7%**；strict 待 oracle；Sim@0.4=0） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
@@ -175,6 +176,14 @@ OOD group-relative RL（rollouts=16，`group_zscore`，bench n=128）：OOD over
 | `16768170` | `succ-direct-smiles-ood-v2-group-rl-conservative-n256` | 完成 | 同上 |
 
 Table1 fair：mean `Acc_all(0.65)` **28.6%**（`edit_latent_source_similarity_rerank`，10 tasks）。OOD follow-up：conservative n=128 **80.2%/78.0%** 7p；n=256 **89.0%/90.0%** 7p；conservative n=256 **89.4%** overall best。
+
+## 近期 Slurm Job 一览（2026-06-27 external MuMO group-RL）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16774795` | `succ-external-mumo-group-rl` | 完成 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+
+MuMO official train/test；10 tasks × 200；group-RL warm-start 2p7p ckpt；n=20 bench。Proxy eval prop frac **40.7%**；validity **85.1%**；strict **0**（无 oracle CSV）；source Sim@0.4 **0**（需 source-edit 能力）。
 
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 
