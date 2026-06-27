@@ -121,20 +121,21 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ diagnostics 完成；source-edit repair v1 已加入
+### 5. MuMO / C-MuMO benchmark port ✅ diagnostics 完成；agentic revise v1 已加入
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
-**MuMO 对照（含 source-edit SFT `16800837`）**：
+**MuMO 对照（含 source-edit SFT/RL）**：
 
 | 变体 | Valid | Proxy | Sim ≥0.4 |
 | --- | ---: | ---: | ---: |
 | source-copy sanity | 100% | 46.7% | **100%** |
 | one-shot | 90.7% | 42.5% | 0 |
 | de novo group-RL | 85.1% | 40.7% | 0 |
-| **source-edit SFT** | **97.3%** | **45.4%** | **0** |
+| source-edit SFT | **97.3%** | **45.4%** | **0** |
+| source-edit SFT→RL | 96.4% | 45.0% | **0** |
 
-SFT 提升 validity/proxy 但 **Sim 仍为 0**；下一步 source-edit group-RL（`source_similarity_weight=2.0`）。
+SFT 提升 validity/proxy 但 **Sim 仍为 0**；source-similarity RL 也未拉回 Sim。下一步转 **agentic revise**：direct-SMILES/MLLM 先给 proposal，再用 source-preserving local edit actions 修正。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -146,6 +147,7 @@ SFT 提升 validity/proxy 但 **Sim 仍为 0**；下一步 source-edit group-RL�
 4. 默认 pilot 关闭 output-side property rerank，避免把外部 benchmark 第一版做成 assisted result。
 5. 已新增 external source-conditioned group-RL 入口；reward 加 source Tanimoto 项，默认 `DISABLE_PROPERTY_RERANK=1`，用于主文 `ours-group-rl` 候选。
 6. 已新增 `append_source_property_program` condition mode 和 MuMO source-edit SFT / SFT+group-RL 入口；生成主干显式看到 source SMILES，不依赖 output-side rerank。
+7. 已新增 MuMO `agentic revise` 入口；它是 assisted/source-edit line，单独报，不与 one-shot direct generation 混表。
 
 预期产出：
 
@@ -200,6 +202,13 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh
 ```
 
+agentic revise v1 提交命令：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh
+```
+
 注意：BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要 external generated-property CSV 才能公平评估；没有 oracle CSV 时只作为 coverage / plumbing pilot。
 
 ### 6. PMO small-budget pilot
@@ -236,4 +245,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ SFT **16800837** 提升 validity/proxy 但 Sim 仍 0；待 source-edit group-RL。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ SFT/RL 提升 validity/proxy 但 Sim 仍 0；下一步看 agentic revise 是否能恢复 source conservation。

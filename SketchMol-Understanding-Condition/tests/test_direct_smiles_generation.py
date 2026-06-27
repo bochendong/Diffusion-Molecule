@@ -21,6 +21,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_dpo.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/export_external_multiproperty_benchmark_rows.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/evaluate_external_multiproperty_predictions.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/build_external_agentic_revise_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/build_external_source_copy_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh").exists()
@@ -30,6 +31,8 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_source_edit_sft.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_agentic_revise.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
@@ -338,6 +341,54 @@ def test_external_source_copy_predictions_use_source_smiles(tmp_path):
     assert rows[0]["generated_smiles"] == "CCO"
     assert rows[0]["method"] == "source_copy_sanity"
     assert rows[0]["direct_candidate_count"] == "1"
+
+
+def test_agentic_revise_prefers_source_similar_property_success(monkeypatch, tmp_path):
+    module = _load_agentic_revise_module()
+    monkeypatch.setattr(module, "safe_canonical", lambda value: str(value or ""))
+    monkeypatch.setattr(
+        module,
+        "safe_tanimoto",
+        lambda left, right: 0.8 if right == "near_good" else (1.0 if left == right else 0.0),
+    )
+    monkeypatch.setattr(
+        module,
+        "local_properties",
+        lambda smiles: {"plogp": {"source": 0.0, "near_good": 1.2, "far_good": 1.4}.get(smiles, 0.0)},
+    )
+    monkeypatch.setattr(
+        module,
+        "local_edit_candidates",
+        lambda smiles, max_candidates: [("near_good", "add_C")] if smiles == "source" else [],
+    )
+    args = module.parse_args(
+        [
+            "--rows-csv",
+            str(tmp_path / "rows.csv"),
+            "--prediction-csv",
+            str(tmp_path / "predictions.csv"),
+            "--max-steps",
+            "1",
+        ]
+    )
+    row = {
+        "condition_id": "a",
+        "source_smiles": "source",
+        "external_task_properties": "plogp",
+        "external_property_directions_json": json.dumps({"plogp": "increase"}),
+        "external_property_thresholds_json": json.dumps({"plogp": 1.0}),
+    }
+
+    result = module.revise_row(
+        row,
+        direct_row={"condition_id": "a", "generated_smiles": "far_good"},
+        args=args,
+        rng=__import__("random").Random(7),
+    )
+
+    assert result["generated_smiles"] == "near_good"
+    assert result["agentic_source_similarity_success"] == "True"
+    assert result["agentic_all_evaluated_local_success"] == "True"
 
 
 def test_smiles_tokenization_roundtrip():
@@ -859,6 +910,17 @@ def _load_rl_module():
 def _load_preference_builder_module():
     path = Path("SketchMol-Understanding-Condition/scripts/build_direct_smiles_preference_dataset.py")
     spec = importlib.util.spec_from_file_location("build_direct_smiles_preference_dataset", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_agentic_revise_module():
+    path = Path("SketchMol-Understanding-Condition/scripts/build_external_agentic_revise_predictions.py")
+    spec = importlib.util.spec_from_file_location("build_external_agentic_revise_predictions", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

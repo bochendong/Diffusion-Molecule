@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **source-edit SFT+RL** MuMO（validity **96.4%**；proxy **45.0%**；Sim 仍 0） |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **source-edit SFT+RL + agentic revise** MuMO（SFT/RL Sim 仍 0；agentic revise 待跑） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
@@ -209,6 +209,14 @@ source-copy sanity：Sim@0.4 **100%**（eval 链路正常）。one-shot baseline
 | `16806903` | `succ-external-mumo-source-edit-rl` | 完成 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
 从 source-edit SFT ckpt 接 group-RL（`source_similarity_weight=2.0`）：validity **96.4%**；proxy **45.0%**；Sim@0.4 仍 **0** → RL 未能拉回 source conservation；待加长 SFT 或 agentic revise。
+
+## 近期 Slurm Job 一览（2026-06-27 MuMO agentic revise）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| 待提交 | `succ-external-mumo-agentic-revise` | 待跑 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+
+新增 agentic revise 入口：direct-SMILES/MLLM 先给 proposal，再对 source 做 local edit actions，目标是把 MuMO source Sim@0.4 从 0 拉回来；作为 assisted/source-edit line 单独报告。
 
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 

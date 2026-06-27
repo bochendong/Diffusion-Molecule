@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO source-edit SFT+RL 完成**；Sim@0.4 仍为 0；oracle CSV 待回填 |
-| **最后更新** | 2026-06-27（source-edit group-RL `16806903`） |
+| **状态** | **MuMO source-edit SFT+RL 完成**；agentic revise 入口已加入；oracle CSV 待回填 |
+| **最后更新** | 2026-06-27（agentic revise v1） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -55,6 +55,9 @@ SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_one
 SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_source_edit_sft.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh
+SketchMol-Understanding-Condition/scripts/build_external_agentic_revise_predictions.py
+SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_agentic_revise.sh
+SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh
 SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh
 SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh
 ```
@@ -186,6 +189,17 @@ group-RL 入口默认：
 
 **结论**：在 SFT 基础上加大 source-similarity reward（权重 2.0）**未能拉回 Sim@0.4**；validity 略降（-0.9pp），proxy 基本持平（-0.4pp）。说明瓶颈不在 RL 超参，而在 **source-edit 监督/数据量不足**（1 epoch × 2000 rows）或 **生成范式**（direct SMILES 从零解码 vs 显式 edit/revise）。下一步优先：**加长 SFT epoch / 扩大 train rows**、ADMET oracle CSV 回填 strict、或接 **agentic revise loop**。
 
+## MuMO agentic revise v1（待跑）
+
+入口：`submit_direct_smiles_external_mumo_agentic_revise.sh`。流程：
+
+1. 复用 source-edit SFT checkpoint 生成 direct proposal（`append_source_property_program`，n=20，无 property rerank）。
+2. 对每个 source molecule 执行 source-preserving local edit actions（add/replace/remove terminal atoms），形成 source-neighbor candidate pool。
+3. 按本地可算性质成功、source Tanimoto、property distance 选择 revised molecule。
+4. 用同一个 external evaluator 输出 Valid / Sim≥0.4 / Prop all / Strict。
+
+这条是 **agentic/assisted source-edit**，不与 one-shot direct generation 混报；目标是先验证显式 revise 能不能把 Sim 从 0 拉回来。
+
 ## 服务器命令
 
 MuMO one-shot baseline（同口径对照，推荐先跑）：
@@ -251,6 +265,13 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh
 ```
 
+MuMO agentic revise（下一条推荐跑）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh
+```
+
 只跑 MuMO OOD：
 
 ```bash
@@ -290,7 +311,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 3. ~~source-copy sanity~~ → **`16779362` 完成**；Sim@0.4 **100%**；排除 eval 链路 bug。
 4. ~~**source-edit SFT warm-start**~~ → **`16800837` 完成**；validity **97.3%**，proxy **45.4%**，Sim 仍 **0**。
 5. ~~**source-edit group-RL**~~ → **`16806903` 完成**；validity **96.4%**，proxy **45.0%**，Sim 仍 **0**；RL 无 Sim 增益。
-6. **加长 source-edit SFT**（更多 epoch / rows）或 **agentic revise loop**；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
+6. **agentic revise v1** → 入口已加入；下一步跑 `direct_smiles_external_mumo_agentic_revise_v1/`，检查 Sim@0.4 是否从 0 拉回。
+7. **加长 source-edit SFT**（更多 epoch / rows）；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源
 
