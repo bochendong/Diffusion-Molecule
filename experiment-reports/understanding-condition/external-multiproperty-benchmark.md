@@ -51,6 +51,9 @@ SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproper
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh
 SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_group_rl.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
+SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_one_shot_baseline.sh
+SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh
+SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh
 ```
 
 one-shot 默认是 pilot/diagnostic：
@@ -111,7 +114,21 @@ group-RL 入口默认：
 
 ## 服务器命令
 
-最小 one-shot pilot：
+MuMO one-shot baseline（同口径对照，推荐先跑）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_one_shot_baseline.sh
+```
+
+MuMO source-copy sanity（不算模型结果，只验证 source similarity / evaluator）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh
+```
+
+最小 one-shot pilot（自定义数据路径）：
 
 ```bash
 git pull --ff-only
@@ -181,10 +198,11 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 ## 接下来
 
 1. ~~跑 external group-RL P1 pilot~~ → **`16774795` 完成**；proxy eval prop frac **40.7%**，strict 待 oracle CSV。
-2. 跑 **one-shot baseline** 同口径对照（`ours-one-shot` vs `ours-group-rl`）。
-3. 跑 generated molecules 的 ADMET/TDC oracle，回填 generated-property CSV。
-4. **source-edit SFT / agentic revise loop**（当前 Sim@0.4=0，de novo ckpt 不适配 source-conditioned edit）。
-5. C-MuMO 复跑（`SUITE=cmumo`）。
+2. 跑 **one-shot baseline** 同口径对照（`submit_direct_smiles_external_mumo_one_shot_baseline.sh`）。
+3. 跑 **source-copy sanity**（`submit_external_mumo_source_copy_sanity.sh`），确认 source fields / Tanimoto evaluator 正常。
+4. 跑 generated molecules 的 ADMET/TDC oracle，回填 generated-property CSV。
+5. **source-edit SFT / agentic revise loop**（当前 Sim@0.4=0，de novo ckpt 不适配 source-conditioned edit）。
+6. C-MuMO 复跑（`SUITE=cmumo`）。
 
 ## 外部来源
 

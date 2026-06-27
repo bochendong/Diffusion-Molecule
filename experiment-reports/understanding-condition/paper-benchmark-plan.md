@@ -154,11 +154,14 @@ one-shot 提交命令：
 
 ```bash
 git pull --ff-only
-SUCC_EXTERNAL_MULTIPROP_SOURCE_FILE=/path/to/mumo_or_cmumo_test.json \
-SUCC_EXTERNAL_MULTIPROP_SUITE=mumo \
-SUCC_EXTERNAL_MULTIPROP_TASK_SPLIT=all \
-SUCC_EXTERNAL_MULTIPROP_MAX_ROWS_PER_TASK=200 \
-bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_one_shot_baseline.sh
+```
+
+source-copy sanity 提交命令（不作为方法结果，只验证 source similarity / evaluator）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh
 ```
 
 group-RL 提交命令（官方文件里含 train/test split）：

@@ -31,6 +31,7 @@ SOURCE_PROPERTIES_CSV="${SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV:-}"
 SUITE="${SUCC_EXTERNAL_MULTIPROP_SUITE:-both}"
 TASK_SPLIT="${SUCC_EXTERNAL_MULTIPROP_TASK_SPLIT:-all}"
 TASKS="${SUCC_EXTERNAL_MULTIPROP_TASKS:-}"
+INPUT_SPLIT="${SUCC_EXTERNAL_MULTIPROP_INPUT_SPLIT:-all}"
 MAX_ROWS_PER_TASK="${SUCC_EXTERNAL_MULTIPROP_MAX_ROWS_PER_TASK:-200}"
 SEED="${SUCC_EXTERNAL_MULTIPROP_SEED:-17}"
 FORCE_EXPORT="${SUCC_EXTERNAL_MULTIPROP_FORCE_EXPORT:-0}"
@@ -80,6 +81,7 @@ echo "  rows_csv=$ROWS_CSV"
 echo "  suite=$SUITE"
 echo "  task_split=$TASK_SPLIT"
 echo "  tasks=${TASKS:-all}"
+echo "  input_split=$INPUT_SPLIT"
 echo "  max_rows_per_task=$MAX_ROWS_PER_TASK"
 echo "  resume_checkpoint=$RESUME_CHECKPOINT"
 echo "  run_train=$RUN_TRAIN"
@@ -101,6 +103,7 @@ if [[ "$FORCE_EXPORT" == "1" || ! -f "$ROWS_CSV" ]]; then
     --suite "$SUITE" \
     --task-split "$TASK_SPLIT" \
     --tasks "$TASKS" \
+    --input-split "$INPUT_SPLIT" \
     --max-rows-per-task "$MAX_ROWS_PER_TASK" \
     --seed "$SEED"
 fi

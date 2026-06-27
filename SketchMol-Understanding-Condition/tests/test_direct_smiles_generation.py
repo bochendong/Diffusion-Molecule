@@ -21,10 +21,14 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_dpo.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/export_external_multiproperty_benchmark_rows.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/evaluate_external_multiproperty_predictions.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/build_external_source_copy_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_group_rl.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_one_shot_baseline.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
@@ -294,6 +298,43 @@ def test_external_multiproperty_evaluator_uses_generated_properties_csv(tmp_path
     overall = [row for row in summary_rows if row["external_suite"] == "all"][0]
     assert overall["strict_success_rate"] == "1"
     assert overall["missing_oracle_properties"] == ""
+
+
+def test_external_source_copy_predictions_use_source_smiles(tmp_path):
+    rows_csv = tmp_path / "rows.csv"
+    predictions_csv = tmp_path / "source_copy_predictions.csv"
+    _write_rows(
+        rows_csv,
+        [
+            {
+                "condition_id": "external_mumo_dpq_000000",
+                "source_smiles": "CCO",
+                "target_smiles": "CCO",
+            }
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/build_external_source_copy_predictions.py",
+            "--rows-csv",
+            str(rows_csv),
+            "--prediction-csv",
+            str(predictions_csv),
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(predictions_csv.open(newline="", encoding="utf-8")))
+    assert len(rows) == 1
+    assert rows[0]["generated_smiles"] == "CCO"
+    assert rows[0]["method"] == "source_copy_sanity"
+    assert rows[0]["direct_candidate_count"] == "1"
 
 
 def test_smiles_tokenization_roundtrip():
