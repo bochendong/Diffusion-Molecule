@@ -121,18 +121,19 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ MuMO group-RL pilot（job `16774795`）
+### 5. MuMO / C-MuMO benchmark port ✅ diagnostics 完成（`16774795` / `16779361` / `16779362`）
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
-**MuMO group-RL pilot 结果**（见 [external-multiproperty-benchmark.md](external-multiproperty-benchmark.md)）：
+**MuMO 三方对照**（见 [external-multiproperty-benchmark.md](external-multiproperty-benchmark.md)）：
 
-| 指标 | 值 | 说明 |
-| --- | ---: | --- |
-| Proxy eval prop frac（all） | **40.7%** | 无 oracle CSV，仅 proxy subset |
-| Validity | **85.1%** | — |
-| Strict（official） | **0** | 缺 BBBP/DRD2/HIA/mutagenicity oracle |
-| Source Sim ≥0.4 | **0** | de novo ckpt 不适配 source edit |
+| 变体 | Job | Proxy eval prop frac | Sim ≥0.4 | Valid |
+| --- | --- | ---: | ---: | ---: |
+| source-copy sanity | `16779362` | 46.7% | **100%** | 100% |
+| one-shot baseline | `16779361` | **42.5%** | 0 | 90.7% |
+| group-RL | `16774795` | 40.7% | 0 | 85.1% |
+
+**结论**：source-copy Sim=100% 排除 eval 链路 bug；one-shot ≈ group-RL，RL 无增益；瓶颈是 **source-edit 能力**（de novo ckpt），非数据/评估问题。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -223,4 +224,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ **MuMO pilot 跑通**（proxy 41%）；需 oracle CSV + source-edit 能力才能公平 claim。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ **MuMO pipeline 跑通**；source-copy 排除 eval bug；**source-edit 能力是主瓶颈**（需 SFT/agentic，非 RL 调参）。

@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO group-RL pilot 完成**（job `16774795`）；oracle CSV 待回填 |
-| **最后更新** | 2026-06-27（MuMO group-RL `16774795`） |
+| **状态** | **MuMO diagnostics 完成**（group-RL + one-shot + source-copy）；oracle CSV 待回填 |
+| **最后更新** | 2026-06-27（MuMO one-shot `16779361` + source-copy `16779362`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -77,6 +77,8 @@ group-RL 入口默认：
 | Job | 名称 | 数据 | 输出 |
 | --- | --- | --- | --- |
 | `16774795` | `succ-external-mumo-group-rl` | MuMO train/test（HuggingFace 官方 JSON） | `direct_smiles_external_mumo_group_rl_v1/` |
+| `16779361` | `succ-external-mumo-one-shot` | MuMO test（one-shot baseline） | `direct_smiles_external_mumo_one_shot_v1/` |
+| `16779362` | `succ-external-mumo-source-copy` | MuMO test（source-copy sanity） | `external_mumo_source_copy_sanity/` |
 
 集群数据路径（已下载）：
 
@@ -106,11 +108,26 @@ group-RL 入口默认：
 | BDQ | ind | 69.5% | **23.2%** |
 | BHMQ | ood | 71.0% | **17.8%** |
 
-**结论**：
+**结论**（初版；见下方 diagnostics 更新）：
 1. **端到端 pipeline 跑通**：export → feature → group-RL → benchmark；10-task coverage OK。
 2. **无 oracle CSV 时 strict=0 是预期行为**（BBBP/DRD2/HIA/mutagenicity 缺 external scorer）；proxy subset `eval prop frac` **~41%** 仅作 plumbing 诊断。
-3. **source similarity 全为 0**（Sim ≥0.4）：生成物几乎未保持 source scaffold，与 MuMO 任务定义冲突；zero-source de novo ckpt + 短 RL 不足以做 source-conditioned edit。
-4. **下一步**：one-shot baseline 同口径对照；ADMET/TDC generated-property CSV 回填 strict；source-edit SFT warm-start 或 agentic revise loop；C-MuMO 复跑。
+3. **source similarity 全为 0**（Sim ≥0.4）：初判为 source-edit 能力问题；已由 source-copy sanity 排除 eval 链路 bug。
+
+## MuMO diagnostics（jobs `16779361` / `16779362`）
+
+同口径 eval：MuMO test，10 tasks × 200，n=20，无 rerank，无 oracle CSV。
+
+| Job | 变体 | Valid | Proxy eval prop frac | Sim ≥0.4 | Strict |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `16779362` | **source-copy sanity** | **100%** | 46.7% | **100%** | 0 |
+| `16779361` | **one-shot baseline** | **90.7%** | **42.5%** | **0** | 0 |
+| `16774795` | group-RL | 85.1% | 40.7% | 0 | 0 |
+
+**诊断结论**：
+1. **source-copy Sim@0.4 = 100%** → `source_smiles` 字段与 Tanimoto evaluator **正常**；group-RL / one-shot 的 Sim=0 **不是数据或评估链路 bug**。
+2. **one-shot proxy 42.5% ≈ group-RL 40.7%** → 短 RL 未带来增益，validity 还略降（90.7% vs 85.1%）；瓶颈在 **de novo ckpt 不具备 source-conditioned edit 能力**，而非 RL 超参。
+3. **strict 全为 0**（三方一致）→ 仍需 ADMET/TDC generated-property CSV 才能报 official strict；source-copy strict=0 也符合预期（复制 source 不改善性质）。
+4. **下一步**：source-edit SFT warm-start 或 agentic revise loop；ADMET oracle 回填；C-MuMO 复跑。
 
 ## 服务器命令
 
@@ -197,12 +214,11 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 
 ## 接下来
 
-1. ~~跑 external group-RL P1 pilot~~ → **`16774795` 完成**；proxy eval prop frac **40.7%**，strict 待 oracle CSV。
-2. 跑 **one-shot baseline** 同口径对照（`submit_direct_smiles_external_mumo_one_shot_baseline.sh`）。
-3. 跑 **source-copy sanity**（`submit_external_mumo_source_copy_sanity.sh`），确认 source fields / Tanimoto evaluator 正常。
-4. 跑 generated molecules 的 ADMET/TDC oracle，回填 generated-property CSV。
-5. **source-edit SFT / agentic revise loop**（当前 Sim@0.4=0，de novo ckpt 不适配 source-conditioned edit）。
-6. C-MuMO 复跑（`SUITE=cmumo`）。
+1. ~~跑 external group-RL P1 pilot~~ → **`16774795` 完成**；proxy **40.7%**，Sim=0。
+2. ~~one-shot baseline~~ → **`16779361` 完成**；proxy **42.5%**，Sim=0；≈ group-RL，RL 无增益。
+3. ~~source-copy sanity~~ → **`16779362` 完成**；Sim@0.4 **100%**；排除 eval 链路 bug。
+4. **source-edit SFT warm-start** 或 **agentic revise loop**（当前 de novo ckpt 不适配 MuMO）。
+5. ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源
 
