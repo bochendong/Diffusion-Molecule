@@ -33,6 +33,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_agentic_revise.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise_rich.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
@@ -359,7 +360,9 @@ def test_agentic_revise_prefers_source_similar_property_success(monkeypatch, tmp
     monkeypatch.setattr(
         module,
         "local_edit_candidates",
-        lambda smiles, max_candidates: [("near_good", "add_C")] if smiles == "source" else [],
+        lambda smiles, max_candidates, action_profile="basic": [("near_good", f"{action_profile}:add_C")]
+        if smiles == "source"
+        else [],
     )
     args = module.parse_args(
         [
@@ -369,6 +372,8 @@ def test_agentic_revise_prefers_source_similar_property_success(monkeypatch, tmp
             str(tmp_path / "predictions.csv"),
             "--max-steps",
             "1",
+            "--edit-action-profile",
+            "rich",
         ]
     )
     row = {
@@ -389,6 +394,54 @@ def test_agentic_revise_prefers_source_similar_property_success(monkeypatch, tmp
     assert result["generated_smiles"] == "near_good"
     assert result["agentic_source_similarity_success"] == "True"
     assert result["agentic_all_evaluated_local_success"] == "True"
+
+
+def test_agentic_revise_similarity_first_requires_local_success(monkeypatch, tmp_path):
+    module = _load_agentic_revise_module()
+    monkeypatch.setattr(module, "safe_canonical", lambda value: str(value or ""))
+    monkeypatch.setattr(
+        module,
+        "safe_tanimoto",
+        lambda left, right: {"source": 1.0, "near_bad": 0.9, "near_good": 0.8, "far_good": 0.0}.get(right, 0.0),
+    )
+    monkeypatch.setattr(
+        module,
+        "local_properties",
+        lambda smiles: {"plogp": {"source": 0.0, "near_bad": 0.2, "near_good": 1.1, "far_good": 1.5}.get(smiles, 0.0)},
+    )
+    args = module.parse_args(
+        [
+            "--rows-csv",
+            str(tmp_path / "rows.csv"),
+            "--prediction-csv",
+            str(tmp_path / "predictions.csv"),
+            "--max-steps",
+            "0",
+            "--selection-mode",
+            "similarity_first",
+            "--similarity-first-min-local-success-fraction",
+            "1.0",
+        ]
+    )
+    row = {
+        "condition_id": "a",
+        "source_smiles": "source",
+        "external_task_properties": "plogp",
+        "external_property_directions_json": json.dumps({"plogp": "increase"}),
+        "external_property_thresholds_json": json.dumps({"plogp": 1.0}),
+    }
+    ranked = module.rank_candidates(
+        row,
+        [
+            module.Candidate("source", "source_copy", "source_copy"),
+            module.Candidate("near_bad", "near_bad", "test"),
+            module.Candidate("near_good", "near_good", "test"),
+            module.Candidate("far_good", "far_good", "test"),
+        ],
+        args=args,
+    )
+
+    assert ranked[0].canonical_smiles == "near_good"
 
 
 def test_smiles_tokenization_roundtrip():

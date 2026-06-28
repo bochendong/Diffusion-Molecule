@@ -68,6 +68,10 @@ echo "  output_dir=$SUCC_EXTERNAL_AGENTIC_OUTPUT_DIR"
 echo "  task_split=$SUCC_EXTERNAL_AGENTIC_TASK_SPLIT"
 echo "  max_rows_per_task=$SUCC_EXTERNAL_AGENTIC_MAX_ROWS_PER_TASK"
 echo "  agentic_steps=$SUCC_EXTERNAL_AGENTIC_STEPS"
+echo "  agentic_beam_size=${SUCC_EXTERNAL_AGENTIC_BEAM_SIZE:-48}"
+echo "  agentic_max_candidates_per_row=${SUCC_EXTERNAL_AGENTIC_MAX_CANDIDATES_PER_ROW:-256}"
+echo "  agentic_edit_action_profile=${SUCC_EXTERNAL_AGENTIC_EDIT_ACTION_PROFILE:-basic}"
+echo "  agentic_selection_mode=${SUCC_EXTERNAL_AGENTIC_SELECTION_MODE:-score}"
 echo "  gpu_candidates=${GPU_CANDIDATES[*]:-none}"
 
 SBATCH_ARGS=(

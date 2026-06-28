@@ -109,6 +109,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--beam-size", type=int, default=48)
     parser.add_argument("--max-candidates-per-parent", type=int, default=64)
     parser.add_argument("--max-candidates-per-row", type=int, default=256)
+    parser.add_argument("--edit-action-profile", choices=("basic", "rich"), default="basic")
+    parser.add_argument("--selection-mode", choices=("score", "similarity_first"), default="score")
+    parser.add_argument("--similarity-first-min-local-success-fraction", type=float, default=1.0)
     parser.add_argument("--property-weight", type=float, default=100.0)
     parser.add_argument("--distance-weight", type=float, default=10.0)
     parser.add_argument("--similarity-weight", type=float, default=12.0)
@@ -155,7 +158,11 @@ def revise_row(
         parents = [item.canonical_smiles for item in beam] or [source_smiles]
         rng.shuffle(parents)
         for parent in parents[: max(1, int(args.beam_size))]:
-            for smiles, action in local_edit_candidates(parent, max_candidates=int(args.max_candidates_per_parent)):
+            for smiles, action in local_edit_candidates(
+                parent,
+                max_candidates=int(args.max_candidates_per_parent),
+                action_profile=str(args.edit_action_profile),
+            ):
                 canonical = safe_canonical(smiles)
                 if not canonical or canonical in seen:
                     continue
@@ -210,6 +217,20 @@ def initial_candidates(
 def rank_candidates(row: Mapping[str, str], candidates: Iterable[Candidate], *, args: argparse.Namespace) -> list[CandidateScore]:
     scored = [score_candidate(row, candidate, args=args) for candidate in candidates]
     scored = [item for item in scored if item.canonical_smiles]
+    if str(args.selection_mode) == "similarity_first":
+        min_success = float(args.similarity_first_min_local_success_fraction)
+        return sorted(
+            scored,
+            key=lambda item: (
+                item.source_similarity_success and item.local_success_fraction >= min_success,
+                item.all_evaluated_local_success,
+                item.local_success_fraction,
+                -item.local_property_distance,
+                item.source_tanimoto if math.isfinite(item.source_tanimoto) else -1.0,
+                item.score,
+            ),
+            reverse=True,
+        )
     return sorted(
         scored,
         key=lambda item: (
@@ -322,7 +343,12 @@ def local_properties(smiles: str) -> dict[str, float]:
     return out
 
 
-def local_edit_candidates(smiles: str, *, max_candidates: int) -> list[tuple[str, str]]:
+def local_edit_candidates(
+    smiles: str,
+    *,
+    max_candidates: int,
+    action_profile: str = "basic",
+) -> list[tuple[str, str]]:
     try:
         from rdkit import Chem
     except ImportError:
@@ -345,7 +371,20 @@ def local_edit_candidates(smiles: str, *, max_candidates: int) -> list[tuple[str
             seen.add(candidate)
             out.append((candidate, action))
 
-    atom_symbols = ("C", "N", "O", "F", "Cl")
+    profile = str(action_profile or "basic").lower()
+    atom_symbols = ("C", "N", "O", "F", "Cl") if profile == "basic" else ("C", "N", "O", "F", "Cl", "Br", "S")
+    fragment_specs = []
+    if profile == "rich":
+        fragment_specs = [
+            ("methyl", "C", 0),
+            ("ethyl", "CC", 0),
+            ("hydroxyl", "O", 0),
+            ("amino", "N", 0),
+            ("cyano", "C#N", 0),
+            ("carboxyl", "C(=O)O", 0),
+            ("amide", "C(=O)N", 0),
+            ("phenyl", "c1ccccc1", 0),
+        ]
     for atom in mol.GetAtoms():
         atom_index = atom.GetIdx()
         if len(out) >= max_candidates:
@@ -355,6 +394,16 @@ def local_edit_candidates(smiles: str, *, max_candidates: int) -> list[tuple[str
             new_index = rw.AddAtom(Chem.Atom(symbol))
             rw.AddBond(atom_index, new_index, Chem.BondType.SINGLE)
             add_candidate(rw.GetMol(), f"add_{symbol}@{atom_index}")
+        for label, fragment_smiles, attach_atom_index in fragment_specs:
+            if len(out) >= max_candidates:
+                break
+            fragment = Chem.MolFromSmiles(fragment_smiles)
+            if fragment is None or fragment.GetNumAtoms() <= attach_atom_index:
+                continue
+            combo = Chem.CombineMols(mol, fragment)
+            rw = Chem.RWMol(combo)
+            rw.AddBond(atom_index, mol.GetNumAtoms() + attach_atom_index, Chem.BondType.SINGLE)
+            add_candidate(rw.GetMol(), f"attach_{label}@{atom_index}")
         if not atom.GetIsAromatic() and atom.GetAtomicNum() not in {1}:
             for symbol in atom_symbols:
                 if atom.GetSymbol() == symbol:
@@ -362,6 +411,27 @@ def local_edit_candidates(smiles: str, *, max_candidates: int) -> list[tuple[str
                 rw = Chem.RWMol(mol)
                 rw.GetAtomWithIdx(atom_index).SetAtomicNum(Chem.Atom(symbol).GetAtomicNum())
                 add_candidate(rw.GetMol(), f"replace_{atom.GetSymbol()}_to_{symbol}@{atom_index}")
+    if profile == "rich":
+        for bond in mol.GetBonds():
+            if len(out) >= max_candidates:
+                break
+            if bond.GetIsAromatic() or bond.IsInRing():
+                continue
+            begin = bond.GetBeginAtomIdx()
+            end = bond.GetEndAtomIdx()
+            current = bond.GetBondType()
+            replacements = []
+            if current == Chem.BondType.SINGLE:
+                replacements = [(Chem.BondType.DOUBLE, "single_to_double"), (Chem.BondType.TRIPLE, "single_to_triple")]
+            elif current == Chem.BondType.DOUBLE:
+                replacements = [(Chem.BondType.SINGLE, "double_to_single")]
+            elif current == Chem.BondType.TRIPLE:
+                replacements = [(Chem.BondType.SINGLE, "triple_to_single")]
+            for replacement, label in replacements:
+                rw = Chem.RWMol(mol)
+                rw.RemoveBond(begin, end)
+                rw.AddBond(begin, end, replacement)
+                add_candidate(rw.GetMol(), f"{label}@{begin}-{end}")
     if mol.GetNumAtoms() > 1:
         for atom in mol.GetAtoms():
             if len(out) >= max_candidates:

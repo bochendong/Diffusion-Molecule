@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO agentic revise 2/4-step 完成**；Sim@0.4 **15.6%**（4-step 无增益）；oracle CSV 待回填 |
-| **最后更新** | 2026-06-27（agentic 4-step `16819986`） |
+| **状态** | **MuMO agentic revise 2/4-step 完成**；rich candidate-pool v2 入口已加入；oracle CSV 待回填 |
+| **最后更新** | 2026-06-28（agentic rich v2） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -58,6 +58,7 @@ SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_sou
 SketchMol-Understanding-Condition/scripts/build_external_agentic_revise_predictions.py
 SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_agentic_revise.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh
+SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise_rich.sh
 SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh
 SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh
 ```
@@ -231,6 +232,17 @@ Revise 统计与 2-step **完全一致**：`mean_candidate_count` **256**；`mea
 
 **结论**：在相同 beam / candidate cap（256/row）下，**4-step 无 Sim/proxy 增益**——瓶颈不在 edit depth，而在 **candidate pool 容量** 或 **local edit action 覆盖面**（terminal add/replace/remove 不足以逼近 source scaffold）。下一步优先：**扩大 beam / max_candidates**、 richer edit actions、ADMET oracle CSV 回填 strict。
 
+## MuMO agentic revise rich v2（待跑）
+
+入口：`submit_direct_smiles_external_mumo_agentic_revise_rich.sh`。这版不再增加 step，而是直接验证 4-step 结论里的两个瓶颈：
+
+1. 复用 2-step 的 direct proposals，不重跑 MLLM。
+2. `edit_action_profile=rich`：新增 fragment attach、bond-order edit、Br/S 等 atom edits。
+3. `beam=128`，`max_candidates_per_parent=256`，`max_candidates_per_row=2048`。
+4. `selection_mode=similarity_first`：只有本地可算性质达标的候选才优先按 Sim≥0.4 / Tanimoto 排序，避免 source-copy 直接胜出。
+
+目标：判断 Sim@0.4 能否显著超过 15.6%；如果仍不动，说明需要真正的 graph-edit policy / fragment library，而不是继续扩局部搜索。
+
 ## 服务器命令
 
 MuMO one-shot baseline（同口径对照，推荐先跑）：
@@ -318,6 +330,13 @@ SUCC_EXTERNAL_AGENTIC_TASK_SPEC_JSON=SketchMol-Understanding-Condition/outputs/d
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh
 ```
 
+MuMO agentic revise rich v2（推荐下一条跑）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise_rich.sh
+```
+
 只跑 MuMO OOD：
 
 ```bash
@@ -359,7 +378,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 5. ~~**source-edit group-RL**~~ → **`16806903` 完成**；validity **96.4%**，proxy **45.0%**，Sim 仍 **0**；RL 无 Sim 增益。
 6. ~~**agentic revise 2-step**~~ → **`16813212` 完成**；Sim@0.4 **15.6%**；validity **100%**；proxy **46.7%**。
 7. ~~**agentic revise 4-step**~~ → **`16819986` 完成**；与 2-step **完全相同**（Sim **15.6%**）→ 瓶颈在 candidate pool / edit actions，不在 step depth。
-8. **扩大 beam / max_candidates** 或 richer edit actions；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
+8. **agentic revise rich v2** → 入口已加入；下一步跑 `direct_smiles_external_mumo_agentic_revise_rich_v1/`，检验 rich actions + 2048 candidates/row 是否超过 15.6% Sim@0.4。
+9. ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源
 
