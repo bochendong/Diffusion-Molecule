@@ -230,7 +230,7 @@ GraphEditDSL agent（heuristic planner）：validity **100%**；proxy **46.7%**�
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| 待提交 | `succ-external-mumo-graph-policy` | 待跑 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16892025` | `succ-external-mumo-graph-policy` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
 policy GraphEditDSL v2：`planner_mode=policy_graph_dsl`，2-step beam expansion，2048 candidates/row，richer DSL actions + property-aware action scoring。提交命令：
 
