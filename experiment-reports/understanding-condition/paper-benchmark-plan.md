@@ -121,7 +121,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ agentic revise 2/4-step 完成；rich v2 已加入
+### 5. MuMO / C-MuMO benchmark port ✅ agentic revise 2/4-step 完成；rich v2 + GraphEditDSL agent 已加入
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
@@ -137,7 +137,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | agentic revise 2-step | assisted | **100%** | **46.7%** | **15.6%** |
 | agentic revise 4-step | assisted | **100%** | **46.7%** | **15.6%** |
 
-SFT/RL direct Sim 仍为 0；**agentic revise 2-step 首次拉回 Sim@0.4（15.6%）**；**4-step 与 2-step 完全相同** → 瓶颈在 candidate pool / edit actions，不在 step depth。下一步：**rich actions + 2048 candidates/row**、oracle CSV strict、C-MuMO。
+SFT/RL direct Sim 仍为 0；**agentic revise 2-step 首次拉回 Sim@0.4（15.6%）**；**4-step 与 2-step 完全相同** → 瓶颈在 candidate pool / edit actions，不在 step depth。下一步：**rich actions + 2048 candidates/row**、**GraphEditDSL agent**、oracle CSV strict、C-MuMO。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -151,6 +151,7 @@ SFT/RL direct Sim 仍为 0；**agentic revise 2-step 首次拉回 Sim@0.4（15.6
 6. 已新增 `append_source_property_program` condition mode 和 MuMO source-edit SFT / SFT+group-RL 入口；生成主干显式看到 source SMILES，不依赖 output-side rerank。
 7. 已新增 MuMO `agentic revise` 入口；它是 assisted/source-edit line，单独报，不与 one-shot direct generation 混表。
 8. 已新增 MuMO `agentic revise rich` 入口；复用 v1 direct proposals，扩大 beam/candidate cap，并使用 similarity-first selection。
+9. 已新增 MuMO `GraphEditDSL agent` 入口；planner 输出结构化 graph-edit actions，RDKit executor 在 source graph 上执行，verifier 按 local property success + source similarity 选候选。这是 source-conditioned edit 的主方向升级，不再只是 rerank/local-search 调参。
 
 预期产出：
 
@@ -219,6 +220,13 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise_rich.sh
 ```
 
+GraphEditDSL agent v1 提交命令（主方向升级，复用 v1 direct proposals）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_agent.sh
+```
+
 注意：BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要 external generated-property CSV 才能公平评估；没有 oracle CSV 时只作为 coverage / plumbing pilot。
 
 ### 6. PMO small-budget pilot
@@ -255,4 +263,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct SFT/RL Sim 仍 0；agentic 2/4-step Sim@0.4 **15.6%**（assisted）；rich candidate-pool v2 待跑；strict 仍待 oracle CSV。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct SFT/RL Sim 仍 0；agentic 2/4-step Sim@0.4 **15.6%**（assisted）；rich candidate-pool v2 与 GraphEditDSL agent 待跑；strict 仍待 oracle CSV。

@@ -22,6 +22,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/export_external_multiproperty_benchmark_rows.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/evaluate_external_multiproperty_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/build_external_agentic_revise_predictions.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/build_external_graph_edit_agent_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/build_external_source_copy_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh").exists()
@@ -34,6 +35,8 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_agentic_revise.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise_rich.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_graph_edit_agent.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_agent.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
@@ -442,6 +445,79 @@ def test_agentic_revise_similarity_first_requires_local_success(monkeypatch, tmp
     )
 
     assert ranked[0].canonical_smiles == "near_good"
+
+
+def test_graph_edit_planner_emits_structured_dsl_actions():
+    module = _load_graph_edit_agent_module()
+    row = {
+        "source_smiles": "CCO",
+        "external_task_properties": "plogp,qed",
+        "external_property_directions_json": json.dumps({"plogp": "increase", "qed": "increase"}),
+    }
+
+    actions = module.plan_graph_edit_actions(row, source_smiles="CCO", site_limit=2, max_plans_per_property=4)
+
+    assert actions
+    assert any(action.op in {"add_atom", "add_fragment"} for action in actions)
+    assert all(json.loads(action.to_json())["op"] for action in actions)
+    assert any(action.prop == "plogp" for action in actions)
+
+
+def test_graph_edit_agent_prefers_source_similar_property_success(monkeypatch, tmp_path):
+    module = _load_graph_edit_agent_module()
+    monkeypatch.setattr(module.revise, "safe_canonical", lambda value: str(value or ""))
+    monkeypatch.setattr(
+        module.revise,
+        "safe_tanimoto",
+        lambda _left, right: {"source": 1.0, "near_good": 0.8, "far_good": 0.0}.get(right, 0.0),
+    )
+    monkeypatch.setattr(
+        module.revise,
+        "local_properties",
+        lambda smiles: {"plogp": {"source": 0.0, "near_good": 1.2, "far_good": 1.4}.get(smiles, 0.0)},
+    )
+    monkeypatch.setattr(module, "editable_atom_sites", lambda _source_smiles, site_limit: [0])
+    monkeypatch.setattr(module, "editable_bond_sites", lambda _source_smiles, site_limit: [])
+
+    def fake_execute(_source_smiles, action):
+        return "near_good" if action.op == "add_fragment" and action.fragment == "C" else ""
+
+    monkeypatch.setattr(module, "execute_graph_edit_action", fake_execute)
+    args = module.parse_args(
+        [
+            "--rows-csv",
+            str(tmp_path / "rows.csv"),
+            "--prediction-csv",
+            str(tmp_path / "predictions.csv"),
+            "--selection-mode",
+            "similarity_first",
+            "--similarity-first-min-local-success-fraction",
+            "1.0",
+            "--site-limit",
+            "1",
+            "--max-plans-per-property",
+            "8",
+        ]
+    )
+    row = {
+        "condition_id": "a",
+        "source_smiles": "source",
+        "external_task_properties": "plogp",
+        "external_property_directions_json": json.dumps({"plogp": "increase"}),
+        "external_property_thresholds_json": json.dumps({"plogp": 1.0}),
+    }
+
+    result, records = module.predict_row(
+        row,
+        direct_row={"condition_id": "a", "generated_smiles": "far_good"},
+        args=args,
+        rng=__import__("random").Random(7),
+    )
+
+    assert result["generated_smiles"] == "near_good"
+    assert result["graph_edit_candidate_source"] == "graph_edit_dsl"
+    assert result["graph_edit_source_similarity_success"] == "True"
+    assert any(record["generated_smiles"] == "near_good" for record in records)
 
 
 def test_smiles_tokenization_roundtrip():
@@ -974,6 +1050,17 @@ def _load_preference_builder_module():
 def _load_agentic_revise_module():
     path = Path("SketchMol-Understanding-Condition/scripts/build_external_agentic_revise_predictions.py")
     spec = importlib.util.spec_from_file_location("build_external_agentic_revise_predictions", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_graph_edit_agent_module():
+    path = Path("SketchMol-Understanding-Condition/scripts/build_external_graph_edit_agent_predictions.py")
+    spec = importlib.util.spec_from_file_location("build_external_graph_edit_agent_predictions", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

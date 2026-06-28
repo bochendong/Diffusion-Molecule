@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO agentic revise 2/4-step 完成**；rich candidate-pool v2 入口已加入；oracle CSV 待回填 |
-| **最后更新** | 2026-06-28（agentic rich v2） |
+| **状态** | **MuMO agentic revise 2/4-step 完成**；rich v2 与 GraphEditDSL agent 入口已加入；oracle CSV 待回填 |
+| **最后更新** | 2026-06-28（GraphEditDSL agent v1） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -59,6 +59,9 @@ SketchMol-Understanding-Condition/scripts/build_external_agentic_revise_predicti
 SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_agentic_revise.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise_rich.sh
+SketchMol-Understanding-Condition/scripts/build_external_graph_edit_agent_predictions.py
+SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_graph_edit_agent.sh
+SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_agent.sh
 SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh
 SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh
 ```
@@ -243,6 +246,17 @@ Revise 统计与 2-step **完全一致**：`mean_candidate_count` **256**；`mea
 
 目标：判断 Sim@0.4 能否显著超过 15.6%；如果仍不动，说明需要真正的 graph-edit policy / fragment library，而不是继续扩局部搜索。
 
+## MuMO GraphEditDSL agent v1（待跑，主方向升级）
+
+入口：`submit_direct_smiles_external_mumo_graph_edit_agent.sh`。这条线不再只是扩大 local revise 搜索，而是把 source-conditioned edit 拆成可学习/可规划的动作空间：
+
+1. **Planner**：输出结构化 `GraphEditDSL` action（`add_atom` / `add_fragment` / `replace_atom` / `delete_terminal_atom` / `change_bond_order`），并写入 `graph_edit_plans.jsonl`，后续可以直接替换成 LLM planner 或 policy model。
+2. **Executor**：用 RDKit 在 `source_smiles` 上执行 action，保证候选来自 source graph 的显式编辑。
+3. **Verifier**：复用 MuMO evaluator 的本地可算性质和 source Tanimoto，默认 `similarity_first`，只在性质达标候选里优先 source-similar molecule。
+4. **Direct proposal**：默认复用 source-edit SFT proposal CSV，但只作为候选之一；主贡献来自 graph-edit DSL candidates。
+
+目标：判断显式 graph edit action 是否能超过 2-step/4-step 的 **15.6% Sim@0.4**。如果 GraphEditDSL 能抬 Sim，同时 proxy 不掉，就把它作为论文里的 `LLM-guided graph edit agent` 主线；如果仍低，下一步改 planner/policy，而不是继续加 local search step。
+
 ## 服务器命令
 
 MuMO one-shot baseline（同口径对照，推荐先跑）：
@@ -337,6 +351,13 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise_rich.sh
 ```
 
+MuMO GraphEditDSL agent v1（主方向升级，复用 v1 direct proposals）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_agent.sh
+```
+
 只跑 MuMO OOD：
 
 ```bash
@@ -379,7 +400,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 6. ~~**agentic revise 2-step**~~ → **`16813212` 完成**；Sim@0.4 **15.6%**；validity **100%**；proxy **46.7%**。
 7. ~~**agentic revise 4-step**~~ → **`16819986` 完成**；与 2-step **完全相同**（Sim **15.6%**）→ 瓶颈在 candidate pool / edit actions，不在 step depth。
 8. **agentic revise rich v2** → 入口已加入；下一步跑 `direct_smiles_external_mumo_agentic_revise_rich_v1/`，检验 rich actions + 2048 candidates/row 是否超过 15.6% Sim@0.4。
-9. ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
+9. **GraphEditDSL agent v1** → 入口已加入；跑 `direct_smiles_external_mumo_graph_edit_agent_v1/`，检验显式 source graph edit 是否比 local revise 更能恢复 scaffold similarity。
+10. ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源
 
