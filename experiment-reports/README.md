@@ -230,7 +230,7 @@ source-copy sanity：Sim@0.4 **100%**（eval 链路正常）。one-shot baseline
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| 待提交 | `succ-external-mumo-agentic-rich` | 待跑 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16824486` | `succ-external-mumo-agentic-rich` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
 rich v2：复用 v1 direct proposals，使用 richer local edit actions，beam **128**，candidate cap **2048/row**，similarity-first selection；目标是验证 Sim@0.4 是否能超过 **15.6%**。
 
