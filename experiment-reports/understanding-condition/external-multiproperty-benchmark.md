@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO source-edit SFT+RL 完成**；agentic revise 入口已加入；oracle CSV 待回填 |
-| **最后更新** | 2026-06-27（agentic revise v1） |
+| **状态** | **MuMO agentic revise v1 完成**；Sim@0.4 **15.6%**（direct 线仍为 0）；oracle CSV 待回填 |
+| **最后更新** | 2026-06-27（agentic revise `16813212`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -87,6 +87,7 @@ group-RL 入口默认：
 | `16779362` | `succ-external-mumo-source-copy` | MuMO test（source-copy sanity） | `external_mumo_source_copy_sanity/` |
 | `16800837` | `succ-external-mumo-source-edit-sft` | MuMO train/test（source-edit SFT warm-start） | `direct_smiles_external_mumo_source_edit_sft_v1/` |
 | `16806903` | `succ-external-mumo-source-edit-rl` | MuMO train/test（source-edit SFT → group-RL） | `direct_smiles_external_mumo_source_edit_sft_group_rl_v1/` |
+| `16813212` | `succ-external-mumo-agentic-revise` | MuMO test（source-edit SFT proposal + 2-step local edit） | `direct_smiles_external_mumo_agentic_revise_v1/` |
 
 集群数据路径（已下载）：
 
@@ -189,16 +190,32 @@ group-RL 入口默认：
 
 **结论**：在 SFT 基础上加大 source-similarity reward（权重 2.0）**未能拉回 Sim@0.4**；validity 略降（-0.9pp），proxy 基本持平（-0.4pp）。说明瓶颈不在 RL 超参，而在 **source-edit 监督/数据量不足**（1 epoch × 2000 rows）或 **生成范式**（direct SMILES 从零解码 vs 显式 edit/revise）。下一步优先：**加长 SFT epoch / 扩大 train rows**、ADMET oracle CSV 回填 strict、或接 **agentic revise loop**。
 
-## MuMO agentic revise v1（待跑）
+## MuMO agentic revise v1（job `16813212`）
 
-入口：`submit_direct_smiles_external_mumo_agentic_revise.sh`。流程：
+入口：`submit_direct_smiles_external_mumo_agentic_revise.sh`（`0bc748d`）。MuMO test 1992 rows；warm-start source-edit SFT ckpt（`16800837`）；`append_source_property_program`；direct proposal n=20；**2-step** source-preserving local edit（beam=48，max 256 candidates/row）；无 property rerank，无 oracle CSV。耗时 **~1h48m**。输出 `direct_smiles_external_mumo_agentic_revise_v1/`。
 
-1. 复用 source-edit SFT checkpoint 生成 direct proposal（`append_source_property_program`，n=20，无 property rerank）。
-2. 对每个 source molecule 执行 source-preserving local edit actions（add/replace/remove terminal atoms），形成 source-neighbor candidate pool。
-3. 按本地可算性质成功、source Tanimoto、property distance 选择 revised molecule。
-4. 用同一个 external evaluator 输出 Valid / Sim≥0.4 / Prop all / Strict。
+Revise 统计：`mean_candidate_count` **256**；`mean_local_success_fraction` **96.5%**；`mean_source_tanimoto` **0.243**；`source_similarity_success_rate` **15.6%**。
 
-这条是 **agentic/assisted source-edit**，不与 one-shot direct generation 混报；目标是先验证显式 revise 能不能把 Sim 从 0 拉回来。
+评测（**assisted/source-edit 线**，不与 direct one-shot 混表）：
+
+| 变体 | 线 | Valid | Proxy eval prop frac | Sim ≥0.4 | Strict |
+| --- | --- | ---: | ---: | ---: | ---: |
+| one-shot direct（`16779361`） | direct | 90.7% | 42.5% | 0 | 0 |
+| source-edit SFT direct（`16800837`） | direct | 97.3% | 45.4% | 0 | 0 |
+| source-edit group-RL direct（`16806903`） | direct | 96.4% | 45.0% | 0 | 0 |
+| **agentic revise 2-step（`16813212`）** | **assisted** | **100%** | **46.7%** | **15.6%** | **0** |
+| source-copy sanity（`16779362`） | oracle | 100% | 46.7% | **100%** | 0 |
+
+分 split（agentic）：
+
+| Split | Valid | Proxy eval prop frac | Sim ≥0.4 |
+| --- | ---: | ---: | ---: |
+| IND（5 tasks） | 100% | 50.0% | 15.8% |
+| OOD（5 tasks） | 100% | 43.3% | 15.4% |
+
+分 task Sim ≥0.4（agentic，最高 / 最低）：BDMQ **27.5%** / HMPQ **2.6%**。
+
+**结论**：显式 local-edit revise **首次把 MuMO Sim@0.4 从 0 拉到 15.6%**，validity 达 **100%**，proxy 略升（+1.3pp vs SFT direct）。但距 source-copy **100%** 和 official strict 仍远；说明 **direct 解码不是 source-edit 的正确范式**，assisted revise 方向正确但 2-step / beam 仍不够。下一步：**agentic 4-step**、扩大 candidate pool、ADMET oracle CSV 回填 strict。
 
 ## 服务器命令
 
@@ -311,8 +328,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 3. ~~source-copy sanity~~ → **`16779362` 完成**；Sim@0.4 **100%**；排除 eval 链路 bug。
 4. ~~**source-edit SFT warm-start**~~ → **`16800837` 完成**；validity **97.3%**，proxy **45.4%**，Sim 仍 **0**。
 5. ~~**source-edit group-RL**~~ → **`16806903` 完成**；validity **96.4%**，proxy **45.0%**，Sim 仍 **0**；RL 无 Sim 增益。
-6. **agentic revise v1** → 入口已加入；下一步跑 `direct_smiles_external_mumo_agentic_revise_v1/`，检查 Sim@0.4 是否从 0 拉回。
-7. **加长 source-edit SFT**（更多 epoch / rows）；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
+6. ~~**agentic revise v1**~~ → **`16813212` 完成**；Sim@0.4 **15.6%**（direct 线仍为 0）；validity **100%**；proxy **46.7%**。
+7. **agentic 4-step** / 扩大 candidate pool；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源
 
