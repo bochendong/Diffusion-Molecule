@@ -222,7 +222,7 @@ source-copy sanity：Sim@0.4 **100%**（eval 链路正常）。one-shot baseline
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| 待提交 | `succ-external-mumo-graph-edit` | 待跑 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16825306` | `succ-external-mumo-graph-edit` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
 GraphEditDSL agent v1 已加入口：复用 v1 direct proposals，planner 产出结构化 graph-edit actions，RDKit 在 source graph 上执行，verifier 按 local property success + source Tanimoto 选择。提交命令：
 
@@ -243,7 +243,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| `16824486` | `succ-external-mumo-agentic-rich` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16824486` | `succ-external-mumo-agentic-rich` | 运行中 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
 rich v2：复用 v1 direct proposals，使用 richer local edit actions，beam **128**，candidate cap **2048/row**，similarity-first selection；目标是验证 Sim@0.4 是否能超过 **15.6%**。
 
