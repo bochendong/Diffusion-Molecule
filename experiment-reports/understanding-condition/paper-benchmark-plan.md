@@ -121,7 +121,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ agentic revise 2/4-step 完成；rich v2 + GraphEditDSL agent 已加入
+### 5. MuMO / C-MuMO benchmark port ✅ assisted edit 完成（rich v2 + GraphEditDSL）
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
@@ -134,10 +134,12 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | de novo group-RL direct | direct | 85.1% | 40.7% | 0 |
 | source-edit SFT direct | direct | **97.3%** | **45.4%** | **0** |
 | source-edit SFT→RL direct | direct | 96.4% | 45.0% | **0** |
-| agentic revise 2-step | assisted | **100%** | **46.7%** | **15.6%** |
-| agentic revise 4-step | assisted | **100%** | **46.7%** | **15.6%** |
+| agentic revise 2-step | assisted | 100% | 46.7% | 15.6% |
+| agentic revise 4-step | assisted | 100% | 46.7% | 15.6% |
+| **agentic rich v2** | assisted | **100%** | **46.7%** | **32.3%** |
+| GraphEditDSL agent | assisted | 100% | 46.7% | 26.2% |
 
-SFT/RL direct Sim 仍为 0；**agentic revise 2-step 首次拉回 Sim@0.4（15.6%）**；**4-step 与 2-step 完全相同** → 瓶颈在 candidate pool / edit actions，不在 step depth。下一步：**rich actions + 2048 candidates/row**、**GraphEditDSL agent**、oracle CSV strict、C-MuMO。
+direct SFT/RL Sim 仍为 0；rich v2 **Sim@0.4 32.3%**（当前 assisted best）；GraphEditDSL heuristic **26.2%**（架构有效，planner 待升级）。下一步：**LLM/policy GraphEdit planner**、oracle CSV strict、C-MuMO。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -263,4 +265,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct SFT/RL Sim 仍 0；agentic 2/4-step Sim@0.4 **15.6%**（assisted）；rich candidate-pool v2 与 GraphEditDSL agent 待跑；strict 仍待 oracle CSV。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct SFT/RL Sim 仍 0；assisted **rich v2 Sim@0.4 32.3%**、GraphEditDSL **26.2%**；strict 仍待 oracle CSV。

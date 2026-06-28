@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO agentic/GraphEditDSL**（2/4-step Sim@0.4 **15.6%**；rich v2 + GraphEditDSL 待跑） |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO assisted edit**（rich v2 Sim@0.4 **32.3%**；GraphEditDSL **26.2%**） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
@@ -222,14 +222,9 @@ source-copy sanity：Sim@0.4 **100%**（eval 链路正常）。one-shot baseline
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| `16825306` | `succ-external-mumo-graph-edit` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16825306` | `succ-external-mumo-graph-edit` | 完成（~22m） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
-GraphEditDSL agent v1 已加入口：复用 v1 direct proposals，planner 产出结构化 graph-edit actions，RDKit 在 source graph 上执行，verifier 按 local property success + source Tanimoto 选择。提交命令：
-
-```bash
-git pull --ff-only
-bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_agent.sh
-```
+GraphEditDSL agent（heuristic planner）：validity **100%**；proxy **46.7%**；Sim@0.4 **26.2%**（>15.6% baseline，< rich v2 **32.3%**）→ 架构有效，待 LLM/policy planner。
 
 ## 近期 Slurm Job 一览（2026-06-27 MuMO agentic revise 4-step）
 
@@ -243,9 +238,9 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| `16824486` | `succ-external-mumo-agentic-rich` | 运行中 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16824486` | `succ-external-mumo-agentic-rich` | 完成（~10h27m） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
-rich v2：复用 v1 direct proposals，使用 richer local edit actions，beam **128**，candidate cap **2048/row**，similarity-first selection；目标是验证 Sim@0.4 是否能超过 **15.6%**。
+rich v2：beam **128**，2048 candidates/row，rich edit actions + similarity-first → Sim@0.4 **32.3%**（+16.7pp vs 2-step）；proxy **46.7%** 不变。
 
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 

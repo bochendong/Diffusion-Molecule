@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO agentic revise 2/4-step 完成**；rich v2 与 GraphEditDSL agent 入口已加入；oracle CSV 待回填 |
-| **最后更新** | 2026-06-28（GraphEditDSL agent v1） |
+| **状态** | **MuMO assisted edit 完成**；rich v2 Sim@0.4 **32.3%**（当前 best）；GraphEditDSL **26.2%**；oracle CSV 待回填 |
+| **最后更新** | 2026-06-28（rich v2 `16824486` + GraphEditDSL `16825306`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -93,6 +93,8 @@ group-RL 入口默认：
 | `16806903` | `succ-external-mumo-source-edit-rl` | MuMO train/test（source-edit SFT → group-RL） | `direct_smiles_external_mumo_source_edit_sft_group_rl_v1/` |
 | `16813212` | `succ-external-mumo-agentic-revise` | MuMO test（source-edit SFT proposal + 2-step local edit） | `direct_smiles_external_mumo_agentic_revise_v1/` |
 | `16819986` | `succ-external-mumo-agentic-revise-4step` | MuMO test（复用 v1 proposals + 4-step local edit） | `direct_smiles_external_mumo_agentic_revise_4step_v1/` |
+| `16824486` | `succ-external-mumo-agentic-rich` | MuMO test（rich actions + 2048 candidates/row） | `direct_smiles_external_mumo_agentic_revise_rich_v1/` |
+| `16825306` | `succ-external-mumo-graph-edit` | MuMO test（GraphEditDSL planner + RDKit executor） | `direct_smiles_external_mumo_graph_edit_agent_v1/` |
 
 集群数据路径（已下载）：
 
@@ -235,27 +237,36 @@ Revise 统计与 2-step **完全一致**：`mean_candidate_count` **256**；`mea
 
 **结论**：在相同 beam / candidate cap（256/row）下，**4-step 无 Sim/proxy 增益**——瓶颈不在 edit depth，而在 **candidate pool 容量** 或 **local edit action 覆盖面**（terminal add/replace/remove 不足以逼近 source scaffold）。下一步优先：**扩大 beam / max_candidates**、 richer edit actions、ADMET oracle CSV 回填 strict。
 
-## MuMO agentic revise rich v2（待跑）
+## MuMO agentic revise rich v2（job `16824486`）
 
-入口：`submit_direct_smiles_external_mumo_agentic_revise_rich.sh`。这版不再增加 step，而是直接验证 4-step 结论里的两个瓶颈：
+入口：`submit_direct_smiles_external_mumo_agentic_revise_rich.sh`（`1b67382`）。复用 v1 direct proposals；`edit_action_profile=rich`（fragment attach、bond-order edit、Br/S 等）；`beam=128`，`max_candidates_per_row=2048`；`selection_mode=similarity_first`。耗时 **~10h27m**。输出 `direct_smiles_external_mumo_agentic_revise_rich_v1/`。
 
-1. 复用 2-step 的 direct proposals，不重跑 MLLM。
-2. `edit_action_profile=rich`：新增 fragment attach、bond-order edit、Br/S 等 atom edits。
-3. `beam=128`，`max_candidates_per_parent=256`，`max_candidates_per_row=2048`。
-4. `selection_mode=similarity_first`：只有本地可算性质达标的候选才优先按 Sim≥0.4 / Tanimoto 排序，避免 source-copy 直接胜出。
+Revise 统计：`mean_candidate_count` **2048**；`mean_local_success_fraction` **98.0%**；`mean_source_tanimoto` **0.347**；`source_similarity_success_rate` **32.3%**。
 
-目标：判断 Sim@0.4 能否显著超过 15.6%；如果仍不动，说明需要真正的 graph-edit policy / fragment library，而不是继续扩局部搜索。
+| 变体 | 线 | Valid | Proxy | Sim ≥0.4 | Strict |
+| --- | --- | ---: | ---: | ---: | ---: |
+| agentic 2-step（`16813212`） | assisted | 100% | 46.7% | 15.6% | 0 |
+| agentic 4-step（`16819986`） | assisted | 100% | 46.7% | 15.6% | 0 |
+| **agentic rich v2（`16824486`）** | **assisted** | **100%** | **46.7%** | **32.3%** | **0** |
 
-## MuMO GraphEditDSL agent v1（待跑，主方向升级）
+分 split（rich v2）：IND Sim **34.9%**；OOD Sim **29.6%**。分 task Sim 最高 BDP **73.0%** / BDMQ **57.5%**；最低 HMPQ **5.7%**。
 
-入口：`submit_direct_smiles_external_mumo_graph_edit_agent.sh`。这条线不再只是扩大 local revise 搜索，而是把 source-conditioned edit 拆成可学习/可规划的动作空间：
+**结论**：rich actions + 2048 candidates/row + similarity-first **把 Sim@0.4 从 15.6% 拉到 32.3%（+16.7pp）**，proxy 不变；验证了 4-step 诊断——瓶颈在 **edit action 覆盖面与 candidate pool**，不在 step depth。
 
-1. **Planner**：输出结构化 `GraphEditDSL` action（`add_atom` / `add_fragment` / `replace_atom` / `delete_terminal_atom` / `change_bond_order`），并写入 `graph_edit_plans.jsonl`，后续可以直接替换成 LLM planner 或 policy model。
-2. **Executor**：用 RDKit 在 `source_smiles` 上执行 action，保证候选来自 source graph 的显式编辑。
-3. **Verifier**：复用 MuMO evaluator 的本地可算性质和 source Tanimoto，默认 `similarity_first`，只在性质达标候选里优先 source-similar molecule。
-4. **Direct proposal**：默认复用 source-edit SFT proposal CSV，但只作为候选之一；主贡献来自 graph-edit DSL candidates。
+## MuMO GraphEditDSL agent v1（job `16825306`）
 
-目标：判断显式 graph edit action 是否能超过 2-step/4-step 的 **15.6% Sim@0.4**。如果 GraphEditDSL 能抬 Sim，同时 proxy 不掉，就把它作为论文里的 `LLM-guided graph edit agent` 主线；如果仍低，下一步改 planner/policy，而不是继续加 local search step。
+入口：`submit_direct_smiles_external_mumo_graph_edit_agent.sh`（`6d2b2b7`）。复用 v1 direct proposals；`planner_mode=heuristic_graph_dsl`；`site_limit=32`，`max_plans_per_property=160`，`max_candidates_per_row=4096`；RDKit executor + `similarity_first` verifier。耗时 **~22m**。输出 `direct_smiles_external_mumo_graph_edit_agent_v1/`（含 `graph_edit_plans.jsonl`）。
+
+Agent 统计：`mean_plan_count` **441**；`mean_candidate_count` **89**；`mean_local_success_fraction` **91.1%**；`mean_source_tanimoto` **0.276**；`source_similarity_success_rate` **26.2%**。
+
+| 变体 | 线 | Valid | Proxy | Sim ≥0.4 | Strict |
+| --- | --- | ---: | ---: | ---: | ---: |
+| agentic rich v2（`16824486`） | assisted | 100% | 46.7% | **32.3%** | 0 |
+| **GraphEditDSL agent（`16825306`）** | **assisted** | **100%** | **46.7%** | **26.2%** | **0** |
+
+分 split（GraphEditDSL）：IND Sim **27.0%**；OOD Sim **25.4%**。分 task Sim 最高 BDP **55.0%** / BDMQ **48.0%**；最低 HMPQ **2.6%**。
+
+**结论**：显式 graph-edit action 空间 **有效**（26.2% > 15.6% baseline），但当前 **heuristic planner 仍低于 rich local revise（32.3%）**——candidate 利用率低（89 vs 2048/row）。GraphEditDSL 架构方向正确，下一步换 **LLM/policy planner**、扩大 executor candidate yield，而非继续加 local search step。
 
 ## 服务器命令
 
@@ -399,8 +410,9 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 5. ~~**source-edit group-RL**~~ → **`16806903` 完成**；validity **96.4%**，proxy **45.0%**，Sim 仍 **0**；RL 无 Sim 增益。
 6. ~~**agentic revise 2-step**~~ → **`16813212` 完成**；Sim@0.4 **15.6%**；validity **100%**；proxy **46.7%**。
 7. ~~**agentic revise 4-step**~~ → **`16819986` 完成**；与 2-step **完全相同**（Sim **15.6%**）→ 瓶颈在 candidate pool / edit actions，不在 step depth。
-8. **agentic revise rich v2** → 入口已加入；下一步跑 `direct_smiles_external_mumo_agentic_revise_rich_v1/`，检验 rich actions + 2048 candidates/row 是否超过 15.6% Sim@0.4。
-9. **GraphEditDSL agent v1** → 入口已加入；跑 `direct_smiles_external_mumo_graph_edit_agent_v1/`，检验显式 source graph edit 是否比 local revise 更能恢复 scaffold similarity。
+8. ~~**agentic revise rich v2**~~ → **`16824486` 完成**；Sim@0.4 **32.3%**（+16.7pp vs 2-step）；validity **100%**；proxy **46.7%**。
+9. ~~**GraphEditDSL agent v1**~~ → **`16825306` 完成**；Sim@0.4 **26.2%**（heuristic planner；低于 rich v2）；架构方向有效。
+10. **GraphEditDSL LLM/policy planner**；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 10. ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源
