@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO agentic revise v1 完成**；Sim@0.4 **15.6%**（direct 线仍为 0）；oracle CSV 待回填 |
-| **最后更新** | 2026-06-27（agentic revise `16813212`） |
+| **状态** | **MuMO agentic revise 2/4-step 完成**；Sim@0.4 **15.6%**（4-step 无增益）；oracle CSV 待回填 |
+| **最后更新** | 2026-06-27（agentic 4-step `16819986`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -88,6 +88,7 @@ group-RL 入口默认：
 | `16800837` | `succ-external-mumo-source-edit-sft` | MuMO train/test（source-edit SFT warm-start） | `direct_smiles_external_mumo_source_edit_sft_v1/` |
 | `16806903` | `succ-external-mumo-source-edit-rl` | MuMO train/test（source-edit SFT → group-RL） | `direct_smiles_external_mumo_source_edit_sft_group_rl_v1/` |
 | `16813212` | `succ-external-mumo-agentic-revise` | MuMO test（source-edit SFT proposal + 2-step local edit） | `direct_smiles_external_mumo_agentic_revise_v1/` |
+| `16819986` | `succ-external-mumo-agentic-revise-4step` | MuMO test（复用 v1 proposals + 4-step local edit） | `direct_smiles_external_mumo_agentic_revise_4step_v1/` |
 
 集群数据路径（已下载）：
 
@@ -215,7 +216,20 @@ Revise 统计：`mean_candidate_count` **256**；`mean_local_success_fraction` *
 
 分 task Sim ≥0.4（agentic，最高 / 最低）：BDMQ **27.5%** / HMPQ **2.6%**。
 
-**结论**：显式 local-edit revise **首次把 MuMO Sim@0.4 从 0 拉到 15.6%**，validity 达 **100%**，proxy 略升（+1.3pp vs SFT direct）。但距 source-copy **100%** 和 official strict 仍远；说明 **direct 解码不是 source-edit 的正确范式**，assisted revise 方向正确但 2-step / beam 仍不够。下一步：**agentic 4-step**、扩大 candidate pool、ADMET oracle CSV 回填 strict。
+**结论**：显式 local-edit revise **首次把 MuMO Sim@0.4 从 0 拉到 15.6%**，validity 达 **100%**，proxy 略升（+1.3pp vs SFT direct）。但距 source-copy **100%** 和 official strict 仍远；说明 **direct 解码不是 source-edit 的正确范式**，assisted revise 方向正确。
+
+## MuMO agentic revise 4-step（job `16819986`）
+
+入口：同 `submit_direct_smiles_external_mumo_agentic_revise.sh`，`SUCC_EXTERNAL_AGENTIC_STEPS=4`；**复用 2-step 的 direct proposals**（`RUN_DIRECT=0`）；其余超参与 2-step 相同（beam=48，max 256 candidates/row）。耗时 **~1h23m**。输出 `direct_smiles_external_mumo_agentic_revise_4step_v1/`。
+
+| 变体 | Steps | Valid | Proxy | Sim ≥0.4 | Strict |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| agentic revise 2-step（`16813212`） | 2 | 100% | 46.7% | **15.6%** | 0 |
+| agentic revise 4-step（`16819986`） | 4 | 100% | 46.7% | **15.6%** | 0 |
+
+Revise 统计与 2-step **完全一致**：`mean_candidate_count` **256**；`mean_source_tanimoto` **0.243**；`source_similarity_success_rate` **15.6%**；逐 task Sim 数值相同。
+
+**结论**：在相同 beam / candidate cap（256/row）下，**4-step 无 Sim/proxy 增益**——瓶颈不在 edit depth，而在 **candidate pool 容量** 或 **local edit action 覆盖面**（terminal add/replace/remove 不足以逼近 source scaffold）。下一步优先：**扩大 beam / max_candidates**、 richer edit actions、ADMET oracle CSV 回填 strict。
 
 ## 服务器命令
 
@@ -282,10 +296,25 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_source_edit_sft_group_rl.sh
 ```
 
-MuMO agentic revise（下一条推荐跑）：
+MuMO agentic revise 2-step：
 
 ```bash
 git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh
+```
+
+MuMO agentic revise 4-step（复用 2-step proposals，只跑 revise）：
+
+```bash
+git pull --ff-only
+SUCC_EXTERNAL_AGENTIC_STEPS=4 \
+SUCC_EXTERNAL_AGENTIC_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/direct_smiles_external_mumo_agentic_revise_4step_v1 \
+SUCC_EXTERNAL_AGENTIC_SLURM_JOB_NAME=succ-external-mumo-agentic-revise-4step \
+SUCC_EXTERNAL_AGENTIC_RUN_DIRECT=0 \
+SUCC_EXTERNAL_AGENTIC_RUN_FEATURE_EXPORT=0 \
+SUCC_EXTERNAL_AGENTIC_DIRECT_PREDICTION_CSV=SketchMol-Understanding-Condition/outputs/direct_smiles_external_mumo_agentic_revise_v1/direct_smiles_proposals.csv \
+SUCC_EXTERNAL_AGENTIC_ROWS_CSV=SketchMol-Understanding-Condition/outputs/direct_smiles_external_mumo_agentic_revise_v1/external_multiproperty_rows.csv \
+SUCC_EXTERNAL_AGENTIC_TASK_SPEC_JSON=SketchMol-Understanding-Condition/outputs/direct_smiles_external_mumo_agentic_revise_v1/external_multiproperty_task_specs.json \
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise.sh
 ```
 
@@ -328,8 +357,9 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 3. ~~source-copy sanity~~ → **`16779362` 完成**；Sim@0.4 **100%**；排除 eval 链路 bug。
 4. ~~**source-edit SFT warm-start**~~ → **`16800837` 完成**；validity **97.3%**，proxy **45.4%**，Sim 仍 **0**。
 5. ~~**source-edit group-RL**~~ → **`16806903` 完成**；validity **96.4%**，proxy **45.0%**，Sim 仍 **0**；RL 无 Sim 增益。
-6. ~~**agentic revise v1**~~ → **`16813212` 完成**；Sim@0.4 **15.6%**（direct 线仍为 0）；validity **100%**；proxy **46.7%**。
-7. **agentic 4-step** / 扩大 candidate pool；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
+6. ~~**agentic revise 2-step**~~ → **`16813212` 完成**；Sim@0.4 **15.6%**；validity **100%**；proxy **46.7%**。
+7. ~~**agentic revise 4-step**~~ → **`16819986` 完成**；与 2-step **完全相同**（Sim **15.6%**）→ 瓶颈在 candidate pool / edit actions，不在 step depth。
+8. **扩大 beam / max_candidates** 或 richer edit actions；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源
 

@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO agentic revise**（Sim@0.4 **15.6%**；direct 线 Sim 仍 0） |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO agentic revise**（2/4-step Sim@0.4 **15.6%**；4-step 无增益） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
 | `understanding-condition/` | [denovo-2p7p-benchmark.md](understanding-condition/denovo-2p7p-benchmark.md) | **完成** de novo 2p–7p（baseline / v2_fix / dualmode） |
@@ -216,7 +216,15 @@ source-copy sanity：Sim@0.4 **100%**（eval 链路正常）。one-shot baseline
 | --- | --- | --- | --- |
 | `16813212` | `succ-external-mumo-agentic-revise` | 完成（~1h48m） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
-2-step agentic revise（assisted line）：validity **100%**；proxy **46.7%**；Sim@0.4 **15.6%**（direct SFT/RL 仍为 0）→ 显式 local edit 方向有效，待 4-step / oracle CSV。
+2-step agentic revise（assisted line）：validity **100%**；proxy **46.7%**；Sim@0.4 **15.6%**（direct SFT/RL 仍为 0）→ 显式 local edit 方向有效。
+
+## 近期 Slurm Job 一览（2026-06-27 MuMO agentic revise 4-step）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16819986` | `succ-external-mumo-agentic-revise-4step` | 完成（~1h23m） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+
+4-step（复用 v1 proposals）：与 2-step **完全相同**（Sim **15.6%**，proxy **46.7%**）→ 瓶颈不在 step depth，待扩大 candidate pool / edit actions。
 
 ## 近期 Slurm Job 一览（2026-06-15 hybrid 默认验证）
 

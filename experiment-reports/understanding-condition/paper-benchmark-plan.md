@@ -121,7 +121,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ agentic revise v1 完成（`16813212`）
+### 5. MuMO / C-MuMO benchmark port ✅ agentic revise 2/4-step 完成
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
@@ -134,9 +134,10 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | de novo group-RL direct | direct | 85.1% | 40.7% | 0 |
 | source-edit SFT direct | direct | **97.3%** | **45.4%** | **0** |
 | source-edit SFT→RL direct | direct | 96.4% | 45.0% | **0** |
-| **agentic revise 2-step** | **assisted** | **100%** | **46.7%** | **15.6%** |
+| agentic revise 2-step | assisted | **100%** | **46.7%** | **15.6%** |
+| agentic revise 4-step | assisted | **100%** | **46.7%** | **15.6%** |
 
-SFT/RL direct 提升 validity/proxy 但 **Sim 仍为 0**；**agentic revise 2-step 首次拉回 Sim@0.4（15.6%）**，validity **100%**，proxy **46.7%**。下一步：**agentic 4-step**、oracle CSV strict、C-MuMO。
+SFT/RL direct Sim 仍为 0；**agentic revise 2-step 首次拉回 Sim@0.4（15.6%）**；**4-step 与 2-step 完全相同** → 瓶颈在 candidate pool / edit actions，不在 step depth。下一步：**扩大 beam/candidates**、oracle CSV strict、C-MuMO。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -246,4 +247,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct SFT/RL Sim 仍 0；**agentic revise 2-step Sim@0.4 15.6%**（assisted line）；strict 仍待 oracle CSV。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct SFT/RL Sim 仍 0；agentic 2/4-step Sim@0.4 **15.6%**（assisted）；4-step 无增益；strict 仍待 oracle CSV。
