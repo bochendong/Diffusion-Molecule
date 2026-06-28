@@ -23,7 +23,7 @@
 | Haccept↓ MW↓ | — | **0.870** | — | **1.000** |
 | DRD2↓ MW↓ SA↓ | 0.518 | **1.000** | 0.724 | **1.000** |
 | Haccept↑ MW↑ QED↓ | — | **0.830** | — | **1.000** |
-| **10-task mean** | — | **0.894** | — | **0.854** |
+| **10-task mean** | **0.450** | **0.794** | **0.727** | **0.854** |
 | **overlap-3 mean (RB/MW/SA)** | **0.555** | **0.860** | **0.838** | **0.860** |
 
 490/1000 行为合成 reference pair；metric 在 rerank 阶段直接优化 Table1 目标。
@@ -47,7 +47,7 @@
 
 ## 结论
 
-1. **v3 + table-success rerank 在 10/10 Table1 上 mean Acc(0.65)=0.894**，overlap-3 **0.860** >> MolEditRL **0.555**。
+1. **v3 + table-success rerank 在 10/10 Table1 上 mean Acc(0.65)=0.794**，overlap-3 **0.860** >> MolEditRL **0.555**。
 2. **GSK3B↑ 全版本均为 0**；其余 9 task 均超过 MolEditRL 单点 Acc(0.65)。
 3. **v2 similarity rerank 在满采样上 overlap-3 仅 0.457**；v3 的跃升主要来自 rerank 目标对齐，而非 latent 生成质变。
 4. 详细报告：[v3 attack](understanding-condition/moledit-instruct-v3-attack.md)、[v2 fix](understanding-condition/moledit-instruct-v2-fix.md)。

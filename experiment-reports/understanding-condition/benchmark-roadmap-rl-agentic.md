@@ -31,7 +31,7 @@
 
 | 任务组 | 当前最好结果 | 备注 |
 | --- | ---: | --- |
-| Table1 10-task mean `Acc(0.65)` | **0.894** | SUCC v3 `table_success_rerank` |
+| Table1 10-task mean `Acc(0.65)` | **0.794** | SUCC v3 `table_success_rerank`；旧报告 0.894 为算术错误 |
 | Table1 10-task mean `Acc(0.15)` | **0.854** | 同上 |
 | overlap-3 mean `Acc(0.65)` | **0.860** | MolEditRL 对应 0.555 |
 

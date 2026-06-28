@@ -7,6 +7,8 @@
 | **项目** | `SketchMol-Understanding-Condition` |
 | **目标** | 把当前结果整理成可投顶会的 benchmark 结构，并提供可直接提交到服务器的命令 |
 
+外部论文 baseline 数值目标已单独整理到 [external-paper-baselines.md](external-paper-baselines.md)。后续 MuMO / C-MuMO 结果必须按 GeLLM3O / GeLLMO-C 的 official `SR` / `Similarity` / `RI` 口径补齐，当前 `Sim >= 0.4` 只作为内部 source-preservation diagnostic。
+
 ## 设计原则
 
 主文必须明确区分两类能力：

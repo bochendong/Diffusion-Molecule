@@ -64,7 +64,7 @@ Latent 仍贴 source；主要增益来自 table-success materializer。
 | Haccept↓ MW↓ | **0.870** | 1.000 | 100 | — |
 | DRD2↓ MW↓ SA↓ | **1.000** | 1.000 | 100 | 0.518 |
 | Haccept↑ MW↑ QED↓ | **0.830** | 1.000 | 100 | — |
-| **10-task mean** | **0.894** | **0.854** | — | — |
+| **10-task mean** | **0.794** | **0.854** | — | 0.450 |
 | overlap-3 (RB/MW/SA) | **0.860** | **0.860** | — | 0.555 |
 
 **9/10 task** Acc(0.65) 超过 MolEditRL；**GSK3B↑ 仍为 0**。
@@ -100,7 +100,7 @@ SketchMol-Understanding-Condition/outputs/univideo_molecule_generation_moledit_i
 
 ## 结论
 
-1. **table-success rerank 是决定性因素**：在 10/10 Table1 上 mean Acc(0.65)=**0.894**，大幅超过 MolEditRL 各 task 单点（除 GSK3B）。
+1. **table-success rerank 是决定性因素**：在 10/10 Table1 上 mean Acc(0.65)=**0.794**，大幅超过 MolEditRL 10-task mean 与多个单点（GSK3B 仍为 0）。
 2. **GSK3B↑ 仍是唯一短板**（TDC oracle task，latent 路径未学到活性方向）。
 3. **合成 pair + 2048 候选 rerank** 使此前 0 行的 3 个组合 task 也可评估（0.83–0.90 Acc）。
 4. **解读需谨慎**：metric 优化直接作用于 rerank 阶段；latent 生成本身改善有限（source cosine 仍 ~0.98）。
