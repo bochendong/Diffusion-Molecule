@@ -37,6 +37,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_agentic_revise_rich.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_graph_edit_agent.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_agent.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_policy.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
@@ -463,6 +464,30 @@ def test_graph_edit_planner_emits_structured_dsl_actions():
     assert any(action.prop == "plogp" for action in actions)
 
 
+def test_graph_edit_policy_planner_scores_rich_dsl_actions(monkeypatch):
+    module = _load_graph_edit_agent_module()
+    monkeypatch.setattr(module, "editable_atom_sites", lambda _source_smiles, site_limit: [0, 1])
+    monkeypatch.setattr(module, "editable_bond_sites", lambda _source_smiles, site_limit: [(0, 1)])
+    row = {
+        "source_smiles": "CCO",
+        "external_task_properties": "plogp,qed",
+        "external_property_directions_json": json.dumps({"plogp": "increase", "qed": "increase"}),
+    }
+
+    actions = module.plan_graph_edit_actions(
+        row,
+        source_smiles="CCO",
+        site_limit=2,
+        max_plans_per_property=32,
+        planner_mode="policy_graph_dsl",
+    )
+
+    assert actions
+    assert actions[0].policy_score >= actions[-1].policy_score
+    assert any(action.fragment in {"C#N", "C(=O)N", "c1ccccc1"} for action in actions)
+    assert any(action.op == "change_bond_order" for action in actions)
+
+
 def test_graph_edit_agent_prefers_source_similar_property_success(monkeypatch, tmp_path):
     module = _load_graph_edit_agent_module()
     monkeypatch.setattr(module.revise, "safe_canonical", lambda value: str(value or ""))
@@ -518,6 +543,75 @@ def test_graph_edit_agent_prefers_source_similar_property_success(monkeypatch, t
     assert result["graph_edit_candidate_source"] == "graph_edit_dsl"
     assert result["graph_edit_source_similarity_success"] == "True"
     assert any(record["generated_smiles"] == "near_good" for record in records)
+
+
+def test_graph_edit_policy_agent_expands_from_beam_parent(monkeypatch, tmp_path):
+    module = _load_graph_edit_agent_module()
+    monkeypatch.setattr(module.revise, "safe_canonical", lambda value: str(value or ""))
+    monkeypatch.setattr(
+        module.revise,
+        "safe_tanimoto",
+        lambda _left, right: {"source": 1.0, "mid": 0.92, "near_good": 0.84, "far_bad": 0.0}.get(right, 0.0),
+    )
+    monkeypatch.setattr(
+        module.revise,
+        "local_properties",
+        lambda smiles: {"plogp": {"source": 0.0, "mid": 0.6, "near_good": 1.2, "far_bad": 0.0}.get(smiles, 0.0)},
+    )
+
+    def fake_plan(_row, *, source_smiles, site_limit, max_plans_per_property, planner_mode="heuristic_graph_dsl"):
+        if source_smiles == "source":
+            return [module.GraphEditAction("add_fragment", site=0, fragment="C", policy_score=4.0)]
+        if source_smiles == "mid":
+            return [module.GraphEditAction("add_atom", site=0, atom="O", policy_score=3.0)]
+        return []
+
+    def fake_execute(parent, action):
+        if parent == "source" and action.fragment == "C":
+            return "mid"
+        if parent == "mid" and action.atom == "O":
+            return "near_good"
+        return ""
+
+    monkeypatch.setattr(module, "plan_graph_edit_actions", fake_plan)
+    monkeypatch.setattr(module, "execute_graph_edit_action", fake_execute)
+    args = module.parse_args(
+        [
+            "--rows-csv",
+            str(tmp_path / "rows.csv"),
+            "--prediction-csv",
+            str(tmp_path / "predictions.csv"),
+            "--planner-mode",
+            "policy_graph_dsl",
+            "--planner-steps",
+            "2",
+            "--beam-size",
+            "1",
+            "--selection-mode",
+            "similarity_first",
+            "--similarity-first-min-local-success-fraction",
+            "1.0",
+        ]
+    )
+    row = {
+        "condition_id": "a",
+        "source_smiles": "source",
+        "external_task_properties": "plogp",
+        "external_property_directions_json": json.dumps({"plogp": "increase"}),
+        "external_property_thresholds_json": json.dumps({"plogp": 1.0}),
+    }
+
+    result, records = module.predict_row(
+        row,
+        direct_row={"condition_id": "a", "generated_smiles": "far_bad"},
+        args=args,
+        rng=__import__("random").Random(7),
+    )
+
+    assert result["generated_smiles"] == "near_good"
+    assert result["graph_edit_planner_mode"] == "policy_graph_dsl"
+    assert result["graph_edit_planner_steps"] == 2
+    assert any(record["parent_smiles"] == "mid" and record["generated_smiles"] == "near_good" for record in records)
 
 
 def test_smiles_tokenization_roundtrip():

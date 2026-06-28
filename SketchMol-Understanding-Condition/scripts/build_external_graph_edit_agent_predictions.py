@@ -16,7 +16,7 @@ import json
 import math
 import random
 import sys
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -42,6 +42,7 @@ class GraphEditAction:
     prop: str = ""
     direction: str = ""
     reason: str = ""
+    policy_score: float = 0.0
 
     def to_json(self) -> str:
         return json.dumps(asdict(self), sort_keys=True)
@@ -54,11 +55,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--plan-jsonl", type=Path, default=None)
     parser.add_argument("--direct-prediction-csv", type=Path, default=None)
     parser.add_argument("--direct-smiles-column", default="generated_smiles")
-    parser.add_argument("--planner-mode", choices=("heuristic_graph_dsl",), default="heuristic_graph_dsl")
+    parser.add_argument("--planner-mode", choices=("heuristic_graph_dsl", "policy_graph_dsl"), default="heuristic_graph_dsl")
     parser.add_argument("--selection-mode", choices=("score", "similarity_first"), default="similarity_first")
     parser.add_argument("--min-source-tanimoto", type=float, default=0.4)
+    parser.add_argument("--planner-steps", type=int, default=1)
+    parser.add_argument("--beam-size", type=int, default=64)
     parser.add_argument("--site-limit", type=int, default=24)
     parser.add_argument("--max-plans-per-property", type=int, default=80)
+    parser.add_argument("--max-candidates-per-parent", type=int, default=256)
     parser.add_argument("--max-candidates-per-row", type=int, default=4096)
     parser.add_argument("--similarity-first-min-local-success-fraction", type=float, default=1.0)
     parser.add_argument("--property-weight", type=float, default=100.0)
@@ -109,13 +113,6 @@ def predict_row(
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
     source_smiles = str(row.get("source_smiles", "") or "").strip()
     direct_smiles = str(direct_row.get(str(args.direct_smiles_column), "") or "").strip()
-    actions = plan_graph_edit_actions(
-        row,
-        source_smiles=source_smiles,
-        site_limit=int(args.site_limit),
-        max_plans_per_property=int(args.max_plans_per_property),
-    )
-    rng.shuffle(actions)
     candidates: list[revise.Candidate] = []
     if source_smiles:
         candidates.append(revise.Candidate(source_smiles, "dsl:source_copy", "source_copy"))
@@ -123,24 +120,59 @@ def predict_row(
         candidates.append(revise.Candidate(direct_smiles, "dsl:direct_model_proposal", "direct_model"))
     plan_records = []
     seen = {revise.safe_canonical(candidate.smiles) for candidate in candidates if revise.safe_canonical(candidate.smiles)}
-    for action in actions:
+    total_plan_count = 0
+    planner_mode = str(args.planner_mode)
+    planner_steps = max(1, int(args.planner_steps))
+    for step in range(1, planner_steps + 1):
+        if planner_mode == "heuristic_graph_dsl" and planner_steps == 1:
+            parent_smiles = [revise.safe_canonical(source_smiles) or source_smiles]
+        else:
+            ranked = revise.rank_candidates(row, candidates, args=args)
+            parent_smiles = [item.canonical_smiles for item in ranked[: max(1, int(args.beam_size))]]
+            if step == 1 and source_smiles:
+                parent_smiles.insert(0, revise.safe_canonical(source_smiles) or source_smiles)
+        parent_smiles = dedupe_strings(parent_smiles)
+        if planner_mode == "heuristic_graph_dsl":
+            rng.shuffle(parent_smiles)
+        for parent in parent_smiles:
+            if len(seen) >= int(args.max_candidates_per_row):
+                break
+            actions = plan_graph_edit_actions(
+                row,
+                source_smiles=parent,
+                site_limit=int(args.site_limit),
+                max_plans_per_property=int(args.max_plans_per_property),
+                planner_mode=planner_mode,
+            )
+            if planner_mode == "heuristic_graph_dsl":
+                rng.shuffle(actions)
+            total_plan_count += len(actions)
+            executed_for_parent = 0
+            for action in actions:
+                if len(seen) >= int(args.max_candidates_per_row):
+                    break
+                if executed_for_parent >= max(1, int(args.max_candidates_per_parent)):
+                    break
+                executed_for_parent += 1
+                generated = execute_graph_edit_action(parent, action)
+                canonical = revise.safe_canonical(generated)
+                plan_records.append(
+                    {
+                        "condition_id": str(row.get("condition_id") or ""),
+                        "source_smiles": source_smiles,
+                        "parent_smiles": parent,
+                        "step": step,
+                        "action": asdict(action),
+                        "generated_smiles": canonical,
+                        "valid": bool(canonical),
+                    }
+                )
+                if not canonical or canonical in seen:
+                    continue
+                seen.add(canonical)
+                candidates.append(revise.Candidate(canonical, f"step{step}:dsl:{action.to_json()}", "graph_edit_dsl"))
         if len(seen) >= int(args.max_candidates_per_row):
             break
-        generated = execute_graph_edit_action(source_smiles, action)
-        canonical = revise.safe_canonical(generated)
-        plan_records.append(
-            {
-                "condition_id": str(row.get("condition_id") or ""),
-                "source_smiles": source_smiles,
-                "action": asdict(action),
-                "generated_smiles": canonical,
-                "valid": bool(canonical),
-            }
-        )
-        if not canonical or canonical in seen:
-            continue
-        seen.add(canonical)
-        candidates.append(revise.Candidate(canonical, f"dsl:{action.to_json()}", "graph_edit_dsl"))
     ranked = revise.rank_candidates(row, candidates, args=args)
     best = ranked[0] if ranked else revise.score_candidate(row, revise.Candidate(source_smiles, "dsl:source_copy", "source_copy"), args=args)
     out = dict(row)
@@ -149,7 +181,10 @@ def predict_row(
     out["direct_generated_smiles"] = direct_smiles
     out["graph_edit_action_trace"] = best.candidate.action_trace
     out["graph_edit_candidate_source"] = best.candidate.source
-    out["graph_edit_plan_count"] = len(actions)
+    out["graph_edit_planner_mode"] = planner_mode
+    out["graph_edit_planner_steps"] = planner_steps
+    out["graph_edit_plan_count"] = total_plan_count
+    out["graph_edit_executed_plan_count"] = len(plan_records)
     out["graph_edit_candidate_count"] = len(candidates)
     out["graph_edit_valid_candidate_count"] = len([item for item in ranked if item.canonical_smiles])
     out["graph_edit_best_score"] = revise.format_float(best.score, digits=6)
@@ -169,7 +204,15 @@ def plan_graph_edit_actions(
     source_smiles: str,
     site_limit: int,
     max_plans_per_property: int,
+    planner_mode: str = "heuristic_graph_dsl",
 ) -> list[GraphEditAction]:
+    if str(planner_mode) == "policy_graph_dsl":
+        return plan_policy_graph_edit_actions(
+            row,
+            source_smiles=source_smiles,
+            site_limit=site_limit,
+            max_plans_per_property=max_plans_per_property,
+        )
     props = revise.parse_list(row.get("external_task_properties") or row.get("condition_properties"))
     directions = revise.parse_json_dict(row.get("external_property_directions_json"), revise.DEFAULT_DIRECTION)
     sites = editable_atom_sites(source_smiles, site_limit=site_limit)
@@ -222,6 +265,47 @@ def plan_graph_edit_actions(
     return dedupe_actions(actions)
 
 
+def plan_policy_graph_edit_actions(
+    row: Mapping[str, str],
+    *,
+    source_smiles: str,
+    site_limit: int,
+    max_plans_per_property: int,
+) -> list[GraphEditAction]:
+    props = revise.parse_list(row.get("external_task_properties") or row.get("condition_properties"))
+    directions = revise.parse_json_dict(row.get("external_property_directions_json"), revise.DEFAULT_DIRECTION)
+    sites = editable_atom_sites(source_smiles, site_limit=site_limit)
+    bonds = editable_bond_sites(source_smiles, site_limit=site_limit)
+    out: list[GraphEditAction] = []
+    for prop in props:
+        prop = revise.canonical_prop(prop)
+        direction = str(directions.get(prop, revise.DEFAULT_DIRECTION.get(prop, "increase"))).lower()
+        prop_actions: list[GraphEditAction] = []
+        for template in policy_action_templates_for_property(prop, direction):
+            if template.op in {"add_atom", "add_fragment", "replace_atom", "delete_terminal_atom"}:
+                prop_actions.extend(
+                    replace(template, site=site, prop=prop, direction=direction)
+                    for site in sites
+                )
+            if template.op == "change_bond_order":
+                prop_actions.extend(
+                    replace(template, bond=bond, prop=prop, direction=direction)
+                    for bond in bonds
+                )
+        prop_actions = score_policy_actions(row, source_smiles, dedupe_actions(prop_actions))
+        out.extend(prop_actions[: max(1, int(max_plans_per_property))])
+    if not out:
+        out = score_policy_actions(
+            row,
+            source_smiles,
+            [
+                GraphEditAction("add_atom", site=site, atom="F", reason="policy_generic_small_substituent")
+                for site in sites[: max(1, min(8, len(sites)))]
+            ],
+        )
+    return dedupe_actions(out)
+
+
 def action_templates_for_property(prop: str, direction: str) -> list[GraphEditAction]:
     if prop in {"plogp", "logp"} and direction == "increase":
         return [
@@ -260,6 +344,150 @@ def action_templates_for_property(prop: str, direction: str) -> list[GraphEditAc
         GraphEditAction("add_fragment", fragment="C", reason=f"{prop}_{direction}_methyl"),
         GraphEditAction("delete_terminal_atom", reason=f"{prop}_{direction}_terminal_prune"),
     ]
+
+
+def policy_action_templates_for_property(prop: str, direction: str) -> list[GraphEditAction]:
+    hydrophobic = [
+        GraphEditAction("add_fragment", fragment="C", reason="policy_logp_methyl"),
+        GraphEditAction("add_fragment", fragment="CC", reason="policy_logp_ethyl"),
+        GraphEditAction("add_fragment", fragment="c1ccccc1", reason="policy_logp_phenyl"),
+        GraphEditAction("add_atom", atom="F", reason="policy_logp_halogen"),
+        GraphEditAction("add_atom", atom="Cl", reason="policy_logp_halogen"),
+        GraphEditAction("add_atom", atom="Br", reason="policy_logp_halogen"),
+    ]
+    polar = [
+        GraphEditAction("add_atom", atom="O", reason="policy_polar_heteroatom"),
+        GraphEditAction("add_atom", atom="N", reason="policy_polar_heteroatom"),
+        GraphEditAction("add_atom", atom="S", reason="policy_polar_heteroatom"),
+        GraphEditAction("add_fragment", fragment="O", reason="policy_hydroxyl"),
+        GraphEditAction("add_fragment", fragment="N", reason="policy_amino"),
+        GraphEditAction("add_fragment", fragment="C#N", reason="policy_cyano"),
+        GraphEditAction("add_fragment", fragment="C(=O)O", reason="policy_carboxyl"),
+        GraphEditAction("add_fragment", fragment="C(=O)N", reason="policy_amide"),
+    ]
+    simplify = [
+        GraphEditAction("delete_terminal_atom", reason="policy_terminal_prune"),
+        GraphEditAction("replace_atom", atom="C", reason="policy_simplify_atom_type"),
+        GraphEditAction("replace_atom", atom="N", reason="policy_simplify_atom_type"),
+        GraphEditAction("replace_atom", atom="O", reason="policy_simplify_atom_type"),
+        GraphEditAction("change_bond_order", bond_order="single", reason="policy_simplify_bond"),
+    ]
+    if prop in {"plogp", "logp"} and direction == "increase":
+        return hydrophobic + [
+            GraphEditAction("change_bond_order", bond_order="double", reason="policy_logp_unsaturate"),
+        ]
+    if prop in {"plogp", "logp"}:
+        return polar + simplify
+    if prop == "qed" and direction == "increase":
+        return [
+            GraphEditAction("add_atom", atom="F", reason="policy_qed_small_halogen"),
+            GraphEditAction("add_atom", atom="Cl", reason="policy_qed_small_halogen"),
+            GraphEditAction("add_atom", atom="O", reason="policy_qed_hbond"),
+            GraphEditAction("add_atom", atom="N", reason="policy_qed_hbond"),
+            GraphEditAction("add_fragment", fragment="C", reason="policy_qed_small_size"),
+            GraphEditAction("add_fragment", fragment="C#N", reason="policy_qed_cyano"),
+        ] + simplify[:2]
+    if prop in {"sas", "sa"} and direction == "decrease":
+        return simplify + [
+            GraphEditAction("add_atom", atom="F", reason="policy_sa_small_substituent"),
+            GraphEditAction("add_fragment", fragment="C", reason="policy_sa_small_alkyl"),
+        ]
+    return [
+        GraphEditAction("add_atom", atom="F", reason=f"policy_{prop}_{direction}_small_halogen"),
+        GraphEditAction("add_atom", atom="Cl", reason=f"policy_{prop}_{direction}_halogen"),
+        GraphEditAction("add_atom", atom="O", reason=f"policy_{prop}_{direction}_heteroatom"),
+        GraphEditAction("add_atom", atom="N", reason=f"policy_{prop}_{direction}_heteroatom"),
+        GraphEditAction("add_atom", atom="S", reason=f"policy_{prop}_{direction}_heteroatom"),
+        GraphEditAction("add_fragment", fragment="C", reason=f"policy_{prop}_{direction}_methyl"),
+        GraphEditAction("add_fragment", fragment="CC", reason=f"policy_{prop}_{direction}_ethyl"),
+        GraphEditAction("add_fragment", fragment="C#N", reason=f"policy_{prop}_{direction}_cyano"),
+        GraphEditAction("add_fragment", fragment="C(=O)N", reason=f"policy_{prop}_{direction}_amide"),
+        GraphEditAction("delete_terminal_atom", reason=f"policy_{prop}_{direction}_terminal_prune"),
+    ]
+
+
+def score_policy_actions(
+    row: Mapping[str, str],
+    source_smiles: str,
+    actions: Sequence[GraphEditAction],
+) -> list[GraphEditAction]:
+    try:
+        from rdkit import Chem
+    except ImportError:
+        return [replace(action, policy_score=policy_template_score(action)) for action in actions]
+    mol = Chem.MolFromSmiles(str(source_smiles or ""))
+    if mol is None:
+        return [replace(action, policy_score=policy_template_score(action)) for action in actions]
+    task_props = set(revise.parse_list(row.get("external_task_properties") or row.get("condition_properties")))
+    scored = []
+    for action in actions:
+        score = policy_template_score(action)
+        score += site_policy_score(mol, action)
+        if action.prop in task_props:
+            score += 0.5
+        if "policy" in action.reason:
+            score += 0.25
+        scored.append(replace(action, policy_score=round(float(score), 6)))
+    return sorted(scored, key=lambda action: (action.policy_score, action.reason, action.op), reverse=True)
+
+
+def policy_template_score(action: GraphEditAction) -> float:
+    score = 1.0
+    if action.op == "add_fragment":
+        fragment_score = {
+            "C": 1.3,
+            "CC": 1.15,
+            "O": 1.0,
+            "N": 1.0,
+            "C#N": 1.1,
+            "C(=O)O": 0.9,
+            "C(=O)N": 1.0,
+            "c1ccccc1": 0.65,
+        }
+        score += fragment_score.get(action.fragment, 0.75)
+    if action.op == "add_atom":
+        atom_score = {"F": 1.35, "Cl": 1.15, "O": 1.05, "N": 1.05, "C": 0.95, "Br": 0.75, "S": 0.7}
+        score += atom_score.get(action.atom, 0.5)
+    if action.op == "delete_terminal_atom":
+        score += 1.25
+    if action.op == "replace_atom":
+        score += 0.8
+    if action.op == "change_bond_order":
+        score += 0.45 if action.bond_order == "single" else 0.2
+    if action.prop in {"sas", "sa"} and action.direction == "decrease":
+        score += 0.8 if action.op in {"delete_terminal_atom", "replace_atom", "change_bond_order"} else 0.1
+    if action.prop in {"plogp", "logp"} and action.direction == "increase":
+        score += 0.8 if action.atom in {"F", "Cl", "Br"} or action.fragment in {"C", "CC"} else 0.2
+    if action.prop == "qed" and action.direction == "increase":
+        score += 0.55 if action.atom in {"F", "Cl", "O", "N"} or action.fragment in {"C", "C#N"} else 0.0
+    return score
+
+
+def site_policy_score(mol, action: GraphEditAction) -> float:
+    score = 0.0
+    if action.site is not None and 0 <= int(action.site) < mol.GetNumAtoms():
+        atom = mol.GetAtomWithIdx(int(action.site))
+        if not atom.IsInRing():
+            score += 0.7
+        if atom.GetDegree() <= 2:
+            score += 0.5
+        if atom.GetDegree() == 1:
+            score += 0.35
+        if atom.GetSymbol() == "C":
+            score += 0.25
+        if atom.GetIsAromatic():
+            score -= 0.4
+        if action.op == "delete_terminal_atom" and atom.GetDegree() != 1:
+            score -= 3.0
+    if action.bond:
+        begin, end = action.bond
+        bond = mol.GetBondBetweenAtoms(int(begin), int(end))
+        if bond is not None:
+            if not bond.IsInRing():
+                score += 0.45
+            if bond.GetIsAromatic():
+                score -= 1.0
+    return score
 
 
 def editable_atom_sites(source_smiles: str, *, site_limit: int) -> list[int]:
@@ -370,11 +598,37 @@ def dedupe_actions(actions: Sequence[GraphEditAction]) -> list[GraphEditAction]:
     out = []
     seen = set()
     for action in actions:
-        key = action.to_json()
+        key = action_identity(action)
         if key in seen:
             continue
         seen.add(key)
         out.append(action)
+    return out
+
+
+def action_identity(action: GraphEditAction) -> tuple[object, ...]:
+    return (
+        action.op,
+        action.site,
+        action.bond,
+        action.atom,
+        action.fragment,
+        action.bond_order,
+        action.prop,
+        action.direction,
+        action.reason,
+    )
+
+
+def dedupe_strings(values: Sequence[str]) -> list[str]:
+    out = []
+    seen = set()
+    for value in values:
+        value = str(value or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
     return out
 
 
@@ -387,6 +641,7 @@ def summarize_graph_agent_rows(rows: list[Mapping[str, object]]) -> dict[str, ob
         "mean_local_success_fraction": revise.mean_float(rows, "graph_edit_local_success_fraction"),
         "mean_source_tanimoto": revise.mean_float(rows, "graph_edit_source_tanimoto"),
         "mean_plan_count": revise.mean_float(rows, "graph_edit_plan_count"),
+        "mean_executed_plan_count": revise.mean_float(rows, "graph_edit_executed_plan_count"),
         "mean_candidate_count": revise.mean_float(rows, "graph_edit_candidate_count"),
     }
 

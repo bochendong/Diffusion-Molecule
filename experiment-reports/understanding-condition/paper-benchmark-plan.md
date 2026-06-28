@@ -139,7 +139,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | **agentic rich v2** | assisted | **100%** | **46.7%** | **32.3%** |
 | GraphEditDSL agent | assisted | 100% | 46.7% | 26.2% |
 
-direct SFT/RL Sim 仍为 0；rich v2 **Sim@0.4 32.3%**（当前 assisted best）；GraphEditDSL heuristic **26.2%**（架构有效，planner 待升级）。下一步：**LLM/policy GraphEdit planner**、oracle CSV strict、C-MuMO。
+direct SFT/RL Sim 仍为 0；rich v2 **Sim@0.4 32.3%**（当前 assisted best）；GraphEditDSL heuristic **26.2%**（架构有效，planner 待升级）。下一步：**policy GraphEditDSL v2**、LLM/policy GraphEdit planner、oracle CSV strict、C-MuMO。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -154,6 +154,7 @@ direct SFT/RL Sim 仍为 0；rich v2 **Sim@0.4 32.3%**（当前 assisted best）
 7. 已新增 MuMO `agentic revise` 入口；它是 assisted/source-edit line，单独报，不与 one-shot direct generation 混表。
 8. 已新增 MuMO `agentic revise rich` 入口；复用 v1 direct proposals，扩大 beam/candidate cap，并使用 similarity-first selection。
 9. 已新增 MuMO `GraphEditDSL agent` 入口；planner 输出结构化 graph-edit actions，RDKit executor 在 source graph 上执行，verifier 按 local property success + source similarity 选候选。这是 source-conditioned edit 的主方向升级，不再只是 rerank/local-search 调参。
+10. 已新增 MuMO `policy GraphEditDSL v2` 入口；2-step beam expansion + property-aware action scoring + richer DSL action set，用来判断 GraphEditDSL 是否能追平 rich v2。
 
 预期产出：
 
@@ -229,6 +230,13 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_agent.sh
 ```
 
+policy GraphEditDSL v2 提交命令：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_policy.sh
+```
+
 注意：BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要 external generated-property CSV 才能公平评估；没有 oracle CSV 时只作为 coverage / plumbing pilot。
 
 ### 6. PMO small-budget pilot
@@ -265,4 +273,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct SFT/RL Sim 仍 0；assisted **rich v2 Sim@0.4 32.3%**、GraphEditDSL **26.2%**；strict 仍待 oracle CSV。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct SFT/RL Sim 仍 0；assisted **rich v2 Sim@0.4 32.3%**、GraphEditDSL **26.2%**；policy GraphEditDSL v2 待跑；strict 仍待 oracle CSV。

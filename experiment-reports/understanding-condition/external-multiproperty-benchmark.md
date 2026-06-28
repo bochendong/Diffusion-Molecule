@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO assisted edit 完成**；rich v2 Sim@0.4 **32.3%**（当前 best）；GraphEditDSL **26.2%**；oracle CSV 待回填 |
-| **最后更新** | 2026-06-28（rich v2 `16824486` + GraphEditDSL `16825306`） |
+| **状态** | **MuMO assisted edit 完成**；rich v2 Sim@0.4 **32.3%**（当前 best）；GraphEditDSL **26.2%**；policy GraphEditDSL v2 已加入口；oracle CSV 待回填 |
+| **最后更新** | 2026-06-28（policy GraphEditDSL v2 entry） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -62,6 +62,7 @@ SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_age
 SketchMol-Understanding-Condition/scripts/build_external_graph_edit_agent_predictions.py
 SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_graph_edit_agent.sh
 SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_agent.sh
+SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_policy.sh
 SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh
 SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh
 ```
@@ -95,6 +96,7 @@ group-RL 入口默认：
 | `16819986` | `succ-external-mumo-agentic-revise-4step` | MuMO test（复用 v1 proposals + 4-step local edit） | `direct_smiles_external_mumo_agentic_revise_4step_v1/` |
 | `16824486` | `succ-external-mumo-agentic-rich` | MuMO test（rich actions + 2048 candidates/row） | `direct_smiles_external_mumo_agentic_revise_rich_v1/` |
 | `16825306` | `succ-external-mumo-graph-edit` | MuMO test（GraphEditDSL planner + RDKit executor） | `direct_smiles_external_mumo_graph_edit_agent_v1/` |
+| 待提交 | `succ-external-mumo-graph-policy` | MuMO test（policy GraphEditDSL 2-step planner） | `direct_smiles_external_mumo_graph_edit_policy_v2/` |
 
 集群数据路径（已下载）：
 
@@ -268,6 +270,17 @@ Agent 统计：`mean_plan_count` **441**；`mean_candidate_count` **89**；`mean
 
 **结论**：显式 graph-edit action 空间 **有效**（26.2% > 15.6% baseline），但当前 **heuristic planner 仍低于 rich local revise（32.3%）**——candidate 利用率低（89 vs 2048/row）。GraphEditDSL 架构方向正确，下一步换 **LLM/policy planner**、扩大 executor candidate yield，而非继续加 local search step。
 
+## MuMO policy GraphEditDSL v2（待跑）
+
+入口：`submit_direct_smiles_external_mumo_graph_edit_policy.sh`。这版是 GraphEditDSL 的主方向升级，不覆盖 v1：
+
+1. `planner_mode=policy_graph_dsl`：按 property program 对 action/site 打分排序，输出带 `policy_score` 的 DSL JSON。
+2. `planner_steps=2` + `beam=96`：允许从第一步 source-neighbor 候选继续做第二步 graph edit，不再只从 source 做单步。
+3. richer DSL actions：补齐 rich v2 里有效的 fragment attach（`C#N`、`C(=O)N`、phenyl）、Br/S atom edits、bond-order edits、terminal prune。
+4. candidate cap 对齐 assisted line：默认 `max_candidates_per_row=2048`，目标是把 GraphEditDSL 的平均候选数从 89 拉高，同时保留可解释 action trace。
+
+目标：超过 heuristic GraphEditDSL **26.2%**，并尽量逼近/超过 rich v2 **32.3%**。如果 v2 接近 rich v2，就说明可以把 GraphEditDSL 作为主线，并继续换真正 LLM/policy planner；如果仍低，优先查 executor yield 和 action validity，而不是加 step depth。
+
 ## 服务器命令
 
 MuMO one-shot baseline（同口径对照，推荐先跑）：
@@ -369,6 +382,13 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_agent.sh
 ```
 
+MuMO policy GraphEditDSL v2（推荐下一条跑）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_policy.sh
+```
+
 只跑 MuMO OOD：
 
 ```bash
@@ -412,8 +432,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 7. ~~**agentic revise 4-step**~~ → **`16819986` 完成**；与 2-step **完全相同**（Sim **15.6%**）→ 瓶颈在 candidate pool / edit actions，不在 step depth。
 8. ~~**agentic revise rich v2**~~ → **`16824486` 完成**；Sim@0.4 **32.3%**（+16.7pp vs 2-step）；validity **100%**；proxy **46.7%**。
 9. ~~**GraphEditDSL agent v1**~~ → **`16825306` 完成**；Sim@0.4 **26.2%**（heuristic planner；低于 rich v2）；架构方向有效。
-10. **GraphEditDSL LLM/policy planner**；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
-10. ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
+10. **policy GraphEditDSL v2** → 入口已加入；跑 `direct_smiles_external_mumo_graph_edit_policy_v2/`，检验 2-step policy DSL planner 能否超过 heuristic 的 **26.2%**。
+11. **GraphEditDSL LLM/policy planner**；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
 
 ## 外部来源
 
