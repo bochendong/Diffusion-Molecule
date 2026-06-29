@@ -101,7 +101,8 @@ group-RL 入口默认：
 | `16819986` | `succ-external-mumo-agentic-revise-4step` | MuMO test（复用 v1 proposals + 4-step local edit） | `direct_smiles_external_mumo_agentic_revise_4step_v1/` |
 | `16824486` | `succ-external-mumo-agentic-rich` | MuMO test（rich actions + 2048 candidates/row） | `direct_smiles_external_mumo_agentic_revise_rich_v1/` |
 | `16825306` | `succ-external-mumo-graph-edit` | MuMO test（GraphEditDSL planner + RDKit executor） | `direct_smiles_external_mumo_graph_edit_agent_v1/` |
-| 待提交 | `succ-external-mumo-graph-policy` | MuMO test（policy GraphEditDSL 2-step planner） | `direct_smiles_external_mumo_graph_edit_policy_v2/` |
+| `16892025` | `succ-external-mumo-graph-policy` | MuMO test（policy GraphEditDSL 2-step planner） | `direct_smiles_external_mumo_graph_edit_policy_v2/` |
+| `16894722` | `succ-external-mumo-one-shot` | MuMO test（official SR evaluator 重跑） | `direct_smiles_external_mumo_one_shot_v1/` |
 
 集群数据路径（已下载）：
 
