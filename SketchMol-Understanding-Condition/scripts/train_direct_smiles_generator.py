@@ -121,6 +121,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="auto")
     parser.add_argument("--prediction-csv", type=Path, default=None)
+    parser.add_argument(
+        "--candidate-output-csv",
+        type=Path,
+        default=None,
+        help="Optional CSV with every sampled candidate before final selection/rerank.",
+    )
     return parser.parse_args(argv)
 
 
@@ -256,6 +262,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_parallel_sequences=int(args.max_parallel_sequences),
             property_rerank=not bool(args.disable_property_rerank),
             condition_mixing_mode=condition_mixing_mode,
+            candidate_output_csv=args.candidate_output_csv,
         )
 
     summary = {
@@ -670,6 +677,7 @@ def write_predictions(
     max_parallel_sequences: int,
     property_rerank: bool,
     condition_mixing_mode: str = "features_only",
+    candidate_output_csv: Path | None = None,
 ) -> dict[str, object]:
     model.eval()
     output_csv.parent.mkdir(parents=True, exist_ok=True)
@@ -683,10 +691,40 @@ def write_predictions(
     dataset_index = 0
     written_rows = 0
     csv_initialized = False
+    candidate_csv_initialized = False
     sample_count = max(1, int(num_samples))
     sample_parallel = max(1, int(parallel_samples))
     max_parallel_sequences = max(1, int(max_parallel_sequences))
     suppress_ids = [vocab.token_to_id[UNK]] if UNK in vocab.token_to_id else []
+    selected_fieldnames = infer_csv_fieldnames(
+        rows,
+        extra_fields=(
+            "generated_smiles",
+            "method",
+            "direct_candidate_count",
+            "direct_unique_candidate_count",
+            "direct_valid_candidate_count",
+            "direct_unique_valid_candidate_count",
+            "direct_best_candidate_rank",
+            "direct_best_score",
+            "direct_best_strict_fraction",
+            "direct_best_property_distance",
+        ),
+    )
+    candidate_fieldnames = infer_csv_fieldnames(
+        rows,
+        extra_fields=(
+            "generated_smiles",
+            "method",
+            "direct_candidate_index",
+            "direct_candidate_raw_smiles",
+            "direct_candidate_canonical_smiles",
+            "direct_candidate_score",
+            "direct_candidate_strict_fraction",
+            "direct_candidate_property_distance",
+            "direct_candidate_count",
+        ),
+    )
     for batch_rows in batches(dataset, batch_size):
         batch = collate(batch_rows, pad_id=model.pad_id, device=device)
         batch_candidates: list[list[str]] = [[] for _ in batch_rows]
@@ -742,8 +780,23 @@ def write_predictions(
             if math.isfinite(distance):
                 property_distances.append(distance)
             batch_output_rows.append(source_row)
+            if candidate_output_csv is not None:
+                candidate_rows = build_candidate_output_rows(
+                    rows[dataset_index],
+                    candidates,
+                    sample_count=sample_count,
+                    condition_mixing_mode=condition_mixing_mode,
+                    property_rerank=property_rerank,
+                )
+                append_csv_rows(
+                    candidate_output_csv,
+                    candidate_rows,
+                    overwrite=not candidate_csv_initialized,
+                    fieldnames=candidate_fieldnames,
+                )
+                candidate_csv_initialized = True
             dataset_index += 1
-        append_csv_rows(output_csv, batch_output_rows, overwrite=not csv_initialized)
+        append_csv_rows(output_csv, batch_output_rows, overwrite=not csv_initialized, fieldnames=selected_fieldnames)
         csv_initialized = True
         written_rows += len(batch_output_rows)
         print(
@@ -813,6 +866,32 @@ def select_generated_candidate(
         "strict_fraction": float(best["strict_fraction"]),
         "normalized_property_distance": float(best["normalized_property_distance"]),
     }
+
+
+def build_candidate_output_rows(
+    row: Mapping[str, str],
+    candidates: Sequence[str],
+    *,
+    sample_count: int,
+    condition_mixing_mode: str,
+    property_rerank: bool,
+) -> list[dict[str, object]]:
+    out = []
+    method = direct_smiles_method_name(sample_count, condition_mixing_mode)
+    for rank, candidate in enumerate(candidates):
+        scored = score_generated_candidate(row, candidate, rank=rank, property_rerank=property_rerank)
+        candidate_row = dict(row)
+        candidate_row["generated_smiles"] = str(scored.get("canonical_smiles") or scored.get("raw_smiles") or "")
+        candidate_row["method"] = f"{method}_candidate"
+        candidate_row["direct_candidate_index"] = int(rank)
+        candidate_row["direct_candidate_raw_smiles"] = str(scored.get("raw_smiles") or "")
+        candidate_row["direct_candidate_canonical_smiles"] = str(scored.get("canonical_smiles") or "")
+        candidate_row["direct_candidate_score"] = float(scored["score"])
+        candidate_row["direct_candidate_strict_fraction"] = float(scored["strict_fraction"])
+        candidate_row["direct_candidate_property_distance"] = float(scored["normalized_property_distance"])
+        candidate_row["direct_candidate_count"] = int(len(candidates))
+        out.append(candidate_row)
+    return out
 
 
 def score_generated_candidate(
@@ -986,19 +1065,36 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         writer.writerows(rows)
 
 
-def append_csv_rows(path: Path, rows: list[dict[str, object]], *, overwrite: bool = False) -> None:
-    if not rows:
-        return
+def infer_csv_fieldnames(rows: Sequence[Mapping[str, object]], *, extra_fields: Sequence[str] = ()) -> list[str]:
     fieldnames: list[str] = []
     seen = set()
     for row in rows:
         for key in row:
             if key not in seen:
                 seen.add(key)
-                fieldnames.append(key)
+                fieldnames.append(str(key))
+    for key in extra_fields:
+        if key not in seen:
+            seen.add(key)
+            fieldnames.append(str(key))
+    return fieldnames
+
+
+def append_csv_rows(
+    path: Path,
+    rows: list[dict[str, object]],
+    *,
+    overwrite: bool = False,
+    fieldnames: Sequence[str] | None = None,
+) -> None:
+    if not rows:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if fieldnames is None:
+        fieldnames = infer_csv_fieldnames(rows)
     mode = "w" if overwrite or not path.exists() else "a"
     with path.open(mode, newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer = csv.DictWriter(handle, fieldnames=list(fieldnames), extrasaction="ignore")
         if mode == "w":
             writer.writeheader()
         writer.writerows(rows)

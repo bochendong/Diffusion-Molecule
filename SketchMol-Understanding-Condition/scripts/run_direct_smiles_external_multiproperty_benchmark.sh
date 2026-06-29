@@ -25,6 +25,8 @@ FEATURES_DIR="${SUCC_EXTERNAL_MULTIPROP_FEATURES_DIR:-$OUTPUT_DIR/condition_feat
 MODEL_DIR="${SUCC_EXTERNAL_MULTIPROP_MODEL_DIR:-$OUTPUT_DIR/direct_smiles_model_external}"
 BENCHMARK_OUTPUT_DIR="${SUCC_EXTERNAL_MULTIPROP_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_external_multiproperty}"
 PREDICTION_CSV="${SUCC_EXTERNAL_MULTIPROP_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_predictions.csv}"
+CANDIDATE_PREDICTION_CSV="${SUCC_EXTERNAL_MULTIPROP_CANDIDATE_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_candidate_predictions.csv}"
+EVAL_PREDICTION_CSV="${SUCC_EXTERNAL_MULTIPROP_EVAL_PREDICTION_CSV:-$CANDIDATE_PREDICTION_CSV}"
 GENERATED_PROPERTIES_CSV="${SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV:-}"
 SOURCE_PROPERTIES_CSV="${SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV:-}"
 
@@ -154,6 +156,7 @@ TRAIN_CMD=(
   --condition-mixing-mode "$CONDITION_MIXING_MODE"
   --output-dir "$MODEL_DIR"
   --prediction-csv "$PREDICTION_CSV"
+  --candidate-output-csv "$CANDIDATE_PREDICTION_CSV"
   --epochs "$EPOCHS"
   --batch-size "$BATCH_SIZE"
   --eval-batch-size "$EVAL_BATCH_SIZE"
@@ -185,10 +188,11 @@ if [[ -n "$SOURCE_PROPERTIES_CSV" ]]; then
   EVAL_ARGS+=(--source-properties-csv "$SOURCE_PROPERTIES_CSV")
 fi
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_external_multiproperty_predictions.py" \
-  --prediction-csv "$PREDICTION_CSV" \
+  --prediction-csv "$EVAL_PREDICTION_CSV" \
   --output-dir "$BENCHMARK_OUTPUT_DIR" \
   --smiles-column generated_smiles \
   --source-smiles-column source_smiles \
+  --group-column condition_id \
   --min-source-tanimoto "$MIN_SOURCE_TANIMOTO" \
   --report-title "SUCC Direct SMILES External Multi-property Benchmark" \
   "${EVAL_ARGS[@]}"
@@ -198,5 +202,7 @@ echo "External multi-property benchmark ready:"
 echo "  rows=$ROWS_CSV"
 echo "  task_specs=$TASK_SPEC_JSON"
 echo "  predictions=$PREDICTION_CSV"
+echo "  candidate_predictions=$CANDIDATE_PREDICTION_CSV"
+echo "  evaluated_predictions=$EVAL_PREDICTION_CSV"
 echo "  report=$BENCHMARK_OUTPUT_DIR/external_multiproperty_report.md"
 echo "  summary=$BENCHMARK_OUTPUT_DIR/external_multiproperty_summary.csv"

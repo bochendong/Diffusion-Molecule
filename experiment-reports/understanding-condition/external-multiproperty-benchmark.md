@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO assisted edit 完成**；rich v2 Sim@0.4 **32.3%**（当前 best）；GraphEditDSL **26.2%**；policy GraphEditDSL v2 已加入口；oracle CSV 待回填 |
-| **最后更新** | 2026-06-28（policy GraphEditDSL v2 entry） |
+| **状态** | **MuMO assisted edit 完成**；official-style `SR / Similarity / RI` evaluator 已修复；rich v2 Sim@0.4 **32.3%**（当前 best）；GraphEditDSL **26.2%**；policy GraphEditDSL v2 已加入口；oracle CSV 待回填 |
+| **最后更新** | 2026-06-29（official SR evaluator + candidate CSV） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -43,6 +43,9 @@ SketchMol-Understanding-Condition/scripts/evaluate_external_multiproperty_predic
 
 1. 本地可算的 proxy properties：QED、LogP、SA、pLogP proxy。
 2. 外部 generated-property CSV：用于 BBBP、HIA、mutagenicity、hERG、DILI、PAMPA 等 ADMET/oracle 性质。
+3. official-style 聚合：按 `condition_id` 把同一 input 的多个候选合并，`SR` 表示 **任一候选** 满足所有 task properties；`Similarity` / `RI` 在成功 input 的最佳成功候选上统计。
+
+注意：`Internal strict` 仍额外要求 `Sim >= 0.4`，只作为 source-preservation diagnostic；不能替代 GeLLM3O / GeLLMO-C 的 `SR`。
 
 新增 server 入口：
 
@@ -72,6 +75,7 @@ one-shot 默认是 pilot/diagnostic：
 - `RUN_TRAIN=0`
 - 使用现有 direct-SMILES checkpoint。
 - `NUM_SAMPLES=20`，对齐 GeLLMO 论文推理设置。
+- 默认额外输出 `direct_smiles_candidate_predictions.csv`，并用它评估 official-style `SR`。
 - `DISABLE_PROPERTY_RERANK=1`，避免第一版变成 output-side rerank。
 - 如果没有 generated-property CSV，报告会把 missing oracle properties 明确列出来。
 
@@ -81,6 +85,7 @@ group-RL 入口默认：
 - 使用 source-conditioned external rows 训练；`SFT_WEIGHT=0.15`，避免 target placeholder 过度鼓励复制 source。
 - reward 仍使用本地可算 proxy strict/distance，同时新增可关闭的 source Tanimoto reward（默认权重 `0.5`，阈值 `0.4`）。
 - benchmark 阶段默认 `NUM_SAMPLES=20`、`DISABLE_PROPERTY_RERANK=1`。
+- benchmark 阶段默认输出候选级 CSV，并以 candidate-level aggregation 评估 `SR / Similarity / RI`。
 - ADMET/oracle 性质仍需要 generated-property CSV 才能公平报告；没有 oracle CSV 时，group-RL 只优化 proxy subset + source conservation。
 
 ## Slurm 运行记录
@@ -290,6 +295,13 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_one_shot_baseline.sh
 ```
 
+输出重点：
+
+- selected prediction：`benchmark_external_multiproperty/direct_smiles_predictions.csv`
+- candidate prediction：`benchmark_external_multiproperty/direct_smiles_candidate_predictions.csv`
+- official-style report：`benchmark_external_multiproperty/external_multiproperty_report.md`
+- summary CSV：`benchmark_external_multiproperty/external_multiproperty_summary.csv`
+
 MuMO source-copy sanity（不算模型结果，只验证 source similarity / evaluator）：
 
 ```bash
@@ -305,6 +317,14 @@ SUCC_EXTERNAL_MULTIPROP_SOURCE_FILE=/path/to/mumo_or_cmumo_test.json \
 SUCC_EXTERNAL_MULTIPROP_SUITE=mumo \
 SUCC_EXTERNAL_MULTIPROP_TASK_SPLIT=all \
 SUCC_EXTERNAL_MULTIPROP_MAX_ROWS_PER_TASK=200 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh
+```
+
+如果已经有外部 ADMET/generated-property CSV，则加：
+
+```bash
+SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV=/path/to/generated_properties.csv \
+SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV=/path/to/source_properties.csv \
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh
 ```
 
@@ -329,6 +349,14 @@ SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SUITE=mumo \
 SUCC_EXTERNAL_MULTIPROP_GROUP_RL_TASK_SPLIT=all \
 SUCC_EXTERNAL_MULTIPROP_GROUP_RL_MAX_ROWS_PER_TASK=200 \
 SUCC_EXTERNAL_MULTIPROP_GROUP_RL_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/direct_smiles_external_mumo_group_rl_v1 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
+```
+
+group-RL 若要用外部 oracle CSV：
+
+```bash
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_GENERATED_PROPERTIES_CSV=/path/to/generated_properties.csv \
+SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SOURCE_PROPERTIES_CSV=/path/to/source_properties.csv \
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_group_rl.sh
 ```
 

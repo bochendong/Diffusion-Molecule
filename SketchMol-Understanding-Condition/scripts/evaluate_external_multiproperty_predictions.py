@@ -86,6 +86,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-properties-csv", type=Path, default=None)
     parser.add_argument("--smiles-column", default="generated_smiles")
     parser.add_argument("--source-smiles-column", default="source_smiles")
+    parser.add_argument(
+        "--group-column",
+        default="condition_id",
+        help="Input id used for official SR aggregation. Candidate rows with the same value count as one input.",
+    )
     parser.add_argument("--min-source-tanimoto", type=float, default=0.4)
     parser.add_argument("--report-title", default="External Multi-property Benchmark")
     return parser.parse_args(argv)
@@ -108,7 +113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         for row in predictions
     ]
-    summary_rows = summarize(detail_rows)
+    summary_rows = summarize(detail_rows, group_column=str(args.group_column))
     write_rows(args.output_dir / "external_multiproperty_detail.csv", detail_rows)
     write_rows(args.output_dir / "external_multiproperty_summary.csv", summary_rows)
     report = render_report(args.report_title, args, summary_rows, detail_rows)
@@ -137,6 +142,7 @@ def evaluate_row(
     source_scores = merged_properties(source, row, source_props_lookup)
     generated_scores = generated_properties(canonical, generated_props) if canonical else {}
     per_prop_success: dict[str, bool | None] = {}
+    relative_improvements: dict[str, float | None] = {}
     missing_props = []
     for prop in task_props:
         prop = canonical_prop(prop)
@@ -147,6 +153,7 @@ def evaluate_row(
         target_value = parse_float(row.get(f"external_target_{prop}"))
         if generated_value is None or (source_value is None and target_value is None):
             per_prop_success[prop] = None
+            relative_improvements[prop] = None
             missing_props.append(prop)
             continue
         direction = str(directions.get(prop, DEFAULT_DIRECTION.get(prop, "increase"))).lower()
@@ -157,8 +164,16 @@ def evaluate_row(
             delta = generated_value - float(source_value)
             success = delta >= threshold if direction == "increase" else -delta >= threshold
         per_prop_success[prop] = bool(success)
+        relative_improvements[prop] = relative_improvement(
+            source_value=source_value,
+            generated_value=generated_value,
+            direction=direction,
+        )
     evaluated = [value for value in per_prop_success.values() if value is not None]
-    all_property_success = bool(evaluated) and all(evaluated) and not missing_props
+    ri_values = [float(value) for value in relative_improvements.values() if value is not None and math.isfinite(float(value))]
+    full_property_coverage = bool(task_props) and not missing_props
+    all_property_success = bool(evaluated) and all(evaluated) and full_property_coverage
+    official_success = bool(valid) and all_property_success
     source_similarity_success = bool(valid) and (math.isnan(tanimoto) or tanimoto >= min_source_tanimoto)
     strict_success = bool(valid) and source_similarity_success and all_property_success
     return {
@@ -168,9 +183,13 @@ def evaluate_row(
         "external_source_tanimoto": "" if math.isnan(tanimoto) else format_float(tanimoto, digits=6),
         "external_source_similarity_success": "True" if source_similarity_success else "False",
         "external_property_success_json": json.dumps(per_prop_success, sort_keys=True),
+        "external_property_relative_improvement_json": json.dumps(relative_improvements, sort_keys=True),
         "external_missing_generated_oracle_properties": ",".join(missing_props),
         "external_evaluated_property_fraction": format_float(len(evaluated) / max(len(task_props), 1), digits=6),
+        "external_full_property_coverage": "True" if full_property_coverage else "False",
         "external_all_property_success": "True" if all_property_success else "False",
+        "external_official_success": "True" if official_success else "False",
+        "external_mean_relative_improvement": format_mean(ri_values, digits=6),
         "external_strict_success": "True" if strict_success else "False",
     }
 
@@ -243,72 +262,137 @@ def read_property_lookup(path: Path | None) -> dict[str, dict[str, float]]:
     return lookup
 
 
-def summarize(rows: list[dict[str, object]]) -> list[dict[str, object]]:
-    groups: dict[tuple[str, str, str], list[dict[str, object]]] = defaultdict(list)
-    for row in rows:
+def summarize(rows: list[dict[str, object]], *, group_column: str = "condition_id") -> list[dict[str, object]]:
+    groups: dict[tuple[str, str, str], list[tuple[int, dict[str, object]]]] = defaultdict(list)
+    for index, row in enumerate(rows):
         groups[
             (
                 str(row.get("external_suite") or "unknown"),
                 str(row.get("external_task_split") or "unknown"),
                 str(row.get("external_task_id") or str(row.get("external_task_key") or "unknown")),
             )
-        ].append(row)
+        ].append((index, row))
     out = []
-    for (suite, split, task_id), items in sorted(groups.items()):
-        n = len(items)
-        valid = mean_bool(items, "external_valid")
-        sim = mean_bool(items, "external_source_similarity_success")
-        prop = mean_bool(items, "external_all_property_success")
-        strict = mean_bool(items, "external_strict_success")
-        missing_counter = Counter()
-        evaluated_fraction = []
-        for item in items:
-            missing_counter.update(parse_list(item.get("external_missing_generated_oracle_properties")))
-            value = parse_float(item.get("external_evaluated_property_fraction"))
-            if value is not None:
-                evaluated_fraction.append(value)
-        out.append(
-            {
-                "external_suite": suite,
-                "external_task_split": split,
-                "external_task_id": task_id,
-                "rows": n,
-                "validity": format_float(valid, digits=6),
-                "source_similarity_success_rate": format_float(sim, digits=6),
-                "all_property_success_rate": format_float(prop, digits=6),
-                "strict_success_rate": format_float(strict, digits=6),
-                "mean_evaluated_property_fraction": format_float(
-                    sum(evaluated_fraction) / max(len(evaluated_fraction), 1),
-                    digits=6,
-                ),
-                "missing_oracle_properties": ",".join(sorted(missing_counter)),
-            }
-        )
+    all_group_summaries = []
+    for (suite, split, task_id), indexed_items in sorted(groups.items()):
+        items = [row for _, row in indexed_items]
+        grouped = group_candidate_rows(indexed_items, group_column=group_column)
+        group_summaries = [summarize_input_group(group_items) for group_items in grouped.values()]
+        all_group_summaries.extend(group_summaries)
+        out.append(make_summary_row(suite, split, task_id, items, group_summaries))
     if rows:
-        out.append(
-            {
-                "external_suite": "all",
-                "external_task_split": "all",
-                "external_task_id": "all",
-                "rows": len(rows),
-                "validity": format_float(mean_bool(rows, "external_valid"), digits=6),
-                "source_similarity_success_rate": format_float(
-                    mean_bool(rows, "external_source_similarity_success"),
-                    digits=6,
-                ),
-                "all_property_success_rate": format_float(mean_bool(rows, "external_all_property_success"), digits=6),
-                "strict_success_rate": format_float(mean_bool(rows, "external_strict_success"), digits=6),
-                "mean_evaluated_property_fraction": format_float(
-                    sum(parse_float(row.get("external_evaluated_property_fraction")) or 0.0 for row in rows)
-                    / max(len(rows), 1),
-                    digits=6,
-                ),
-                "missing_oracle_properties": ",".join(
-                    sorted({prop for row in rows for prop in parse_list(row.get("external_missing_generated_oracle_properties"))})
-                ),
-            }
-        )
+        out.append(make_summary_row("all", "all", "all", rows, all_group_summaries))
     return out
+
+
+def group_candidate_rows(
+    indexed_rows: list[tuple[int, dict[str, object]]],
+    *,
+    group_column: str,
+) -> dict[str, list[dict[str, object]]]:
+    out: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for index, row in indexed_rows:
+        key = str(
+            row.get(group_column)
+            or row.get("condition_id")
+            or row.get("sample_id")
+            or row.get("variant_id")
+            or row.get("pair_id")
+            or f"row_{index:08d}"
+        )
+        out[key].append(row)
+    return out
+
+
+def summarize_input_group(items: list[dict[str, object]]) -> dict[str, object]:
+    valid_any = any(truthy(item.get("external_valid")) for item in items)
+    sim_any = any(truthy(item.get("external_source_similarity_success")) for item in items)
+    prop_any = any(truthy(item.get("external_all_property_success")) for item in items)
+    strict_any = any(truthy(item.get("external_strict_success")) for item in items)
+    full_coverage_any = any(
+        truthy(item.get("external_valid")) and truthy(item.get("external_full_property_coverage")) for item in items
+    )
+    success_candidates = [item for item in items if truthy(item.get("external_official_success"))]
+    best = best_success_candidate(success_candidates)
+    return {
+        "candidate_rows": len(items),
+        "valid": valid_any,
+        "source_similarity_success": sim_any,
+        "all_property_success": prop_any,
+        "strict_success": strict_any,
+        "official_evaluable": full_coverage_any,
+        "official_success": bool(best),
+        "success_similarity": parse_float(best.get("external_source_tanimoto")) if best else None,
+        "success_relative_improvement": parse_float(best.get("external_mean_relative_improvement")) if best else None,
+    }
+
+
+def best_success_candidate(items: list[dict[str, object]]) -> dict[str, object] | None:
+    if not items:
+        return None
+    return max(
+        items,
+        key=lambda item: (
+            parse_float(item.get("external_mean_relative_improvement")) or -math.inf,
+            parse_float(item.get("external_source_tanimoto")) or -math.inf,
+        ),
+    )
+
+
+def make_summary_row(
+    suite: str,
+    split: str,
+    task_id: str,
+    candidate_rows: list[dict[str, object]],
+    group_summaries: list[dict[str, object]],
+) -> dict[str, object]:
+    missing_counter = Counter()
+    evaluated_fraction = []
+    for item in candidate_rows:
+        missing_counter.update(parse_list(item.get("external_missing_generated_oracle_properties")))
+        value = parse_float(item.get("external_evaluated_property_fraction"))
+        if value is not None:
+            evaluated_fraction.append(value)
+    missing_props = ",".join(sorted(missing_counter))
+    success_similarities = [
+        float(item["success_similarity"])
+        for item in group_summaries
+        if item.get("success_similarity") is not None and math.isfinite(float(item["success_similarity"]))
+    ]
+    success_ris = [
+        float(item["success_relative_improvement"])
+        for item in group_summaries
+        if item.get("success_relative_improvement") is not None
+        and math.isfinite(float(item["success_relative_improvement"]))
+    ]
+    input_count = len(group_summaries)
+    official_evaluable_rate = mean_group_bool(group_summaries, "official_evaluable")
+    status = "official" if not missing_props and official_evaluable_rate >= 1.0 else "lower_bound_missing_oracle"
+    return {
+        "external_suite": suite,
+        "external_task_split": split,
+        "external_task_id": task_id,
+        "rows": input_count,
+        "input_groups": input_count,
+        "candidate_rows": len(candidate_rows),
+        "validity": format_float(mean_group_bool(group_summaries, "valid"), digits=6),
+        "success_rate": format_float(mean_group_bool(group_summaries, "official_success"), digits=6),
+        "similarity": format_mean(success_similarities, digits=6),
+        "relative_improvement": format_mean(success_ris, digits=6),
+        "source_similarity_success_rate": format_float(
+            mean_group_bool(group_summaries, "source_similarity_success"),
+            digits=6,
+        ),
+        "all_property_success_rate": format_float(mean_group_bool(group_summaries, "all_property_success"), digits=6),
+        "strict_success_rate": format_float(mean_group_bool(group_summaries, "strict_success"), digits=6),
+        "official_evaluable_rate": format_float(official_evaluable_rate, digits=6),
+        "mean_evaluated_property_fraction": format_float(
+            sum(evaluated_fraction) / max(len(evaluated_fraction), 1),
+            digits=6,
+        ),
+        "missing_oracle_properties": missing_props,
+        "success_rate_status": status,
+    }
 
 
 def render_report(
@@ -322,20 +406,28 @@ def render_report(
         "",
         f"- prediction_csv: `{args.prediction_csv}`",
         f"- generated_properties_csv: `{args.generated_properties_csv or 'none'}`",
+        f"- group_column: `{args.group_column}`",
         f"- min_source_tanimoto: `{args.min_source_tanimoto}`",
         f"- rows: `{len(detail_rows)}`",
         "",
-        "| Suite | Split | Task | Rows | Valid | Sim | Prop all | Strict | Eval prop frac | Missing oracle props |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| Suite | Split | Task | Inputs | Candidates | Valid | SR | Sim(success) | RI(success) | Sim>=thr | Internal strict | Eval prop frac | Missing oracle props | Status |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     for row in summary_rows:
         lines.append(
-            "| {external_suite} | {external_task_split} | {external_task_id} | {rows} | "
-            "{validity} | {source_similarity_success_rate} | {all_property_success_rate} | "
-            "{strict_success_rate} | {mean_evaluated_property_fraction} | {missing_oracle_properties} |".format(**row)
+            "| {external_suite} | {external_task_split} | {external_task_id} | {input_groups} | "
+            "{candidate_rows} | {validity} | {success_rate} | {similarity} | {relative_improvement} | "
+            "{source_similarity_success_rate} | {strict_success_rate} | {mean_evaluated_property_fraction} | "
+            "{missing_oracle_properties} | {success_rate_status} |".format(**row)
         )
     lines.append("")
-    lines.append("Rows with missing oracle properties are diagnostic-only until a generated-properties CSV is supplied.")
+    lines.append(
+        "`SR` follows the external-paper style: one input is successful if any candidate in the same group satisfies all task properties."
+    )
+    lines.append(
+        "`Internal strict` additionally requires the source-similarity threshold and is kept only as a source-preservation diagnostic."
+    )
+    lines.append("Rows with missing oracle properties are lower-bound diagnostic results until generated/source property CSVs cover them.")
     lines.append("")
     return "\n".join(lines)
 
@@ -399,6 +491,21 @@ def canonical_prop(value: object) -> str:
     return PROPERTY_ALIASES.get(key, key)
 
 
+def relative_improvement(
+    *,
+    source_value: float | None,
+    generated_value: float | None,
+    direction: str,
+) -> float | None:
+    if source_value is None or generated_value is None:
+        return None
+    source = float(source_value)
+    generated = float(generated_value)
+    delta = generated - source if direction == "increase" else source - generated
+    denominator = max(abs(source), 1e-8)
+    return float(delta / denominator)
+
+
 def parse_float(value: object) -> float | None:
     try:
         out = float(str(value).strip())
@@ -415,11 +522,22 @@ def mean_bool(rows: list[dict[str, object]], key: str) -> float:
     return sum(1 for row in rows if truthy(row.get(key))) / max(len(rows), 1)
 
 
+def mean_group_bool(rows: list[dict[str, object]], key: str) -> float:
+    return sum(1 for row in rows if bool(row.get(key))) / max(len(rows), 1)
+
+
 def format_float(value: float, *, digits: int = 4) -> str:
     if not math.isfinite(float(value)):
         return ""
     text = f"{float(value):.{digits}f}"
     return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def format_mean(values: Sequence[float], *, digits: int = 4) -> str:
+    finite = [float(value) for value in values if math.isfinite(float(value))]
+    if not finite:
+        return ""
+    return format_float(sum(finite) / len(finite), digits=digits)
 
 
 if __name__ == "__main__":

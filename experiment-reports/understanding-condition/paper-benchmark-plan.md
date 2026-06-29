@@ -3,11 +3,11 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | active planning |
-| **最后更新** | 2026-06-27 |
+| **最后更新** | 2026-06-29 |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **目标** | 把当前结果整理成可投顶会的 benchmark 结构，并提供可直接提交到服务器的命令 |
 
-外部论文 baseline 数值目标已单独整理到 [external-paper-baselines.md](external-paper-baselines.md)。后续 MuMO / C-MuMO 结果必须按 GeLLM3O / GeLLMO-C 的 official `SR` / `Similarity` / `RI` 口径补齐，当前 `Sim >= 0.4` 只作为内部 source-preservation diagnostic。
+外部论文 baseline 数值目标已单独整理到 [external-paper-baselines.md](external-paper-baselines.md)。MuMO / C-MuMO evaluator 已修复为 candidate-level official-style `SR` / `Similarity` / `RI` 聚合；当前 `Sim >= 0.4` 只作为内部 source-preservation diagnostic。下一步需要重跑 direct/group-RL，并补 ADMET/generated-property oracle CSV。
 
 ## 设计原则
 

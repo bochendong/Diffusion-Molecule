@@ -31,6 +31,8 @@ MODEL_DIR="${SUCC_EXTERNAL_MULTIPROP_GROUP_RL_MODEL_DIR:-$OUTPUT_DIR/direct_smil
 BENCHMARK_OUTPUT_DIR="${SUCC_EXTERNAL_MULTIPROP_GROUP_RL_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_external_multiproperty_group_rl}"
 BENCHMARK_MODEL_DIR="${SUCC_EXTERNAL_MULTIPROP_GROUP_RL_BENCHMARK_MODEL_DIR:-$OUTPUT_DIR/direct_smiles_model_group_rl_eval}"
 PREDICTION_CSV="${SUCC_EXTERNAL_MULTIPROP_GROUP_RL_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_predictions.csv}"
+CANDIDATE_PREDICTION_CSV="${SUCC_EXTERNAL_MULTIPROP_GROUP_RL_CANDIDATE_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_candidate_predictions.csv}"
+EVAL_PREDICTION_CSV="${SUCC_EXTERNAL_MULTIPROP_GROUP_RL_EVAL_PREDICTION_CSV:-$CANDIDATE_PREDICTION_CSV}"
 GENERATED_PROPERTIES_CSV="${SUCC_EXTERNAL_MULTIPROP_GROUP_RL_GENERATED_PROPERTIES_CSV:-${SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV:-}}"
 SOURCE_PROPERTIES_CSV="${SUCC_EXTERNAL_MULTIPROP_GROUP_RL_SOURCE_PROPERTIES_CSV:-${SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV:-}}"
 
@@ -265,6 +267,7 @@ if [[ "$RUN_BENCHMARK_AFTER_TRAIN" == "1" ]]; then
     --condition-mixing-mode "$CONDITION_MIXING_MODE"
     --output-dir "$BENCHMARK_MODEL_DIR"
     --prediction-csv "$PREDICTION_CSV"
+    --candidate-output-csv "$CANDIDATE_PREDICTION_CSV"
     --eval-batch-size "$RL_EVAL_BATCH_SIZE"
     --max-new-tokens "$BENCHMARK_MAX_NEW_TOKENS"
     --temperature "$BENCHMARK_TEMPERATURE"
@@ -292,10 +295,11 @@ if [[ "$RUN_BENCHMARK_AFTER_TRAIN" == "1" ]]; then
     EVAL_ARGS+=(--source-properties-csv "$SOURCE_PROPERTIES_CSV")
   fi
   "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_external_multiproperty_predictions.py" \
-    --prediction-csv "$PREDICTION_CSV" \
+    --prediction-csv "$EVAL_PREDICTION_CSV" \
     --output-dir "$BENCHMARK_OUTPUT_DIR" \
     --smiles-column generated_smiles \
     --source-smiles-column source_smiles \
+    --group-column condition_id \
     --min-source-tanimoto "$MIN_SOURCE_TANIMOTO" \
     --report-title "SUCC Direct SMILES External Multi-property Group-RL Benchmark" \
     "${EVAL_ARGS[@]}"
@@ -306,6 +310,8 @@ if [[ "$RUN_BENCHMARK_AFTER_TRAIN" == "1" ]]; then
   echo "  eval_rows=$EVAL_ROWS_CSV"
   echo "  checkpoint=$RL_CHECKPOINT"
   echo "  predictions=$PREDICTION_CSV"
+  echo "  candidate_predictions=$CANDIDATE_PREDICTION_CSV"
+  echo "  evaluated_predictions=$EVAL_PREDICTION_CSV"
   echo "  report=$BENCHMARK_OUTPUT_DIR/external_multiproperty_report.md"
   echo "  summary=$BENCHMARK_OUTPUT_DIR/external_multiproperty_summary.csv"
 fi

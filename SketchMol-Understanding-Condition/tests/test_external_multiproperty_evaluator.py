@@ -1,0 +1,102 @@
+import importlib.util
+from pathlib import Path
+
+
+SCRIPT_PATH = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_external_multiproperty_predictions.py"
+
+
+def load_evaluator():
+    spec = importlib.util.spec_from_file_location("evaluate_external_multiproperty_predictions", SCRIPT_PATH)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_official_sr_groups_candidates_and_does_not_require_similarity(monkeypatch):
+    evaluator = load_evaluator()
+    props = {
+        "SRC1": {"QED": 0.2, "LogP": 1.0, "SA": 0.0},
+        "FAIL1": {"QED": 0.25, "LogP": 1.0, "SA": 0.0},
+        "HIT1": {"QED": 0.4, "LogP": 1.0, "SA": 0.0},
+        "SRC2": {"QED": 0.2, "LogP": 1.0, "SA": 0.0},
+        "FAIL2": {"QED": 0.22, "LogP": 1.0, "SA": 0.0},
+    }
+    sims = {("SRC1", "HIT1"): 0.2, ("SRC1", "FAIL1"): 0.7, ("SRC2", "FAIL2"): 0.8}
+    monkeypatch.setattr(evaluator, "canonical_smiles", lambda smiles: str(smiles or "").strip() or None)
+    monkeypatch.setattr(evaluator, "molecular_properties", lambda smiles: props.get(smiles, {}))
+    monkeypatch.setattr(evaluator, "morgan_tanimoto", lambda left, right: sims.get((left, right), 0.0))
+
+    base = {
+        "external_suite": "mumo",
+        "external_task_split": "ind",
+        "external_task_id": "Q",
+        "external_task_properties": "qed",
+        "external_property_directions_json": '{"qed":"increase"}',
+        "external_property_thresholds_json": '{"qed":0.1}',
+    }
+    prediction_rows = [
+        {**base, "condition_id": "input_1", "source_smiles": "SRC1", "generated_smiles": "FAIL1"},
+        {**base, "condition_id": "input_1", "source_smiles": "SRC1", "generated_smiles": "HIT1"},
+        {**base, "condition_id": "input_2", "source_smiles": "SRC2", "generated_smiles": "FAIL2"},
+    ]
+
+    detail = [
+        evaluator.evaluate_row(
+            row,
+            generated_props={},
+            source_props_lookup={},
+            smiles_column="generated_smiles",
+            source_smiles_column="source_smiles",
+            min_source_tanimoto=0.4,
+        )
+        for row in prediction_rows
+    ]
+    summary = evaluator.summarize(detail, group_column="condition_id")
+    task_summary = next(row for row in summary if row["external_task_id"] == "Q")
+
+    assert task_summary["input_groups"] == 2
+    assert task_summary["candidate_rows"] == 3
+    assert task_summary["validity"] == "1"
+    assert task_summary["success_rate"] == "0.5"
+    assert task_summary["similarity"] == "0.2"
+    assert task_summary["relative_improvement"] == "1"
+    assert task_summary["strict_success_rate"] == "0"
+
+
+def test_missing_oracle_marks_success_rate_as_lower_bound(monkeypatch):
+    evaluator = load_evaluator()
+    monkeypatch.setattr(evaluator, "canonical_smiles", lambda smiles: str(smiles or "").strip() or None)
+    monkeypatch.setattr(evaluator, "molecular_properties", lambda _smiles: {})
+    monkeypatch.setattr(evaluator, "morgan_tanimoto", lambda _left, _right: 1.0)
+
+    row = {
+        "condition_id": "input_1",
+        "source_smiles": "SRC",
+        "generated_smiles": "GEN",
+        "external_suite": "mumo",
+        "external_task_split": "ind",
+        "external_task_id": "B",
+        "external_task_properties": "bbbp",
+        "external_property_directions_json": '{"bbbp":"increase"}',
+        "external_property_thresholds_json": '{"bbbp":0.1}',
+    }
+
+    detail = [
+        evaluator.evaluate_row(
+            row,
+            generated_props={},
+            source_props_lookup={},
+            smiles_column="generated_smiles",
+            source_smiles_column="source_smiles",
+            min_source_tanimoto=0.4,
+        )
+    ]
+    summary = evaluator.summarize(detail, group_column="condition_id")
+    task_summary = next(item for item in summary if item["external_task_id"] == "B")
+
+    assert detail[0]["external_full_property_coverage"] == "False"
+    assert task_summary["official_evaluable_rate"] == "0"
+    assert task_summary["success_rate_status"] == "lower_bound_missing_oracle"
+    assert task_summary["missing_oracle_properties"] == "bbbp"

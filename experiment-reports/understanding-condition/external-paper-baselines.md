@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | initial baseline extraction |
-| **最后更新** | 2026-06-28 |
+| **最后更新** | 2026-06-29 |
 | **用途** | 把我们的 Table1 / MuMO / C-MuMO 结果放到外部论文口径下，而不是只和自己历史版本比较 |
 
 ## 为什么要单独建这张表
@@ -36,12 +36,12 @@
 
 | 设置 | 外部 best / target | 我们当前状态 |
 | --- | ---: | --- |
-| IND average `SR` | **76.8%** / **76.1%**（best generalist GeLLM3O variants） | 不能比较；我们当前没有 oracle SR |
-| OOD average `SR` | **88.7%** / **90.8%**（best generalist GeLLM3O variants） | 不能比较；我们当前没有 oracle SR |
-| Similarity band | 约 **0.5-0.6** | 我们只记录了 `Sim >= 0.4` 诊断，不是同一指标 |
-| candidate budget | **20** per input | 我们 direct 用 n=20；assisted/rich/GraphEditDSL candidate pool 更大，需单独标 assisted |
+| IND average `SR` | **76.8%** / **76.1%**（best generalist GeLLM3O variants） | evaluator 已支持 candidate-level `SR`；待重跑 + oracle CSV |
+| OOD average `SR` | **88.7%** / **90.8%**（best generalist GeLLM3O variants） | evaluator 已支持 candidate-level `SR`；待重跑 + oracle CSV |
+| Similarity band | 约 **0.5-0.6** | 新 evaluator 输出 `Similarity(success)`；`Sim >= 0.4` 仅保留为内部诊断 |
+| candidate budget | **20** per input | direct/group-RL 脚本已默认保存并评估 20-candidate CSV；assisted/rich/GraphEditDSL 需单独标 assisted |
 
-目标：MuMO 主文表不能报 proxy/Sim 代替 SR。下一步必须补 ADMET/TDC generated-property oracle CSV，把我们的 generated SMILES 转成 official SR / Sim / RI。
+目标：MuMO 主文表不能报 proxy/Sim 代替 SR。下一步必须补 ADMET/TDC generated-property oracle CSV，并重跑 direct/group-RL，得到 official-style SR / Sim / RI。
 
 ### GeLLMO-C / C-MuMOInstruct
 
@@ -49,8 +49,8 @@
 
 | 设置 | 外部 best / target | 我们当前状态 |
 | --- | ---: | --- |
-| IND average `SR` | 约 **74.8%**（best generalist row from main table） | 未跑 C-MuMO official oracle |
-| OOD average `SR` | 约 **63.0%**（best generalist row from main table） | 未跑 C-MuMO official oracle |
+| IND average `SR` | 约 **74.8%**（best generalist row from main table） | evaluator 已支持；未跑 C-MuMO official oracle |
+| OOD average `SR` | 约 **63.0%**（best generalist row from main table） | evaluator 已支持；未跑 C-MuMO official oracle |
 | Strict setting | paper appendix reports stricter success criteria | 未实现同口径 |
 | candidate budget | **20** per input | 我们需要用 n=20 direct + assisted 分表 |
 
@@ -74,7 +74,7 @@
 
 1. 从 GeLLM3O / GeLLMO-C paper HTML/PDF 里抽 task-level SR / Sim / RI，做 machine-readable CSV。
 2. 给 MuMO / C-MuMO evaluator 补 official generated-property oracle CSV：BBBP、DRD2、HIA、Mutagenicity、hERG、Liver/DILI、PAMPA/AMPA、pLogP、QED 等。
-3. 重新评估我们的 direct / agentic rich / GraphEditDSL 输出，输出 `SR`、`Sim(mean)`、`RI`，而不是只报 proxy 和 `Sim >= 0.4`。
+3. 重新评估我们的 direct / agentic rich / GraphEditDSL 输出，输出 `SR`、`Sim(success)`、`RI(success)`，而不是只报 proxy 和 `Sim >= 0.4`。
 4. 主文表按 line 分开：`ours-direct n=20`、`ours-assisted rich/GraphEditDSL`、`ours-RL/agentic`，避免把 assisted result 和 one-shot baselines 混表。
 5. 继续保留内部 `Sim >= 0.4`，但只作为 source preservation diagnostic。
 
