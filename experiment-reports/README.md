@@ -235,6 +235,24 @@ GraphEditDSL agent（heuristic planner）：validity **100%**；proxy **46.7%**�
 
 policy GraphEditDSL v2：yield **2046/row**（↑ vs heuristic 89）；Sim@0.4 **19.7%**（↓ vs heuristic **26.2%**）；rich v2 仍 best **32.3%**。
 
+## 近期 Slurm Job 一览（2026-06-29 MuMO flight sweep）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| 待提交 | `succ-external-mumo-graph-policy-sim` | pending | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| 待提交 | `succ-external-mumo-graph-heur2` | pending | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| 待提交 | `succ-external-mumo-agentic-rich-x2` | pending | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| 待提交 | `succ-external-mumo-source-edit-sft-long` | pending | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| 待提交 | `succ-external-mumo-source-edit-rl-official` | pending | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| 待提交 | `succ-external-mumo-source-edit-rl-highsim` | pending | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+
+一键提交：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_flight_sweep.sh
+```
+
 ## 近期 Slurm Job 一览（2026-06-29 MuMO official SR 重跑）
 
 | Job ID | 名称 | 状态 | 报告 |

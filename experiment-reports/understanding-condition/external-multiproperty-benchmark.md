@@ -312,6 +312,46 @@ Agent 统计：`mean_candidate_count` **2046**（v1 heuristic **89**）；`mean_
 
 **结论**：policy planner **把 candidate yield 从 89 拉到 2046/row（目标达成）**，但 Sim@0.4 **反而低于 heuristic（19.7% vs 26.2%）**，仍远低于 rich v2 **32.3%**——property-aware scoring 可能过度牺牲 source similarity。GraphEditDSL 主线仍成立，但下一步应调 **similarity/property 平衡** 或换 **LLM planner**，而非继续扩 beam。
 
+## MuMO flight sweep（待提交）
+
+目的：用户长时间离线时一次性覆盖几条差异足够大的方向，避免只押单个小调参。
+
+| 脚本 | 方向 | 主要问题 | 输出 |
+| --- | --- | --- | --- |
+| `submit_direct_smiles_external_mumo_graph_edit_similarity_anchor.sh` | policy GraphEditDSL similarity-anchor | v2 是否只是 scoring 过度偏 property？ | `direct_smiles_external_mumo_graph_edit_policy_sim_anchor_v1/` |
+| `submit_direct_smiles_external_mumo_graph_edit_heuristic_2step.sh` | heuristic GraphEditDSL 2-step | heuristic 的 26.2% 能否靠第二步和更宽 beam 提升？ | `direct_smiles_external_mumo_graph_edit_heuristic_2step_v1/` |
+| `submit_direct_smiles_external_mumo_agentic_revise_rich_x2.sh` | rich revise x2 | rich v2 的 32.3% 是否仍受 candidate cap 限制？ | `direct_smiles_external_mumo_agentic_revise_rich_x2_v1/` |
+| `submit_direct_smiles_external_mumo_source_edit_sft_long.sh` | longer source-edit SFT | direct source-edit Sim=0 是否只是 1 epoch underfit？ | `direct_smiles_external_mumo_source_edit_sft_long_v1/` |
+| `submit_direct_smiles_external_mumo_source_edit_rl_official_rerun.sh` | official rerun | 旧 source-edit RL 在 candidate-level 口径下到底是多少？ | `direct_smiles_external_mumo_source_edit_rl_official_rerun_v1/` |
+| `submit_direct_smiles_external_mumo_source_edit_rl_highsim.sh` | high-sim group-RL | 把 source-sim reward 拉高能否修 direct source conservation？ | `direct_smiles_external_mumo_source_edit_rl_highsim_v1/` |
+
+一键提交：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_flight_sweep.sh
+```
+
+如果要轻量版，只跑 assisted/search 线：
+
+```bash
+git pull --ff-only
+SUCC_FLIGHT_SOURCE_SFT_LONG=0 \
+SUCC_FLIGHT_SOURCE_RL_OFFICIAL=0 \
+SUCC_FLIGHT_SOURCE_RL_HIGHSIM=0 \
+bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_flight_sweep.sh
+```
+
+如果要只跑训练线：
+
+```bash
+git pull --ff-only
+SUCC_FLIGHT_GRAPH_SIM=0 \
+SUCC_FLIGHT_GRAPH_HEUR2=0 \
+SUCC_FLIGHT_RICH_X2=0 \
+bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_flight_sweep.sh
+```
+
 ## 服务器命令
 
 MuMO one-shot baseline（同口径对照，推荐先跑）：
@@ -443,6 +483,13 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_policy.sh
 ```
 
+MuMO flight sweep（推荐长时间离线时跑）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_flight_sweep.sh
+```
+
 只跑 MuMO OOD：
 
 ```bash
@@ -488,7 +535,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 9. ~~**GraphEditDSL agent v1**~~ → **`16825306` 完成**；Sim@0.4 **26.2%**（heuristic planner；低于 rich v2）；架构方向有效。
 10. ~~**policy GraphEditDSL v2**~~ → **`16892025` 完成**；yield **2046/row**（↑ vs 89）；Sim@0.4 **19.7%**（↓ vs heuristic **26.2%**）；rich v2 仍 best **32.3%**。
 11. ~~**one-shot official SR 重跑**~~ → **`16894722` 完成**；candidate-level SR **0**（无 oracle）；Sim diagnostic **0.05%**；direct 无 source-edit。
-12. **group-RL / assisted 线 official SR 重跑**；ADMET oracle CSV 回填；GraphEditDSL similarity/property 平衡或 LLM planner；C-MuMO 复跑。
+12. **flight sweep** → 已加入口；同时覆盖 GraphEditDSL similarity-anchor、heuristic 2-step、rich x2、source-edit SFT long、source-edit RL official rerun、high-sim group-RL。
+13. **group-RL / assisted 线 official SR 重跑**；ADMET oracle CSV 回填；GraphEditDSL similarity/property 平衡或 LLM planner；C-MuMO 复跑。
 
 ## 外部来源
 

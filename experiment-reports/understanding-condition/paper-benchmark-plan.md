@@ -141,7 +141,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 † candidate-level proxy；‡ 旧 selected-prediction 口径。SR 均需 oracle CSV。
 
-rich v2 **Sim@0.4 32.3%**（assisted best）；policy GraphEditDSL yield **2046/row** 但 Sim **19.7%**（↓ vs heuristic）；one-shot official 重跑确认 direct Sim≈0。下一步：**group-RL official 重跑**、oracle CSV、GraphEditDSL planner 调优、C-MuMO。
+rich v2 **Sim@0.4 32.3%**（assisted best）；policy GraphEditDSL yield **2046/row** 但 Sim **19.7%**（↓ vs heuristic）；one-shot official 重跑确认 direct Sim≈0。下一步：**flight sweep**（GraphEditDSL similarity-anchor / heuristic 2-step / rich x2 / source-edit SFT long / high-sim RL）、oracle CSV、C-MuMO。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -239,6 +239,13 @@ git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_policy.sh
 ```
 
+flight sweep 提交命令：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_flight_sweep.sh
+```
+
 注意：BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要 external generated-property CSV 才能公平评估；没有 oracle CSV 时只作为 coverage / plumbing pilot。
 
 ### 6. PMO small-budget pilot
@@ -275,4 +282,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct official 重跑 Sim≈0、SR=0（无 oracle）；assisted **rich v2 Sim 32.3%**；policy GraphEditDSL yield↑ 但 Sim **19.7%**；strict/SR 仍待 oracle CSV。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct official 重跑 Sim≈0、SR=0（无 oracle）；assisted **rich v2 Sim 32.3%**；policy GraphEditDSL yield↑ 但 Sim **19.7%**；flight sweep 已加入口；strict/SR 仍待 oracle CSV。

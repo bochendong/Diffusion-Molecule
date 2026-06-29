@@ -30,6 +30,8 @@ EVAL_FEATURES_DIR="${SUCC_EXTERNAL_SOURCE_EDIT_SFT_EVAL_FEATURES_DIR:-$OUTPUT_DI
 MODEL_DIR="${SUCC_EXTERNAL_SOURCE_EDIT_SFT_MODEL_DIR:-$OUTPUT_DIR/direct_smiles_model_source_edit_sft}"
 BENCHMARK_OUTPUT_DIR="${SUCC_EXTERNAL_SOURCE_EDIT_SFT_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_source_edit_sft}"
 PREDICTION_CSV="${SUCC_EXTERNAL_SOURCE_EDIT_SFT_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_predictions.csv}"
+CANDIDATE_PREDICTION_CSV="${SUCC_EXTERNAL_SOURCE_EDIT_SFT_CANDIDATE_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_candidate_predictions.csv}"
+EVAL_PREDICTION_CSV="${SUCC_EXTERNAL_SOURCE_EDIT_SFT_EVAL_PREDICTION_CSV:-$CANDIDATE_PREDICTION_CSV}"
 GENERATED_PROPERTIES_CSV="${SUCC_EXTERNAL_SOURCE_EDIT_SFT_GENERATED_PROPERTIES_CSV:-${SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV:-}}"
 SOURCE_PROPERTIES_CSV="${SUCC_EXTERNAL_SOURCE_EDIT_SFT_SOURCE_PROPERTIES_CSV:-${SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV:-}}"
 
@@ -184,6 +186,7 @@ TRAIN_CMD=(
   --condition-mixing-mode "$CONDITION_MIXING_MODE"
   --output-dir "$MODEL_DIR"
   --prediction-csv "$PREDICTION_CSV"
+  --candidate-output-csv "$CANDIDATE_PREDICTION_CSV"
   --epochs "$EPOCHS"
   --batch-size "$BATCH_SIZE"
   --eval-batch-size "$EVAL_BATCH_SIZE"
@@ -220,10 +223,11 @@ if [[ -n "$SOURCE_PROPERTIES_CSV" ]]; then
   EVAL_ARGS+=(--source-properties-csv "$SOURCE_PROPERTIES_CSV")
 fi
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_external_multiproperty_predictions.py" \
-  --prediction-csv "$PREDICTION_CSV" \
+  --prediction-csv "$EVAL_PREDICTION_CSV" \
   --output-dir "$BENCHMARK_OUTPUT_DIR" \
   --smiles-column generated_smiles \
   --source-smiles-column source_smiles \
+  --group-column condition_id \
   --min-source-tanimoto "$MIN_SOURCE_TANIMOTO" \
   --report-title "SUCC Direct SMILES External Source-edit SFT Benchmark" \
   "${EVAL_ARGS[@]}"
@@ -234,5 +238,7 @@ echo "  train_rows=$TRAIN_ROWS_CSV"
 echo "  eval_rows=$EVAL_ROWS_CSV"
 echo "  checkpoint=$MODEL_DIR/direct_smiles_generator.pt"
 echo "  predictions=$PREDICTION_CSV"
+echo "  candidate_predictions=$CANDIDATE_PREDICTION_CSV"
+echo "  evaluated_predictions=$EVAL_PREDICTION_CSV"
 echo "  report=$BENCHMARK_OUTPUT_DIR/external_multiproperty_report.md"
 echo "  summary=$BENCHMARK_OUTPUT_DIR/external_multiproperty_summary.csv"
