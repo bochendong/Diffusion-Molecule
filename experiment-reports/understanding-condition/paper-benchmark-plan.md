@@ -123,25 +123,25 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ assisted edit 完成（rich v2 + GraphEditDSL）
+### 5. MuMO / C-MuMO benchmark port ✅ assisted edit + official SR 重跑完成
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
 **MuMO 对照（direct vs assisted 分开报）**：
 
-| 变体 | 线 | Valid | Proxy | Sim ≥0.4 |
-| --- | --- | ---: | ---: | ---: |
-| source-copy sanity | oracle | 100% | 46.7% | **100%** |
-| one-shot direct | direct | 90.7% | 42.5% | 0 |
-| de novo group-RL direct | direct | 85.1% | 40.7% | 0 |
-| source-edit SFT direct | direct | **97.3%** | **45.4%** | **0** |
-| source-edit SFT→RL direct | direct | 96.4% | 45.0% | **0** |
-| agentic revise 2-step | assisted | 100% | 46.7% | 15.6% |
-| agentic revise 4-step | assisted | 100% | 46.7% | 15.6% |
-| **agentic rich v2** | assisted | **100%** | **46.7%** | **32.3%** |
-| GraphEditDSL agent | assisted | 100% | 46.7% | 26.2% |
+| 变体 | 线 | Valid | Proxy | Sim ≥0.4 | SR |
+| --- | --- | ---: | ---: | ---: | ---: |
+| source-copy sanity | oracle | 100% | 46.7% | **100%** | — |
+| one-shot direct（official `16894722`） | direct | 90.7% | 16.4%† | 0.05% | **0** |
+| de novo group-RL direct | direct | 85.1% | 40.7%‡ | 0 | 0 |
+| source-edit SFT direct | direct | 97.3% | 45.4%‡ | 0 | 0 |
+| agentic rich v2 | assisted | **100%** | **46.7%** | **32.3%** | 0 |
+| GraphEditDSL heuristic | assisted | 100% | 46.7% | 26.2% | 0 |
+| policy GraphEditDSL v2 | assisted | 100% | 46.7% | 19.7% | 0 |
 
-direct SFT/RL Sim 仍为 0；rich v2 **Sim@0.4 32.3%**（当前 assisted best）；GraphEditDSL heuristic **26.2%**（架构有效，planner 待升级）。下一步：**policy GraphEditDSL v2**、LLM/policy GraphEdit planner、oracle CSV strict、C-MuMO。
+† candidate-level proxy；‡ 旧 selected-prediction 口径。SR 均需 oracle CSV。
+
+rich v2 **Sim@0.4 32.3%**（assisted best）；policy GraphEditDSL yield **2046/row** 但 Sim **19.7%**（↓ vs heuristic）；one-shot official 重跑确认 direct Sim≈0。下一步：**group-RL official 重跑**、oracle CSV、GraphEditDSL planner 调优、C-MuMO。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -275,4 +275,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mum
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct SFT/RL Sim 仍 0；assisted **rich v2 Sim@0.4 32.3%**、GraphEditDSL **26.2%**；policy GraphEditDSL v2 待跑；strict 仍待 oracle CSV。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct official 重跑 Sim≈0、SR=0（无 oracle）；assisted **rich v2 Sim 32.3%**；policy GraphEditDSL yield↑ 但 Sim **19.7%**；strict/SR 仍待 oracle CSV。

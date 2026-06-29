@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO assisted edit**（rich v2 Sim@0.4 **32.3%**；GraphEditDSL **26.2%**；policy v2 待跑） |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO assisted edit**（rich v2 Sim **32.3%**；policy GraphEditDSL **19.7%**） |
 | `understanding-condition/` | [external-paper-baselines.md](understanding-condition/external-paper-baselines.md) | **新增** 外部论文 baseline 数值目标（MolEditRL / GeLLM3O / GeLLMO-C / C-MORAL） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
@@ -231,22 +231,17 @@ GraphEditDSL agent（heuristic planner）：validity **100%**；proxy **46.7%**�
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| `16892025` | `succ-external-mumo-graph-policy` | 运行中 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16892025` | `succ-external-mumo-graph-policy` | 完成（~5h42m） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
-policy GraphEditDSL v2：`planner_mode=policy_graph_dsl`，2-step beam expansion，2048 candidates/row，richer DSL actions + property-aware action scoring。提交命令：
-
-```bash
-git pull --ff-only
-bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_policy.sh
-```
+policy GraphEditDSL v2：yield **2046/row**（↑ vs heuristic 89）；Sim@0.4 **19.7%**（↓ vs heuristic **26.2%**）；rich v2 仍 best **32.3%**。
 
 ## 近期 Slurm Job 一览（2026-06-29 MuMO official SR 重跑）
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| `16894722` | `succ-external-mumo-one-shot` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16894722` | `succ-external-mumo-one-shot` | 完成（~31m） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
-`13f3bec` 修复 candidate-level official `SR / Similarity / RI` 聚合；重跑 one-shot baseline（n=20，输出 `direct_smiles_candidate_predictions.csv`）。旧 `16779361` 数值仍作 plumbing 参考，不再冒充外部论文 SR。
+`13f3bec` candidate-level official SR 重跑：validity **90.7%**；SR **0**（无 oracle）；Sim diagnostic **0.05%**；direct 确认无 source-edit。
 
 ## 近期 Slurm Job 一览（2026-06-27 MuMO agentic revise 4-step）
 

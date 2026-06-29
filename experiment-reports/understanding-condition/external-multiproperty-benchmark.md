@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **MuMO assisted edit 完成**；official-style `SR / Similarity / RI` evaluator 已修复；rich v2 Sim@0.4 **32.3%**（当前 best）；GraphEditDSL **26.2%**；policy GraphEditDSL v2 已加入口；oracle CSV 待回填 |
-| **最后更新** | 2026-06-29（official SR evaluator + candidate CSV） |
+| **状态** | **official SR 重跑 + policy GraphEditDSL v2 完成**；rich v2 Sim@0.4 **32.3%**（assisted best）；policy GraphEditDSL **19.7%**（yield↑ Sim↓）；oracle CSV 待回填 |
+| **最后更新** | 2026-06-29（one-shot `16894722` + policy GraphEditDSL `16892025`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -153,6 +153,26 @@ group-RL 入口默认：
 3. **strict 全为 0**（三方一致）→ 仍需 ADMET/TDC generated-property CSV 才能报 official strict；source-copy strict=0 也符合预期（复制 source 不改善性质）。
 4. **下一步**：先跑 source-edit SFT warm-start，再用该 checkpoint 接 source-edit group-RL；ADMET oracle 回填；C-MuMO 复跑。
 
+> **口径更新（`13f3bec`）**：下方 `16779361` 等旧 job 使用 **selected-prediction** 聚合；`16894722` 起 direct 线改用 **candidate-level official SR** 聚合（n=20/input）。旧 proxy **42.5%** 与新版 candidate-level proxy **16.4%** 不可直接横比。
+
+## MuMO one-shot official SR 重跑（job `16894722`）
+
+入口：`submit_direct_smiles_external_mumo_one_shot_baseline.sh`（`13f3bec` 后重跑）。MuMO test 1992 inputs × n=20 candidates = **39840** candidate rows；de novo ckpt；无 rerank，无 oracle CSV。耗时 **~31m**。输出 `direct_smiles_external_mumo_one_shot_v1/benchmark_external_multiproperty/direct_smiles_candidate_predictions.csv`。
+
+评测（**official candidate-level 口径**）：
+
+| 指标 | 值 | 说明 |
+| --- | ---: | --- |
+| Valid（candidate-level） | **90.7%** | 与旧 selected `16779361` 一致 |
+| Proxy eval prop frac | **16.4%** | candidate-level 均值；≠ 旧 selected **42.5%** |
+| **SR** | **0** | 无 oracle CSV（`lower_bound_missing_oracle`） |
+| Sim≥0.4（input diagnostic） | **0.05%** | 与旧 selected Sim=0 一致 |
+| Internal strict | **0** | source-preservation diagnostic |
+
+分 split Sim≥0.4：IND **0%**；OOD **0%**（BPQ 有 0.5% candidate-level hit）。
+
+**结论**：新 evaluator 确认 direct one-shot **不具备 source-edit 能力**（Sim≈0）；SR 仍待 oracle CSV。旧 `16779361` 的 proxy/Sim 仅作 plumbing 参考，正式对外报数用本 job。
+
 ## Source-edit repair v1
 
 当前 direct-SMILES checkpoint 是 zero-source de novo 训练出来的；MuMO/C-MuMO 则要求输入 source molecule 后做小改动。因此这版先修生成主干，而不是继续调 rerank：
@@ -276,16 +296,21 @@ Agent 统计：`mean_plan_count` **441**；`mean_candidate_count` **89**；`mean
 
 **结论**：显式 graph-edit action 空间 **有效**（26.2% > 15.6% baseline），但当前 **heuristic planner 仍低于 rich local revise（32.3%）**——candidate 利用率低（89 vs 2048/row）。GraphEditDSL 架构方向正确，下一步换 **LLM/policy planner**、扩大 executor candidate yield，而非继续加 local search step。
 
-## MuMO policy GraphEditDSL v2（待跑）
+## MuMO policy GraphEditDSL v2（job `16892025`）
 
-入口：`submit_direct_smiles_external_mumo_graph_edit_policy.sh`。这版是 GraphEditDSL 的主方向升级，不覆盖 v1：
+入口：`submit_direct_smiles_external_mumo_graph_edit_policy.sh`（`17079b0`）。复用 v1 direct proposals；`planner_mode=policy_graph_dsl`；2-step beam（beam=96）；richer DSL actions；`max_candidates_per_row=2048`；`similarity_first`。耗时 **~5h42m**。输出 `direct_smiles_external_mumo_graph_edit_policy_v2/`。
 
-1. `planner_mode=policy_graph_dsl`：按 property program 对 action/site 打分排序，输出带 `policy_score` 的 DSL JSON。
-2. `planner_steps=2` + `beam=96`：允许从第一步 source-neighbor 候选继续做第二步 graph edit，不再只从 source 做单步。
-3. richer DSL actions：补齐 rich v2 里有效的 fragment attach（`C#N`、`C(=O)N`、phenyl）、Br/S atom edits、bond-order edits、terminal prune。
-4. candidate cap 对齐 assisted line：默认 `max_candidates_per_row=2048`，目标是把 GraphEditDSL 的平均候选数从 89 拉高，同时保留可解释 action trace。
+Agent 统计：`mean_candidate_count` **2046**（v1 heuristic **89**）；`mean_executed_plan_count` **4383**；`mean_plan_count` **15325**；`mean_source_tanimoto` **0.280**；`source_similarity_success_rate` **19.7%**。
 
-目标：超过 heuristic GraphEditDSL **26.2%**，并尽量逼近/超过 rich v2 **32.3%**。如果 v2 接近 rich v2，就说明可以把 GraphEditDSL 作为主线，并继续换真正 LLM/policy planner；如果仍低，优先查 executor yield 和 action validity，而不是加 step depth。
+| 变体 | 线 | Valid | Proxy | Sim ≥0.4 | SR |
+| --- | --- | ---: | ---: | ---: | ---: |
+| agentic rich v2（`16824486`） | assisted | 100% | 46.7% | **32.3%** | 0 |
+| GraphEditDSL heuristic（`16825306`） | assisted | 100% | 46.7% | 26.2% | 0 |
+| **policy GraphEditDSL v2（`16892025`）** | **assisted** | **100%** | **46.7%** | **19.7%** | **0** |
+
+分 split（policy）：IND Sim **18.4%**；OOD Sim **20.9%**。分 task Sim 最高 BDMQ **53.0%** / BDP **20.5%**；最低 HMPQ **1.0%**。
+
+**结论**：policy planner **把 candidate yield 从 89 拉到 2046/row（目标达成）**，但 Sim@0.4 **反而低于 heuristic（19.7% vs 26.2%）**，仍远低于 rich v2 **32.3%**——property-aware scoring 可能过度牺牲 source similarity。GraphEditDSL 主线仍成立，但下一步应调 **similarity/property 平衡** 或换 **LLM planner**，而非继续扩 beam。
 
 ## 服务器命令
 
@@ -461,8 +486,9 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 7. ~~**agentic revise 4-step**~~ → **`16819986` 完成**；与 2-step **完全相同**（Sim **15.6%**）→ 瓶颈在 candidate pool / edit actions，不在 step depth。
 8. ~~**agentic revise rich v2**~~ → **`16824486` 完成**；Sim@0.4 **32.3%**（+16.7pp vs 2-step）；validity **100%**；proxy **46.7%**。
 9. ~~**GraphEditDSL agent v1**~~ → **`16825306` 完成**；Sim@0.4 **26.2%**（heuristic planner；低于 rich v2）；架构方向有效。
-10. **policy GraphEditDSL v2** → 入口已加入；跑 `direct_smiles_external_mumo_graph_edit_policy_v2/`，检验 2-step policy DSL planner 能否超过 heuristic 的 **26.2%**。
-11. **GraphEditDSL LLM/policy planner**；ADMET/TDC generated-property CSV 回填 strict；C-MuMO 复跑。
+10. ~~**policy GraphEditDSL v2**~~ → **`16892025` 完成**；yield **2046/row**（↑ vs 89）；Sim@0.4 **19.7%**（↓ vs heuristic **26.2%**）；rich v2 仍 best **32.3%**。
+11. ~~**one-shot official SR 重跑**~~ → **`16894722` 完成**；candidate-level SR **0**（无 oracle）；Sim diagnostic **0.05%**；direct 无 source-edit。
+12. **group-RL / assisted 线 official SR 重跑**；ADMET oracle CSV 回填；GraphEditDSL similarity/property 平衡或 LLM planner；C-MuMO 复跑。
 
 ## 外部来源
 
