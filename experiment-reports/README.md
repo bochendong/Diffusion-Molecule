@@ -231,7 +231,7 @@ GraphEditDSL agent（heuristic planner）：validity **100%**；proxy **46.7%**�
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| `16892025` | `succ-external-mumo-graph-policy` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16892025` | `succ-external-mumo-graph-policy` | 运行中 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 
 policy GraphEditDSL v2：`planner_mode=policy_graph_dsl`，2-step beam expansion，2048 candidates/row，richer DSL actions + property-aware action scoring。提交命令：
 
@@ -239,6 +239,14 @@ policy GraphEditDSL v2：`planner_mode=policy_graph_dsl`，2-step beam expansion
 git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_policy.sh
 ```
+
+## 近期 Slurm Job 一览（2026-06-29 MuMO official SR 重跑）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16894722` | `succ-external-mumo-one-shot` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+
+`13f3bec` 修复 candidate-level official `SR / Similarity / RI` 聚合；重跑 one-shot baseline（n=20，输出 `direct_smiles_candidate_predictions.csv`）。旧 `16779361` 数值仍作 plumbing 参考，不再冒充外部论文 SR。
 
 ## 近期 Slurm Job 一览（2026-06-27 MuMO agentic revise 4-step）
 
