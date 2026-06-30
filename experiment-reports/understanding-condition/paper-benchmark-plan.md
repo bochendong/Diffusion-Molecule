@@ -135,13 +135,14 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | one-shot direct（official `16894722`） | direct | 90.7% | 16.4%† | 0.05% | **0** |
 | de novo group-RL direct | direct | 85.1% | 40.7%‡ | 0 | 0 |
 | source-edit SFT direct | direct | 97.3% | 45.4%‡ | 0 | 0 |
-| agentic rich v2 | assisted | **100%** | **46.7%** | **32.3%** | 0 |
-| GraphEditDSL heuristic | assisted | 100% | 46.7% | 26.2% | 0 |
+| agentic rich v2 | assisted | 100% | 46.7% | 32.3% | 0 |
+| GraphEditDSL heuristic 1-step | assisted | 100% | 46.7% | 26.2% | 0 |
 | policy GraphEditDSL v2 | assisted | 100% | 46.7% | 19.7% | 0 |
+| **GraphEditDSL heuristic 2-step** | assisted | **100%** | **46.7%** | **45.6%** | **0** |
 
 † candidate-level proxy；‡ 旧 selected-prediction 口径。SR 均需 oracle CSV。
 
-rich v2 **Sim@0.4 32.3%**（assisted best）；policy GraphEditDSL yield **2046/row** 但 Sim **19.7%**（↓ vs heuristic）；one-shot official 重跑确认 direct Sim≈0。下一步：**flight sweep**（GraphEditDSL similarity-anchor / heuristic 2-step / rich x2 / source-edit SFT long / high-sim RL）、oracle CSV、C-MuMO。
+**heuristic GraphEditDSL 2-step Sim 45.6%**（flight sweep 新 assisted best）；direct SFT long / high-sim RL 仍 Sim≈0；rich x2 运行中。下一步：oracle CSV、LLM GraphEdit planner、C-MuMO。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
