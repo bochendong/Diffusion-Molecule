@@ -282,4 +282,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_flight_sweep
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ direct official 重跑 Sim≈0、SR=0（无 oracle）；assisted **rich v2 Sim 32.3%**；policy GraphEditDSL yield↑ 但 Sim **19.7%**；flight sweep 已加入口；strict/SR 仍待 oracle CSV。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ **heuristic GraphEditDSL 2-step Sim 45.6%**（assisted 新 best）；direct 训练线仍 Sim≈0；SR 仍待 oracle CSV；rich x2 运行中。

@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **official SR 重跑 + policy GraphEditDSL v2 完成**；rich v2 Sim@0.4 **32.3%**（assisted best）；policy GraphEditDSL **19.7%**（yield↑ Sim↓）；oracle CSV 待回填 |
-| **最后更新** | 2026-06-29（one-shot `16894722` + policy GraphEditDSL `16892025`） |
+| **状态** | **flight sweep 5/6 完成**；heuristic GraphEditDSL 2-step Sim **45.6%**（assisted 新 best）；rich x2 运行中；oracle CSV 待回填 |
+| **最后更新** | 2026-06-30（flight sweep `16946786`–`16946792`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -312,9 +312,39 @@ Agent 统计：`mean_candidate_count` **2046**（v1 heuristic **89**）；`mean_
 
 **结论**：policy planner **把 candidate yield 从 89 拉到 2046/row（目标达成）**，但 Sim@0.4 **反而低于 heuristic（19.7% vs 26.2%）**，仍远低于 rich v2 **32.3%**——property-aware scoring 可能过度牺牲 source similarity。GraphEditDSL 主线仍成立，但下一步应调 **similarity/property 平衡** 或换 **LLM planner**，而非继续扩 beam。
 
-## MuMO flight sweep（已提交 `296be91`）
+## MuMO flight sweep 结果（`296be91`）
 
-目的：用户长时间离线时一次性覆盖几条差异足够大的方向，避免只押单个小调参。
+5/6 完成；`16946788` rich x2 仍 **RUNNING**（~24h+）。SR 全线 **0**（无 oracle CSV）。Sim≥0.4 为 source-preservation diagnostic。
+
+### Assisted / search 线
+
+| Job | 变体 | Sim≥0.4 | Proxy | Valid | 耗时 | 结论 |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| `16824486` | rich v2 | 32.3% | 46.7% | 100% | ~10h27m | 旧 assisted best |
+| `16825306` | GraphEdit heuristic 1-step | 26.2% | 46.7% | 100% | ~22m | — |
+| `16892025` | policy GraphEdit v2 | 19.7% | 46.7% | 100% | ~5h42m | yield↑ Sim↓ |
+| `16946786` | **policy sim-anchor** | **19.7%** | 46.7% | 100% | ~5h54m | **= policy v2**，scoring 调整无效 |
+| **`16946787`** | **heuristic 2-step** | **45.6%** | 46.7% | 100% | ~12h04m | **新 assisted best**（+13.3pp vs rich v2） |
+| `16946788` | rich x2（4096/row） | — | — | — | 运行中 | 待完成 |
+
+heuristic 2-step 统计：`mean_candidate_count` **3817**；`mean_source_tanimoto` **0.409**；IND Sim **45.4%**；OOD Sim **45.8%**；最高 task BDP **97%** / BDMQ **69.5%**。
+
+**结论**：GraphEditDSL **2-step beam expansion** 是当前最强 assisted 线（**45.6%**），超过 rich local revise（32.3%）。policy sim-anchor 与 v2 完全相同 → 问题不在 similarity weight 微调，而在 **policy planner 本身**。
+
+### Direct 训练线（official candidate-level）
+
+| Job | 变体 | Sim≥0.4 | Proxy | Valid | 耗时 | 结论 |
+| --- | --- | ---: | ---: | ---: | --- | --- |
+| `16800837` | SFT 1 epoch（旧口径） | 0 | 45.4%‡ | 97.3% | — | selected 口径 |
+| `16946790` | **SFT long**（3 epoch × 400 rows/task） | **0.08%** | 25.7% | 100% | ~2h13m | 加长 SFT **未**拉回 Sim |
+| `16946791` | **RL official 重跑**（n=64 cand） | **0.10%** | 15.8% | 99.6% | ~1h38m | candidate 口径仍 Sim≈0 |
+| `16946792` | **high-sim RL**（sim_weight=8） | **0.05%** | 12.2% | 99.2% | ~3h50m | 高 sim reward **无效**，proxy 还降 |
+
+**结论**：direct source-edit 训练（加长 SFT / 高 sim RL）**无法**恢复 source conservation；MuMO 主方向应押 **GraphEditDSL assisted** 而非继续训 direct decoder。
+
+## MuMO flight sweep 提交记录
+
+目的：用户长时间离线时一次性覆盖几条差异足够大的方向。
 
 | Job | 脚本 | 方向 | 输出 |
 | --- | --- | --- | --- |
@@ -535,7 +565,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 9. ~~**GraphEditDSL agent v1**~~ → **`16825306` 完成**；Sim@0.4 **26.2%**（heuristic planner；低于 rich v2）；架构方向有效。
 10. ~~**policy GraphEditDSL v2**~~ → **`16892025` 完成**；yield **2046/row**（↑ vs 89）；Sim@0.4 **19.7%**（↓ vs heuristic **26.2%**）；rich v2 仍 best **32.3%**。
 11. ~~**one-shot official SR 重跑**~~ → **`16894722` 完成**；candidate-level SR **0**（无 oracle）；Sim diagnostic **0.05%**；direct 无 source-edit。
-12. ~~**flight sweep**~~ → **6 jobs 已提交**（`16946786`–`16946792`）；覆盖 GraphEditDSL sim-anchor / heuristic 2-step / rich x2 / SFT long / RL official / high-sim RL。
+12. ~~**flight sweep**~~ → **5/6 完成**；**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted 新 best）；sim-anchor = policy v2；direct SFT long / high-sim RL 仍 Sim≈0；rich x2 运行中。
 13. **group-RL / assisted 线 official SR 重跑**；ADMET oracle CSV 回填；GraphEditDSL similarity/property 平衡或 LLM planner；C-MuMO 复跑。
 
 ## 外部来源

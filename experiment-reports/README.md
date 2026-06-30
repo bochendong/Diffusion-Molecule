@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO assisted edit**（rich v2 Sim **32.3%**；policy GraphEditDSL **19.7%**） |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO assisted**（heuristic GraphEdit 2-step Sim **45.6%**；rich x2 运行中） |
 | `understanding-condition/` | [external-paper-baselines.md](understanding-condition/external-paper-baselines.md) | **新增** 外部论文 baseline 数值目标（MolEditRL / GeLLM3O / GeLLMO-C / C-MORAL） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
@@ -239,12 +239,14 @@ policy GraphEditDSL v2：yield **2046/row**（↑ vs heuristic 89）；Sim@0.4 *
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |
-| `16946786` | `succ-external-mumo-graph-policy-sim` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
-| `16946787` | `succ-external-mumo-graph-heur2` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
-| `16946788` | `succ-external-mumo-agentic-rich-x2` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
-| `16946790` | `succ-external-mumo-source-edit-sft-long` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
-| `16946791` | `succ-external-mumo-source-edit-rl-official` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
-| `16946792` | `succ-external-mumo-source-edit-rl-highsim` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16946786` | `succ-external-mumo-graph-policy-sim` | 完成（~5h54m） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16946787` | `succ-external-mumo-graph-heur2` | 完成（~12h04m） | 同上 |
+| `16946788` | `succ-external-mumo-agentic-rich-x2` | **运行中** | 同上 |
+| `16946790` | `succ-external-mumo-source-edit-sft-long` | 完成（~2h13m） | 同上 |
+| `16946791` | `succ-external-mumo-source-edit-rl-official` | 完成（~1h38m） | 同上 |
+| `16946792` | `succ-external-mumo-source-edit-rl-highsim` | 完成（~3h50m） | 同上 |
+
+**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted 新 best）；sim-anchor = policy v2 **19.7%**；direct SFT long / high-sim RL 仍 Sim≈0。
 
 一键提交：
 
