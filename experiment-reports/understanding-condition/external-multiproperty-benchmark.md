@@ -344,13 +344,19 @@ heuristic 2-step 统计：`mean_candidate_count` **3817**；`mean_source_tanimot
 
 **结论**：direct source-edit 训练（加长 SFT / 高 sim RL）**无法**恢复 source conservation；MuMO 主方向应押 **GraphEditDSL assisted** 而非继续训 direct decoder。
 
-## Official MuMO / C-MuMO SR suite（2026-07-01）
+## Official MuMO / C-MuMO SR suite（`ec519ec`）
 
 新增入口：
 
 ```bash
 bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
 ```
+
+| Job | Suite | 线 | 输出 | 状态 |
+| --- | --- | --- | --- | --- |
+| `16997790` | MuMO | source/target-copy sanity | `external_mumo_official_copy_sanity_v1/` | 已提交 |
+| `16997792` | MuMO | GraphEditDSL heuristic 2-step top-20 | `external_mumo_official_graph_edit_heuristic_2step_v1/` | 已提交 |
+| — | C-MuMO | copy + GraphEditDSL | `external_cmumo_official_*` | **待数据**（cmumo/test.json 未下载） |
 
 默认提交 4 条：
 

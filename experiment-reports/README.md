@@ -235,6 +235,15 @@ GraphEditDSL agent（heuristic planner）：validity **100%**；proxy **46.7%**�
 
 policy GraphEditDSL v2：yield **2046/row**（↑ vs heuristic 89）；Sim@0.4 **19.7%**（↓ vs heuristic **26.2%**）；rich v2 仍 best **32.3%**。
 
+## 近期 Slurm Job 一览（2026-07-01 MuMO official SR suite）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `16997790` | `succ-mumo-official-copy` | 已提交 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `16997792` | `succ-mumo-official-graph` | 已提交 | 同上 |
+
+`ec519ec` official suite：MuMO source/target-copy sanity + GraphEditDSL heuristic 2-step **top-20** candidate-level SR。C-MuMO **未提交**（`/scratch/bdong/datasets/.../cmumo/test.json` 缺失）。
+
 ## 近期 Slurm Job 一览（2026-06-29 MuMO flight sweep）
 
 | Job ID | 名称 | 状态 | 报告 |
