@@ -7,6 +7,8 @@
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
+> 2026-07-01 infrastructure update：新增 official-style suite。GraphEditDSL 现在默认输出 **selected-1** 和 **top-20 candidate CSV**；evaluator 支持 C-MuMO `improve` / `maintain` objective；新增 oracle coverage builder，可合并外部 ADMET CSV 并补本地/TDC 可算性质。主报告应看 candidate-level `SR / Sim(success) / RI(success)`，`Sim>=0.4` 继续只作 source-preservation diagnostic。
+
 ## 关键判断
 
 MuMO / C-MuMO 不是 zero-source absolute target design。它们的任务形式是：
@@ -341,6 +343,47 @@ heuristic 2-step 统计：`mean_candidate_count` **3817**；`mean_source_tanimot
 | `16946792` | **high-sim RL**（sim_weight=8） | **0.05%** | 12.2% | 99.2% | ~3h50m | 高 sim reward **无效**，proxy 还降 |
 
 **结论**：direct source-edit 训练（加长 SFT / 高 sim RL）**无法**恢复 source conservation；MuMO 主方向应押 **GraphEditDSL assisted** 而非继续训 direct decoder。
+
+## Official MuMO / C-MuMO SR suite（2026-07-01）
+
+新增入口：
+
+```bash
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
+```
+
+默认提交 4 条：
+
+| Suite | 线 | 输出目录 | 说明 |
+| --- | --- | --- | --- |
+| MuMO | source-copy + target-copy sanity | `outputs/external_mumo_official_copy_sanity_v1/` | 校验 source similarity、target/oracle 上界 |
+| MuMO | GraphEditDSL heuristic 2-step top-20 | `outputs/external_mumo_official_graph_edit_heuristic_2step_v1/` | 复用 MuMO direct proposal CSV，candidate-level official SR |
+| C-MuMO | source-copy + target-copy sanity | `outputs/external_cmumo_official_copy_sanity_v1/` | 校验 C-MuMO objective / oracle 映射 |
+| C-MuMO | GraphEditDSL heuristic 2-step top-20 | `outputs/external_cmumo_official_graph_edit_heuristic_2step_v1/` | source-only GraphEditDSL 起步，不依赖 MuMO proposal CSV |
+
+关键产物：
+
+- `benchmark_graph_edit_agent/graph_edit_agent_candidate_predictions.csv`：每个 input 的 top-20 candidates。
+- `benchmark_graph_edit_agent/external_multiproperty_report.md`：candidate-level official-style `SR / Sim(success) / RI(success)`。
+- `benchmark_graph_edit_agent/selected_prediction_eval/external_multiproperty_report.md`：selected-1 diagnostic。
+- `external_oracle_properties.report.md`：oracle property coverage；若 ADMET 缺失，不能 claim official SR。
+
+如果已有外部 ADMET/generated-property CSV：
+
+```bash
+SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV=/path/to/generated_properties.csv \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
+```
+
+如果只想先跑 C-MuMO：
+
+```bash
+SUCC_OFFICIAL_RUN_MUMO=0 \
+SUCC_OFFICIAL_CMUMO_SOURCE_FILE=/scratch/bdong/datasets/Diffusion-Molecule/external/cmumo/test.json \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
+```
+
+注意：suite 默认 `SUCC_OFFICIAL_BUILD_ORACLE_CSV=1`，会生成 coverage CSV/report；但 BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等仍需要外部 predictor CSV 才能达到完整 official coverage。
 
 ## MuMO flight sweep 提交记录
 

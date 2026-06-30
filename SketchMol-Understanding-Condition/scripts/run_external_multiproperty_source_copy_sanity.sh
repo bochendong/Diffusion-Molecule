@@ -23,8 +23,12 @@ TASK_SPEC_JSON="${SUCC_EXTERNAL_SOURCE_COPY_TASK_SPEC_JSON:-$OUTPUT_DIR/external
 SUMMARY_JSON="${SUCC_EXTERNAL_SOURCE_COPY_SUMMARY_JSON:-$OUTPUT_DIR/external_multiproperty_rows.summary.json}"
 BENCHMARK_OUTPUT_DIR="${SUCC_EXTERNAL_SOURCE_COPY_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_source_copy}"
 PREDICTION_CSV="${SUCC_EXTERNAL_SOURCE_COPY_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/source_copy_predictions.csv}"
+TARGET_COPY_BENCHMARK_OUTPUT_DIR="${SUCC_EXTERNAL_TARGET_COPY_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_target_copy}"
+TARGET_COPY_PREDICTION_CSV="${SUCC_EXTERNAL_TARGET_COPY_PREDICTION_CSV:-$TARGET_COPY_BENCHMARK_OUTPUT_DIR/target_copy_predictions.csv}"
 GENERATED_PROPERTIES_CSV="${SUCC_EXTERNAL_SOURCE_COPY_GENERATED_PROPERTIES_CSV:-${SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV:-}}"
 SOURCE_PROPERTIES_CSV="${SUCC_EXTERNAL_SOURCE_COPY_SOURCE_PROPERTIES_CSV:-${SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV:-}}"
+BUILD_ORACLE_CSV="${SUCC_EXTERNAL_SOURCE_COPY_BUILD_ORACLE_CSV:-${SUCC_EXTERNAL_MULTIPROP_BUILD_ORACLE_CSV:-0}}"
+ORACLE_PROPERTIES_CSV="${SUCC_EXTERNAL_SOURCE_COPY_ORACLE_PROPERTIES_CSV:-$OUTPUT_DIR/external_oracle_properties.csv}"
 
 SUITE="${SUCC_EXTERNAL_SOURCE_COPY_SUITE:-${SUCC_EXTERNAL_MULTIPROP_SUITE:-mumo}}"
 TASK_SPLIT="${SUCC_EXTERNAL_SOURCE_COPY_TASK_SPLIT:-${SUCC_EXTERNAL_MULTIPROP_TASK_SPLIT:-all}}"
@@ -34,10 +38,11 @@ MAX_ROWS_PER_TASK="${SUCC_EXTERNAL_SOURCE_COPY_MAX_ROWS_PER_TASK:-${SUCC_EXTERNA
 SEED="${SUCC_EXTERNAL_SOURCE_COPY_SEED:-${SUCC_EXTERNAL_MULTIPROP_SEED:-17}}"
 FORCE_EXPORT="${SUCC_EXTERNAL_SOURCE_COPY_FORCE_EXPORT:-${SUCC_EXTERNAL_MULTIPROP_FORCE_EXPORT:-0}}"
 MIN_SOURCE_TANIMOTO="${SUCC_EXTERNAL_SOURCE_COPY_MIN_SOURCE_TANIMOTO:-${SUCC_EXTERNAL_MULTIPROP_MIN_SOURCE_TANIMOTO:-0.4}}"
+RUN_TARGET_COPY="${SUCC_EXTERNAL_RUN_TARGET_COPY_SANITY:-1}"
 
 export PYTHONPATH="$PROJECT_DIR:$REPO_DIR/SketchMol-MultiProperty-EditDataset${PYTHONPATH:+:$PYTHONPATH}"
 
-mkdir -p "$OUTPUT_DIR" "$BENCHMARK_OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR" "$BENCHMARK_OUTPUT_DIR" "$TARGET_COPY_BENCHMARK_OUTPUT_DIR"
 
 echo "External multi-property source-copy sanity"
 echo "  python=$PYTHON_BIN"
@@ -48,6 +53,8 @@ echo "  task_split=$TASK_SPLIT"
 echo "  tasks=${TASKS:-all}"
 echo "  input_split=$INPUT_SPLIT"
 echo "  max_rows_per_task=$MAX_ROWS_PER_TASK"
+echo "  run_target_copy=$RUN_TARGET_COPY"
+echo "  build_oracle_csv=$BUILD_ORACLE_CSV"
 
 if [[ "$FORCE_EXPORT" == "1" || ! -f "$ROWS_CSV" ]]; then
   if [[ -z "$SOURCE_FILE" || ! -f "$SOURCE_FILE" ]]; then
@@ -71,6 +78,31 @@ fi
   --rows-csv "$ROWS_CSV" \
   --prediction-csv "$PREDICTION_CSV"
 
+if [[ "$RUN_TARGET_COPY" == "1" ]]; then
+  "$PYTHON_BIN" "$PROJECT_DIR/scripts/build_external_target_copy_predictions.py" \
+    --rows-csv "$ROWS_CSV" \
+    --prediction-csv "$TARGET_COPY_PREDICTION_CSV"
+fi
+
+if [[ "$BUILD_ORACLE_CSV" == "1" ]]; then
+  ORACLE_INPUT_ARGS=(--input-csv "$ROWS_CSV" --input-csv "$PREDICTION_CSV")
+  if [[ "$RUN_TARGET_COPY" == "1" ]]; then
+    ORACLE_INPUT_ARGS+=(--input-csv "$TARGET_COPY_PREDICTION_CSV")
+  fi
+  MERGE_ARGS=()
+  if [[ -n "$GENERATED_PROPERTIES_CSV" ]]; then
+    MERGE_ARGS+=(--merge-properties-csv "$GENERATED_PROPERTIES_CSV")
+  fi
+  "$PYTHON_BIN" "$PROJECT_DIR/scripts/score_external_multiproperty_oracles.py" \
+    "${ORACLE_INPUT_ARGS[@]}" \
+    --output-csv "$ORACLE_PROPERTIES_CSV" \
+    "${MERGE_ARGS[@]}"
+  GENERATED_PROPERTIES_CSV="$ORACLE_PROPERTIES_CSV"
+  if [[ -z "$SOURCE_PROPERTIES_CSV" ]]; then
+    SOURCE_PROPERTIES_CSV="$ORACLE_PROPERTIES_CSV"
+  fi
+fi
+
 EVAL_ARGS=()
 if [[ -n "$GENERATED_PROPERTIES_CSV" ]]; then
   EVAL_ARGS+=(--generated-properties-csv "$GENERATED_PROPERTIES_CSV")
@@ -87,9 +119,25 @@ fi
   --report-title "External Multi-property Source-copy Sanity" \
   "${EVAL_ARGS[@]}"
 
+if [[ "$RUN_TARGET_COPY" == "1" ]]; then
+  "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_external_multiproperty_predictions.py" \
+    --prediction-csv "$TARGET_COPY_PREDICTION_CSV" \
+    --output-dir "$TARGET_COPY_BENCHMARK_OUTPUT_DIR" \
+    --smiles-column generated_smiles \
+    --source-smiles-column source_smiles \
+    --min-source-tanimoto "$MIN_SOURCE_TANIMOTO" \
+    --report-title "External Multi-property Target-copy Sanity" \
+    "${EVAL_ARGS[@]}"
+fi
+
 echo
 echo "External source-copy sanity ready:"
 echo "  rows=$ROWS_CSV"
 echo "  predictions=$PREDICTION_CSV"
 echo "  report=$BENCHMARK_OUTPUT_DIR/external_multiproperty_report.md"
 echo "  summary=$BENCHMARK_OUTPUT_DIR/external_multiproperty_summary.csv"
+if [[ "$RUN_TARGET_COPY" == "1" ]]; then
+  echo "  target_predictions=$TARGET_COPY_PREDICTION_CSV"
+  echo "  target_report=$TARGET_COPY_BENCHMARK_OUTPUT_DIR/external_multiproperty_report.md"
+  echo "  target_summary=$TARGET_COPY_BENCHMARK_OUTPUT_DIR/external_multiproperty_summary.csv"
+fi

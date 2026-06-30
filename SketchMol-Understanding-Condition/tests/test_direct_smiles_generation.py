@@ -21,9 +21,11 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/train_direct_smiles_generator_dpo.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/export_external_multiproperty_benchmark_rows.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/evaluate_external_multiproperty_predictions.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/score_external_multiproperty_oracles.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/build_external_agentic_revise_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/build_external_graph_edit_agent_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/build_external_source_copy_predictions.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/build_external_target_copy_predictions.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_multiproperty_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_multiproperty_group_rl.sh").exists()
@@ -40,6 +42,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mumo_graph_edit_policy.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_multiproperty_source_copy_sanity.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_source_copy_sanity.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
@@ -204,6 +207,11 @@ def test_external_multiproperty_exporter_preserves_official_task_properties(tmp_
     assert row["external_suite"] == "mumo"
     assert row["external_task_id"] == "BDQ"
     assert row["external_task_properties"] == "bbbp,drd2,qed"
+    assert json.loads(row["external_property_objectives_json"]) == {
+        "bbbp": "improve",
+        "drd2": "improve",
+        "qed": "improve",
+    }
     assert row["external_unsupported_properties"] == "bbbp,drd2"
     assert row["condition_properties"] == "QED"
     assert row["property_count"] == "3"
@@ -250,6 +258,49 @@ def test_external_multiproperty_exporter_filters_input_split(tmp_path):
     assert len(rows) == 1
     assert rows[0]["molecule_id"] == "test_a"
     assert rows[0]["source_smiles"] == "CCN"
+
+
+def test_external_multiproperty_exporter_preserves_property_objectives(tmp_path):
+    source_csv = tmp_path / "sources.csv"
+    output_csv = tmp_path / "external_rows.csv"
+    _write_rows(
+        source_csv,
+        [
+            {
+                "sample_id": "mol_a",
+                "source_smiles": "CCO",
+                "qed": "0.8",
+                "qed_objective": "maintain",
+            }
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/export_external_multiproperty_benchmark_rows.py",
+            "--source-file",
+            str(source_csv),
+            "--output-csv",
+            str(output_csv),
+            "--suite",
+            "cmumo",
+            "--tasks",
+            "BPQ",
+            "--max-rows-per-task",
+            "1",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    row = next(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    objectives = json.loads(row["external_property_objectives_json"])
+    assert objectives["qed"] == "maintain"
+    assert "maintain high QED" in row["instruction"]
 
 
 def test_external_multiproperty_evaluator_uses_generated_properties_csv(tmp_path):
@@ -309,6 +360,39 @@ def test_external_multiproperty_evaluator_uses_generated_properties_csv(tmp_path
     overall = [row for row in summary_rows if row["external_suite"] == "all"][0]
     assert overall["strict_success_rate"] == "1"
     assert overall["missing_oracle_properties"] == ""
+
+
+def test_external_oracle_scorer_merges_precomputed_properties(tmp_path):
+    predictions_csv = tmp_path / "predictions.csv"
+    merge_csv = tmp_path / "precomputed.csv"
+    output_csv = tmp_path / "oracle_props.csv"
+    _write_rows(predictions_csv, [{"generated_smiles": "CCO"}])
+    _write_rows(merge_csv, [{"smiles": "CCO", "bbbp": "0.77"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/score_external_multiproperty_oracles.py",
+            "--input-csv",
+            str(predictions_csv),
+            "--merge-properties-csv",
+            str(merge_csv),
+            "--output-csv",
+            str(output_csv),
+            "--required-properties",
+            "bbbp",
+            "--tdc-oracles",
+            "never",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    row = next(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    assert row["bbbp"] == "0.77"
 
 
 def test_external_source_copy_predictions_use_source_smiles(tmp_path):
@@ -543,6 +627,60 @@ def test_graph_edit_agent_prefers_source_similar_property_success(monkeypatch, t
     assert result["graph_edit_candidate_source"] == "graph_edit_dsl"
     assert result["graph_edit_source_similarity_success"] == "True"
     assert any(record["generated_smiles"] == "near_good" for record in records)
+
+
+def test_graph_edit_agent_emits_top_k_candidate_rows(monkeypatch, tmp_path):
+    module = _load_graph_edit_agent_module()
+    monkeypatch.setattr(module.revise, "safe_canonical", lambda value: str(value or ""))
+    monkeypatch.setattr(
+        module.revise,
+        "safe_tanimoto",
+        lambda _left, right: {"source": 1.0, "near_good": 0.8, "far_good": 0.0}.get(right, 0.0),
+    )
+    monkeypatch.setattr(
+        module.revise,
+        "local_properties",
+        lambda smiles: {"plogp": {"source": 0.0, "near_good": 1.2, "far_good": 1.4}.get(smiles, 0.0)},
+    )
+    monkeypatch.setattr(module, "editable_atom_sites", lambda _source_smiles, site_limit: [0])
+    monkeypatch.setattr(module, "editable_bond_sites", lambda _source_smiles, site_limit: [])
+    monkeypatch.setattr(module, "execute_graph_edit_action", lambda _source_smiles, _action: "near_good")
+    args = module.parse_args(
+        [
+            "--rows-csv",
+            str(tmp_path / "rows.csv"),
+            "--prediction-csv",
+            str(tmp_path / "predictions.csv"),
+            "--candidate-output-csv",
+            str(tmp_path / "candidate_predictions.csv"),
+            "--top-k-candidates",
+            "2",
+            "--selection-mode",
+            "similarity_first",
+            "--similarity-first-min-local-success-fraction",
+            "1.0",
+        ]
+    )
+    row = {
+        "condition_id": "external_mumo_dpq_000000",
+        "source_smiles": "source",
+        "external_task_properties": "plogp",
+        "external_property_directions_json": json.dumps({"plogp": "increase"}),
+        "external_property_thresholds_json": json.dumps({"plogp": 1.0}),
+    }
+
+    selected, _records, candidates = module.predict_row_full(
+        row,
+        direct_row={"condition_id": "external_mumo_dpq_000000", "generated_smiles": "far_good"},
+        args=args,
+        rng=__import__("random").Random(7),
+    )
+
+    assert selected["generated_smiles"] == "near_good"
+    assert len(candidates) == 2
+    assert candidates[0]["condition_id"] == "external_mumo_dpq_000000"
+    assert candidates[0]["candidate_rank"] == 1
+    assert candidates[0]["candidate_selected"] == "True"
 
 
 def test_graph_edit_policy_agent_expands_from_beam_parent(monkeypatch, tmp_path):

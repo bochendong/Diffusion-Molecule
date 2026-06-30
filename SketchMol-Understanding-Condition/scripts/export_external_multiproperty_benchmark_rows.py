@@ -76,6 +76,18 @@ DEFAULT_DIRECTION = {
     "liver": "decrease",
     "mutagenicity": "decrease",
 }
+DEFAULT_OBJECTIVE = {
+    "ampa": "improve",
+    "bbbp": "improve",
+    "carc": "improve",
+    "drd2": "improve",
+    "erg": "improve",
+    "hia": "improve",
+    "liver": "improve",
+    "mutagenicity": "improve",
+    "plogp": "improve",
+    "qed": "improve",
+}
 PROPERTY_DISPLAY_NAMES = {
     "ampa": "membrane permeability",
     "bbbp": "BBB permeability",
@@ -107,6 +119,10 @@ class ExternalTaskSpec:
     @property
     def directions(self) -> dict[str, str]:
         return {prop: DEFAULT_DIRECTION[prop] for prop in self.properties}
+
+    @property
+    def objectives(self) -> dict[str, str]:
+        return {prop: DEFAULT_OBJECTIVE[prop] for prop in self.properties}
 
 
 TASK_SPECS: tuple[ExternalTaskSpec, ...] = (
@@ -443,15 +459,17 @@ def build_condition_row(
     split = str(raw_row.get("split") or raw_row.get("dataset_split") or "eval")
     official_source = {prop: read_property_value(raw_row, prop, prefix="source") for prop in spec.properties}
     official_target = {prop: read_property_value(raw_row, prop, prefix="target") for prop in spec.properties}
+    objectives = property_objectives(raw_row, spec)
     local_source_props = local_properties_for_smiles(source_smiles)
     local_targets = local_proxy_targets(
         spec,
         local_source_props=local_source_props,
         official_source=official_source,
         official_target=official_target,
+        objectives=objectives,
     )
     local_selected = [prop for prop in PROPERTY_COLUMNS if prop in local_targets]
-    instruction = render_instruction(source_smiles, spec)
+    instruction = render_instruction(source_smiles, spec, objectives=objectives)
     unsupported = [prop for prop in spec.properties if prop not in LOCAL_PROXY_PROPERTY_MAP]
     row: dict[str, object] = {
         "sample_id": condition_id,
@@ -481,6 +499,7 @@ def build_condition_row(
         "external_task_split": spec.split,
         "external_task_properties": ",".join(spec.properties),
         "external_property_directions_json": json.dumps(spec.directions, sort_keys=True),
+        "external_property_objectives_json": json.dumps(objectives, sort_keys=True),
         "external_property_thresholds_json": json.dumps(
             {prop: spec.thresholds[prop] for prop in spec.properties},
             sort_keys=True,
@@ -521,8 +540,10 @@ def local_proxy_targets(
     local_source_props: Mapping[str, float],
     official_source: Mapping[str, float | None],
     official_target: Mapping[str, float | None],
+    objectives: Mapping[str, str] | None = None,
 ) -> dict[str, float]:
     targets: dict[str, float] = {}
+    objectives = objectives or spec.objectives
     for external_prop in spec.properties:
         local_prop = LOCAL_PROXY_PROPERTY_MAP.get(external_prop)
         if not local_prop:
@@ -536,7 +557,10 @@ def local_proxy_targets(
                 continue
             direction = DEFAULT_DIRECTION[external_prop]
             threshold = float(spec.thresholds[external_prop])
-            target = float(source_value) + threshold if direction == "increase" else float(source_value) - threshold
+            if normalize_objective(objectives.get(external_prop, "improve")) == "maintain":
+                target = float(source_value)
+            else:
+                target = float(source_value) + threshold if direction == "increase" else float(source_value) - threshold
         if local_prop == "QED":
             target = min(1.0, max(0.0, float(target)))
         targets[local_prop] = float(target)
@@ -564,11 +588,15 @@ def local_direction_for(spec: ExternalTaskSpec, local_prop: str) -> str:
     return ""
 
 
-def render_instruction(source_smiles: str, spec: ExternalTaskSpec) -> str:
+def render_instruction(source_smiles: str, spec: ExternalTaskSpec, *, objectives: Mapping[str, str] | None = None) -> str:
+    objectives = objectives or spec.objectives
     clauses = []
     for prop in spec.properties:
         direction = DEFAULT_DIRECTION[prop]
-        verb = "increase" if direction == "increase" else "decrease"
+        if normalize_objective(objectives.get(prop, "improve")) == "maintain":
+            verb = "maintain high" if direction == "increase" else "maintain low"
+        else:
+            verb = "increase" if direction == "increase" else "decrease"
         clauses.append(f"{verb} {PROPERTY_DISPLAY_NAMES.get(prop, prop)}")
     if len(clauses) == 1:
         objective = clauses[0]
@@ -612,6 +640,53 @@ def read_property_value(row: Mapping[str, object], prop: str, *, prefix: str) ->
         if value is not None:
             return value
     return None
+
+
+def property_objectives(row: Mapping[str, object], spec: ExternalTaskSpec) -> dict[str, str]:
+    payload = parse_objective_payload(first_value(row, ("external_property_objectives_json", "property_objectives", "objectives", "objective")))
+    out = {}
+    for prop in spec.properties:
+        raw = first_value(
+            row,
+            (
+                f"{prop}_objective",
+                f"objective_{prop}",
+                f"{prop}_mode",
+                f"{prop}_goal",
+            ),
+        )
+        if raw is None:
+            raw = payload.get(prop)
+        out[prop] = normalize_objective(raw or DEFAULT_OBJECTIVE[prop])
+    return out
+
+
+def parse_objective_payload(value: object) -> dict[str, object]:
+    if isinstance(value, Mapping):
+        return {str(key).lower(): val for key, val in value.items()}
+    if isinstance(value, str) and value.strip():
+        text = value.strip()
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, Mapping):
+            return {str(key).lower(): val for key, val in parsed.items()}
+        out = {}
+        for item in text.replace("|", ",").replace(";", ",").split(","):
+            if ":" not in item:
+                continue
+            key, raw_value = item.split(":", 1)
+            out[key.strip().lower()] = raw_value.strip()
+        return out
+    return {}
+
+
+def normalize_objective(value: object) -> str:
+    key = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if key in {"maintain", "keep", "preserve", "retain", "near_optimal", "nearoptimal", "sustain"}:
+        return "maintain"
+    return "improve"
 
 
 def parse_properties_payload(value: object) -> dict[str, object]:

@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO assisted**（heuristic GraphEdit 2-step Sim **45.6%**；rich x2 运行中） |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO/C-MuMO official suite ready**（GraphEdit top-20 + oracle coverage；heuristic GraphEdit 2-step Sim **45.6%**） |
 | `understanding-condition/` | [external-paper-baselines.md](understanding-condition/external-paper-baselines.md) | **新增** 外部论文 baseline 数值目标（MolEditRL / GeLLM3O / GeLLMO-C / C-MORAL） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |

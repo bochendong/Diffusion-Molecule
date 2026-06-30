@@ -100,3 +100,51 @@ def test_missing_oracle_marks_success_rate_as_lower_bound(monkeypatch):
     assert task_summary["official_evaluable_rate"] == "0"
     assert task_summary["success_rate_status"] == "lower_bound_missing_oracle"
     assert task_summary["missing_oracle_properties"] == "bbbp"
+
+
+def test_cmumo_maintain_objective_allows_small_non_degrading_change(monkeypatch):
+    evaluator = load_evaluator()
+    props = {
+        "SRC": {"QED": 0.8},
+        "KEEP": {"QED": 0.74},
+        "DROP": {"QED": 0.65},
+    }
+    monkeypatch.setattr(evaluator, "canonical_smiles", lambda smiles: str(smiles or "").strip() or None)
+    monkeypatch.setattr(evaluator, "molecular_properties", lambda smiles: props.get(smiles, {}))
+    monkeypatch.setattr(evaluator, "morgan_tanimoto", lambda _left, _right: 0.8)
+
+    base = {
+        "external_suite": "cmumo",
+        "external_task_split": "ind",
+        "external_task_id": "Q-maintain",
+        "external_task_properties": "qed",
+        "external_property_directions_json": '{"qed":"increase"}',
+        "external_property_objectives_json": '{"qed":"maintain"}',
+        "external_property_thresholds_json": '{"qed":0.1}',
+        "source_smiles": "SRC",
+    }
+    detail = [
+        evaluator.evaluate_row(
+            {**base, "condition_id": "input_1", "generated_smiles": "KEEP"},
+            generated_props={},
+            source_props_lookup={},
+            smiles_column="generated_smiles",
+            source_smiles_column="source_smiles",
+            min_source_tanimoto=0.4,
+        ),
+        evaluator.evaluate_row(
+            {**base, "condition_id": "input_2", "generated_smiles": "DROP"},
+            generated_props={},
+            source_props_lookup={},
+            smiles_column="generated_smiles",
+            source_smiles_column="source_smiles",
+            min_source_tanimoto=0.4,
+        ),
+    ]
+    summary = evaluator.summarize(detail, group_column="condition_id")
+    task_summary = next(item for item in summary if item["external_task_id"] == "Q-maintain")
+
+    assert detail[0]["external_all_property_success"] == "True"
+    assert detail[0]["external_mean_relative_improvement"] == ""
+    assert detail[1]["external_all_property_success"] == "False"
+    assert task_summary["success_rate"] == "0.5"

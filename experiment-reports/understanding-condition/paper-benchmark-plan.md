@@ -123,7 +123,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ assisted edit + official SR 重跑完成
+### 5. MuMO / C-MuMO benchmark port ✅ official suite ready，等待服务器结果
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
@@ -140,9 +140,9 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | policy GraphEditDSL v2 | assisted | 100% | 46.7% | 19.7% | 0 |
 | **GraphEditDSL heuristic 2-step** | assisted | **100%** | **46.7%** | **45.6%** | **0** |
 
-† candidate-level proxy；‡ 旧 selected-prediction 口径。SR 均需 oracle CSV。
+† candidate-level proxy；‡ 旧 selected-prediction 口径。上表旧 SR 均为缺 oracle 的 lower-bound diagnostic，不能作为 external claim。
 
-**heuristic GraphEditDSL 2-step Sim 45.6%**（flight sweep 新 assisted best）；direct SFT long / high-sim RL 仍 Sim≈0；rich x2 运行中。下一步：oracle CSV、LLM GraphEdit planner、C-MuMO。
+**heuristic GraphEditDSL 2-step Sim 45.6%**（flight sweep 新 assisted best）；direct SFT long / high-sim RL 仍 Sim≈0；rich x2 运行中。2026-07-01 已新增 official-style MuMO/C-MuMO suite：GraphEditDSL 输出 top-20 candidate CSV，evaluator 支持 C-MuMO maintain objective，并生成 oracle coverage report。下一步：跑 suite + 回填 ADMET oracle CSV，再看 official `SR / Sim(success) / RI(success)`。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -158,6 +158,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 8. 已新增 MuMO `agentic revise rich` 入口；复用 v1 direct proposals，扩大 beam/candidate cap，并使用 similarity-first selection。
 9. 已新增 MuMO `GraphEditDSL agent` 入口；planner 输出结构化 graph-edit actions，RDKit executor 在 source graph 上执行，verifier 按 local property success + source similarity 选候选。这是 source-conditioned edit 的主方向升级，不再只是 rerank/local-search 调参。
 10. 已新增 MuMO `policy GraphEditDSL v2` 入口；2-step beam expansion + property-aware action scoring + richer DSL action set，用来判断 GraphEditDSL 是否能追平 rich v2。
+11. 已新增 `submit_external_multiproperty_official_suite.sh`：一次提交 MuMO / C-MuMO source-copy、target-copy、GraphEditDSL top-20 candidate-level evaluation。
+12. 已新增 `score_external_multiproperty_oracles.py`：合并外部 ADMET CSV，补本地/TDC 可算性质，并输出 official evaluator coverage report。
 
 预期产出：
 
@@ -245,6 +247,21 @@ flight sweep 提交命令：
 ```bash
 git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_flight_sweep.sh
+```
+
+MuMO / C-MuMO official suite 提交命令（推荐当前主线）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
+```
+
+如果已有外部 ADMET/generated-property CSV：
+
+```bash
+git pull --ff-only
+SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV=/path/to/generated_properties.csv \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
 ```
 
 注意：BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要 external generated-property CSV 才能公平评估；没有 oracle CSV 时只作为 coverage / plumbing pilot。

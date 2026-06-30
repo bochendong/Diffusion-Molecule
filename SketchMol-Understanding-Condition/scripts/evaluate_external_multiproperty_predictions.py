@@ -52,6 +52,18 @@ DEFAULT_THRESHOLDS = {
     "plogp": 1.0,
     "qed": 0.1,
 }
+DEFAULT_OBJECTIVE = {
+    "ampa": "improve",
+    "bbbp": "improve",
+    "carc": "improve",
+    "drd2": "improve",
+    "erg": "improve",
+    "hia": "improve",
+    "liver": "improve",
+    "mutagenicity": "improve",
+    "plogp": "improve",
+    "qed": "improve",
+}
 PROPERTY_ALIASES = {
     "ames": "mutagenicity",
     "mutagen": "mutagenicity",
@@ -139,10 +151,12 @@ def evaluate_row(
     task_props = parse_list(row.get("external_task_properties") or row.get("condition_properties"))
     directions = parse_json_dict(row.get("external_property_directions_json"), DEFAULT_DIRECTION)
     thresholds = parse_json_dict(row.get("external_property_thresholds_json"), DEFAULT_THRESHOLDS)
+    objectives = parse_json_dict(row.get("external_property_objectives_json"), DEFAULT_OBJECTIVE)
     source_scores = merged_properties(source, row, source_props_lookup)
     generated_scores = generated_properties(canonical, generated_props) if canonical else {}
     per_prop_success: dict[str, bool | None] = {}
     relative_improvements: dict[str, float | None] = {}
+    property_objectives: dict[str, str] = {}
     missing_props = []
     for prop in task_props:
         prop = canonical_prop(prop)
@@ -156,18 +170,27 @@ def evaluate_row(
             relative_improvements[prop] = None
             missing_props.append(prop)
             continue
-        direction = str(directions.get(prop, DEFAULT_DIRECTION.get(prop, "increase"))).lower()
+        direction = normalize_direction(directions.get(prop, DEFAULT_DIRECTION.get(prop, "increase")))
         threshold = float(thresholds.get(prop, DEFAULT_THRESHOLDS.get(prop, 0.0)))
-        if target_value is not None:
-            success = generated_value >= target_value if direction == "increase" else generated_value <= target_value
-        else:
-            delta = generated_value - float(source_value)
-            success = delta >= threshold if direction == "increase" else -delta >= threshold
-        per_prop_success[prop] = bool(success)
-        relative_improvements[prop] = relative_improvement(
+        objective = normalize_objective(objectives.get(prop, DEFAULT_OBJECTIVE.get(prop, "improve")))
+        property_objectives[prop] = objective
+        success = property_success(
             source_value=source_value,
             generated_value=generated_value,
+            target_value=target_value,
             direction=direction,
+            objective=objective,
+            threshold=threshold,
+        )
+        per_prop_success[prop] = bool(success)
+        relative_improvements[prop] = (
+            relative_improvement(
+                source_value=source_value,
+                generated_value=generated_value,
+                direction=direction,
+            )
+            if objective == "improve"
+            else None
         )
     evaluated = [value for value in per_prop_success.values() if value is not None]
     ri_values = [float(value) for value in relative_improvements.values() if value is not None and math.isfinite(float(value))]
@@ -183,6 +206,7 @@ def evaluate_row(
         "external_source_tanimoto": "" if math.isnan(tanimoto) else format_float(tanimoto, digits=6),
         "external_source_similarity_success": "True" if source_similarity_success else "False",
         "external_property_success_json": json.dumps(per_prop_success, sort_keys=True),
+        "external_property_objectives_json": json.dumps(property_objectives, sort_keys=True),
         "external_property_relative_improvement_json": json.dumps(relative_improvements, sort_keys=True),
         "external_missing_generated_oracle_properties": ",".join(missing_props),
         "external_evaluated_property_fraction": format_float(len(evaluated) / max(len(task_props), 1), digits=6),
@@ -504,6 +528,45 @@ def relative_improvement(
     delta = generated - source if direction == "increase" else source - generated
     denominator = max(abs(source), 1e-8)
     return float(delta / denominator)
+
+
+def property_success(
+    *,
+    source_value: float | None,
+    generated_value: float,
+    target_value: float | None,
+    direction: str,
+    objective: str,
+    threshold: float,
+) -> bool:
+    generated = float(generated_value)
+    if objective == "maintain":
+        if target_value is not None:
+            target = float(target_value)
+            return generated >= target if direction == "increase" else generated <= target
+        if source_value is None:
+            return False
+        source = float(source_value)
+        return generated >= source - threshold if direction == "increase" else generated <= source + threshold
+    if target_value is not None:
+        target = float(target_value)
+        return generated >= target if direction == "increase" else generated <= target
+    if source_value is None:
+        return False
+    delta = generated - float(source_value)
+    return delta >= threshold if direction == "increase" else -delta >= threshold
+
+
+def normalize_objective(value: object) -> str:
+    key = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if key in {"maintain", "keep", "preserve", "retain", "near_optimal", "nearoptimal", "sustain"}:
+        return "maintain"
+    return "improve"
+
+
+def normalize_direction(value: object) -> str:
+    key = str(value or "").strip().lower()
+    return "decrease" if key in {"decrease", "down", "lower", "minimize", "minimise", "-1", "↓"} else "increase"
 
 
 def parse_float(value: object) -> float | None:

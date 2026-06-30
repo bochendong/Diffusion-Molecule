@@ -52,6 +52,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--rows-csv", required=True, type=Path)
     parser.add_argument("--prediction-csv", required=True, type=Path)
+    parser.add_argument("--candidate-output-csv", type=Path, default=None)
     parser.add_argument("--plan-jsonl", type=Path, default=None)
     parser.add_argument("--direct-prediction-csv", type=Path, default=None)
     parser.add_argument("--direct-smiles-column", default="generated_smiles")
@@ -70,6 +71,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--similarity-weight", type=float, default=30.0)
     parser.add_argument("--similarity-bonus", type=float, default=80.0)
     parser.add_argument("--copy-penalty", type=float, default=8.0)
+    parser.add_argument("--top-k-candidates", type=int, default=20)
     parser.add_argument("--method", default="external_graph_edit_agent")
     parser.add_argument("--seed", type=int, default=17)
     return parser.parse_args(argv)
@@ -81,15 +83,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     rows = revise.read_rows(args.rows_csv)
     direct_rows = revise.read_direct_predictions(args.direct_prediction_csv) if args.direct_prediction_csv else {}
     output_rows = []
+    candidate_rows = []
     plan_records = []
     for index, row in enumerate(rows):
         direct_row = direct_rows.get(revise.row_key(row), {})
-        output_row, records = predict_row(row, direct_row=direct_row, args=args, rng=rng)
+        output_row, records, row_candidates = predict_row_full(row, direct_row=direct_row, args=args, rng=rng)
         output_rows.append(output_row)
+        candidate_rows.extend(row_candidates)
         plan_records.extend(records)
         if (index + 1) % 100 == 0 or index + 1 == len(rows):
             print(f"[graph-edit-agent] wrote {index + 1}/{len(rows)} rows", flush=True)
     revise.write_rows(args.prediction_csv, output_rows)
+    if args.candidate_output_csv:
+        revise.write_rows(args.candidate_output_csv, candidate_rows)
     if args.plan_jsonl:
         args.plan_jsonl.parent.mkdir(parents=True, exist_ok=True)
         with args.plan_jsonl.open("w", encoding="utf-8") as handle:
@@ -111,6 +117,17 @@ def predict_row(
     args: argparse.Namespace,
     rng: random.Random,
 ) -> tuple[dict[str, object], list[dict[str, object]]]:
+    output_row, records, _candidate_rows = predict_row_full(row, direct_row=direct_row, args=args, rng=rng)
+    return output_row, records
+
+
+def predict_row_full(
+    row: Mapping[str, str],
+    *,
+    direct_row: Mapping[str, str],
+    args: argparse.Namespace,
+    rng: random.Random,
+) -> tuple[dict[str, object], list[dict[str, object]], list[dict[str, object]]]:
     source_smiles = str(row.get("source_smiles", "") or "").strip()
     direct_smiles = str(direct_row.get(str(args.direct_smiles_column), "") or "").strip()
     candidates: list[revise.Candidate] = []
@@ -195,7 +212,55 @@ def predict_row(
     out["graph_edit_evaluated_local_property_count"] = best.evaluated_local_property_count
     out["graph_edit_local_property_distance"] = revise.format_float(best.local_property_distance, digits=6)
     out["graph_edit_missing_local_properties"] = ",".join(best.missing_local_properties)
-    return out, plan_records
+    candidate_rows = build_candidate_output_rows(
+        row,
+        ranked,
+        args=args,
+        direct_smiles=direct_smiles,
+        total_plan_count=total_plan_count,
+        executed_plan_count=len(plan_records),
+    )
+    return out, plan_records, candidate_rows
+
+
+def build_candidate_output_rows(
+    row: Mapping[str, str],
+    ranked: Sequence[revise.CandidateScore],
+    *,
+    args: argparse.Namespace,
+    direct_smiles: str,
+    total_plan_count: int,
+    executed_plan_count: int,
+) -> list[dict[str, object]]:
+    out = []
+    top_k = max(1, int(args.top_k_candidates))
+    for rank, item in enumerate(ranked[:top_k], start=1):
+        candidate_row = dict(row)
+        candidate_row["generated_smiles"] = item.canonical_smiles
+        candidate_row["method"] = str(args.method)
+        candidate_row["candidate_rank"] = rank
+        candidate_row["candidate_selected"] = "True" if rank == 1 else "False"
+        candidate_row["direct_generated_smiles"] = direct_smiles
+        candidate_row["graph_edit_action_trace"] = item.candidate.action_trace
+        candidate_row["graph_edit_candidate_source"] = item.candidate.source
+        candidate_row["graph_edit_planner_mode"] = str(args.planner_mode)
+        candidate_row["graph_edit_planner_steps"] = max(1, int(args.planner_steps))
+        candidate_row["graph_edit_plan_count"] = total_plan_count
+        candidate_row["graph_edit_executed_plan_count"] = executed_plan_count
+        candidate_row["graph_edit_candidate_count"] = len(ranked)
+        candidate_row["graph_edit_valid_candidate_count"] = len(ranked)
+        candidate_row["graph_edit_best_score"] = revise.format_float(item.score, digits=6)
+        candidate_row["graph_edit_source_tanimoto"] = (
+            "" if math.isnan(item.source_tanimoto) else revise.format_float(item.source_tanimoto, digits=6)
+        )
+        candidate_row["graph_edit_source_similarity_success"] = "True" if item.source_similarity_success else "False"
+        candidate_row["graph_edit_local_success_fraction"] = revise.format_float(item.local_success_fraction, digits=6)
+        candidate_row["graph_edit_all_evaluated_local_success"] = "True" if item.all_evaluated_local_success else "False"
+        candidate_row["graph_edit_evaluated_local_property_count"] = item.evaluated_local_property_count
+        candidate_row["graph_edit_local_property_distance"] = revise.format_float(item.local_property_distance, digits=6)
+        candidate_row["graph_edit_missing_local_properties"] = ",".join(item.missing_local_properties)
+        out.append(candidate_row)
+    return out
 
 
 def plan_graph_edit_actions(
