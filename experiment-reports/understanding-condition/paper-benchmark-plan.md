@@ -139,10 +139,11 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | GraphEditDSL heuristic 1-step | assisted | 100% | 46.7% | 26.2% | 0 |
 | policy GraphEditDSL v2 | assisted | 100% | 46.7% | 19.7% | 0 |
 | **GraphEditDSL heuristic 2-step** | assisted | **100%** | **46.7%** | **45.6%** | **0** |
+| agentic rich x2 | assisted | 100% | 46.7% | 42.5% | 0 |
 
 † candidate-level proxy；‡ 旧 selected-prediction 口径。上表旧 SR 均为缺 oracle 的 lower-bound diagnostic，不能作为 external claim。
 
-**heuristic GraphEditDSL 2-step Sim 45.6%**（flight sweep 新 assisted best）；direct SFT long / high-sim RL 仍 Sim≈0；rich x2 运行中。2026-07-01 已新增 official-style MuMO/C-MuMO suite：GraphEditDSL 输出 top-20 candidate CSV，evaluator 支持 C-MuMO maintain objective，并生成 oracle coverage report。下一步：跑 suite + 回填 ADMET oracle CSV，再看 official `SR / Sim(success) / RI(success)`。
+**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；rich x2 **42.5%**（4096/row，+10.2pp vs rich v2）。2026-07-01 已新增 official-style MuMO/C-MuMO suite。下一步：official SR suite 结果 + ADMET oracle CSV。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -300,4 +301,4 @@ bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_off
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ **heuristic GraphEditDSL 2-step Sim 45.6%**（assisted 新 best）；direct 训练线仍 Sim≈0；SR 仍待 oracle CSV；rich x2 运行中。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ **heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；rich x2 **42.5%**；direct 训练线仍 Sim≈0；official SR 待 oracle CSV。

@@ -2,7 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **flight sweep 5/6 完成**；heuristic GraphEditDSL 2-step Sim **45.6%**（assisted 新 best）；rich x2 运行中；oracle CSV 待回填 |
+| **状态** | **flight sweep 6/6 完成**；heuristic GraphEditDSL 2-step Sim **45.6%**（assisted best）；rich x2 **42.5%**；official SR suite 运行中 |
+| **最后更新** | 2026-07-01（rich x2 `16946788`） |
 | **最后更新** | 2026-06-30（flight sweep `16946786`–`16946792`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
@@ -316,22 +317,19 @@ Agent 统计：`mean_candidate_count` **2046**（v1 heuristic **89**）；`mean_
 
 ## MuMO flight sweep 结果（`296be91`）
 
-5/6 完成；`16946788` rich x2 仍 **RUNNING**（~24h+）。SR 全线 **0**（无 oracle CSV）。Sim≥0.4 为 source-preservation diagnostic。
+6/6 完成。SR 全线 **0**（无 oracle CSV）。Sim≥0.4 为 source-preservation diagnostic。
 
 ### Assisted / search 线
 
 | Job | 变体 | Sim≥0.4 | Proxy | Valid | 耗时 | 结论 |
 | --- | --- | ---: | ---: | ---: | --- | --- |
-| `16824486` | rich v2 | 32.3% | 46.7% | 100% | ~10h27m | 旧 assisted best |
-| `16825306` | GraphEdit heuristic 1-step | 26.2% | 46.7% | 100% | ~22m | — |
-| `16892025` | policy GraphEdit v2 | 19.7% | 46.7% | 100% | ~5h42m | yield↑ Sim↓ |
-| `16946786` | **policy sim-anchor** | **19.7%** | 46.7% | 100% | ~5h54m | **= policy v2**，scoring 调整无效 |
-| **`16946787`** | **heuristic 2-step** | **45.6%** | 46.7% | 100% | ~12h04m | **新 assisted best**（+13.3pp vs rich v2） |
-| `16946788` | rich x2（4096/row） | — | — | — | 运行中 | 待完成 |
+| `16824486` | rich v2（2048/row） | 32.3% | 46.7% | 100% | ~10h27m | — |
+| **`16946788`** | **rich x2（4096/row）** | **42.5%** | 46.7% | 100% | ~1d5h | **+10.2pp vs rich v2** |
+| **`16946787`** | **heuristic GraphEdit 2-step** | **45.6%** | 46.7% | 100% | ~12h04m | **assisted best**（+3.1pp vs rich x2） |
 
-heuristic 2-step 统计：`mean_candidate_count` **3817**；`mean_source_tanimoto` **0.409**；IND Sim **45.4%**；OOD Sim **45.8%**；最高 task BDP **97%** / BDMQ **69.5%**。
+rich x2 统计：`mean_candidate_count` **4096**；`mean_source_tanimoto` **0.401**；IND Sim **44.9%**；OOD Sim **40.1%**；最高 task BDP **86%** / BDMQ **65.5%**。
 
-**结论**：GraphEditDSL **2-step beam expansion** 是当前最强 assisted 线（**45.6%**），超过 rich local revise（32.3%）。policy sim-anchor 与 v2 完全相同 → 问题不在 similarity weight 微调，而在 **policy planner 本身**。
+**结论**：4096 candidates/row **有效**（32.3% → **42.5%**，+10.2pp），但 **仍略低于 GraphEditDSL 2-step（45.6%）**；且耗时 ~29h vs ~12h。candidate cap 不是唯一瓶颈——**graph-edit action 空间**仍略优。
 
 ### Direct 训练线（official candidate-level）
 
@@ -614,7 +612,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 9. ~~**GraphEditDSL agent v1**~~ → **`16825306` 完成**；Sim@0.4 **26.2%**（heuristic planner；低于 rich v2）；架构方向有效。
 10. ~~**policy GraphEditDSL v2**~~ → **`16892025` 完成**；yield **2046/row**（↑ vs 89）；Sim@0.4 **19.7%**（↓ vs heuristic **26.2%**）；rich v2 仍 best **32.3%**。
 11. ~~**one-shot official SR 重跑**~~ → **`16894722` 完成**；candidate-level SR **0**（无 oracle）；Sim diagnostic **0.05%**；direct 无 source-edit。
-12. ~~**flight sweep**~~ → **5/6 完成**；**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted 新 best）；sim-anchor = policy v2；direct SFT long / high-sim RL 仍 Sim≈0；rich x2 运行中。
+12. ~~**flight sweep**~~ → **6/6 完成**；**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；rich x2 **42.5%**（+10.2pp vs rich v2）；direct 训练线仍 Sim≈0。
 13. **group-RL / assisted 线 official SR 重跑**；ADMET oracle CSV 回填；GraphEditDSL similarity/property 平衡或 LLM planner；C-MuMO 复跑。
 
 ## 外部来源

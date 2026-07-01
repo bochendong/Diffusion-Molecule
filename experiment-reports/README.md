@@ -250,7 +250,9 @@ policy GraphEditDSL v2：yield **2046/row**（↑ vs heuristic 89）；Sim@0.4 *
 | --- | --- | --- | --- |
 | `16946786` | `succ-external-mumo-graph-policy-sim` | 完成（~5h54m） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
 | `16946787` | `succ-external-mumo-graph-heur2` | 完成（~12h04m） | 同上 |
-| `16946788` | `succ-external-mumo-agentic-rich-x2` | **运行中** | 同上 |
+| `16946788` | `succ-external-mumo-agentic-rich-x2` | 完成（~1d5h） | 同上 |
+
+rich x2（4096/row）：Sim@0.4 **42.5%**（+10.2pp vs rich v2 **32.3%**）；仍略低于 heuristic GraphEdit 2-step **45.6%**。
 | `16946790` | `succ-external-mumo-source-edit-sft-long` | 完成（~2h13m） | 同上 |
 | `16946791` | `succ-external-mumo-source-edit-rl-official` | 完成（~1h38m） | 同上 |
 | `16946792` | `succ-external-mumo-source-edit-rl-highsim` | 完成（~3h50m） | 同上 |
