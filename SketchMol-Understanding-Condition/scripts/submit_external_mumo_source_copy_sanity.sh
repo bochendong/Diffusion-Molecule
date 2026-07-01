@@ -28,6 +28,7 @@ CPUS="${SUCC_EXTERNAL_SOURCE_COPY_SLURM_CPUS:-${SUCC_SLURM_CPUS:-2}}"
 JOB_NAME="${SUCC_EXTERNAL_SOURCE_COPY_SLURM_JOB_NAME:-succ-external-mumo-source-copy}"
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 PARTITION="${SUCC_EXTERNAL_SOURCE_COPY_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
+DEPENDENCY="${SUCC_EXTERNAL_SOURCE_COPY_SLURM_DEPENDENCY:-${SUCC_SLURM_DEPENDENCY:-}}"
 
 if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
   echo "ERROR: SUCC_PYTHON_BIN is not executable: $SUCC_PYTHON_BIN" >&2
@@ -47,6 +48,7 @@ echo "  output_dir=$SUCC_EXTERNAL_SOURCE_COPY_OUTPUT_DIR"
 echo "  suite=$SUCC_EXTERNAL_SOURCE_COPY_SUITE"
 echo "  task_split=$SUCC_EXTERNAL_SOURCE_COPY_TASK_SPLIT"
 echo "  max_rows_per_task=$SUCC_EXTERNAL_SOURCE_COPY_MAX_ROWS_PER_TASK"
+echo "  dependency=${DEPENDENCY:-none}"
 
 SBATCH_ARGS=(
   --account="$ACCOUNT"
@@ -59,6 +61,9 @@ SBATCH_ARGS=(
 )
 if [[ -n "$PARTITION" ]]; then
   SBATCH_ARGS+=(--partition="$PARTITION")
+fi
+if [[ -n "$DEPENDENCY" ]]; then
+  SBATCH_ARGS+=(--dependency="$DEPENDENCY")
 fi
 
 output="$(sbatch "${SBATCH_ARGS[@]}" --wrap="bash '$PROJECT_DIR/scripts/run_external_multiproperty_source_copy_sanity.sh'")"

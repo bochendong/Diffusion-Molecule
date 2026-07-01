@@ -48,6 +48,7 @@ JOB_NAME="$SUCC_EXTERNAL_GRAPH_EDIT_SLURM_JOB_NAME"
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 PARTITION="${SUCC_EXTERNAL_GRAPH_EDIT_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
 GPU_PROFILE="${SUCC_EXTERNAL_GRAPH_EDIT_GPU_PROFILE:-${SUCC_GPU_PROFILE:-none}}"
+DEPENDENCY="${SUCC_EXTERNAL_GRAPH_EDIT_SLURM_DEPENDENCY:-${SUCC_SLURM_DEPENDENCY:-}}"
 
 if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
   echo "ERROR: SUCC_PYTHON_BIN is not executable: $SUCC_PYTHON_BIN" >&2
@@ -96,6 +97,7 @@ echo "  max_candidates_per_parent=$SUCC_EXTERNAL_GRAPH_EDIT_MAX_CANDIDATES_PER_P
 echo "  max_candidates_per_row=$SUCC_EXTERNAL_GRAPH_EDIT_MAX_CANDIDATES_PER_ROW"
 echo "  top_k_candidates=$SUCC_EXTERNAL_GRAPH_EDIT_TOP_K_CANDIDATES"
 echo "  gpu_candidates=${GPU_CANDIDATES[*]:-none}"
+echo "  dependency=${DEPENDENCY:-none}"
 
 SBATCH_ARGS=(
   --account="$ACCOUNT"
@@ -108,6 +110,9 @@ SBATCH_ARGS=(
 )
 if [[ -n "$PARTITION" ]]; then
   SBATCH_ARGS+=(--partition="$PARTITION")
+fi
+if [[ -n "$DEPENDENCY" ]]; then
+  SBATCH_ARGS+=(--dependency="$DEPENDENCY")
 fi
 
 job_id=""

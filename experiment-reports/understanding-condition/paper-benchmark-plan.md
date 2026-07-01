@@ -361,6 +361,15 @@ SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV=$NEW_ORACLE \
 bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
 ```
 
+并行 follow-up 一键入口（推荐在等 sourcefix/C-MuMO 时跑）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_parallel_followup.sh
+```
+
+它会把外部 benchmark 接成两个 Slurm DAG：`sourcefix oracle -> C-MuMO official rerun`，以及 `MuMO IND-hard GraphEdit sweeps -> hard-candidate oracle -> hard-task re-eval`。所以不是纯等待；只有 C-MuMO SR 必须等 sourcefix oracle，MuMO hard-task 修复可以同步跑。
+
 Slurm 提交：
 
 ```bash

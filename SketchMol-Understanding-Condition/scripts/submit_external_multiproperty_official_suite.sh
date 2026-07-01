@@ -15,6 +15,7 @@ RUN_CMUMO="${SUCC_OFFICIAL_RUN_CMUMO:-1}"
 RUN_COPY_SANITY="${SUCC_OFFICIAL_RUN_COPY_SANITY:-1}"
 RUN_GRAPH_EDIT="${SUCC_OFFICIAL_RUN_GRAPH_EDIT:-1}"
 BUILD_ORACLE_CSV="${SUCC_OFFICIAL_BUILD_ORACLE_CSV:-1}"
+DEPENDENCY="${SUCC_OFFICIAL_SLURM_DEPENDENCY:-${SUCC_SLURM_DEPENDENCY:-}}"
 
 run_step() {
   local label="$1"
@@ -39,6 +40,7 @@ submit_copy_sanity() {
     export SUCC_EXTERNAL_SOURCE_COPY_OUTPUT_DIR="$output_dir"
     export SUCC_EXTERNAL_SOURCE_COPY_SLURM_JOB_NAME="$job_name"
     export SUCC_EXTERNAL_SOURCE_COPY_BUILD_ORACLE_CSV="$BUILD_ORACLE_CSV"
+    export SUCC_EXTERNAL_SOURCE_COPY_SLURM_DEPENDENCY="$DEPENDENCY"
     bash "$PROJECT_DIR/scripts/submit_external_mumo_source_copy_sanity.sh"
   )
 }
@@ -59,6 +61,7 @@ submit_graph_edit() {
     export SUCC_EXTERNAL_GRAPH_EDIT_REQUIRE_DIRECT_PROPOSALS="$require_direct"
     export SUCC_EXTERNAL_GRAPH_EDIT_TOP_K_CANDIDATES="${SUCC_EXTERNAL_GRAPH_EDIT_TOP_K_CANDIDATES:-20}"
     export SUCC_EXTERNAL_GRAPH_EDIT_BUILD_ORACLE_CSV="$BUILD_ORACLE_CSV"
+    export SUCC_EXTERNAL_GRAPH_EDIT_SLURM_DEPENDENCY="$DEPENDENCY"
     bash "$PROJECT_DIR/scripts/submit_direct_smiles_external_mumo_graph_edit_heuristic_2step.sh"
   )
 }
@@ -71,6 +74,7 @@ echo "  task_split=$TASK_SPLIT"
 echo "  build_oracle_csv=$BUILD_ORACLE_CSV"
 echo "  generated_properties_csv=${SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV:-none}"
 echo "  source_properties_csv=${SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV:-none}"
+echo "  dependency=${DEPENDENCY:-none}"
 
 if [[ "$RUN_MUMO" == "1" ]]; then
   if [[ "$RUN_COPY_SANITY" == "1" ]]; then

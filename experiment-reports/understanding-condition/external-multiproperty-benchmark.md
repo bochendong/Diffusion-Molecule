@@ -440,6 +440,20 @@ SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV=$NEW_ORACLE \
 bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
 ```
 
+如果要把可并行工作一次性提交，用：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_parallel_followup.sh
+```
+
+这个入口会同时做两条事：
+
+1. 提交 `succ-ext-oracle-sourcefix`，并把 C-MuMO official rerun 通过 `afterok:<oracle_job>` 挂在它后面。
+2. 立刻提交 MuMO IND-hard sweep（BDP / BDPQ / DPQ / BDMQ），再把这些新候选接到独立的 ADMET oracle + re-eval 链上。
+
+依赖关系：C-MuMO official 必须等 sourcefix oracle；MuMO IND-hard sweep 的 candidate generation 可以同步跑，不需要等 C-MuMO。
+
 如果只想先跑 C-MuMO：
 
 ```bash

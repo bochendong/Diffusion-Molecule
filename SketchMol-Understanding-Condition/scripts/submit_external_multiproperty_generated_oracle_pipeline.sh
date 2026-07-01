@@ -29,6 +29,7 @@ PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 ADMET_PYTHON_BIN="${SUCC_ADMET_PYTHON_BIN:-/home/bdong/.venvs/admet_ai/bin/python}"
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 PARTITION="${SUCC_ORACLE_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
+DEPENDENCY="${SUCC_ORACLE_SLURM_DEPENDENCY:-${SUCC_SLURM_DEPENDENCY:-}}"
 
 if [[ -z "$INPUT_CSV" ]]; then
   echo "ERROR: set SUCC_ORACLE_INPUT_CSV to prediction CSV path(s)." >&2
@@ -47,6 +48,7 @@ echo "  admet_batch_size=$BATCH_SIZE"
 echo "  skip_admet=$SKIP_ADMET"
 echo "  python=$PYTHON_BIN"
 echo "  admet_python=$ADMET_PYTHON_BIN"
+echo "  dependency=${DEPENDENCY:-none}"
 
 SBATCH_ARGS=(
   --account="$ACCOUNT"
@@ -59,6 +61,9 @@ SBATCH_ARGS=(
 )
 if [[ -n "$PARTITION" ]]; then
   SBATCH_ARGS+=(--partition="$PARTITION")
+fi
+if [[ -n "$DEPENDENCY" ]]; then
+  SBATCH_ARGS+=(--dependency="$DEPENDENCY")
 fi
 
 output="$(sbatch "${SBATCH_ARGS[@]}" --wrap="bash '$PROJECT_DIR/scripts/run_external_multiproperty_generated_oracle_pipeline.sh'")"
