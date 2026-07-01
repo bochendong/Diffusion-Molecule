@@ -2,9 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **flight sweep 6/6 完成**；heuristic GraphEditDSL 2-step Sim **45.6%**（assisted best）；rich x2 **42.5%**；official SR suite 运行中 |
-| **最后更新** | 2026-07-01（rich x2 `16946788`） |
-| **最后更新** | 2026-06-30（flight sweep `16946786`–`16946792`） |
+| **状态** | **official suite 6/6 完成**；MuMO GraphEdit 2-step top-20 Sim **46%** / DPQ SR **13.5%**（proxy-only lower-bound）；**待 ADMET CSV** 才能报真实 SR |
+| **最后更新** | 2026-07-01（official suite `16997790`–`17010957`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -352,9 +351,49 @@ bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_off
 
 | Job | Suite | 线 | 输出 | 状态 |
 | --- | --- | --- | --- | --- |
-| `16997790` | MuMO | source/target-copy sanity | `external_mumo_official_copy_sanity_v1/` | 已提交 |
-| `16997792` | MuMO | GraphEditDSL heuristic 2-step top-20 | `external_mumo_official_graph_edit_heuristic_2step_v1/` | 已提交 |
-| — | C-MuMO | copy + GraphEditDSL | `external_cmumo_official_*` | **待数据**（cmumo/test.json 未下载） |
+| `16997790` | MuMO | source/target-copy sanity | `external_mumo_official_copy_sanity_v1/` | **完成**（~1m） |
+| `16997792` | MuMO | GraphEditDSL heuristic 2-step top-20 | `external_mumo_official_graph_edit_heuristic_2step_v1/` | **完成** |
+| `17010444` | MuMO | GraphEditDSL **source-only** 2-step | `external_mumo_official_graph_edit_source_only_2step_v1/` | **完成** |
+| `17010445` | MuMO | GraphEditDSL **1-step** top-20 | `external_mumo_official_graph_edit_1step_top20_v1/` | **完成** |
+| `17010954` | C-MuMO | source/target-copy sanity | `external_cmumo_official_copy_sanity_v1/` | **完成** |
+| `17010957` | C-MuMO | GraphEditDSL 2-step top-20 | `external_cmumo_official_graph_edit_heuristic_2step_v1/` | **完成** |
+
+### Official suite 结果汇总（2026-07-01，**无 ADMET oracle CSV**）
+
+**口径**：candidate-level top-20 `SR` / `Sim≥0.4`；`Status=official` 仅 **DPQ**（IND，drd2+plogp+qed 可本地/TDC 算）。其余 task 缺 BBBP/HIA/mutagenicity 等 → aggregate SR 是 **lower-bound**，不能和 GeLLMO 论文横比。`RI(success)` 在 proxy-only 成功样本上数值异常，暂不报。
+
+#### MuMO GraphEdit ablation（top-20 candidate-level）
+
+| Job | 变体 | SR (all) | Sim≥0.4 (all) | DPQ SR | DPQ Sim≥0.4 |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `16997792` | 2-step + direct proposal | **1.35%** | **46.0%** | **13.5%** | 42.5% |
+| `17010445` | 1-step top-20 | 0.95% | 99.9% | 9.5% | 99.5% |
+| `17010444` | source-only 2-step | 0% | 99.4% | 0% | 97.5% |
+
+Selected-1 diagnostic（与 flight sweep Sim 口径一致）：
+
+| Job | SR (all) | Sim≥0.4 (all) | DPQ SR |
+| --- | ---: | ---: | ---: |
+| `16997792` | 0.60% | **45.6%** | 6.0% |
+| `17010445` | 0.65% | 24.8% | 6.5% |
+| `17010444` | 0% | 97.7% | 0% |
+
+**Ablation 结论**：
+
+1. **2-step beam expansion**：top-20 池在 DPQ 上 SR **13.5% vs 9.5%**（+4pp）；selected-1 Sim **45.6% vs 24.8%**。2-step 用更大搜索换更高 source-edit 质量 + 候选池 property 命中。
+2. **Direct proposal 依赖**：source-only 2-step Sim≈99% 但 **DPQ SR=0**——GraphEditDSL 单独几乎只做 source 保持，不改善性质；需 direct/agentic proposal 作起点。
+3. **1-step 候选池 Sim 虚高**：top-20 层 Sim≥0.4≈100%，但 selected-1 仅 24.8%——说明 1-step 生了很多近 source 候选，rerank/selected 路径与 top-20 oracle 口径不一致。
+
+#### C-MuMO（`17010954` / `17010957`）
+
+| Job | 线 | Sim≥0.4 (all) | SR (all) |
+| --- | --- | ---: | ---: |
+| `17010954` | copy sanity | 100% | 0 |
+| `17010957` | GraphEdit 2-step top-20 | 99.95% | 0 |
+
+C-MuMO plumbing OK（copy Sim=100%）；GraphEdit 候选池 Sim 极高但 **SR=0**——缺 ampa/bbbp/carc/erg/hia/liver/mutagenicity oracle（eval prop frac **42%**）。需 ADMET-AI CSV + 重跑。
+
+**下一步（阻塞真实 SR）**：`17047446` ADMET-AI oracle build 运行中 → 完成后用 `generated_properties.csv` 重跑 official suite。
 
 默认提交 4 条：
 

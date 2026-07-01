@@ -123,9 +123,21 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ official suite ready，等待服务器结果
+### 5. MuMO / C-MuMO benchmark port ✅ official suite 6/6 完成
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
+
+**Official suite 结果（2026-07-01，无 ADMET CSV → SR 为 lower-bound）**：
+
+| Job | 变体 | top-20 SR | Sim≥0.4 | DPQ SR (official) |
+| --- | --- | ---: | ---: | ---: |
+| `16997792` | MuMO GraphEdit 2-step + proposal | **1.35%** | **46%** | **13.5%** |
+| `17010445` | MuMO GraphEdit 1-step | 0.95% | 99.9%† | 9.5% |
+| `17010444` | MuMO GraphEdit source-only | 0% | 99.4% | 0% |
+| `17010957` | C-MuMO GraphEdit 2-step | 0% | 99.95% | — |
+| `17010954` | C-MuMO copy sanity | 0% | 100% | — |
+
+† 1-step top-20 候选池 Sim 虚高，selected-1 Sim 仅 **24.8%**。
 
 **MuMO 对照（direct vs assisted 分开报）**：
 
@@ -143,7 +155,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 † candidate-level proxy；‡ 旧 selected-prediction 口径。上表旧 SR 均为缺 oracle 的 lower-bound diagnostic，不能作为 external claim。
 
-**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；rich x2 **42.5%**（4096/row，+10.2pp vs rich v2）。2026-07-01 已新增 official-style MuMO/C-MuMO suite。下一步：official SR suite 结果 + ADMET oracle CSV。
+**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；official top-20 Sim **46%** / DPQ SR **13.5%**（proxy-only）。**阻塞项：ADMET-AI generated-property CSV** → 重跑 official suite 才能报 GeLLMO 口径 SR。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -266,6 +278,83 @@ bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_off
 ```
 
 注意：BBBP / HIA / mutagenicity / hERG / DILI / PAMPA 等性质需要 external generated-property CSV 才能公平评估；没有 oracle CSV 时只作为 coverage / plumbing pilot。
+
+#### C-MuMO 数据下载（已完成 2026-07-01）
+
+官方数据源：`NingLab/C-MuMOInstruct`（HuggingFace）。与 MuMO 不同，test split 按 task 拆成 10 个 `test_*_mixed.json.gz`；fetch 脚本会合并并规范化 `task` / `improved` / `stable` 字段。
+
+```bash
+bash SketchMol-Understanding-Condition/scripts/fetch_external_cmumo_dataset.sh
+# 输出：/scratch/bdong/datasets/Diffusion-Molecule/external/cmumo/test.json
+```
+
+MuMO 如需重下：
+
+```bash
+bash SketchMol-Understanding-Condition/scripts/fetch_external_mumo_dataset.sh
+```
+
+C-MuMO official suite：
+
+```bash
+git pull --ff-only
+SUCC_OFFICIAL_RUN_MUMO=0 \
+SUCC_OFFICIAL_CMUMO_SOURCE_FILE=/scratch/bdong/datasets/Diffusion-Molecule/external/cmumo/test.json \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
+```
+
+#### ADMET generated-property CSV（GeLLMO 官方 predictor）
+
+GeLLMO / GeLLMO-C 论文使用 **ADMET-AI** 作为 ADMET oracle（`process-output.ipynb` → `generate_props()` → `*-admet_props.csv`），再与本地/TDC 性质（QED、pLogP、SA、DRD2）合并（`evaluate.ipynb` → `compute_props()`）。
+
+| GeLLMO ADMET-AI 列 | SUCC oracle 名 |
+| --- | --- |
+| `BBB_Martins` | `bbbp` |
+| `HIA_Hou` | `hia` |
+| `AMES` | `mutagenicity` |
+| `hERG` | `erg` |
+| `DILI` | `liver` |
+| `PAMPA_NCATS` | `ampa` |
+| `Carcinogens_Lagunin` | `carc` |
+
+DRD2 仍走 TDC Oracle（与 GeLLMO `data/props/` 一致）；QED / pLogP / SA 由 `score_external_multiproperty_oracles.py` 本地补全。
+
+安装 ADMET-AI（建议单独 venv；overlay 若无 `admet-ai` 则 `pip install admet-ai`）：
+
+```bash
+pip install admet-ai
+```
+
+从 prediction CSV 构建 generated-property oracle：
+
+```bash
+SUCC_ORACLE_INPUT_CSV=SketchMol-Understanding-Condition/outputs/external_mumo_official_graph_edit_heuristic_2step_v1/benchmark_graph_edit_agent/graph_edit_agent_candidate_predictions.csv \
+SUCC_ORACLE_OUTPUT_CSV=SketchMol-Understanding-Condition/outputs/external_oracle_build_v1/generated_properties.csv \
+bash SketchMol-Understanding-Condition/scripts/run_external_multiproperty_generated_oracle_pipeline.sh
+```
+
+Slurm 提交：
+
+```bash
+SUCC_ORACLE_INPUT_CSV=.../graph_edit_agent_candidate_predictions.csv \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_generated_oracle_pipeline.sh
+```
+
+生成后重跑 official suite：
+
+```bash
+SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV=SketchMol-Understanding-Condition/outputs/external_oracle_build_v1/generated_properties.csv \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
+```
+
+venv 安装（ComputeCanada，需先 `module load rdkit`）：
+
+```bash
+bash SketchMol-Understanding-Condition/scripts/setup_admet_ai_venv.sh
+export SUCC_ADMET_PYTHON_BIN=$HOME/.venvs/admet_ai/bin/python
+```
+
+参考： [GeLLMO repo](https://github.com/ninglab/GeLLMO) · [GeLLMO-C repo](https://github.com/ninglab/GeLLMO-C) · [ADMET-AI](https://github.com/swansonk14/admet_ai)
 
 ### 6. PMO small-budget pilot
 

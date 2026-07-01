@@ -323,7 +323,11 @@ def task_matches_filter(spec: ExternalTaskSpec, task_filter: set[str]) -> bool:
 
 
 def normalize_task_name(value: object) -> str:
-    return str(value or "").strip().lower().replace(" ", "").replace("_", "+")
+    text = str(value or "").strip().lower().replace(" ", "").replace("_", "+")
+    for prefix in ("cmumo:", "c-mumo:", "c:"):
+        if text.startswith(prefix):
+            text = text[len(prefix) :]
+    return text
 
 
 def read_source_rows(path: Path) -> list[dict[str, object]]:
@@ -644,8 +648,16 @@ def read_property_value(row: Mapping[str, object], prop: str, *, prefix: str) ->
 
 def property_objectives(row: Mapping[str, object], spec: ExternalTaskSpec) -> dict[str, str]:
     payload = parse_objective_payload(first_value(row, ("external_property_objectives_json", "property_objectives", "objectives", "objective")))
+    improved = objective_property_set(row.get("improved"))
+    stable = objective_property_set(row.get("stable"))
     out = {}
     for prop in spec.properties:
+        if prop in stable:
+            out[prop] = "maintain"
+            continue
+        if prop in improved:
+            out[prop] = "improve"
+            continue
         raw = first_value(
             row,
             (
@@ -659,6 +671,16 @@ def property_objectives(row: Mapping[str, object], spec: ExternalTaskSpec) -> di
             raw = payload.get(prop)
         out[prop] = normalize_objective(raw or DEFAULT_OBJECTIVE[prop])
     return out
+
+
+def objective_property_set(value: object) -> set[str]:
+    if isinstance(value, str):
+        items = [item.strip() for item in value.replace("|", ",").split(",") if item.strip()]
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        items = [str(item).strip() for item in value if str(item).strip()]
+    else:
+        return set()
+    return {str(item).strip().lower() for item in items}
 
 
 def parse_objective_payload(value: object) -> dict[str, object]:
