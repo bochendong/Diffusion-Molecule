@@ -113,7 +113,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args.output_dir.mkdir(parents=True, exist_ok=True)
     predictions = read_rows(args.prediction_csv)
     generated_props = read_property_lookup(args.generated_properties_csv)
-    source_props_lookup = read_property_lookup(args.source_properties_csv)
+    source_props_lookup = merge_property_lookups(generated_props, read_property_lookup(args.source_properties_csv))
     detail_rows = [
         evaluate_row(
             row,
@@ -284,6 +284,16 @@ def read_property_lookup(path: Path | None) -> dict[str, dict[str, float]]:
                 props[prop] = parsed
         lookup[canonical] = props
     return lookup
+
+
+def merge_property_lookups(
+    fallback: Mapping[str, Mapping[str, float]],
+    override: Mapping[str, Mapping[str, float]],
+) -> dict[str, dict[str, float]]:
+    merged = {smiles: dict(props) for smiles, props in fallback.items()}
+    for smiles, props in override.items():
+        merged.setdefault(smiles, {}).update(props)
+    return merged
 
 
 def summarize(rows: list[dict[str, object]], *, group_column: str = "condition_id") -> list[dict[str, object]]:
@@ -525,8 +535,10 @@ def relative_improvement(
         return None
     source = float(source_value)
     generated = float(generated_value)
+    denominator = abs(source)
+    if denominator < 1e-6:
+        return None
     delta = generated - source if direction == "increase" else source - generated
-    denominator = max(abs(source), 1e-8)
     return float(delta / denominator)
 
 

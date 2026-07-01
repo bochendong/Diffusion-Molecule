@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **ADMET oracle 完成**（`17047446`）；MuMO GraphEdit 2-step official SR **48.3%**（IND **28.1%** / OOD **69.0%**） |
-| **最后更新** | 2026-07-01（oracle build `17047446` + oracle-backed re-eval） |
+| **状态** | **ADMET oracle 完成**（`17047446`）；MuMO GraphEdit 2-step official SR **48.3%**（IND **28.1%** / OOD **69.0%**）；C-MuMO source-oracle fix ready |
+| **最后更新** | 2026-07-02（source oracle collector/evaluator fix；待重跑 sourcefix oracle） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -392,8 +392,9 @@ MuMO 2-step task-level SR（oracle-backed，top-20）：
 1. **2-step + direct proposal 是主线**：aggregate SR **48.3%**；OOD **69%** 接近 GeLLMO 论文量级（~77–89%），IND **28%** 仍偏低。
 2. **2-step vs 1-step**：48.3% vs 3.0%——beam + proposal 在 full oracle 下增益远大于 proxy-only 诊断。
 3. **source-only 仍弱于 full pipeline**（8.1% vs 48.3%），但不再 Sim≈100%/SR=0 的假象。
-4. **C-MuMO SR=0**：maintain/improve 需要 **source-side** property oracle；当前 CSV 主要覆盖 generated SMILES，source 性质回填不完整（eval prop frac **~31%**）→ 待补 source oracle 重评。
-5. **RI(success)** 在部分 task 仍异常偏高，主表报 **SR + Sim(success)**，RI 暂不作为 claim。
+4. **C-MuMO SR=0**：maintain/improve 需要 **source-side** property oracle；`17047446` CSV 主要覆盖 generated SMILES，source 性质回填不完整（eval prop frac **~31%**）。
+5. **2026-07-02 修复**：`collect_external_multiproperty_oracle_smiles.py` 之前每行只收第一个 SMILES，导致有 `generated_smiles` 时跳过 `source_smiles/target_smiles`。现已改为同一行收全列，并让 evaluator 在未传 `source_properties_csv` 时默认复用 generated/source unified oracle CSV。
+6. **RI(success)** 修复：source property 接近 0 时 RI 记为 undefined，避免 `1e-8` denominator 造成虚高。主表仍优先报 **SR + Sim(success)**，RI 作为 supplement。
 
 GeLLMO 参考（Table 2 best generalist）：IND SR **~77%**，OOD SR **~89%**。
 
@@ -417,6 +418,25 @@ GeLLMO 参考（Table 2 best generalist）：IND SR **~77%**，OOD SR **~89%**�
 
 ```bash
 SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV=/path/to/generated_properties.csv \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
+```
+
+source-oracle 修复后推荐重跑（增量补 ADMET；旧 CSV 已覆盖的 SMILES 会跳过）：
+
+```bash
+OLD_ORACLE=SketchMol-Understanding-Condition/outputs/external_oracle_build_v1/generated_properties.csv
+NEW_ORACLE=SketchMol-Understanding-Condition/outputs/external_oracle_build_sourcefix_v1/generated_properties.csv
+SUCC_ORACLE_SLURM_JOB_NAME=succ-ext-oracle-sourcefix \
+SUCC_ORACLE_WORK_DIR=SketchMol-Understanding-Condition/outputs/external_oracle_build_sourcefix_v1 \
+SUCC_ORACLE_OUTPUT_CSV=$NEW_ORACLE \
+SUCC_ORACLE_MERGE_PROPERTIES_CSV=$OLD_ORACLE \
+SUCC_ORACLE_INPUT_CSV=SketchMol-Understanding-Condition/outputs/external_mumo_official_graph_edit_heuristic_2step_v1/benchmark_graph_edit_agent/graph_edit_agent_candidate_predictions.csv,SketchMol-Understanding-Condition/outputs/external_cmumo_official_graph_edit_heuristic_2step_v1/external_multiproperty_rows.csv,SketchMol-Understanding-Condition/outputs/external_cmumo_official_graph_edit_heuristic_2step_v1/benchmark_graph_edit_agent/graph_edit_agent_candidate_predictions.csv \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_generated_oracle_pipeline.sh
+
+SUCC_OFFICIAL_RUN_MUMO=0 \
+SUCC_OFFICIAL_RUN_CMUMO=1 \
+SUCC_EXTERNAL_MULTIPROP_GENERATED_PROPERTIES_CSV=$NEW_ORACLE \
+SUCC_EXTERNAL_MULTIPROP_SOURCE_PROPERTIES_CSV=$NEW_ORACLE \
 bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_official_suite.sh
 ```
 

@@ -148,3 +148,16 @@ def test_cmumo_maintain_objective_allows_small_non_degrading_change(monkeypatch)
     assert detail[0]["external_mean_relative_improvement"] == ""
     assert detail[1]["external_all_property_success"] == "False"
     assert task_summary["success_rate"] == "0.5"
+
+
+def test_relative_improvement_is_undefined_for_near_zero_source():
+    evaluator = load_evaluator()
+
+    assert (
+        evaluator.relative_improvement(
+            source_value=0.0,
+            generated_value=0.5,
+            direction="increase",
+        )
+        is None
+    )

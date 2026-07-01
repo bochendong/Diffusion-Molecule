@@ -362,6 +362,62 @@ def test_external_multiproperty_evaluator_uses_generated_properties_csv(tmp_path
     assert overall["missing_oracle_properties"] == ""
 
 
+def test_external_multiproperty_evaluator_uses_generated_properties_as_source_fallback(tmp_path):
+    predictions_csv = tmp_path / "predictions.csv"
+    generated_props_csv = tmp_path / "generated_props.csv"
+    output_dir = tmp_path / "eval"
+    _write_rows(
+        predictions_csv,
+        [
+            {
+                "condition_id": "external_cmumo_bpq_000000",
+                "source_smiles": "CCO",
+                "generated_smiles": "CCN",
+                "external_suite": "cmumo",
+                "external_task_split": "ind",
+                "external_task_id": "BPQ",
+                "external_task_properties": "bbbp",
+                "external_property_directions_json": json.dumps({"bbbp": "increase"}),
+                "external_property_objectives_json": json.dumps({"bbbp": "maintain"}),
+                "external_property_thresholds_json": json.dumps({"bbbp": 0.1}),
+            }
+        ],
+    )
+    _write_rows(
+        generated_props_csv,
+        [
+            {"smiles": "CCO", "bbbp": "0.8"},
+            {"smiles": "CCN", "bbbp": "0.75"},
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/evaluate_external_multiproperty_predictions.py",
+            "--prediction-csv",
+            str(predictions_csv),
+            "--generated-properties-csv",
+            str(generated_props_csv),
+            "--output-dir",
+            str(output_dir),
+            "--min-source-tanimoto",
+            "0",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    summary_rows = list(csv.DictReader((output_dir / "external_multiproperty_summary.csv").open(newline="", encoding="utf-8")))
+    overall = [row for row in summary_rows if row["external_suite"] == "all"][0]
+    assert overall["success_rate"] == "1"
+    assert overall["success_rate_status"] == "official"
+    assert overall["missing_oracle_properties"] == ""
+
+
 def test_external_oracle_scorer_merges_precomputed_properties(tmp_path):
     predictions_csv = tmp_path / "predictions.csv"
     merge_csv = tmp_path / "precomputed.csv"
@@ -393,6 +449,80 @@ def test_external_oracle_scorer_merges_precomputed_properties(tmp_path):
     assert result.returncode == 0, result.stderr
     row = next(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
     assert row["bbbp"] == "0.77"
+
+
+def test_external_oracle_collector_keeps_all_smiles_columns_per_row(tmp_path):
+    predictions_csv = tmp_path / "predictions.csv"
+    output_csv = tmp_path / "unique_smiles.csv"
+    _write_rows(
+        predictions_csv,
+        [
+            {
+                "generated_smiles": "CCN",
+                "source_smiles": "CCO",
+                "target_smiles": "CCC",
+            }
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/collect_external_multiproperty_oracle_smiles.py",
+            "--input-csv",
+            str(predictions_csv),
+            "--output-csv",
+            str(output_csv),
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    assert [row["smiles"] for row in rows] == ["CCN", "CCO", "CCC"]
+
+
+def test_external_oracle_collector_can_skip_precovered_smiles(tmp_path):
+    predictions_csv = tmp_path / "predictions.csv"
+    covered_csv = tmp_path / "covered.csv"
+    output_csv = tmp_path / "unique_smiles.csv"
+    _write_rows(
+        predictions_csv,
+        [
+            {
+                "generated_smiles": "CCN",
+                "source_smiles": "CCO",
+                "target_smiles": "CCC",
+            }
+        ],
+    )
+    _write_rows(covered_csv, [{"smiles": "CCN", "bbbp": "0.8", "hia": "0.7"}])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/collect_external_multiproperty_oracle_smiles.py",
+            "--input-csv",
+            str(predictions_csv),
+            "--exclude-properties-csv",
+            str(covered_csv),
+            "--required-properties",
+            "bbbp,hia",
+            "--output-csv",
+            str(output_csv),
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    assert [row["smiles"] for row in rows] == ["CCO", "CCC"]
 
 
 def test_external_source_copy_predictions_use_source_smiles(tmp_path):

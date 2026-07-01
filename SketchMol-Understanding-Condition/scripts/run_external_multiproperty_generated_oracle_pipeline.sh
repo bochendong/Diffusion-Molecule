@@ -40,6 +40,7 @@ INPUT_CSV="${SUCC_ORACLE_INPUT_CSV:-}"
 OUTPUT_CSV="${SUCC_ORACLE_OUTPUT_CSV:-$WORK_DIR/generated_properties.csv}"
 SMILES_COLUMNS="${SUCC_ORACLE_SMILES_COLUMNS:-generated_smiles,source_smiles,target_smiles,smiles,SMILES,canonical_smiles}"
 MERGE_CSVS="${SUCC_ORACLE_MERGE_PROPERTIES_CSV:-}"
+ADMET_REQUIRED_PROPERTIES="${SUCC_ORACLE_ADMET_REQUIRED_PROPERTIES:-ampa,bbbp,carc,erg,hia,liver,mutagenicity}"
 BATCH_SIZE="${SUCC_ORACLE_ADMET_BATCH_SIZE:-256}"
 SKIP_ADMET="${SUCC_ORACLE_SKIP_ADMET:-0}"
 
@@ -59,6 +60,7 @@ echo "  work_dir=$WORK_DIR"
 echo "  python_bin=$PYTHON_BIN"
 echo "  admet_python_bin=$ADMET_PYTHON_BIN"
 echo "  merge_properties_csv=${MERGE_CSVS:-none}"
+echo "  admet_required_properties=$ADMET_REQUIRED_PROPERTIES"
 echo "  skip_admet=$SKIP_ADMET"
 
 IFS=',' read -r -a input_paths <<< "$INPUT_CSV"
@@ -70,16 +72,31 @@ for path in "${input_paths[@]}"; do
     collect_args+=(--input-csv "$trimmed")
   fi
 done
+if [[ -n "$MERGE_CSVS" ]]; then
+  IFS=',' read -r -a merge_paths_for_filter <<< "$MERGE_CSVS"
+  for path in "${merge_paths_for_filter[@]}"; do
+    trimmed="${path#"${path%%[![:space:]]*}"}"
+    trimmed="${trimmed%"${trimmed##*[![:space:]]}"}"
+    if [[ -n "$trimmed" ]]; then
+      collect_args+=(--exclude-properties-csv "$trimmed")
+    fi
+  done
+  collect_args+=(--required-properties "$ADMET_REQUIRED_PROPERTIES")
+fi
 
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/collect_external_multiproperty_oracle_smiles.py" \
   "${collect_args[@]}" \
   --smiles-columns "$SMILES_COLUMNS"
 
-if [[ "$SKIP_ADMET" != "1" ]]; then
+unique_smiles_count="$(( $(wc -l < "$UNIQUE_SMILES_CSV") - 1 ))"
+if [[ "$SKIP_ADMET" != "1" && "$unique_smiles_count" -gt 0 ]]; then
   "$ADMET_PYTHON_BIN" "$PROJECT_DIR/scripts/predict_external_multiproperty_admet_ai.py" \
     --input-smiles-csv "$UNIQUE_SMILES_CSV" \
     --output-csv "$ADMET_CSV" \
     --batch-size "$BATCH_SIZE"
+elif [[ "$SKIP_ADMET" != "1" ]]; then
+  echo "all collected SMILES already have required ADMET properties in merge CSVs; skipping ADMET-AI prediction"
+  rm -f "$ADMET_CSV"
 else
   echo "skip ADMET-AI prediction (SUCC_ORACLE_SKIP_ADMET=1)"
 fi
