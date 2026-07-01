@@ -123,21 +123,30 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 
 ## P1: 下一批要接的外部 benchmark
 
-### 5. MuMO / C-MuMO benchmark port ✅ official suite 6/6 完成
+### 5. MuMO / C-MuMO benchmark port ✅ ADMET oracle SR 可报（MuMO）
 
 目的：把我们的方法放到外部论文已经使用的 IND/OOD multi-property benchmark 上。
 
-**Official suite 结果（2026-07-01，无 ADMET CSV → SR 为 lower-bound）**：
+**Proxy-only diagnostic（缺 ADMET 前）**：
 
-| Job | 变体 | top-20 SR | Sim≥0.4 | DPQ SR (official) |
+| Job | 变体 | top-20 SR | Sim≥0.4 | DPQ SR |
 | --- | --- | ---: | ---: | ---: |
-| `16997792` | MuMO GraphEdit 2-step + proposal | **1.35%** | **46%** | **13.5%** |
+| `16997792` | MuMO GraphEdit 2-step + proposal | 1.35% | 46% | 13.5% |
 | `17010445` | MuMO GraphEdit 1-step | 0.95% | 99.9%† | 9.5% |
 | `17010444` | MuMO GraphEdit source-only | 0% | 99.4% | 0% |
-| `17010957` | C-MuMO GraphEdit 2-step | 0% | 99.95% | — |
-| `17010954` | C-MuMO copy sanity | 0% | 100% | — |
 
-† 1-step top-20 候选池 Sim 虚高，selected-1 Sim 仅 **24.8%**。
+† 1-step 候选池 Sim 虚高；selected-1 Sim **24.8%**。
+
+**ADMET oracle-backed（`17047446` + re-eval）**：
+
+| Job | 变体 | SR (all) | IND avg | OOD avg | Sim(success) |
+| --- | --- | ---: | ---: | ---: | ---: |
+| **`16997792`** | **MuMO GraphEdit 2-step** | **48.3%** | **28.1%** | **69.0%** | **0.19** |
+| `17010444` | source-only | 8.1% | — | — | 0.51 |
+| `17010445` | 1-step | 3.0% | — | — | 0.49 |
+| `17010957` | C-MuMO 2-step | 0% | — | — | — |
+
+Oracle CSV：`outputs/external_oracle_build_v1/generated_properties.csv`（39,522 SMILES，ADMET 97.1%）。GeLLMO 参考：IND **~77%**，OOD **~89%**。C-MuMO 待 source-side oracle（maintain/improve）。
 
 **MuMO 对照（direct vs assisted 分开报）**：
 
@@ -153,9 +162,9 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | **GraphEditDSL heuristic 2-step** | assisted | **100%** | **46.7%** | **45.6%** | **0** |
 | agentic rich x2 | assisted | 100% | 46.7% | 42.5% | 0 |
 
-† candidate-level proxy；‡ 旧 selected-prediction 口径。上表旧 SR 均为缺 oracle 的 lower-bound diagnostic，不能作为 external claim。
+† candidate-level proxy；‡ 旧 selected-prediction 口径。上表 SR=0 列为 proxy-only 时代；**oracle-backed MuMO GraphEdit 2-step SR=48.3%** 见上表。
 
-**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；official top-20 Sim **46%** / DPQ SR **13.5%**（proxy-only）。**阻塞项：ADMET-AI generated-property CSV** → 重跑 official suite 才能报 GeLLMO 口径 SR。
+**MuMO 主结果（oracle-backed，`16997792`）**：GraphEdit 2-step top-20 SR **48.3%**（IND **28.1%** / OOD **69.0%**）；Sim(success) **0.19**。下一项：C-MuMO source oracle + RI 修复。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 

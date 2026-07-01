@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | **official suite 6/6 完成**；MuMO GraphEdit 2-step top-20 Sim **46%** / DPQ SR **13.5%**（proxy-only lower-bound）；**待 ADMET CSV** 才能报真实 SR |
-| **最后更新** | 2026-07-01（official suite `16997790`–`17010957`） |
+| **状态** | **ADMET oracle 完成**（`17047446`）；MuMO GraphEdit 2-step official SR **48.3%**（IND **28.1%** / OOD **69.0%**） |
+| **最后更新** | 2026-07-01（oracle build `17047446` + oracle-backed re-eval） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -358,42 +358,44 @@ bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_off
 | `17010954` | C-MuMO | source/target-copy sanity | `external_cmumo_official_copy_sanity_v1/` | **完成** |
 | `17010957` | C-MuMO | GraphEditDSL 2-step top-20 | `external_cmumo_official_graph_edit_heuristic_2step_v1/` | **完成** |
 
-### Official suite 结果汇总（2026-07-01，**无 ADMET oracle CSV**）
+### Official suite 结果汇总
 
-**口径**：candidate-level top-20 `SR` / `Sim≥0.4`；`Status=official` 仅 **DPQ**（IND，drd2+plogp+qed 可本地/TDC 算）。其余 task 缺 BBBP/HIA/mutagenicity 等 → aggregate SR 是 **lower-bound**，不能和 GeLLMO 论文横比。`RI(success)` 在 proxy-only 成功样本上数值异常，暂不报。
+#### Proxy-only（缺 ADMET，lower-bound diagnostic）
 
-#### MuMO GraphEdit ablation（top-20 candidate-level）
+**口径**：candidate-level top-20；无 ADMET CSV 时仅 **DPQ** 可标 `official`；aggregate SR **不可**与 GeLLMO 横比。
 
-| Job | 变体 | SR (all) | Sim≥0.4 (all) | DPQ SR | DPQ Sim≥0.4 |
-| --- | --- | ---: | ---: | ---: | ---: |
-| `16997792` | 2-step + direct proposal | **1.35%** | **46.0%** | **13.5%** | 42.5% |
-| `17010445` | 1-step top-20 | 0.95% | 99.9% | 9.5% | 99.5% |
-| `17010444` | source-only 2-step | 0% | 99.4% | 0% | 97.5% |
+| Job | 变体 | SR (all) | Sim≥0.4 (all) | DPQ SR |
+| --- | --- | ---: | ---: | ---: |
+| `16997792` | 2-step + direct proposal | 1.35% | 46.0% | 13.5% |
+| `17010445` | 1-step top-20 | 0.95% | 99.9% | 9.5% |
+| `17010444` | source-only 2-step | 0% | 99.4% | 0% |
 
-Selected-1 diagnostic（与 flight sweep Sim 口径一致）：
+#### ADMET oracle-backed（`17047446` + re-eval，`generated_properties.csv`）
 
-| Job | SR (all) | Sim≥0.4 (all) | DPQ SR |
-| --- | ---: | ---: | ---: |
-| `16997792` | 0.60% | **45.6%** | 6.0% |
-| `17010445` | 0.65% | 24.8% | 6.5% |
-| `17010444` | 0% | 97.7% | 0% |
+Oracle build：**38,377** unique SMILES → ADMET-AI → **39,522** rows merged；ADMET 覆盖 **97.1%**（1145 SMILES 缺 ADMET，多为 invalid/duplicate edge cases）。Re-eval 输出：`outputs/*/benchmark_with_oracle_v1/`（不纳入 git）。
 
-**Ablation 结论**：
+| Job | 变体 | SR (all) | Sim(success) | IND avg SR | OOD avg SR | Internal strict |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| **`16997792`** | **2-step + proposal** | **48.3%** | **0.19** | **28.1%** | **69.0%** | 8.4% |
+| `17010444` | source-only 2-step | 8.1% | 0.51 | — | — | 7.4% |
+| `17010445` | 1-step top-20 | 3.0% | 0.49 | — | — | 2.2% |
+| `17010957` | C-MuMO 2-step | **0%** | — | — | — | 0% |
 
-1. **2-step beam expansion**：top-20 池在 DPQ 上 SR **13.5% vs 9.5%**（+4pp）；selected-1 Sim **45.6% vs 24.8%**。2-step 用更大搜索换更高 source-edit 质量 + 候选池 property 命中。
-2. **Direct proposal 依赖**：source-only 2-step Sim≈99% 但 **DPQ SR=0**——GraphEditDSL 单独几乎只做 source 保持，不改善性质；需 direct/agentic proposal 作起点。
-3. **1-step 候选池 Sim 虚高**：top-20 层 Sim≥0.4≈100%，但 selected-1 仅 24.8%——说明 1-step 生了很多近 source 候选，rerank/selected 路径与 top-20 oracle 口径不一致。
+MuMO 2-step task-level SR（oracle-backed，top-20）：
 
-#### C-MuMO（`17010954` / `17010957`）
+| Split | BDP | BDPQ | BDQ | BPQ | DPQ | BDMQ | BHMQ | BMPQ | HMPQ | MPQ |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SR | 5.5% | 13.5% | 20% | **88%** | 13.5% | 12.5% | 57% | 89.5% | 94.3% | 91.5% |
 
-| Job | 线 | Sim≥0.4 (all) | SR (all) |
-| --- | --- | ---: | ---: |
-| `17010954` | copy sanity | 100% | 0 |
-| `17010957` | GraphEdit 2-step top-20 | 99.95% | 0 |
+**结论（oracle-backed）**：
 
-C-MuMO plumbing OK（copy Sim=100%）；GraphEdit 候选池 Sim 极高但 **SR=0**——缺 ampa/bbbp/carc/erg/hia/liver/mutagenicity oracle（eval prop frac **42%**）。需 ADMET-AI CSV + 重跑。
+1. **2-step + direct proposal 是主线**：aggregate SR **48.3%**；OOD **69%** 接近 GeLLMO 论文量级（~77–89%），IND **28%** 仍偏低。
+2. **2-step vs 1-step**：48.3% vs 3.0%——beam + proposal 在 full oracle 下增益远大于 proxy-only 诊断。
+3. **source-only 仍弱于 full pipeline**（8.1% vs 48.3%），但不再 Sim≈100%/SR=0 的假象。
+4. **C-MuMO SR=0**：maintain/improve 需要 **source-side** property oracle；当前 CSV 主要覆盖 generated SMILES，source 性质回填不完整（eval prop frac **~31%**）→ 待补 source oracle 重评。
+5. **RI(success)** 在部分 task 仍异常偏高，主表报 **SR + Sim(success)**，RI 暂不作为 claim。
 
-**下一步（阻塞真实 SR）**：`17047446` ADMET-AI oracle build 运行中 → 完成后用 `generated_properties.csv` 重跑 official suite。
+GeLLMO 参考（Table 2 best generalist）：IND SR **~77%**，OOD SR **~89%**。
 
 默认提交 4 条：
 
