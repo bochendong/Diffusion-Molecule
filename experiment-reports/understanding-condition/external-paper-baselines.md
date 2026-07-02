@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | initial baseline extraction |
-| **最后更新** | 2026-06-29 |
+| **最后更新** | 2026-07-02 |
 | **用途** | 把我们的 Table1 / MuMO / C-MuMO 结果放到外部论文口径下，而不是只和自己历史版本比较 |
 
 ## 为什么要单独建这张表
@@ -104,8 +104,8 @@ python SketchMol-Understanding-Condition/scripts/summarize_external_multipropert
 
 | 设置 | 外部 best / target | 我们当前状态 |
 | --- | ---: | --- |
-| IND average `SR` | 约 **74.8%**（best generalist row from main table） | evaluator 已支持；未跑 C-MuMO official oracle |
-| OOD average `SR` | 约 **63.0%**（best generalist row from main table） | evaluator 已支持；未跑 C-MuMO official oracle |
+| IND average `SR` | 约 **74.8%**（best generalist row from main table） | **1.7%**（GraphEdit 2-step + dedicated oracle，`17081085`） |
+| OOD average `SR` | 约 **63.0%**（best generalist row from main table） | **1.1%**（同上） |
 | Strict setting | paper appendix reports stricter success criteria | 未实现同口径 |
 | candidate budget | **20** per input | 我们需要用 n=20 direct + assisted 分表 |
 

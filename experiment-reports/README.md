@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO SR 48.3%**；IND-hard **DPQ +4.5pp**；C-MuMO Sim≈100% 但 SR 待 dedicated oracle |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO SR 48.3%**；**C-MuMO SR 1.4%**；IND-hard **DPQ +4.5pp** |
 | `understanding-condition/` | [external-paper-baselines.md](understanding-condition/external-paper-baselines.md) | **新增** 外部论文 baseline 数值目标（MolEditRL / GeLLM3O / GeLLMO-C / C-MORAL） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
@@ -262,13 +262,21 @@ Official suite **6/6 完成** + oracle build **`17047446` 完成**。MuMO GraphE
 | `17052465` | `succ-mumo-indhard-oracle` | 完成 | 同上 |
 | `17052466`–`17052468` | IND-hard re-eval ×3 | 完成 | 同上 |
 
-Parallel followup **全链完成**。IND-hard balanced：**DPQ 18.0%**（+4.5pp vs full suite）；aggregate SR **12.4%**（4 tasks）。C-MuMO GraphEdit Sim≥0.4 **99.95%**，但 official SR **0**（source oracle 仅覆盖 **7/1776** C-MuMO source SMILES）。
+Parallel followup **全链完成**。IND-hard balanced：**DPQ 18.0%**（+4.5pp vs full suite）；aggregate SR **12.4%**（4 tasks）。C-MuMO source oracle 覆盖 bug 已定位（7/1776）。
 
-一键提交：
+## 近期 Slurm Job 一览（2026-07-02 C-MuMO dedicated oracle）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `17081083` | `succ-cmumo-oracle-v1` | 完成（~19m） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `17081084` | `succ-cmumo-official-copy` | 完成 | 同上 |
+| `17081085` | `succ-cmumo-official-graph` | 完成（~6h） | 同上 |
+
+C-MuMO dedicated oracle：**source_smiles 1776/1776** 覆盖。GraphEdit 2-step official SR **1.4%**（IND **1.7%** / OOD **1.1%**）；Sim≥0.4 **99.95%**。相对 GeLLMO-C（IND ~75% / OOD ~63%）差距巨大；瓶颈在 maintain/improve 多性质满足，不在 Sim。
 
 ```bash
 git pull --ff-only
-bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_parallel_followup.sh
+bash SketchMol-Understanding-Condition/scripts/submit_external_cmumo_dedicated_oracle_fix.sh
 ```
 
 | Job ID | 名称 | 状态 | 报告 |

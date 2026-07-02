@@ -376,7 +376,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_par
 | --- | --- |
 | MuMO full suite | SR **48.3%**（不变，oracle v1） |
 | MuMO IND-hard balanced | **DPQ 18.0%**（+4.5pp）；4-task aggregate **12.4%** |
-| C-MuMO GraphEdit 2-step | Sim≥0.4 **99.95%**；SR **0**（source oracle 覆盖 **7/1776**） |
+| C-MuMO GraphEdit 2-step | **SR 1.4%**（IND **1.7%** / OOD **1.1%**）；Sim≥0.4 **99.95%**（`17081085` + dedicated oracle） |
 
 下一步：单独建 C-MuMO oracle（`external_oracle_build_cmumo_v1`），`BUILD_ORACLE_CSV=0` 重评 C-MuMO official SR。
 
@@ -437,4 +437,4 @@ export SUCC_ADMET_PYTHON_BIN=$HOME/.venvs/admet_ai/bin/python
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ MuMO official SR **48.3%**（OOD **69%** 接近论文量级）；IND-hard **DPQ +4.5pp**；C-MuMO Sim≈100% 但 SR 待 dedicated source oracle。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ MuMO official SR **48.3%**（OOD **69%** 接近论文量级）；C-MuMO official SR **1.4%**（距 GeLLMO-C ~75%/63% 仍远）；IND-hard **DPQ +4.5pp**。

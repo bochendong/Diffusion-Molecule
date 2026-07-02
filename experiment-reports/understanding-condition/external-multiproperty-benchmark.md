@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | MuMO GraphEdit 2-step official SR **48.3%**（IND **28.1%** / OOD **69.0%**）；IND-hard sweep **DPQ +4.5pp**；C-MuMO GraphEdit 完成但 **official SR 仍不可报**（source oracle 覆盖 **7/1776**） |
-| **最后更新** | 2026-07-02（parallel followup `0574bcf` 全链完成；jobs `17050708`–`17052468`） |
+| **状态** | MuMO GraphEdit 2-step SR **48.3%**（IND **28.1%** / OOD **69.0%**）；C-MuMO GraphEdit 2-step SR **1.4%**（IND **1.7%** / OOD **1.1%**）；IND-hard **DPQ +4.5pp** |
+| **最后更新** | 2026-07-02（C-MuMO dedicated oracle `b769919` jobs `17081083`–`17081085`；aligned eval `1ba9237`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -380,6 +380,7 @@ Oracle build：**38,377** unique SMILES → ADMET-AI → **39,522** rows merged�
 | `17010444` | source-only 2-step | 8.1% | 0.51 | — | — | 7.4% |
 | `17010445` | 1-step top-20 | 3.0% | 0.49 | — | — | 2.2% |
 | `17010957` | C-MuMO 2-step | **0%** | — | — | — | 0% |
+| **`17081085`** | **C-MuMO 2-step + dedicated oracle** | **1.4%** | **0.63** | **1.7%** | **1.1%** | **1.3%** |
 
 MuMO 2-step task-level SR（oracle-backed，top-20）：
 
@@ -468,6 +469,91 @@ C-MuMO GraphEdit 2-step（`17050922`/`17052461`，candidate-level top-20）：
 3. BDP/BDPQ/BDMQ 在 dedicated sweep 下 **未超过** full-suite 基线——MuMO IND 短板仍在多性质联合满足，而非单纯 search budget。
 
 Re-eval 产物：`outputs/external_mumo_indhard_graph_edit_*/benchmark_with_indhard_oracle_v1/`（不进 git）。
+
+## C-MuMO dedicated oracle + official SR（`b769919`，jobs `17081083`–`17081085`）
+
+入口：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_cmumo_dedicated_oracle_fix.sh
+```
+
+| Job | 名称 | 耗时 | 状态 |
+| --- | --- | --- | --- |
+| `17081083` | `succ-cmumo-oracle-v1` | ~19m | **完成** |
+| `17081084` | `succ-cmumo-official-copy` | ~1m | **完成** |
+| `17081085` | `succ-cmumo-official-graph` | ~6h | **完成** |
+
+Dedicated oracle：`outputs/external_oracle_build_cmumo_v1/generated_properties.csv`（**38,247** SMILES，ADMET **100%**）。`oracle_coverage_audit.md` 确认 **source_smiles 1776/1776**、generated 候选 **100%** 覆盖（修复前仅 **7/1776**）。
+
+### Copy sanity（oracle 上界）
+
+| 变体 | SR (all) | Eval prop frac | Status |
+| --- | ---: | ---: | --- |
+| Source-copy | **0.05%** | **100%** | official |
+| Target-copy | **0.05%** | **100%** | official |
+
+复制 source/target 几乎不可能满足 C-MuMO 的 improve+maintain 目标；说明 **oracle 链路已正常**，低 SR 来自编辑能力而非评测 bug。
+
+### GraphEdit 2-step official SR（candidate-level top-20）
+
+输出：`external_cmumo_official_graph_edit_heuristic_2step_cmumo_oracle_v1/`  
+Re-eval：`benchmark_with_cmumo_oracle_v1/`（GraphEdit job 未自动写 report，本地补跑 re-eval）
+
+| 指标 | 值 |
+| --- | ---: |
+| **SR (all)** | **1.4%** |
+| **IND avg SR** | **1.7%** |
+| **OOD avg SR** | **1.1%** |
+| Sim(success) | **0.63** |
+| Sim≥0.4（diagnostic） | **99.95%** |
+| Internal strict | **1.3%** |
+| Valid | **100%** |
+| mean_source_tanimoto | **0.73** |
+
+C-MuMO task-level SR（oracle-backed，top-20）：
+
+| Split | Task | SR | Sim(success) |
+| --- | --- | ---: | ---: |
+| ind | ACEP | 2.0% | 0.84 |
+| ind | **BPQ** | **5.0%** | 0.52 |
+| ind | ELQ | 1.0% | 0.61 |
+| ind | DHMQ | 0.5% | 0.55 |
+| ind | BDPQ | 0% | — |
+| ood | **ABMP** | **4.0%** | 0.69 |
+| ood | BCMQ | 1.0% | 0.62 |
+| ood | HLMPQ | 0.5% | 0.45 |
+| ood | BDEQ | 0% | — |
+| ood | CDE | 0% | — |
+
+**结论（C-MuMO official SR）**：
+
+1. **首次可 claim official SR**：aggregate **1.4%**；eval prop frac **100%**。
+2. **Sim 不是瓶颈**（99.95% diagnostic），**maintain/improve 多性质联合满足** 才是主因；与 MuMO **48.3%** 差距巨大。
+3. 相对 GeLLMO-C 论文 best generalist（IND **~74.8%** / OOD **~63.0%**），当前 heuristic GraphEditDSL **远未达标**。
+4. 下一步：C-MuMO 专用 planner（property-specific maintain/improve objective）、或接 GeLLMO-C 风格 LLM + 我们的 evaluator 横比。
+
+## Aligned MuMO evaluation diagnostics（`1ba9237`）
+
+新增评测对齐层（**不改模型**）：任意 candidate CSV 可用同一套 official evaluator 重评，输出 aligned comparison 表 + failure breakdown，便于 GeLLMO official 跑完后并排比较。
+
+```bash
+SUCC_EXTERNAL_ALIGNED_LABEL=ours_graph_edit \
+SUCC_EXTERNAL_ALIGNED_PREDICTION_CSV=SketchMol-Understanding-Condition/outputs/external_mumo_official_graph_edit_heuristic_2step_v1/benchmark_graph_edit_agent/graph_edit_agent_candidate_predictions.csv \
+SUCC_EXTERNAL_ALIGNED_GENERATED_PROPERTIES_CSV=SketchMol-Understanding-Condition/outputs/external_oracle_build_v1/generated_properties.csv \
+SUCC_EXTERNAL_ALIGNED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/external_aligned_ours_graph_edit_v1 \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_aligned_eval.sh
+```
+
+GeLLMO postprocess 完成后合并：
+
+```bash
+python SketchMol-Understanding-Condition/scripts/summarize_external_multiproperty_aligned_runs.py \
+  --run ours=.../external_aligned_ours_graph_edit_v1/eval_ours_graph_edit \
+  --run gellmo=.../external_gellmo_official_mumo_v1/eval_official_oracle \
+  --output-dir SketchMol-Understanding-Condition/outputs/external_aligned_ours_vs_gellmo_v1
+```
 
 ### MuMO method repair：ADMET-prior GraphEditDSL（待跑）
 
@@ -774,10 +860,11 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 10. ~~**policy GraphEditDSL v2**~~ → **`16892025` 完成**；yield **2046/row**（↑ vs 89）；Sim@0.4 **19.7%**（↓ vs heuristic **26.2%**）；rich v2 仍 best **32.3%**。
 11. ~~**one-shot official SR 重跑**~~ → **`16894722` 完成**；candidate-level SR **0**（无 oracle）；Sim diagnostic **0.05%**；direct 无 source-edit。
 12. ~~**flight sweep**~~ → **6/6 完成**；**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；rich x2 **42.5%**（+10.2pp vs rich v2）；direct 训练线仍 Sim≈0。
-13. ~~**parallel followup**~~ → **完成**（`17050708`–`17052468`）：IND-hard balanced **DPQ +4.5pp**；C-MuMO GraphEdit Sim≈100% 但 SR 仍不可报。
-14. **C-MuMO dedicated oracle**（入口：`submit_external_cmumo_dedicated_oracle_fix.sh`；输出 `external_oracle_build_cmumo_v1`，覆盖 source_smiles + 候选）；`BUILD_ORACLE_CSV=0` + `FORCE_EXPORT=1` 重评 official SR。
-15. **MuMO method repair**：`admet_prior_graph_dsl`（入口 `submit_external_mumo_admet_prior_repair.sh`），先看 full MuMO overall/IND 是否超过 48.3%/28.1%，再看 IND-hard BDP/BDPQ/BDMQ 是否抬升。
-16. GraphEditDSL similarity/property 平衡或 LLM planner；IND-hard 上继续调 BDP/BDPQ/BDMQ。
+13. ~~**parallel followup**~~ → **完成**（`17050708`–`17052468`）：IND-hard balanced **DPQ +4.5pp**；C-MuMO source oracle 覆盖 bug 已定位。
+14. ~~**C-MuMO dedicated oracle**~~ → **完成**（`17081083`–`17081085`）：official SR **1.4%**（IND **1.7%** / OOD **1.1%**）；Sim≥0.4 **99.95%**。
+15. **MuMO method repair**：`admet_prior_graph_dsl`（`17081457`–`17081459` 运行中）；目标超过 MuMO **48.3%** / IND **28.1%**。
+16. **GeLLMO official baseline**（`17081866`–`17081876` pending GPU）；完成后用 aligned eval 与 ours 并排。
+17. C-MuMO 专用 maintain/improve planner；GraphEditDSL similarity/property 平衡或 LLM planner。
 
 ## 外部来源
 
