@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO oracle SR 48.3%**（GraphEdit 2-step；IND 28% / OOD 69%）；C-MuMO 待 source oracle |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO SR 48.3%**；IND-hard **DPQ +4.5pp**；C-MuMO Sim≈100% 但 SR 待 dedicated oracle |
 | `understanding-condition/` | [external-paper-baselines.md](understanding-condition/external-paper-baselines.md) | **新增** 外部论文 baseline 数值目标（MolEditRL / GeLLM3O / GeLLMO-C / C-MORAL） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
@@ -249,7 +249,27 @@ policy GraphEditDSL v2：yield **2046/row**（↑ vs heuristic 89）；Sim@0.4 *
 
 Official suite **6/6 完成** + oracle build **`17047446` 完成**。MuMO GraphEdit 2-step oracle SR **48.3%**（IND **28.1%** / OOD **69.0%**）；C-MuMO 待 source-side oracle。
 
-## 近期 Slurm Job 一览（2026-06-29 MuMO flight sweep）
+## 近期 Slurm Job 一览（2026-07-02 external parallel followup）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `17050708` / `17052459` | `succ-ext-oracle-sourcefix` | 完成 | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `17050919` / `17052460` | `succ-cmumo-official-copy` | 完成 | 同上 |
+| `17050922` / `17052461` | `succ-cmumo-official-graph` | 完成（~6.5h） | 同上 |
+| `17052462` | `succ-mumo-indhard-balanced` | 完成（~6h） | 同上 |
+| `17052463` | `succ-mumo-indhard-property` | 完成（~5h） | 同上 |
+| `17052464` | `succ-mumo-indhard-wide` | 完成（~7h） | 同上 |
+| `17052465` | `succ-mumo-indhard-oracle` | 完成 | 同上 |
+| `17052466`–`17052468` | IND-hard re-eval ×3 | 完成 | 同上 |
+
+Parallel followup **全链完成**。IND-hard balanced：**DPQ 18.0%**（+4.5pp vs full suite）；aggregate SR **12.4%**（4 tasks）。C-MuMO GraphEdit Sim≥0.4 **99.95%**，但 official SR **0**（source oracle 仅覆盖 **7/1776** C-MuMO source SMILES）。
+
+一键提交：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_parallel_followup.sh
+```
 
 | Job ID | 名称 | 状态 | 报告 |
 | --- | --- | --- | --- |

@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | active planning |
-| **最后更新** | 2026-06-29 |
+| **最后更新** | 2026-07-02 |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **目标** | 把当前结果整理成可投顶会的 benchmark 结构，并提供可直接提交到服务器的命令 |
 
@@ -370,6 +370,16 @@ bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_par
 
 它会把外部 benchmark 接成两个 Slurm DAG：`sourcefix oracle -> C-MuMO official rerun`，以及 `MuMO IND-hard GraphEdit sweeps -> hard-candidate oracle -> hard-task re-eval`。所以不是纯等待；只有 C-MuMO SR 必须等 sourcefix oracle，MuMO hard-task 修复可以同步跑。
 
+**2026-07-02 结果（jobs `17050708`–`17052468`，全链完成）**：
+
+| 线 | 关键结果 |
+| --- | --- |
+| MuMO full suite | SR **48.3%**（不变，oracle v1） |
+| MuMO IND-hard balanced | **DPQ 18.0%**（+4.5pp）；4-task aggregate **12.4%** |
+| C-MuMO GraphEdit 2-step | Sim≥0.4 **99.95%**；SR **0**（source oracle 覆盖 **7/1776**） |
+
+下一步：单独建 C-MuMO oracle（`external_oracle_build_cmumo_v1`），`BUILD_ORACLE_CSV=0` 重评 C-MuMO official SR。
+
 Slurm 提交：
 
 ```bash
@@ -427,4 +437,4 @@ export SUCC_ADMET_PYTHON_BIN=$HOME/.venvs/admet_ai/bin/python
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？→ 公平版 mean Acc@0.65 **28.6%**；需与 attack 线并排。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ **heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；rich x2 **42.5%**；direct 训练线仍 Sim≈0；official SR 待 oracle CSV。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ MuMO official SR **48.3%**（OOD **69%** 接近论文量级）；IND-hard **DPQ +4.5pp**；C-MuMO Sim≈100% 但 SR 待 dedicated source oracle。
