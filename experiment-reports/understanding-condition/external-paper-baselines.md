@@ -43,6 +43,31 @@
 
 目标：MuMO 主文表不能报 proxy/Sim 代替 SR。下一步必须补 ADMET/TDC generated-property oracle CSV，并重跑 direct/group-RL，得到 official-style SR / Sim / RI。
 
+#### Official GeLLMO reproduction wrapper
+
+2026-07-02 新增官方复现入口，用于把 **reported GeLLM3O numbers** 升级为 **same-pipeline reproduced baseline**：
+
+- 官方 repo：`https://github.com/ninglab/GeLLMO`
+- 官方数据/model：`NingLab/MuMOInstruct`，默认 LoRA `NingLab/GeLLMO-P6-Mistral`
+- 官方推理口径：`num_return_sequences=20`，按 `task + instr_setting(seen/unseen)` 过滤
+- 我们新增转换器：`convert_external_gellmo_responses.py`，把官方 `<SMILES>...</SMILES>` JSON response 转成 SUCC candidate-level evaluator CSV
+- 一键入口：`submit_external_gellmo_official_suite.sh`，DAG 为 `10 task inference jobs -> merge -> generated-property oracle -> official evaluator`
+
+服务器命令：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_external_gellmo_official_suite.sh
+```
+
+若只想先 smoke test 一个任务：
+
+```bash
+SUCC_GELLMO_TASK=bbbp+drd2+qed \
+SUCC_GELLMO_SETTING=seen \
+bash SketchMol-Understanding-Condition/scripts/submit_external_gellmo_official_task.sh
+```
+
 ### GeLLMO-C / C-MuMOInstruct
 
 来源：GeLLMO-C 论文与官方 repo。C-MuMO 是 property-specific objective benchmark，要求改善 sub-optimal properties，同时保持 near-optimal properties。

@@ -51,6 +51,11 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_cmumo_dedicated_oracle_fix.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_cmumo_dedicated_oracle_fix.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_admet_prior_repair.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/convert_external_gellmo_responses.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_external_gellmo_official_task.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_external_gellmo_official_postprocess.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_external_gellmo_official_task.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_external_gellmo_official_suite.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
@@ -335,6 +340,23 @@ def test_external_multiproperty_exporter_accepts_alternate_source_smiles_and_ign
     assert row["source_smiles"] == "CCO"
     assert row["target_smiles"] == "CCO"
     assert row["external_target_placeholder"] == "True"
+
+
+def test_gellmo_response_converter_extracts_tagged_smiles(monkeypatch):
+    module = _load_gellmo_converter_module()
+    monkeypatch.setattr(module, "canonical_smiles", lambda value: {"CCO": "CCO", "OCC": "CCO", "CCN": "CCN"}.get(str(value)))
+
+    candidates = module.extract_candidate_smiles(
+        {
+            "response": [
+                "%%% Response: <SMILES> CCO </SMILES>",
+                "%%% Response: <SMILES> OCC </SMILES> and <SMILES> CCN </SMILES>",
+            ]
+        },
+        model_id="mistral",
+    )
+
+    assert candidates == ["CCO", "CCN"]
 
 
 def test_external_multiproperty_evaluator_uses_generated_properties_csv(tmp_path):
@@ -1544,6 +1566,17 @@ def _load_preference_builder_module():
 def _load_external_exporter_module():
     path = Path("SketchMol-Understanding-Condition/scripts/export_external_multiproperty_benchmark_rows.py")
     spec = importlib.util.spec_from_file_location("export_external_multiproperty_benchmark_rows", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_gellmo_converter_module():
+    path = Path("SketchMol-Understanding-Condition/scripts/convert_external_gellmo_responses.py")
+    spec = importlib.util.spec_from_file_location("convert_external_gellmo_responses", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
