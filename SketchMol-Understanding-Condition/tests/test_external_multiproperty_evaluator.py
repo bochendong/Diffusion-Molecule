@@ -1,4 +1,7 @@
 import importlib.util
+import csv
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -199,3 +202,147 @@ def test_relative_improvement_is_undefined_for_near_zero_source():
         )
         is None
     )
+
+
+def test_aligned_report_builder_emits_failure_breakdown(tmp_path):
+    eval_dir = tmp_path / "ours_eval"
+    report_dir = tmp_path / "aligned"
+    eval_dir.mkdir()
+    _write_rows(
+        eval_dir / "external_multiproperty_summary.csv",
+        [
+            {
+                "external_suite": "mumo",
+                "external_task_split": "ind",
+                "external_task_id": "Q",
+                "input_groups": "4",
+                "candidate_rows": "4",
+                "validity": "0.75",
+                "source_available_rate": "1",
+                "success_rate": "0.25",
+                "similarity": "0.2",
+                "relative_improvement": "1.0",
+                "source_similarity_success_rate": "0.5",
+                "all_property_success_rate": "0.25",
+                "strict_success_rate": "0",
+                "official_evaluable_rate": "0.75",
+                "mean_evaluated_property_fraction": "0.75",
+                "missing_oracle_properties": "",
+                "success_rate_status": "official",
+            },
+            {
+                "external_suite": "all",
+                "external_task_split": "all",
+                "external_task_id": "all",
+                "input_groups": "4",
+                "candidate_rows": "4",
+                "validity": "0.75",
+                "source_available_rate": "1",
+                "success_rate": "0.25",
+                "similarity": "0.2",
+                "relative_improvement": "1.0",
+                "source_similarity_success_rate": "0.5",
+                "all_property_success_rate": "0.25",
+                "strict_success_rate": "0",
+                "official_evaluable_rate": "0.75",
+                "mean_evaluated_property_fraction": "0.75",
+                "missing_oracle_properties": "",
+                "success_rate_status": "official",
+            },
+        ],
+    )
+    _write_rows(
+        eval_dir / "external_multiproperty_detail.csv",
+        [
+            {
+                "condition_id": "a",
+                "external_suite": "mumo",
+                "external_task_split": "ind",
+                "external_task_id": "Q",
+                "external_valid": "True",
+                "external_full_property_coverage": "True",
+                "external_all_property_success": "True",
+                "external_source_similarity_success": "False",
+                "external_official_success": "True",
+                "external_strict_success": "False",
+            },
+            {
+                "condition_id": "b",
+                "external_suite": "mumo",
+                "external_task_split": "ind",
+                "external_task_id": "Q",
+                "external_valid": "False",
+                "external_full_property_coverage": "False",
+                "external_all_property_success": "False",
+                "external_source_similarity_success": "False",
+                "external_official_success": "False",
+                "external_strict_success": "False",
+            },
+            {
+                "condition_id": "c",
+                "external_suite": "mumo",
+                "external_task_split": "ind",
+                "external_task_id": "Q",
+                "external_valid": "True",
+                "external_full_property_coverage": "False",
+                "external_all_property_success": "False",
+                "external_source_similarity_success": "True",
+                "external_official_success": "False",
+                "external_strict_success": "False",
+            },
+            {
+                "condition_id": "d",
+                "external_suite": "mumo",
+                "external_task_split": "ind",
+                "external_task_id": "Q",
+                "external_valid": "True",
+                "external_full_property_coverage": "True",
+                "external_all_property_success": "False",
+                "external_source_similarity_success": "True",
+                "external_official_success": "False",
+                "external_strict_success": "False",
+            },
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/summarize_external_multiproperty_aligned_runs.py",
+            "--run",
+            f"ours={eval_dir}",
+            "--output-dir",
+            str(report_dir),
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    comparison_rows = list(
+        csv.DictReader((report_dir / "external_multiproperty_aligned_comparison.csv").open(newline="", encoding="utf-8"))
+    )
+    failure_rows = list(
+        csv.DictReader((report_dir / "external_multiproperty_failure_breakdown.csv").open(newline="", encoding="utf-8"))
+    )
+    overall = next(row for row in comparison_rows if row["external_suite"] == "all")
+    failure_overall = next(row for row in failure_rows if row["external_suite"] == "all")
+
+    assert overall["run_label"] == "ours"
+    assert overall["SR"] == "0.25"
+    assert failure_overall["official_success_groups"] == "1"
+    assert failure_overall["official_success_similarity_failed_groups"] == "1"
+    assert failure_overall["invalid_groups"] == "1"
+    assert failure_overall["missing_oracle_groups"] == "1"
+    assert failure_overall["similarity_pass_property_failed_groups"] == "1"
+
+
+def _write_rows(path: Path, rows: list[dict[str, str]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames = list(rows[0]) if rows else []
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(rows)

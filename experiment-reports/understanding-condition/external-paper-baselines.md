@@ -68,6 +68,36 @@ SUCC_GELLMO_SETTING=seen \
 bash SketchMol-Understanding-Condition/scripts/submit_external_gellmo_official_task.sh
 ```
 
+#### Our aligned diagnostic while GeLLMO is running
+
+2026-07-02 新增 aligned eval/diagnostic 薄层。目的不是改模型，而是让 **ours** 和 **GeLLMO official** 都落到同一张表：
+
+- 输入：任意 candidate-level prediction CSV（ours 或 GeLLMO converted CSV）
+- 评测：复用同一个 `evaluate_external_multiproperty_predictions.py`
+- 输出：
+  - `external_multiproperty_aligned_comparison.csv`：SR / Sim(success) / RI(success) / Sim>=0.4 / strict
+  - `external_multiproperty_failure_breakdown.csv`：invalid、missing oracle、property fail、similarity fail 等分桶
+  - `external_multiproperty_aligned_report.md`：可直接发给老师的 Markdown 表
+
+先单独对齐我们的某个 run：
+
+```bash
+SUCC_EXTERNAL_ALIGNED_LABEL=ours_graph_edit \
+SUCC_EXTERNAL_ALIGNED_PREDICTION_CSV=SketchMol-Understanding-Condition/outputs/external_mumo_official_graph_edit_heuristic_2step_v1/benchmark_graph_edit_agent/graph_edit_agent_candidate_predictions.csv \
+SUCC_EXTERNAL_ALIGNED_GENERATED_PROPERTIES_CSV=SketchMol-Understanding-Condition/outputs/external_oracle_build_v1/generated_properties.csv \
+SUCC_EXTERNAL_ALIGNED_OUTPUT_DIR=SketchMol-Understanding-Condition/outputs/external_aligned_ours_graph_edit_v1 \
+bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_aligned_eval.sh
+```
+
+等 GeLLMO official postprocess 出来后，把两个 eval dir 合并成同一张表：
+
+```bash
+python SketchMol-Understanding-Condition/scripts/summarize_external_multiproperty_aligned_runs.py \
+  --run ours=SketchMol-Understanding-Condition/outputs/external_aligned_ours_graph_edit_v1/eval_ours_graph_edit \
+  --run gellmo=SketchMol-Understanding-Condition/outputs/external_gellmo_official_mumo_v1/eval_official_oracle \
+  --output-dir SketchMol-Understanding-Condition/outputs/external_aligned_ours_vs_gellmo_v1
+```
+
 ### GeLLMO-C / C-MuMOInstruct
 
 来源：GeLLMO-C 论文与官方 repo。C-MuMO 是 property-specific objective benchmark，要求改善 sub-optimal properties，同时保持 near-optimal properties。
