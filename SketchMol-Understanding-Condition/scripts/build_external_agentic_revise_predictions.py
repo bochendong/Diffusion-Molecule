@@ -250,7 +250,7 @@ def score_candidate(row: Mapping[str, str], candidate: Candidate, *, args: argpa
     source = str(row.get("source_smiles", "") or "").strip()
     source_canonical = safe_canonical(source)
     tanimoto = safe_tanimoto(source_canonical or source, canonical) if source else math.nan
-    sim_success = bool(math.isnan(tanimoto) or tanimoto >= float(args.min_source_tanimoto))
+    sim_success = bool(math.isfinite(tanimoto) and tanimoto >= float(args.min_source_tanimoto))
     components = local_property_components(row, canonical)
     score = (
         float(args.property_weight) * components["success_fraction"]

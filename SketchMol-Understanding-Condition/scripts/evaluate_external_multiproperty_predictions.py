@@ -146,8 +146,10 @@ def evaluate_row(
     generated = str(row.get(smiles_column, "") or "").strip()
     source = str(row.get(source_smiles_column, "") or "").strip()
     canonical = safe_canonical(generated)
+    source_canonical = safe_canonical(source) if source else ""
     valid = bool(canonical)
-    tanimoto = safe_tanimoto(source, canonical) if valid and source else math.nan
+    source_available = bool(source_canonical)
+    tanimoto = safe_tanimoto(source_canonical, canonical) if valid and source_available else math.nan
     task_props = parse_list(row.get("external_task_properties") or row.get("condition_properties"))
     directions = parse_json_dict(row.get("external_property_directions_json"), DEFAULT_DIRECTION)
     thresholds = parse_json_dict(row.get("external_property_thresholds_json"), DEFAULT_THRESHOLDS)
@@ -197,11 +199,13 @@ def evaluate_row(
     full_property_coverage = bool(task_props) and not missing_props
     all_property_success = bool(evaluated) and all(evaluated) and full_property_coverage
     official_success = bool(valid) and all_property_success
-    source_similarity_success = bool(valid) and (math.isnan(tanimoto) or tanimoto >= min_source_tanimoto)
+    source_similarity_success = bool(valid) and math.isfinite(tanimoto) and tanimoto >= min_source_tanimoto
     strict_success = bool(valid) and source_similarity_success and all_property_success
     return {
         **dict(row),
         "external_generated_canonical_smiles": canonical,
+        "external_source_canonical_smiles": source_canonical,
+        "external_source_available": "True" if source_available else "False",
         "external_valid": "True" if valid else "False",
         "external_source_tanimoto": "" if math.isnan(tanimoto) else format_float(tanimoto, digits=6),
         "external_source_similarity_success": "True" if source_similarity_success else "False",
@@ -340,6 +344,7 @@ def group_candidate_rows(
 
 def summarize_input_group(items: list[dict[str, object]]) -> dict[str, object]:
     valid_any = any(truthy(item.get("external_valid")) for item in items)
+    source_available_any = any(truthy(item.get("external_source_available")) for item in items)
     sim_any = any(truthy(item.get("external_source_similarity_success")) for item in items)
     prop_any = any(truthy(item.get("external_all_property_success")) for item in items)
     strict_any = any(truthy(item.get("external_strict_success")) for item in items)
@@ -351,6 +356,7 @@ def summarize_input_group(items: list[dict[str, object]]) -> dict[str, object]:
     return {
         "candidate_rows": len(items),
         "valid": valid_any,
+        "source_available": source_available_any,
         "source_similarity_success": sim_any,
         "all_property_success": prop_any,
         "strict_success": strict_any,
@@ -410,6 +416,7 @@ def make_summary_row(
         "input_groups": input_count,
         "candidate_rows": len(candidate_rows),
         "validity": format_float(mean_group_bool(group_summaries, "valid"), digits=6),
+        "source_available_rate": format_float(mean_group_bool(group_summaries, "source_available"), digits=6),
         "success_rate": format_float(mean_group_bool(group_summaries, "official_success"), digits=6),
         "similarity": format_mean(success_similarities, digits=6),
         "relative_improvement": format_mean(success_ris, digits=6),
@@ -444,13 +451,13 @@ def render_report(
         f"- min_source_tanimoto: `{args.min_source_tanimoto}`",
         f"- rows: `{len(detail_rows)}`",
         "",
-        "| Suite | Split | Task | Inputs | Candidates | Valid | SR | Sim(success) | RI(success) | Sim>=thr | Internal strict | Eval prop frac | Missing oracle props | Status |",
-        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
+        "| Suite | Split | Task | Inputs | Candidates | Valid | Source | SR | Sim(success) | RI(success) | Sim>=thr | Internal strict | Eval prop frac | Missing oracle props | Status |",
+        "| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |",
     ]
     for row in summary_rows:
         lines.append(
             "| {external_suite} | {external_task_split} | {external_task_id} | {input_groups} | "
-            "{candidate_rows} | {validity} | {success_rate} | {similarity} | {relative_improvement} | "
+            "{candidate_rows} | {validity} | {source_available_rate} | {success_rate} | {similarity} | {relative_improvement} | "
             "{source_similarity_success_rate} | {strict_success_rate} | {mean_evaluated_property_fraction} | "
             "{missing_oracle_properties} | {success_rate_status} |".format(**row)
         )

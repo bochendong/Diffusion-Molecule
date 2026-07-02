@@ -35,7 +35,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--smiles-columns",
-        default="generated_smiles,source_smiles,target_smiles,smiles,SMILES,canonical_smiles",
+        default=(
+            "generated_smiles,source_smiles,target_smiles,input_smiles,output_smiles,"
+            "input,output,source,original_smiles,optimized_smiles,smiles,SMILES,canonical_smiles"
+        ),
     )
     return parser.parse_args(argv)
 

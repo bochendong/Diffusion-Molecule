@@ -440,6 +440,7 @@ C-MuMO GraphEdit 2-step（`17050922`/`17052461`，candidate-level top-20）：
 
 1. GraphEdit 候选 **Sim 接近满分**，但 **不能 claim official SR**。
 2. 下一步需单独建 `external_oracle_build_cmumo_v1/`：输入必须含 `external_cmumo_official_copy_sanity_v1` 的 **source_smiles** + GraphEdit 候选 CSV；official suite 应设 `SUCC_OFFICIAL_BUILD_ORACLE_CSV=0` 并直接传预建 oracle，避免 `build_oracle_csv=1` 用 TDC-only 局部表覆盖 full ADMET CSV。
+3. 2026-07-02 修复方向：新增 dedicated C-MuMO oracle pipeline，会从 raw C-MuMO `test.json` 重新导出 source rows、合并旧 copy/GraphEdit candidates 建 oracle，并输出 `oracle_coverage_audit.md`；evaluator 也改为 **source 缺失 / Tanimoto NaN 不再算 Sim 成功**，防止再次出现 false-positive source-preservation 诊断。
 
 ### 链 B：MuMO IND-hard GraphEdit sweep
 
@@ -759,7 +760,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 11. ~~**one-shot official SR 重跑**~~ → **`16894722` 完成**；candidate-level SR **0**（无 oracle）；Sim diagnostic **0.05%**；direct 无 source-edit。
 12. ~~**flight sweep**~~ → **6/6 完成**；**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；rich x2 **42.5%**（+10.2pp vs rich v2）；direct 训练线仍 Sim≈0。
 13. ~~**parallel followup**~~ → **完成**（`17050708`–`17052468`）：IND-hard balanced **DPQ +4.5pp**；C-MuMO GraphEdit Sim≈100% 但 SR 仍不可报。
-14. **C-MuMO dedicated oracle**（`external_oracle_build_cmumo_v1`，覆盖 source_smiles + 候选）；`BUILD_ORACLE_CSV=0` 重评 official SR。
+14. **C-MuMO dedicated oracle**（入口：`submit_external_cmumo_dedicated_oracle_fix.sh`；输出 `external_oracle_build_cmumo_v1`，覆盖 source_smiles + 候选）；`BUILD_ORACLE_CSV=0` + `FORCE_EXPORT=1` 重评 official SR。
 15. GraphEditDSL similarity/property 平衡或 LLM planner；IND-hard 上继续调 BDP/BDPQ/BDMQ。
 
 ## 外部来源

@@ -47,6 +47,9 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_re_eval.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_ind_hard_sweep.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_parallel_followup.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/audit_external_multiproperty_oracle_coverage.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_external_cmumo_dedicated_oracle_fix.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_external_cmumo_dedicated_oracle_fix.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
@@ -307,6 +310,32 @@ def test_external_multiproperty_exporter_preserves_property_objectives(tmp_path)
     assert "maintain high QED" in row["instruction"]
 
 
+def test_external_multiproperty_exporter_accepts_alternate_source_smiles_and_ignores_numeric_target(monkeypatch):
+    module = _load_external_exporter_module()
+    monkeypatch.setattr(module, "canonical_smiles", lambda value: str(value) if str(value) in {"CCO", "CCN"} else None)
+    monkeypatch.setattr(module, "molecular_properties", lambda _smiles: {})
+    spec = next(item for item in module.TASK_SPECS if item.suite == "cmumo" and item.task_id == "BPQ")
+
+    row = module.build_condition_row(
+        {
+            "sample_id": "mol_a",
+            "input": "CCO",
+            "target": "0.75",
+            "qed": "0.4",
+        },
+        spec=spec,
+        raw_index=0,
+        local_index=0,
+        source_smiles_column=None,
+        target_smiles_column=None,
+        id_column=None,
+    )
+
+    assert row["source_smiles"] == "CCO"
+    assert row["target_smiles"] == "CCO"
+    assert row["external_target_placeholder"] == "True"
+
+
 def test_external_multiproperty_evaluator_uses_generated_properties_csv(tmp_path):
     predictions_csv = tmp_path / "predictions.csv"
     generated_props_csv = tmp_path / "generated_props.csv"
@@ -362,7 +391,7 @@ def test_external_multiproperty_evaluator_uses_generated_properties_csv(tmp_path
     assert result.returncode == 0, result.stderr
     summary_rows = list(csv.DictReader((output_dir / "external_multiproperty_summary.csv").open(newline="", encoding="utf-8")))
     overall = [row for row in summary_rows if row["external_suite"] == "all"][0]
-    assert overall["strict_success_rate"] == "1"
+    assert overall["success_rate"] == "1"
     assert overall["missing_oracle_properties"] == ""
 
 
@@ -664,6 +693,36 @@ def test_agentic_revise_similarity_first_requires_local_success(monkeypatch, tmp
     )
 
     assert ranked[0].canonical_smiles == "near_good"
+
+
+def test_agentic_revise_nan_tanimoto_fails_similarity(monkeypatch, tmp_path):
+    module = _load_agentic_revise_module()
+    monkeypatch.setattr(module, "safe_canonical", lambda value: str(value or ""))
+    monkeypatch.setattr(module, "safe_tanimoto", lambda _left, _right: float("nan"))
+    monkeypatch.setattr(module, "local_properties", lambda _smiles: {"plogp": 2.0})
+    args = module.parse_args(
+        [
+            "--rows-csv",
+            str(tmp_path / "rows.csv"),
+            "--prediction-csv",
+            str(tmp_path / "predictions.csv"),
+            "--min-source-tanimoto",
+            "0.4",
+        ]
+    )
+
+    score = module.score_candidate(
+        {
+            "source_smiles": "source",
+            "external_task_properties": "plogp",
+            "external_property_directions_json": json.dumps({"plogp": "increase"}),
+            "external_property_thresholds_json": json.dumps({"plogp": 1.0}),
+        },
+        module.Candidate("candidate", "test", "test"),
+        args=args,
+    )
+
+    assert score.source_similarity_success is False
 
 
 def test_graph_edit_planner_emits_structured_dsl_actions():
@@ -1405,6 +1464,17 @@ def _load_rl_module():
 def _load_preference_builder_module():
     path = Path("SketchMol-Understanding-Condition/scripts/build_direct_smiles_preference_dataset.py")
     spec = importlib.util.spec_from_file_location("build_direct_smiles_preference_dataset", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_external_exporter_module():
+    path = Path("SketchMol-Understanding-Condition/scripts/export_external_multiproperty_benchmark_rows.py")
+    spec = importlib.util.spec_from_file_location("export_external_multiproperty_benchmark_rows", path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

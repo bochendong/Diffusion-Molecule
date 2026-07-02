@@ -102,6 +102,44 @@ def test_missing_oracle_marks_success_rate_as_lower_bound(monkeypatch):
     assert task_summary["missing_oracle_properties"] == "bbbp"
 
 
+def test_missing_source_does_not_count_as_similarity_success(monkeypatch):
+    evaluator = load_evaluator()
+    monkeypatch.setattr(evaluator, "canonical_smiles", lambda smiles: str(smiles or "").strip() or None)
+    monkeypatch.setattr(evaluator, "molecular_properties", lambda smiles: {"QED": 0.5} if smiles == "GEN" else {})
+    monkeypatch.setattr(evaluator, "morgan_tanimoto", lambda _left, _right: None)
+
+    detail = evaluator.evaluate_row(
+        {
+            "condition_id": "input_1",
+            "source_smiles": "",
+            "generated_smiles": "GEN",
+            "external_suite": "cmumo",
+            "external_task_split": "ind",
+            "external_task_id": "Q",
+            "external_task_properties": "qed",
+            "external_property_directions_json": '{"qed":"increase"}',
+            "external_property_thresholds_json": '{"qed":0.1}',
+            "external_target_qed": "0.4",
+        },
+        generated_props={},
+        source_props_lookup={},
+        smiles_column="generated_smiles",
+        source_smiles_column="source_smiles",
+        min_source_tanimoto=0.4,
+    )
+    summary = evaluator.summarize([detail], group_column="condition_id")
+    task_summary = next(item for item in summary if item["external_task_id"] == "Q")
+
+    assert detail["external_valid"] == "True"
+    assert detail["external_source_available"] == "False"
+    assert detail["external_source_similarity_success"] == "False"
+    assert detail["external_official_success"] == "True"
+    assert detail["external_strict_success"] == "False"
+    assert task_summary["source_available_rate"] == "0"
+    assert task_summary["source_similarity_success_rate"] == "0"
+    assert task_summary["strict_success_rate"] == "0"
+
+
 def test_cmumo_maintain_objective_allows_small_non_degrading_change(monkeypatch):
     evaluator = load_evaluator()
     props = {

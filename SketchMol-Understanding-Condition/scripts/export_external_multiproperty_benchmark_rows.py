@@ -25,7 +25,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 if str(PROJECT_DIR) not in sys.path:
     sys.path.insert(0, str(PROJECT_DIR))
 
-from sketchmol_understanding_condition.chem import molecular_properties  # noqa: E402
+from sketchmol_understanding_condition.chem import canonical_smiles, molecular_properties  # noqa: E402
 from sketchmol_understanding_condition.unified_condition_dataset import PROPERTY_COLUMNS  # noqa: E402
 
 
@@ -450,10 +450,10 @@ def build_condition_row(
     target_smiles_column: str | None,
     id_column: str | None,
 ) -> dict[str, object]:
-    source_smiles = str(first_value(raw_row, source_smiles_candidates(source_smiles_column)) or "").strip()
+    source_smiles = first_smiles_value(raw_row, source_smiles_candidates(source_smiles_column))
     if not source_smiles:
         raise ValueError(f"Missing source SMILES for input row {raw_index}")
-    target_smiles = str(first_value(raw_row, target_smiles_candidates(target_smiles_column)) or "").strip()
+    target_smiles = first_smiles_value(raw_row, target_smiles_candidates(target_smiles_column))
     target_placeholder = False
     if not target_smiles:
         target_smiles = source_smiles
@@ -731,13 +731,64 @@ def first_value(row: Mapping[str, object], keys: Iterable[str]) -> object | None
     return None
 
 
+def first_smiles_value(row: Mapping[str, object], keys: Iterable[str]) -> str:
+    for key in keys:
+        if key not in row:
+            continue
+        canonical = canonical_smiles_or_blank(row.get(key))
+        if canonical:
+            return canonical
+    return ""
+
+
+def canonical_smiles_or_blank(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    try:
+        return canonical_smiles(text) or ""
+    except RuntimeError:
+        return text
+
+
 def source_smiles_candidates(value: str | None) -> tuple[str, ...]:
-    base = ("source_smiles", "input_smiles", "smiles", "SMILES", "canonical_smiles")
+    base = (
+        "source_smiles",
+        "input_smiles",
+        "input",
+        "input_mol",
+        "input_molecule",
+        "source",
+        "src_smiles",
+        "src",
+        "original_smiles",
+        "original",
+        "mol",
+        "molecule",
+        "molecule_smiles",
+        "smiles",
+        "SMILES",
+        "canonical_smiles",
+    )
     return ((value,) + base) if value else base
 
 
 def target_smiles_candidates(value: str | None) -> tuple[str, ...]:
-    base = ("target_smiles", "output_smiles", "edited_smiles", "target")
+    base = (
+        "target_smiles",
+        "output_smiles",
+        "edited_smiles",
+        "target_mol",
+        "target_molecule",
+        "output",
+        "output_mol",
+        "output_molecule",
+        "tgt_smiles",
+        "optimized_smiles",
+        "response_smiles",
+        "answer_smiles",
+        "target",
+    )
     return ((value,) + base) if value else base
 
 
