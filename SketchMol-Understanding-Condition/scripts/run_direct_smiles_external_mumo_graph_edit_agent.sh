@@ -57,6 +57,7 @@ PROPERTY_WEIGHT="${SUCC_EXTERNAL_GRAPH_EDIT_PROPERTY_WEIGHT:-100}"
 DISTANCE_WEIGHT="${SUCC_EXTERNAL_GRAPH_EDIT_DISTANCE_WEIGHT:-10}"
 SIMILARITY_WEIGHT="${SUCC_EXTERNAL_GRAPH_EDIT_SIMILARITY_WEIGHT:-30}"
 SIMILARITY_BONUS="${SUCC_EXTERNAL_GRAPH_EDIT_SIMILARITY_BONUS:-80}"
+ADMET_PRIOR_WEIGHT="${SUCC_EXTERNAL_GRAPH_EDIT_ADMET_PRIOR_WEIGHT:-0}"
 COPY_PENALTY="${SUCC_EXTERNAL_GRAPH_EDIT_COPY_PENALTY:-8}"
 TOP_K_CANDIDATES="${SUCC_EXTERNAL_GRAPH_EDIT_TOP_K_CANDIDATES:-20}"
 
@@ -80,6 +81,7 @@ echo "  max_plans_per_property=$MAX_PLANS_PER_PROPERTY"
 echo "  max_candidates_per_parent=$MAX_CANDIDATES_PER_PARENT"
 echo "  max_candidates_per_row=$MAX_CANDIDATES_PER_ROW"
 echo "  top_k_candidates=$TOP_K_CANDIDATES"
+echo "  admet_prior_weight=$ADMET_PRIOR_WEIGHT"
 echo "  min_source_tanimoto=$MIN_SOURCE_TANIMOTO"
 echo "  build_oracle_csv=$BUILD_ORACLE_CSV"
 echo "  generated_properties_csv=${GENERATED_PROPERTIES_CSV:-none}"
@@ -130,6 +132,7 @@ fi
   --distance-weight "$DISTANCE_WEIGHT" \
   --similarity-weight "$SIMILARITY_WEIGHT" \
   --similarity-bonus "$SIMILARITY_BONUS" \
+  --admet-prior-weight "$ADMET_PRIOR_WEIGHT" \
   --copy-penalty "$COPY_PENALTY" \
   --top-k-candidates "$TOP_K_CANDIDATES" \
   --seed "$SEED" \

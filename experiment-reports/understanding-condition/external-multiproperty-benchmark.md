@@ -469,6 +469,21 @@ C-MuMO GraphEdit 2-step（`17050922`/`17052461`，candidate-level top-20）：
 
 Re-eval 产物：`outputs/external_mumo_indhard_graph_edit_*/benchmark_with_indhard_oracle_v1/`（不进 git）。
 
+### MuMO method repair：ADMET-prior GraphEditDSL（待跑）
+
+目标：提升 **我们的方法在 MuMO benchmark 上的 SR**，尤其是 IND / IND-hard。当前 GraphEditDSL 生成和排序主要依赖 source similarity + 本地 proxy（QED / pLogP / SA），对 BBBP / DRD2 / HIA / mutagenicity 这类 ADMET oracle 性质基本是盲生成。新线新增 `admet_prior_graph_dsl`：
+
+- 不读取 official oracle 做 test-time selection；official oracle 仍只用于最终 re-eval。
+- 在 graph-edit planner 中加入可解释 ADMET templates：BBB/DRD2 倾向疏水芳香/弱碱胺、HIA 控制极性和柔性、mutagenicity↓ 倾向删除/替换潜在 reactive handles。
+- 在 candidate ranking 中加入 `admet_prior_score`，由 RDKit descriptors / simple structural alerts 计算，作为 beam expansion 和 top-k 的非 oracle 先验。
+- 一键入口：`submit_external_mumo_admet_prior_repair.sh`；DAG 为 `GraphEdit ADMET-prior -> generated-property oracle -> official re-eval`。
+
+推荐先跑 full MuMO；若想快筛 IND-hard，可设置 `SUCC_MUMO_ADMET_TASKS=BDP,BDPQ,DPQ,BDMQ`。
+
+```bash
+bash SketchMol-Understanding-Condition/scripts/submit_external_mumo_admet_prior_repair.sh
+```
+
 默认提交 4 条：
 
 | Suite | 线 | 输出目录 | 说明 |
@@ -761,7 +776,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 12. ~~**flight sweep**~~ → **6/6 完成**；**heuristic GraphEditDSL 2-step Sim 45.6%**（assisted best）；rich x2 **42.5%**（+10.2pp vs rich v2）；direct 训练线仍 Sim≈0。
 13. ~~**parallel followup**~~ → **完成**（`17050708`–`17052468`）：IND-hard balanced **DPQ +4.5pp**；C-MuMO GraphEdit Sim≈100% 但 SR 仍不可报。
 14. **C-MuMO dedicated oracle**（入口：`submit_external_cmumo_dedicated_oracle_fix.sh`；输出 `external_oracle_build_cmumo_v1`，覆盖 source_smiles + 候选）；`BUILD_ORACLE_CSV=0` + `FORCE_EXPORT=1` 重评 official SR。
-15. GraphEditDSL similarity/property 平衡或 LLM planner；IND-hard 上继续调 BDP/BDPQ/BDMQ。
+15. **MuMO method repair**：`admet_prior_graph_dsl`（入口 `submit_external_mumo_admet_prior_repair.sh`），先看 full MuMO overall/IND 是否超过 48.3%/28.1%，再看 IND-hard BDP/BDPQ/BDMQ 是否抬升。
+16. GraphEditDSL similarity/property 平衡或 LLM planner；IND-hard 上继续调 BDP/BDPQ/BDMQ。
 
 ## 外部来源
 

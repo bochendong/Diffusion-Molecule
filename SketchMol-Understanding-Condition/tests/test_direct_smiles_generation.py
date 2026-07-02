@@ -50,6 +50,7 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/audit_external_multiproperty_oracle_coverage.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_cmumo_dedicated_oracle_fix.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_cmumo_dedicated_oracle_fix.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_admet_prior_repair.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_ood_benchmark.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_direct_smiles_denovo_2p7p_v2_benchmark.sh").exists()
@@ -763,6 +764,74 @@ def test_graph_edit_policy_planner_scores_rich_dsl_actions(monkeypatch):
     assert actions[0].policy_score >= actions[-1].policy_score
     assert any(action.fragment in {"C#N", "C(=O)N", "c1ccccc1"} for action in actions)
     assert any(action.op == "change_bond_order" for action in actions)
+
+
+def test_graph_edit_admet_prior_planner_emits_mumo_specific_actions(monkeypatch):
+    module = _load_graph_edit_agent_module()
+    monkeypatch.setattr(module, "editable_atom_sites", lambda _source_smiles, site_limit: [0, 1])
+    monkeypatch.setattr(module, "editable_bond_sites", lambda _source_smiles, site_limit: [(0, 1)])
+    monkeypatch.setattr(module, "score_policy_actions", lambda _row, _source_smiles, actions: list(actions))
+    row = {
+        "source_smiles": "CCO",
+        "external_task_properties": "bbbp,drd2,mutagenicity",
+        "external_property_directions_json": json.dumps(
+            {"bbbp": "increase", "drd2": "increase", "mutagenicity": "decrease"}
+        ),
+    }
+
+    actions = module.plan_graph_edit_actions(
+        row,
+        source_smiles="CCO",
+        site_limit=2,
+        max_plans_per_property=32,
+        planner_mode="admet_prior_graph_dsl",
+    )
+
+    reasons = {action.reason for action in actions}
+    assert any("admet_bbbp" in reason for reason in reasons)
+    assert any("admet_drd2" in reason for reason in reasons)
+    assert any("admet_mutagenicity" in reason for reason in reasons)
+
+
+def test_graph_edit_admet_prior_weight_changes_ranking(monkeypatch, tmp_path):
+    module = _load_graph_edit_agent_module()
+    monkeypatch.setattr(module.revise, "safe_canonical", lambda value: str(value or ""))
+    monkeypatch.setattr(module.revise, "safe_tanimoto", lambda _left, _right: 0.8)
+    monkeypatch.setattr(module.revise, "local_properties", lambda _smiles: {})
+    monkeypatch.setattr(
+        module,
+        "admet_prior_score",
+        lambda _row, smiles: {"low": 0.1, "high": 0.9}.get(smiles, 0.0),
+    )
+    args = module.parse_args(
+        [
+            "--rows-csv",
+            str(tmp_path / "rows.csv"),
+            "--prediction-csv",
+            str(tmp_path / "predictions.csv"),
+            "--selection-mode",
+            "score",
+            "--admet-prior-weight",
+            "100",
+        ]
+    )
+    row = {
+        "source_smiles": "source",
+        "external_task_properties": "bbbp",
+        "external_property_directions_json": json.dumps({"bbbp": "increase"}),
+        "external_property_thresholds_json": json.dumps({"bbbp": 0.1}),
+    }
+
+    ranked = module.rank_graph_candidates(
+        row,
+        [
+            module.revise.Candidate("low", "low", "test"),
+            module.revise.Candidate("high", "high", "test"),
+        ],
+        args=args,
+    )
+
+    assert ranked[0].canonical_smiles == "high"
 
 
 def test_graph_edit_agent_prefers_source_similar_property_success(monkeypatch, tmp_path):

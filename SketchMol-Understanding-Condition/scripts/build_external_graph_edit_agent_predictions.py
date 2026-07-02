@@ -17,6 +17,7 @@ import math
 import random
 import sys
 from dataclasses import asdict, dataclass, replace
+from functools import lru_cache
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -56,7 +57,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--plan-jsonl", type=Path, default=None)
     parser.add_argument("--direct-prediction-csv", type=Path, default=None)
     parser.add_argument("--direct-smiles-column", default="generated_smiles")
-    parser.add_argument("--planner-mode", choices=("heuristic_graph_dsl", "policy_graph_dsl"), default="heuristic_graph_dsl")
+    parser.add_argument(
+        "--planner-mode",
+        choices=("heuristic_graph_dsl", "policy_graph_dsl", "admet_prior_graph_dsl"),
+        default="heuristic_graph_dsl",
+    )
     parser.add_argument("--selection-mode", choices=("score", "similarity_first"), default="similarity_first")
     parser.add_argument("--min-source-tanimoto", type=float, default=0.4)
     parser.add_argument("--planner-steps", type=int, default=1)
@@ -70,6 +75,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--distance-weight", type=float, default=10.0)
     parser.add_argument("--similarity-weight", type=float, default=30.0)
     parser.add_argument("--similarity-bonus", type=float, default=80.0)
+    parser.add_argument("--admet-prior-weight", type=float, default=0.0)
     parser.add_argument("--copy-penalty", type=float, default=8.0)
     parser.add_argument("--top-k-candidates", type=int, default=20)
     parser.add_argument("--method", default="external_graph_edit_agent")
@@ -144,7 +150,7 @@ def predict_row_full(
         if planner_mode == "heuristic_graph_dsl" and planner_steps == 1:
             parent_smiles = [revise.safe_canonical(source_smiles) or source_smiles]
         else:
-            ranked = revise.rank_candidates(row, candidates, args=args)
+            ranked = rank_graph_candidates(row, candidates, args=args)
             parent_smiles = [item.canonical_smiles for item in ranked[: max(1, int(args.beam_size))]]
             if step == 1 and source_smiles:
                 parent_smiles.insert(0, revise.safe_canonical(source_smiles) or source_smiles)
@@ -161,7 +167,7 @@ def predict_row_full(
                 max_plans_per_property=int(args.max_plans_per_property),
                 planner_mode=planner_mode,
             )
-            if planner_mode == "heuristic_graph_dsl":
+            if planner_mode in {"heuristic_graph_dsl", "admet_prior_graph_dsl"}:
                 rng.shuffle(actions)
             total_plan_count += len(actions)
             executed_for_parent = 0
@@ -190,7 +196,7 @@ def predict_row_full(
                 candidates.append(revise.Candidate(canonical, f"step{step}:dsl:{action.to_json()}", "graph_edit_dsl"))
         if len(seen) >= int(args.max_candidates_per_row):
             break
-    ranked = revise.rank_candidates(row, candidates, args=args)
+    ranked = rank_graph_candidates(row, candidates, args=args)
     best = ranked[0] if ranked else revise.score_candidate(row, revise.Candidate(source_smiles, "dsl:source_copy", "source_copy"), args=args)
     out = dict(row)
     out["generated_smiles"] = best.canonical_smiles
@@ -212,6 +218,7 @@ def predict_row_full(
     out["graph_edit_evaluated_local_property_count"] = best.evaluated_local_property_count
     out["graph_edit_local_property_distance"] = revise.format_float(best.local_property_distance, digits=6)
     out["graph_edit_missing_local_properties"] = ",".join(best.missing_local_properties)
+    out["graph_edit_admet_prior_score"] = revise.format_float(admet_prior_score(row, best.canonical_smiles), digits=6)
     candidate_rows = build_candidate_output_rows(
         row,
         ranked,
@@ -259,6 +266,10 @@ def build_candidate_output_rows(
         candidate_row["graph_edit_evaluated_local_property_count"] = item.evaluated_local_property_count
         candidate_row["graph_edit_local_property_distance"] = revise.format_float(item.local_property_distance, digits=6)
         candidate_row["graph_edit_missing_local_properties"] = ",".join(item.missing_local_properties)
+        candidate_row["graph_edit_admet_prior_score"] = revise.format_float(
+            admet_prior_score(row, item.canonical_smiles),
+            digits=6,
+        )
         out.append(candidate_row)
     return out
 
@@ -273,6 +284,13 @@ def plan_graph_edit_actions(
 ) -> list[GraphEditAction]:
     if str(planner_mode) == "policy_graph_dsl":
         return plan_policy_graph_edit_actions(
+            row,
+            source_smiles=source_smiles,
+            site_limit=site_limit,
+            max_plans_per_property=max_plans_per_property,
+        )
+    if str(planner_mode) == "admet_prior_graph_dsl":
+        return plan_admet_prior_graph_edit_actions(
             row,
             source_smiles=source_smiles,
             site_limit=site_limit,
@@ -371,6 +389,41 @@ def plan_policy_graph_edit_actions(
     return dedupe_actions(out)
 
 
+def plan_admet_prior_graph_edit_actions(
+    row: Mapping[str, str],
+    *,
+    source_smiles: str,
+    site_limit: int,
+    max_plans_per_property: int,
+) -> list[GraphEditAction]:
+    props = revise.parse_list(row.get("external_task_properties") or row.get("condition_properties"))
+    directions = revise.parse_json_dict(row.get("external_property_directions_json"), revise.DEFAULT_DIRECTION)
+    sites = editable_atom_sites(source_smiles, site_limit=site_limit)
+    bonds = editable_bond_sites(source_smiles, site_limit=site_limit)
+    out: list[GraphEditAction] = []
+    for prop in props:
+        prop = revise.canonical_prop(prop)
+        direction = str(directions.get(prop, revise.DEFAULT_DIRECTION.get(prop, "increase"))).lower()
+        prop_actions: list[GraphEditAction] = []
+        for template in admet_action_templates_for_property(prop, direction):
+            if template.op in {"add_atom", "add_fragment", "replace_atom", "delete_terminal_atom"}:
+                prop_actions.extend(replace(template, site=site, prop=prop, direction=direction) for site in sites)
+            if template.op == "change_bond_order":
+                prop_actions.extend(replace(template, bond=bond, prop=prop, direction=direction) for bond in bonds)
+        prop_actions = score_policy_actions(row, source_smiles, dedupe_actions(prop_actions))
+        out.extend(prop_actions[: max(1, int(max_plans_per_property))])
+    if not out:
+        out = score_policy_actions(
+            row,
+            source_smiles,
+            [
+                GraphEditAction("add_atom", site=site, atom="F", reason="admet_generic_small_halogen")
+                for site in sites[: max(1, min(8, len(sites)))]
+            ],
+        )
+    return dedupe_actions(out)
+
+
 def action_templates_for_property(prop: str, direction: str) -> list[GraphEditAction]:
     if prop in {"plogp", "logp"} and direction == "increase":
         return [
@@ -408,6 +461,54 @@ def action_templates_for_property(prop: str, direction: str) -> list[GraphEditAc
         GraphEditAction("add_atom", atom="O", reason=f"{prop}_{direction}_heteroatom"),
         GraphEditAction("add_fragment", fragment="C", reason=f"{prop}_{direction}_methyl"),
         GraphEditAction("delete_terminal_atom", reason=f"{prop}_{direction}_terminal_prune"),
+    ]
+
+
+def admet_action_templates_for_property(prop: str, direction: str) -> list[GraphEditAction]:
+    if prop == "bbbp" and direction == "increase":
+        return [
+            GraphEditAction("add_atom", atom="F", reason="admet_bbbp_reduce_polar_penalty"),
+            GraphEditAction("add_atom", atom="Cl", reason="admet_bbbp_lipophilic_halogen"),
+            GraphEditAction("add_fragment", fragment="C", reason="admet_bbbp_methyl"),
+            GraphEditAction("add_fragment", fragment="CC", reason="admet_bbbp_ethyl"),
+            GraphEditAction("add_fragment", fragment="C(F)(F)F", reason="admet_bbbp_trifluoromethyl"),
+            GraphEditAction("add_fragment", fragment="c1ccccc1", reason="admet_bbbp_aromatic_lipophilicity"),
+            GraphEditAction("delete_terminal_atom", reason="admet_bbbp_reduce_flexible_terminal"),
+        ]
+    if prop == "drd2" and direction == "increase":
+        return [
+            GraphEditAction("add_fragment", fragment="CN", reason="admet_drd2_basic_amine_tail"),
+            GraphEditAction("add_fragment", fragment="CN(C)C", reason="admet_drd2_tertiary_amine_tail"),
+            GraphEditAction("add_atom", atom="N", reason="admet_drd2_basic_nitrogen"),
+            GraphEditAction("add_fragment", fragment="c1ccccc1", reason="admet_drd2_aromatic_contact"),
+            GraphEditAction("add_atom", atom="F", reason="admet_drd2_small_halogen"),
+            GraphEditAction("add_atom", atom="Cl", reason="admet_drd2_lipophilic_halogen"),
+            GraphEditAction("add_fragment", fragment="C", reason="admet_drd2_methyl_scan"),
+        ]
+    if prop == "hia" and direction == "increase":
+        return [
+            GraphEditAction("add_atom", atom="F", reason="admet_hia_small_halogen"),
+            GraphEditAction("add_fragment", fragment="C", reason="admet_hia_small_alkyl"),
+            GraphEditAction("add_atom", atom="O", reason="admet_hia_hbond_balance"),
+            GraphEditAction("add_atom", atom="N", reason="admet_hia_hbond_balance"),
+            GraphEditAction("add_fragment", fragment="C#N", reason="admet_hia_compact_acceptor"),
+            GraphEditAction("delete_terminal_atom", reason="admet_hia_reduce_flexibility"),
+        ]
+    if prop == "mutagenicity" and direction == "decrease":
+        return [
+            GraphEditAction("delete_terminal_atom", reason="admet_mutagenicity_remove_terminal_alert"),
+            GraphEditAction("replace_atom", atom="C", reason="admet_mutagenicity_simplify_atom"),
+            GraphEditAction("replace_atom", atom="O", reason="admet_mutagenicity_oxygen_substitution"),
+            GraphEditAction("replace_atom", atom="N", reason="admet_mutagenicity_nitrogen_substitution"),
+            GraphEditAction("add_atom", atom="O", reason="admet_mutagenicity_add_polar_handle"),
+            GraphEditAction("add_fragment", fragment="C(=O)N", reason="admet_mutagenicity_amide_handle"),
+            GraphEditAction("change_bond_order", bond_order="single", reason="admet_mutagenicity_reduce_unsaturation"),
+        ]
+    if prop in {"plogp", "logp", "qed", "sas", "sa"}:
+        return policy_action_templates_for_property(prop, direction)
+    return policy_action_templates_for_property(prop, direction) + [
+        GraphEditAction("add_fragment", fragment="C(=O)N", reason=f"admet_{prop}_{direction}_amide_probe"),
+        GraphEditAction("add_fragment", fragment="C#N", reason=f"admet_{prop}_{direction}_cyano_probe"),
     ]
 
 
@@ -490,7 +591,7 @@ def score_policy_actions(
         score += site_policy_score(mol, action)
         if action.prop in task_props:
             score += 0.5
-        if "policy" in action.reason:
+        if "policy" in action.reason or "admet" in action.reason:
             score += 0.25
         scored.append(replace(action, policy_score=round(float(score), 6)))
     return sorted(scored, key=lambda action: (action.policy_score, action.reason, action.op), reverse=True)
@@ -507,6 +608,9 @@ def policy_template_score(action: GraphEditAction) -> float:
             "C#N": 1.1,
             "C(=O)O": 0.9,
             "C(=O)N": 1.0,
+            "CN": 1.1,
+            "CN(C)C": 1.0,
+            "C(F)(F)F": 0.95,
             "c1ccccc1": 0.65,
         }
         score += fragment_score.get(action.fragment, 0.75)
@@ -553,6 +657,210 @@ def site_policy_score(mol, action: GraphEditAction) -> float:
             if bond.GetIsAromatic():
                 score -= 1.0
     return score
+
+
+def rank_graph_candidates(
+    row: Mapping[str, str],
+    candidates: Sequence[revise.Candidate],
+    *,
+    args: argparse.Namespace,
+) -> list[revise.CandidateScore]:
+    scored = [revise.score_candidate(row, candidate, args=args) for candidate in candidates]
+    scored = [item for item in scored if item.canonical_smiles]
+    prior_weight = float(getattr(args, "admet_prior_weight", 0.0) or 0.0)
+    if prior_weight:
+        scored = [
+            replace(
+                item,
+                score=float(item.score) + prior_weight * admet_prior_score(row, item.canonical_smiles),
+            )
+            for item in scored
+        ]
+    if str(args.selection_mode) == "similarity_first":
+        min_success = float(args.similarity_first_min_local_success_fraction)
+        return sorted(
+            scored,
+            key=lambda item: (
+                item.source_similarity_success and item.local_success_fraction >= min_success,
+                item.all_evaluated_local_success,
+                item.local_success_fraction,
+                -item.local_property_distance,
+                item.source_tanimoto if math.isfinite(item.source_tanimoto) else -1.0,
+                item.score,
+            ),
+            reverse=True,
+        )
+    return sorted(
+        scored,
+        key=lambda item: (
+            item.score,
+            item.all_evaluated_local_success,
+            item.local_success_fraction,
+            item.source_tanimoto if math.isfinite(item.source_tanimoto) else -1.0,
+        ),
+        reverse=True,
+    )
+
+
+def admet_prior_score(row: Mapping[str, str], smiles: str) -> float:
+    props = revise.parse_list(row.get("external_task_properties") or row.get("condition_properties"))
+    if not props:
+        return 0.0
+    directions = revise.parse_json_dict(row.get("external_property_directions_json"), revise.DEFAULT_DIRECTION)
+    desc = admet_prior_descriptors(smiles)
+    if not desc:
+        return 0.0
+    scores = []
+    for prop in props:
+        prop = revise.canonical_prop(prop)
+        direction = str(directions.get(prop, revise.DEFAULT_DIRECTION.get(prop, "increase"))).lower()
+        scores.append(admet_property_prior(prop, direction, desc))
+    return float(sum(scores) / max(len(scores), 1))
+
+
+@lru_cache(maxsize=200000)
+def admet_prior_descriptors(smiles: str) -> dict[str, float]:
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import rdMolDescriptors
+    except ImportError:
+        return {}
+    mol = Chem.MolFromSmiles(str(smiles or ""))
+    if mol is None:
+        return {}
+    try:
+        props = revise.molecular_properties(smiles) or {}
+    except RuntimeError:
+        props = {}
+    alert_smarts = (
+        "[N+](=O)[O-]",
+        "N=N",
+        "[OX2r3]",
+        "NN",
+        "C(=O)Cl",
+        "[Cl,Br,I][CH2]",
+    )
+    alerts = 0
+    for smarts in alert_smarts:
+        patt = Chem.MolFromSmarts(smarts)
+        if patt is not None and mol.HasSubstructMatch(patt):
+            alerts += 1
+    basic_n = 0
+    halogens = 0
+    aromatic_atoms = 0
+    for atom in mol.GetAtoms():
+        symbol = atom.GetSymbol()
+        if symbol in {"F", "Cl", "Br", "I"}:
+            halogens += 1
+        if atom.GetIsAromatic():
+            aromatic_atoms += 1
+        if symbol == "N" and atom.GetFormalCharge() >= 0 and not atom.GetIsAromatic():
+            basic_n += 1
+    try:
+        aromatic_rings = float(rdMolDescriptors.CalcNumAromaticRings(mol))
+    except Exception:
+        aromatic_rings = 0.0
+    return {
+        "mw": float(props.get("MolWt", 0.0)),
+        "logp": float(props.get("LogP", 0.0)),
+        "qed": float(props.get("QED", 0.0)),
+        "tpsa": float(props.get("TPSA", 0.0)),
+        "hbd": float(props.get("HBD", 0.0)),
+        "hba": float(props.get("HBA", 0.0)),
+        "rb": float(props.get("rotatable", 0.0)),
+        "sa": float(props.get("SA", 5.0)),
+        "aromatic_rings": aromatic_rings,
+        "aromatic_atoms": float(aromatic_atoms),
+        "basic_n": float(basic_n),
+        "halogens": float(halogens),
+        "alerts": float(alerts),
+    }
+
+
+def admet_property_prior(prop: str, direction: str, desc: Mapping[str, float]) -> float:
+    if prop == "bbbp" and direction == "increase":
+        return weighted_mean(
+            (
+                range_score(desc["logp"], low=0.5, best_low=1.8, best_high=3.8, high=5.2),
+                below_score(desc["tpsa"], best=65.0, limit=105.0),
+                below_score(desc["hbd"], best=1.0, limit=3.0),
+                below_score(desc["hba"], best=5.0, limit=9.0),
+                range_score(desc["mw"], low=150.0, best_low=220.0, best_high=450.0, high=580.0),
+                below_score(desc["rb"], best=5.0, limit=10.0),
+            ),
+            weights=(2.0, 2.0, 1.0, 1.0, 1.0, 1.0),
+        )
+    if prop == "hia" and direction == "increase":
+        return weighted_mean(
+            (
+                below_score(desc["tpsa"], best=90.0, limit=140.0),
+                below_score(desc["hbd"], best=3.0, limit=6.0),
+                below_score(desc["hba"], best=7.0, limit=11.0),
+                below_score(desc["rb"], best=7.0, limit=12.0),
+                range_score(desc["logp"], low=-0.5, best_low=0.5, best_high=4.5, high=6.0),
+                clamp01(desc["qed"]),
+            ),
+            weights=(1.5, 1.0, 1.0, 1.0, 1.0, 1.0),
+        )
+    if prop == "drd2" and direction == "increase":
+        return weighted_mean(
+            (
+                clamp01(desc["aromatic_rings"] / 2.0),
+                clamp01(desc["basic_n"]),
+                range_score(desc["logp"], low=1.0, best_low=2.2, best_high=4.8, high=6.2),
+                below_score(desc["tpsa"], best=65.0, limit=115.0),
+                range_score(desc["mw"], low=180.0, best_low=260.0, best_high=520.0, high=650.0),
+                below_score(desc["rb"], best=7.0, limit=13.0),
+            ),
+            weights=(1.5, 1.5, 1.3, 1.0, 0.8, 0.7),
+        )
+    if prop == "mutagenicity" and direction == "decrease":
+        return weighted_mean(
+            (
+                1.0 - clamp01(desc["alerts"] / 2.0),
+                clamp01(desc["qed"]),
+                below_score(desc["sa"], best=3.0, limit=6.0),
+                below_score(desc["halogens"], best=2.0, limit=5.0),
+                below_score(desc["aromatic_rings"], best=2.0, limit=5.0),
+            ),
+            weights=(2.0, 1.0, 1.0, 0.5, 0.5),
+        )
+    if prop == "qed" and direction == "increase":
+        return clamp01(desc["qed"])
+    if prop in {"plogp", "logp"} and direction == "increase":
+        return range_score(desc["logp"], low=0.0, best_low=2.0, best_high=4.5, high=6.5)
+    if prop in {"sas", "sa"} and direction == "decrease":
+        return below_score(desc["sa"], best=3.0, limit=6.0)
+    return 0.5 * clamp01(desc["qed"]) + 0.5 * below_score(desc["sa"], best=3.0, limit=6.0)
+
+
+def range_score(value: float, *, low: float, best_low: float, best_high: float, high: float) -> float:
+    value = float(value)
+    if value <= low or value >= high:
+        return 0.0
+    if best_low <= value <= best_high:
+        return 1.0
+    if value < best_low:
+        return clamp01((value - low) / max(best_low - low, 1e-8))
+    return clamp01((high - value) / max(high - best_high, 1e-8))
+
+
+def below_score(value: float, *, best: float, limit: float) -> float:
+    value = float(value)
+    if value <= best:
+        return 1.0
+    if value >= limit:
+        return 0.0
+    return clamp01((limit - value) / max(limit - best, 1e-8))
+
+
+def weighted_mean(values: Sequence[float], *, weights: Sequence[float]) -> float:
+    weighted = [float(value) * float(weight) for value, weight in zip(values, weights)]
+    return float(sum(weighted) / max(sum(float(weight) for weight in weights), 1e-8))
+
+
+def clamp01(value: float) -> float:
+    return max(0.0, min(1.0, float(value)))
 
 
 def editable_atom_sites(source_smiles: str, *, site_limit: int) -> list[int]:
