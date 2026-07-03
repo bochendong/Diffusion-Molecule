@@ -25,8 +25,8 @@
 | --- | ---: | ---: | --- |
 | overlap-3 mean `Acc_all(0.65)` | **0.555** | **0.860** | RB / MW / SA 三个重合单任务 |
 | overlap-3 mean `Acc_all(0.15)` | **0.838** | **0.860** | 同上 |
-| 10-task mean `Acc_all(0.65)` | **0.450** | **0.794**† / **0.289**‡ | 我们为 table-success rerank assisted result；† uncapped v3 attack；‡ **n=256 capped sweep**（2026-07-03） |
-| 10-task mean `Acc_all(0.15)` | **0.727** | **0.854**† / **0.791**‡ | GSK3B 仍为 0 |
+| 10-task mean `Acc_all(0.65)` | **0.450** | **0.794**‡ / **0.289**§ | 我们为 table-success rerank assisted result；‡ **n=2048** unified sweep（2026-07-03）；§ **n=256** |
+| 10-task mean `Acc_all(0.15)` | **0.727** | **0.854**‡ / **0.791**§ | GSK3B 仍为 0 |
 
 结论：Table1 是目前最容易写成“超过已有方法”的主表，但必须把 base generator、fair result、assisted/selection result 分开。
 

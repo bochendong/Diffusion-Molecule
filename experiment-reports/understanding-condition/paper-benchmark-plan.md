@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | active planning |
-| **最后更新** | 2026-07-03（Table1 candidate budget sweep `0f26caf` jobs `17110244`–`17110248`） |
+| **最后更新** | 2026-07-03（Table1 candidate sweep n=2048 jobs `17116806`–`17116807`；复现 v3 attack **0.794**） |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **目标** | 把当前结果整理成可投顶会的 benchmark 结构，并提供可直接提交到服务器的命令 |
 
@@ -65,7 +65,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_v3_fair_t
 - 给出 `Acc_all(0.65)` / `Acc_all(0.15)` 的公平版
 - 能和 `table_success_rerank` 结果并排，量化 selection gain
 
-### 1b. Table1 candidate budget sweep ✅（jobs `17110244`–`17110248`，`0f26caf`）
+### 1b. Table1 candidate budget sweep ✅（jobs `17110244`–`17110248` / `17116806`–`17116807`）
 
 目的：在**同一 eval latent + synthetic pack** 下，量化 `edit_latent_table_success_rerank` 的 **candidate budget n**（同时对齐 `source_similarity_rerank_candidates`）对 Table1 的影响。
 
@@ -74,6 +74,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_v3_fair_t
 ```bash
 git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_table1_candidate_sweep.sh
+# 单档 n=2048：
+SUCC_TABLE1_CANDIDATE_SWEEP=2048 bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_table1_candidate_sweep.sh
 # 强制重跑 eval：SUCC_TABLE1_REUSE_EVAL=0 ...
 ```
 
@@ -81,6 +83,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_table1_ca
 | --- | ---: | --- | --- |
 | `17110244` → `17110245` | **20** | materialized bench → table metrics | ~15m |
 | `17110247` → `17110248` | **256** | materialized bench → table metrics | ~18m |
+| `17116806` → `17116807` | **2048** | materialized bench → table metrics | ~28m |
 
 Pack：`table1_benchmark_synthetic/`（10 tasks × 100 = 1000 rows）；**复用** `table1_eval_latent/eval_latent/`（未重跑 eval）。
 
@@ -90,21 +93,23 @@ Pack：`table1_benchmark_synthetic/`（10 tasks × 100 = 1000 rows）；**复用
 | ---: | ---: | ---: | --- |
 | **20** | **8.5%** | **61.8%** | Acc@0.65 **−20.1pp** vs fair **28.6%** |
 | **256** | **28.9%** | **79.1%** | Acc@0.65 **≈ fair 28.6%**（+0.3pp）；Acc@0.15 **+22.2pp** |
+| **2048** | **79.4%** | **85.4%** | Acc@0.65 **+50.8pp** vs fair；**复现 v3 attack 0.794** |
 | fair（P0 §1，similarity only） | **28.6%** | **56.9%** | — |
 
-分 task 最大增益（Acc@0.65，n=20→256）：DRD2↓ MW↓ SA↓ **+39pp**（9%→48%）；Rotbonds↓ **+30pp**；QED↑ SA↓ **+26pp**。**GSK3B↑ 仍为 0**（n=20 / n=256 均 0）。Validity 全 task **100%**。
+分 task 最大增益（Acc@0.65）：n=20→256 时 DRD2↓ MW↓ SA↓ **+39pp**；n=256→2048 时 Rotbonds↓ / MW↑ / DRD2↓ MW↓ SA↓ **→100%**。**GSK3B↑ 仍为 0**（n=20 / 256 / 2048 均 0）。Validity 全 task **100%**。
 
 产物：
 
 - n=20：`.../moledit_table_metrics_table1_table_attack_n20/moledit_table_summary.md`
 - n=256：`.../moledit_table_metrics_table1_table_attack_n256/moledit_table_summary.md`
+- n=2048：`.../moledit_table_metrics_table1_table_attack_n2048/moledit_table_summary.md`
 
 **结论**：
 
 1. **n=20 对 table-success rerank 明显不够**（Acc@0.65 仅 8.5%）。
-2. **n=256 时 Acc@0.65 与 fair similarity rerank 几乎持平**——在 capped synthetic pack 上，table-success rerank 的 strict Acc@0.65 **selection gain 很有限**；主要增益在 Acc@0.15。
-3. 旧 v3 attack 报告 **0.794**（uncapped / 不同 materialization）**不可与本次 sweep 直接横比**；对外 claim 必须标注 **candidate budget n**。
-4. n=256 Acc@0.65 **28.9%** 仍低于 MolEditRL 10-task mean **45%**。
+2. **n=256 时 Acc@0.65 与 fair similarity rerank 几乎持平**——strict Acc@0.65 的 selection gain 很有限；主要增益在 Acc@0.15。
+3. **n=2048 在同一 synthetic pack 上逐 task 复现旧 v3 attack 0.794 / 0.854**——历史数字差异来自 **candidate budget**，不是 materialization bug。
+4. 对外 claim 必须标注 **candidate budget n**；n=256 仍低于 MolEditRL 10-task mean **45%**；n=2048 **超过** MolEditRL（**79.4%** vs **45%**）。
 
 ### 2. OOD group RL + conservative decoding（n=128）✅（job `16768168`）
 
@@ -467,7 +472,7 @@ export SUCC_ADMET_PYTHON_BIN=$HOME/.venvs/admet_ai/bin/python
 ### Edit
 
 - `ours-direct`: Table1 fair（`edit_latent_source_similarity_rerank`，mean Acc@0.65 **28.6%**）
-- `ours-assisted`: Table1 attack（`edit_latent_table_success_rerank`；**n=256** mean Acc@0.65 **28.9%**，**n=20** **8.5%**；须标注 candidate budget）
+- `ours-assisted`: Table1 attack（`edit_latent_table_success_rerank`；**n=2048** mean Acc@0.65 **79.4%**；**n=256** **28.9%**；**n=20** **8.5%**；须标注 candidate budget）
 
 ### De novo
 
@@ -477,5 +482,5 @@ export SUCC_ADMET_PYTHON_BIN=$HOME/.venvs/admet_ai/bin/python
 ## 当前最值得优先回答的问题
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
-2. ~~Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？~~ → fair mean Acc@0.65 **28.6%**；table-success rerank **n=256** **28.9%**（≈ fair）；**n=20** **8.5%**（candidate pool 不足）；旧 uncapped attack **0.794** 不可与 capped sweep 横比。
+2. ~~Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？~~ → fair **28.6%**；table-success rerank **n=256** **28.9%**（≈ fair）；**n=2048** **79.4%**（+50.8pp，复现 v3 attack）；**n=20** **8.5%**（pool 不足）。
 3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ MuMO official SR **48.3%**（OOD **69%** 接近论文量级）；C-MuMO official SR **1.4%**（距 GeLLMO-C ~75%/63% 仍远）；IND-hard **DPQ +4.5pp**。

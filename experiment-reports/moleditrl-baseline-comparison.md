@@ -26,7 +26,7 @@
 | **10-task mean** | **0.450** | **0.794** | **0.727** | **0.854** |
 | **overlap-3 mean (RB/MW/SA)** | **0.555** | **0.860** | **0.838** | **0.860** |
 
-> **2026-07-03 candidate budget sweep**（`table1_benchmark_synthetic`，复用 eval latent，jobs `17110244`–`17110248`）：`table_success_rerank` mean Acc@0.65 **n=20 → 8.5%**，**n=256 → 28.9%**（≈ fair similarity rerank **28.6%**）。上表 **0.794** 为 uncapped / 不同 materialization，勿与 capped sweep 横比。详见 [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) §1b。
+> **2026-07-03 candidate budget sweep**（`table1_benchmark_synthetic`，复用 eval latent）：mean Acc@0.65 **n=20 → 8.5%**，**n=256 → 28.9%**（≈ fair **28.6%**），**n=2048 → 79.4%**（逐 task 复现上表 **0.794**）。详见 [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) §1b。
 
 490/1000 行为合成 reference pair；metric 在 rerank 阶段直接优化 Table1 目标。
 
