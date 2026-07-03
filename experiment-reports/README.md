@@ -176,7 +176,23 @@ OOD group-relative RL（rollouts=16，`group_zscore`，bench n=128）：OOD over
 | `16768169` | `succ-direct-smiles-ood-v2-group-rl-n256` | 完成 | 同上 |
 | `16768170` | `succ-direct-smiles-ood-v2-group-rl-conservative-n256` | 完成 | 同上 |
 
-Table1 fair：mean `Acc_all(0.65)` **28.6%**（`edit_latent_source_similarity_rerank`，10 tasks）。OOD follow-up：conservative n=128 **80.2%/78.0%** 7p；n=256 **89.0%/90.0%** 7p；conservative n=256 **89.4%** overall best。
+Table1 fair：mean `Acc_all(0.65)` **28.6%**（`edit_latent_source_similarity_rerank`，10 tasks）。Table1 attack candidate sweep（`17110244`–`17110248`）：**n=20 → 8.5%**，**n=256 → 28.9%** Acc@0.65。OOD follow-up：conservative n=128 **80.2%/78.0%** 7p；n=256 **89.0%/90.0%** 7p；conservative n=256 **89.4%** overall best。
+
+## 近期 Slurm Job 一览（2026-07-03 Table1 candidate budget sweep）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `17110244` | `succ-t1-bench-n20` | 完成（~15m） | [paper benchmark plan](understanding-condition/paper-benchmark-plan.md) |
+| `17110245` | `succ-t1-table-n20` | 完成 | 同上 |
+| `17110247` | `succ-t1-bench-n256` | 完成（~18m） | 同上 |
+| `17110248` | `succ-t1-table-n256` | 完成 | 同上 |
+
+`edit_latent_table_success_rerank` on `table1_benchmark_synthetic`：Acc@0.65 **8.5%**（n=20）→ **28.9%**（n=256，≈ fair **28.6%**）；Acc@0.15 **61.8%** → **79.1%**。GSK3B↑ 仍 **0**。
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_table1_candidate_sweep.sh
+```
 
 ## 近期 Slurm Job 一览（2026-06-27 external MuMO group-RL）
 

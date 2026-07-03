@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | initial baseline extraction |
-| **最后更新** | 2026-07-02 |
+| **最后更新** | 2026-07-03 |
 | **用途** | 把我们的 Table1 / MuMO / C-MuMO 结果放到外部论文口径下，而不是只和自己历史版本比较 |
 
 ## 为什么要单独建这张表
@@ -25,8 +25,8 @@
 | --- | ---: | ---: | --- |
 | overlap-3 mean `Acc_all(0.65)` | **0.555** | **0.860** | RB / MW / SA 三个重合单任务 |
 | overlap-3 mean `Acc_all(0.15)` | **0.838** | **0.860** | 同上 |
-| 10-task mean `Acc_all(0.65)` | **0.450** | **0.794** | 我们为 table-success rerank assisted result；旧报告 0.894 为算术错误 |
-| 10-task mean `Acc_all(0.15)` | **0.727** | **0.854** | GSK3B 仍为 0 |
+| 10-task mean `Acc_all(0.65)` | **0.450** | **0.794**† / **0.289**‡ | 我们为 table-success rerank assisted result；† uncapped v3 attack；‡ **n=256 capped sweep**（2026-07-03） |
+| 10-task mean `Acc_all(0.15)` | **0.727** | **0.854**† / **0.791**‡ | GSK3B 仍为 0 |
 
 结论：Table1 是目前最容易写成“超过已有方法”的主表，但必须把 base generator、fair result、assisted/selection result 分开。
 
