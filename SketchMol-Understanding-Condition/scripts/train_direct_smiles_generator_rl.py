@@ -24,6 +24,8 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from train_direct_smiles_generator import (  # noqa: E402
     UNK,
+    PROPERTY_NORMALIZERS,
+    PROPERTY_VALUE_KEYS,
     _repeat_generation_batch,
     _safe_canonical_smiles,
     batches,
@@ -31,19 +33,63 @@ from train_direct_smiles_generator import (  # noqa: E402
     collate,
     load_checkpoint,
     load_store,
+    parse_direction_value,
+    parse_float,
     property_score_components,
     read_rows,
     resolve_device,
     resolve_condition_mixing_mode,
     save_checkpoint,
     seed_everything,
+    selected_properties,
 )
 from sketchmol_understanding_condition.direct_smiles_generation import (  # noqa: E402
     ConditionedSmilesDecoder,
     SmilesVocabulary,
     detokenize_smiles,
 )
-from sketchmol_understanding_condition.chem import morgan_tanimoto  # noqa: E402
+from sketchmol_understanding_condition.chem import molecular_properties, morgan_tanimoto  # noqa: E402
+
+
+PROPERTY_ALIASES = {
+    "gsk3b": "GSK3B",
+    "gsk3β": "GSK3B",
+    "gsk3": "GSK3B",
+    "drd2": "DRD2",
+    "rb": "RB",
+    "rotbonds": "RB",
+    "rotbond": "RB",
+    "rotatable": "RB",
+    "rotatable_bonds": "RB",
+    "mw": "MW",
+    "molwt": "MW",
+    "molecular_weight": "MW",
+    "sa": "SA",
+    "sas": "SA",
+    "synthetic_accessibility": "SA",
+    "haccept": "HBA",
+    "hacceptor": "HBA",
+    "hba": "HBA",
+    "logp": "LogP",
+    "qed": "QED",
+    "tpsa": "TPSA",
+    "hbd": "HBD",
+}
+_TDC_ORACLE_CACHE: dict[str, object | None] = {}
+_PROPERTY_CACHE: dict[str, dict[str, float] | None] = {}
+
+
+def _ensure_rdkit_six_compat() -> None:
+    if "rdkit.six" in sys.modules:
+        return
+    try:
+        from rdkit.six import iteritems  # noqa: F401
+    except ModuleNotFoundError:
+        import types
+
+        six_mod = types.ModuleType("rdkit.six")
+        six_mod.iteritems = dict.items
+        sys.modules["rdkit.six"] = six_mod
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -90,12 +136,27 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default="sum",
     )
     parser.add_argument("--reference-kl-weight", type=float, default=0.0)
+    parser.add_argument(
+        "--reward-mode",
+        choices=("property_strict", "table1_edit"),
+        default="property_strict",
+        help=(
+            "property_strict matches the de novo 2p-7p reward. "
+            "table1_edit scores source-conditioned MolEdit-style property directions."
+        ),
+    )
     parser.add_argument("--reward-valid-weight", type=float, default=1.0)
     parser.add_argument("--reward-strict-weight", type=float, default=1.0)
     parser.add_argument("--reward-distance-weight", type=float, default=0.1)
     parser.add_argument("--reward-distance-clip", type=float, default=10.0)
     parser.add_argument("--reward-source-similarity-weight", type=float, default=0.0)
     parser.add_argument("--reward-source-similarity-threshold", type=float, default=0.4)
+    parser.add_argument(
+        "--reward-source-copy-penalty",
+        type=float,
+        default=0.0,
+        help="Penalty applied when a source-conditioned edit simply copies the source molecule.",
+    )
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="auto")
     return parser.parse_args(argv)
@@ -176,12 +237,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             advantage_clip=float(args.advantage_clip),
             sequence_logprob_reduction=str(args.sequence_logprob_reduction),
             reference_kl_weight=float(args.reference_kl_weight),
+            reward_mode=str(args.reward_mode),
             reward_valid_weight=float(args.reward_valid_weight),
             reward_strict_weight=float(args.reward_strict_weight),
             reward_distance_weight=float(args.reward_distance_weight),
             reward_distance_clip=float(args.reward_distance_clip),
             reward_source_similarity_weight=float(args.reward_source_similarity_weight),
             reward_source_similarity_threshold=float(args.reward_source_similarity_threshold),
+            reward_source_copy_penalty=float(args.reward_source_copy_penalty),
             grad_clip=float(args.grad_clip),
             seed=int(args.seed) + epoch,
         )
@@ -207,12 +270,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                         repetition_penalty=float(args.repetition_penalty),
                         no_repeat_ngram_size=int(args.no_repeat_ngram_size),
                         min_new_tokens=int(args.min_new_tokens),
+                        reward_mode=str(args.reward_mode),
                         reward_valid_weight=float(args.reward_valid_weight),
                         reward_strict_weight=float(args.reward_strict_weight),
                         reward_distance_weight=float(args.reward_distance_weight),
                         reward_distance_clip=float(args.reward_distance_clip),
                         reward_source_similarity_weight=float(args.reward_source_similarity_weight),
                         reward_source_similarity_threshold=float(args.reward_source_similarity_threshold),
+                        reward_source_copy_penalty=float(args.reward_source_copy_penalty),
                     ).items()
                 }
             )
@@ -240,8 +305,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "advantage_mode": str(args.advantage_mode),
         "sequence_logprob_reduction": str(args.sequence_logprob_reduction),
         "reference_kl_weight": float(args.reference_kl_weight),
+        "reward_mode": str(args.reward_mode),
         "reward_source_similarity_weight": float(args.reward_source_similarity_weight),
         "reward_source_similarity_threshold": float(args.reward_source_similarity_threshold),
+        "reward_source_copy_penalty": float(args.reward_source_copy_penalty),
         "device": str(device),
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -274,12 +341,14 @@ def train_epoch_rl(
     advantage_clip: float,
     sequence_logprob_reduction: str,
     reference_kl_weight: float,
+    reward_mode: str,
     reward_valid_weight: float,
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
+    reward_source_copy_penalty: float,
     grad_clip: float,
     seed: int,
 ) -> dict[str, object]:
@@ -327,12 +396,14 @@ def train_epoch_rl(
             batch_meta,
             generated,
             vocab,
+            reward_mode=reward_mode,
             reward_valid_weight=reward_valid_weight,
             reward_strict_weight=reward_strict_weight,
             reward_distance_weight=reward_distance_weight,
             reward_distance_clip=reward_distance_clip,
             reward_source_similarity_weight=reward_source_similarity_weight,
             reward_source_similarity_threshold=reward_source_similarity_threshold,
+            reward_source_copy_penalty=reward_source_copy_penalty,
         ).to(device)
         rewards_2d = rewards.view(len(batch_rows), rollouts_per_prompt)
         advantages = group_relative_advantages(
@@ -403,12 +474,14 @@ def evaluate_rl(
     repetition_penalty: float,
     no_repeat_ngram_size: int,
     min_new_tokens: int,
+    reward_mode: str,
     reward_valid_weight: float,
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
+    reward_source_copy_penalty: float,
 ) -> dict[str, float]:
     model.eval()
     rewards = []
@@ -438,12 +511,14 @@ def evaluate_rl(
             batch_meta,
             generated,
             vocab,
+            reward_mode=reward_mode,
             reward_valid_weight=reward_valid_weight,
             reward_strict_weight=reward_strict_weight,
             reward_distance_weight=reward_distance_weight,
             reward_distance_clip=reward_distance_clip,
             reward_source_similarity_weight=reward_source_similarity_weight,
             reward_source_similarity_threshold=reward_source_similarity_threshold,
+            reward_source_copy_penalty=reward_source_copy_penalty,
         )
         rewards.append(float(reward.mean()))
         dataset_index += len(batch_rows)
@@ -553,12 +628,14 @@ def compute_rewards(
     generated: torch.Tensor,
     vocab: SmilesVocabulary,
     *,
+    reward_mode: str,
     reward_valid_weight: float,
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
+    reward_source_copy_penalty: float,
 ) -> torch.Tensor:
     rewards = []
     rollout_count = max(1, int(generated.shape[0] // max(len(rows), 1)))
@@ -571,12 +648,14 @@ def compute_rewards(
                 reward_for_smiles(
                     row,
                     smiles,
+                    reward_mode=reward_mode,
                     reward_valid_weight=reward_valid_weight,
                     reward_strict_weight=reward_strict_weight,
                     reward_distance_weight=reward_distance_weight,
                     reward_distance_clip=reward_distance_clip,
                     reward_source_similarity_weight=reward_source_similarity_weight,
                     reward_source_similarity_threshold=reward_source_similarity_threshold,
+                    reward_source_copy_penalty=reward_source_copy_penalty,
                 )
             )
     return torch.as_tensor(rewards, dtype=torch.float32)
@@ -586,17 +665,22 @@ def reward_for_smiles(
     row: Mapping[str, str],
     smiles: str,
     *,
+    reward_mode: str = "property_strict",
     reward_valid_weight: float,
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
     reward_source_similarity_weight: float = 0.0,
     reward_source_similarity_threshold: float = 0.4,
+    reward_source_copy_penalty: float = 0.0,
 ) -> float:
     canonical = _safe_canonical_smiles(smiles)
     if not canonical:
         return -1.0
-    strict_fraction, distance = property_score_components(row, canonical)
+    if reward_mode == "table1_edit":
+        strict_fraction, distance = table1_edit_score_components(row, canonical)
+    else:
+        strict_fraction, distance = property_score_components(row, canonical)
     distance = min(float(distance), float(reward_distance_clip))
     valid_reward = float(reward_valid_weight)
     strict_reward = float(reward_strict_weight) * float(strict_fraction)
@@ -606,7 +690,128 @@ def reward_for_smiles(
         canonical,
         threshold=float(reward_source_similarity_threshold),
     )
-    return valid_reward + strict_reward - distance_penalty + source_similarity_reward
+    copy_penalty = float(reward_source_copy_penalty) * source_copy_component(row, canonical)
+    return valid_reward + strict_reward - distance_penalty + source_similarity_reward - copy_penalty
+
+
+def table1_edit_score_components(row: Mapping[str, str], smiles: str) -> tuple[float, float]:
+    source_smiles = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
+    if not source_smiles:
+        return 0.0, 0.0
+    specs = table1_edit_specs(row)
+    if not specs:
+        return 0.0, 0.0
+    successes = []
+    distances = []
+    for prop, direction in specs:
+        source_score = score_edit_property(source_smiles, prop)
+        generated_score = score_edit_property(smiles, prop)
+        if source_score is None or generated_score is None:
+            successes.append(False)
+            distances.append(1e6)
+            continue
+        if direction == "increase":
+            margin = float(generated_score) - float(source_score)
+        elif direction == "decrease":
+            margin = float(source_score) - float(generated_score)
+        else:
+            successes.append(False)
+            distances.append(1e6)
+            continue
+        successes.append(margin > 0.0)
+        normalizer = float(PROPERTY_NORMALIZERS.get(prop, 1.0))
+        distances.append(max(0.0, -margin) / max(normalizer, 1e-8))
+    return sum(1 for value in successes if value) / max(len(successes), 1), sum(distances) / max(len(distances), 1)
+
+
+def table1_edit_specs(row: Mapping[str, str]) -> list[tuple[str, str]]:
+    specs: list[tuple[str, str]] = []
+    raw = str(row.get("instruction_tasks", "") or "").strip()
+    if raw:
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = []
+        if isinstance(parsed, list):
+            for item in parsed:
+                if not isinstance(item, Mapping):
+                    continue
+                prop = canonical_edit_property(item.get("property", ""))
+                direction = canonical_edit_direction(item.get("direction", ""))
+                if prop and direction:
+                    specs.append((prop, direction))
+    if specs:
+        return specs
+    out = []
+    for prop in selected_properties(row):
+        canonical = canonical_edit_property(prop)
+        direction = canonical_edit_direction(row.get(f"{canonical}_direction", "") or row.get(f"{prop}_direction", ""))
+        if canonical and direction:
+            out.append((canonical, direction))
+    return out
+
+
+def score_edit_property(smiles: str, prop: str) -> float | None:
+    prop = canonical_edit_property(prop)
+    if prop in PROPERTY_VALUE_KEYS:
+        props = cached_molecular_properties(smiles)
+        if not props:
+            return None
+        value = props.get(prop)
+        return None if value is None or not math.isfinite(float(value)) else float(value)
+    oracle = tdc_oracle(prop)
+    if oracle is None:
+        return None
+    try:
+        value = float(oracle(smiles))  # type: ignore[operator]
+    except Exception:
+        return None
+    return value if math.isfinite(value) else None
+
+
+def cached_molecular_properties(smiles: str) -> dict[str, float] | None:
+    key = str(smiles or "")
+    if key not in _PROPERTY_CACHE:
+        props = molecular_properties(key)
+        if props is None:
+            _PROPERTY_CACHE[key] = None
+        else:
+            _PROPERTY_CACHE[key] = {
+                prop: float(props[value_key])
+                for prop, value_key in PROPERTY_VALUE_KEYS.items()
+                if value_key in props and math.isfinite(float(props[value_key]))
+            }
+    return _PROPERTY_CACHE[key]
+
+
+def tdc_oracle(prop: str):
+    prop = canonical_edit_property(prop)
+    if prop in _TDC_ORACLE_CACHE:
+        return _TDC_ORACLE_CACHE[prop]
+    try:
+        _ensure_rdkit_six_compat()
+        from tdc import Oracle
+
+        _TDC_ORACLE_CACHE[prop] = Oracle(name=prop)
+    except Exception:
+        _TDC_ORACLE_CACHE[prop] = None
+    return _TDC_ORACLE_CACHE[prop]
+
+
+def canonical_edit_property(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return PROPERTY_ALIASES.get(text.lower(), text)
+
+
+def canonical_edit_direction(value: object) -> str:
+    parsed = parse_direction_value(value)
+    if parsed > 0:
+        return "increase"
+    if parsed < 0:
+        return "decrease"
+    return ""
 
 
 def source_similarity_component(row: Mapping[str, str], smiles: str, *, threshold: float) -> float:
@@ -624,6 +829,13 @@ def source_similarity_component(row: Mapping[str, str], smiles: str, *, threshol
     if threshold <= 0:
         return value
     return (value - threshold) / max(1.0 - threshold, 1e-6)
+
+
+def source_copy_component(row: Mapping[str, str], smiles: str) -> float:
+    source_smiles = str(row.get("source_smiles", "") or "").strip()
+    if not source_smiles:
+        return 0.0
+    return 1.0 if _safe_canonical_smiles(source_smiles) == _safe_canonical_smiles(smiles) else 0.0
 
 
 if __name__ == "__main__":
