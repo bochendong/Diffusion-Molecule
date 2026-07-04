@@ -98,19 +98,15 @@ feature_output="$(
     --dependency="afterok:$prep_job" \
     --output="$LOG_DIR/%x-%j.log" \
     --export=ALL \
-    bash "$SCRIPT_DIR/submit_unified_smiles_generator_feature_variants.sh" 2>&1 | tee /dev/stderr
+    --wrap="bash '$SCRIPT_DIR/run_unified_smiles_generator_feature_variants.sh'" 2>&1
 )"
 echo "$feature_output"
-feature_job="$(echo "$feature_output" | sed -n 's/unified_smiles_generator_feature_variants_job=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
-if [[ -z "$feature_job" ]]; then
-  feature_job="$(echo "$feature_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
-fi
+feature_job="$(echo "$feature_output" | sed -n 's/Submitted batch job \([0-9][0-9]*\).*/\1/p' | tail -n 1)"
 if [[ -z "$feature_job" ]]; then
   echo "ERROR: failed to submit feature-export job." >&2
   exit 1
 fi
 
-main_wrap="bash '$SCRIPT_DIR/run_unified_smiles_generator_experiment_suite.sh'"
 main_output="$(
   SUCC_UNIFIED_SUITE_GPU_PROFILE="${SUCC_UNIFIED_SUITE_GPU_PROFILE:-h100_40gb_mig}" \
   SUCC_UNIFIED_SUITE_SLURM_TIME="$MAIN_TIME" \
@@ -118,7 +114,7 @@ main_output="$(
   SUCC_UNIFIED_SUITE_SLURM_CPUS="$CPUS" \
   SUCC_UNIFIED_SUITE_SLURM_JOB_NAME="succ-unified-firstpass" \
   SUCC_UNIFIED_SUITE_SLURM_DEPENDENCY="afterok:$feature_job" \
-  bash "$SCRIPT_DIR/submit_unified_smiles_generator_experiment_suite.sh" 2>&1 | tee /dev/stderr
+  bash "$SCRIPT_DIR/submit_unified_smiles_generator_experiment_suite.sh" 2>&1
 )"
 echo "$main_output"
 main_job="$(echo "$main_output" | sed -n 's/unified_smiles_generator_experiment_suite_job=\([0-9][0-9]*\).*/\1/p' | tail -n 1)"
