@@ -60,6 +60,35 @@
 
 v2 在 **仅 n=64 推理** 下 overall **+11.9pp** vs v1 best n=256；7p **+19.1pp**（0.258→0.449）。2p/3p/4p 亦全面超过 SketchMol ref。
 
+## SketchMol fair-budget 对齐（待跑）
+
+SketchMol 官方 sampling 脚本的 sample 数为 `n_samples * conditional_count`；官方 README paper-style 示例与本仓库 `run_paper_repro.sh` 默认是 `n_samples=1`、`conditional_count=40`，即 **SketchMol@40**。因此 direct-SMILES de novo 主文公平表需要补：
+
+- **Ours@1**：single-sample / no best-of-K scaling。
+- **Ours@40**：与 SketchMol paper-style candidate budget 对齐。
+- **Ours@256**：保留为 high-budget/scaling result，不能作为唯一主对比。
+
+新增一键提交入口（inference-only，复用当前 group-RL checkpoints）：
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_fair_budget_suite.sh
+```
+
+默认提交四个 job：`2p7p@1`、`2p7p@40`、`OOD@1`、`OOD@40`。结果完成后汇总：
+
+```bash
+python SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_fair_budget_results.py \
+  --suite-root SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_v2_fair_budget_suite_v1
+```
+
+如只跑 2p-7p，可设：
+
+```bash
+SUCC_DIRECT_FAIR_BUDGET_RUN_OOD=0 \
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_fair_budget_suite.sh
+```
+
 ## OOD 结果（n=64，job `16472652`）
 
 | Overall strict | validity | unique valid | 2p bucket strict | 7p bucket strict | mean valid |

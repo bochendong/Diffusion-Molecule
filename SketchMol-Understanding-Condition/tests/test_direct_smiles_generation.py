@@ -94,6 +94,8 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/submit_univideo_moledit_v3_fair_table1_extension.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_rerun_suite.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_v2_suite_results.py").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_fair_budget_suite.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_fair_budget_results.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_preference_dpo_2p7p.sh").exists()
 
 
@@ -179,6 +181,68 @@ def test_collect_direct_smiles_v2_suite_results(tmp_path):
     assert by_variant["2p7p_conservative_n128"]["strict_7p"] == "0.601"
     assert by_variant["ood_conservative_n128"]["strict_7p"] == "0.720"
     assert by_variant["ood_default_n128"]["status"] == "missing"
+
+
+def test_collect_direct_smiles_fair_budget_results(tmp_path):
+    suite_root = tmp_path / "fair_suite"
+    report_path = tmp_path / "fair_report.md"
+    csv_path = tmp_path / "fair_summary.csv"
+
+    _write_rows(
+        suite_root / "2p7p_n1" / "benchmark_direct_smiles_group_rl_n1" / "benchmark_summary.csv",
+        [
+            {"method": "direct_smiles_mllm", "property_count": "2", "strict_success_rate": "0.500"},
+            {
+                "method": "direct_smiles_mllm",
+                "property_count": "all",
+                "strict_success_rate": "0.250",
+                "validity": "0.900",
+                "success_rate_strict_in_valid_mols": "0.278",
+                "unique_valid_smiles": "5400",
+                "uniqueness_in_valid_mols": "1.000",
+            },
+        ],
+    )
+    _write_rows(
+        suite_root / "2p7p_n40" / "benchmark_direct_smiles_group_rl_n40" / "benchmark_summary.csv",
+        [
+            {"method": "direct_smiles_mllm", "property_count": "7", "strict_success_rate": "0.600"},
+            {
+                "method": "direct_smiles_mllm",
+                "property_count": "all",
+                "strict_success_rate": "0.720",
+                "validity": "0.990",
+                "success_rate_strict_in_valid_mols": "0.727",
+                "unique_valid_smiles": "5940",
+                "uniqueness_in_valid_mols": "1.000",
+            },
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/collect_direct_smiles_denovo_fair_budget_results.py",
+            "--suite-root",
+            str(suite_root),
+            "--report-path",
+            str(report_path),
+            "--csv-path",
+            str(csv_path),
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    summary_rows = list(csv.DictReader(csv_path.open(newline="", encoding="utf-8")))
+    by_variant = {row["variant"]: row for row in summary_rows}
+    assert by_variant["2p7p_n1"]["overall_strict"] == "0.250"
+    assert by_variant["2p7p_n40"]["strict_7p"] == "0.600"
+    assert by_variant["ood_n1"]["status"] == "missing"
+    assert "Ours@40" in report_path.read_text(encoding="utf-8")
 
 
 def test_external_multiproperty_exporter_preserves_official_task_properties(tmp_path):
