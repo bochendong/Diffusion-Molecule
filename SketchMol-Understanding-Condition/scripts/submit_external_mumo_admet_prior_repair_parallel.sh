@@ -91,7 +91,6 @@ if [[ ! -f "$ROWS_CSV" ]]; then
     --task-spec-json "$OUTPUT_DIR/external_multiproperty_task_specs.json" \
     --suite mumo \
     --task-split "$TASK_SPLIT" \
-    --tasks all \
     --input-split all \
     --max-rows-per-task "$MAX_ROWS_PER_TASK" \
     --seed 17

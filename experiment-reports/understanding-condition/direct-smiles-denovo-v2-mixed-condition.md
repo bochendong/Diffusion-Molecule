@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | **完成**（2026-06-21） |
-| **最后更新** | 2026-06-27（P0 OOD follow-up `16768168`–`16768170`；Table1 fair `16768165`–`16768167`） |
+| **最后更新** | 2026-06-27（P0 OOD follow-up `16768168`–`16768170`；Table1 fair `16768165`–`16768167`；fair-budget suite `17162873`–`17162880`） |
 | **入口** | `submit_direct_smiles_denovo_2p7p_v2_benchmark.sh` / `submit_direct_smiles_denovo_ood_v2_benchmark.sh` / `submit_direct_smiles_denovo_v2_rerun_suite.sh` / `submit_direct_smiles_rl_2p7p_v2.sh` / `submit_direct_smiles_group_rl_2p7p_v2.sh` / `submit_direct_smiles_group_rl_ood_v2.sh` |
 | **目的** | 在 direct SMILES decoder 上引入 mixed conditioning + property-count curriculum，提升高 property count（6p/7p）strict |
 
@@ -60,34 +60,30 @@
 
 v2 在 **仅 n=64 推理** 下 overall **+11.9pp** vs v1 best n=256；7p **+19.1pp**（0.258→0.449）。2p/3p/4p 亦全面超过 SketchMol ref。
 
-## SketchMol fair-budget 对齐（待跑）
+## SketchMol fair-budget 对齐 ✅（jobs `17162873`–`17162880`）
 
-SketchMol 官方 sampling 脚本的 sample 数为 `n_samples * conditional_count`；官方 README paper-style 示例与本仓库 `run_paper_repro.sh` 默认是 `n_samples=1`、`conditional_count=40`，即 **SketchMol@40**。因此 direct-SMILES de novo 主文公平表需要补：
-
-- **Ours@1**：single-sample / no best-of-K scaling。
-- **Ours@40**：与 SketchMol paper-style candidate budget 对齐。
-- **Ours@256**：保留为 high-budget/scaling result，不能作为唯一主对比。
-
-新增一键提交入口（inference-only，复用当前 group-RL checkpoints）：
+SketchMol paper-style 为 **@40**（`n_samples=1` × `conditional_count=40`）。inference-only，复用 group-RL checkpoints。
 
 ```bash
-git pull --ff-only
 bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_fair_budget_suite.sh
-```
-
-默认提交四个 job：`2p7p@1`、`2p7p@40`、`OOD@1`、`OOD@40`。结果完成后汇总：
-
-```bash
 python SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_fair_budget_results.py \
   --suite-root SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_v2_fair_budget_suite_v1
 ```
 
-如只跑 2p-7p，可设：
+| Variant | Overall strict | Validity | 2p | 3p | 4p | 5p | 6p | 7p | vs SketchMol ref |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| 2p-7p **@1** | 10.1% | 34.2% | 17.3% | 12.8% | 12.1% | 7.2% | 6.2% | 4.8% | — |
+| 2p-7p **@40** | **68.1%** | **96.9%** | **91.7%** | **83.2%** | **72.7%** | **63.6%** | **51.0%** | **46.5%** | ref 2p **80.4%** / 7p **68.5%** |
+| OOD **@1** | 3.3% | 7.8% | 1.3% | — | — | — | — | 1.0% | — |
+| OOD **@40** | **48.1%** | 82.2% | 29.0% | — | — | — | — | 37.0% | ref 2p **80.4%** / 7p **68.5%** |
 
-```bash
-SUCC_DIRECT_FAIR_BUDGET_RUN_OOD=0 \
-bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_fair_budget_suite.sh
-```
+**结论**：
+
+1. **2p-7p @40** 可作 fair-budget 主对比：2p–4p 超/平 SketchMol ref；6p/7p 仍差 **~17–22pp**。
+2. **OOD @40** 不宜当主结果（overall **48.1%**；valid 候选 ~3.4/40）；high-budget 仍用 @128/@256（conservative n=256 **89.4%**）。
+3. **@1** 仅作 ablation，说明必须 best-of-K rerank。
+
+产物：`outputs/direct_smiles_denovo_v2_fair_budget_suite_v1/fair_budget_report.md`。
 
 ## OOD 结果（n=64，job `16472652`）
 

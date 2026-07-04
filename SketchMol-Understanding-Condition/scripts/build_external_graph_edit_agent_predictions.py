@@ -62,7 +62,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         choices=("heuristic_graph_dsl", "policy_graph_dsl", "admet_prior_graph_dsl"),
         default="heuristic_graph_dsl",
     )
-    parser.add_argument("--selection-mode", choices=("score", "similarity_first"), default="similarity_first")
+    parser.add_argument(
+        "--selection-mode",
+        choices=("score", "similarity_first", "admet_hybrid"),
+        default="similarity_first",
+    )
     parser.add_argument("--min-source-tanimoto", type=float, default=0.4)
     parser.add_argument("--planner-steps", type=int, default=1)
     parser.add_argument("--beam-size", type=int, default=64)
@@ -767,8 +771,26 @@ def rank_graph_candidates(
             )
             for item in scored
         ]
-    if str(args.selection_mode) == "similarity_first":
+    if str(args.selection_mode) in {"similarity_first", "admet_hybrid"}:
         min_success = float(args.similarity_first_min_local_success_fraction)
+        admet_scores = {
+            item.canonical_smiles: admet_prior_score(row, item.canonical_smiles) for item in scored
+        }
+        if str(args.selection_mode) == "admet_hybrid":
+            return sorted(
+                scored,
+                key=lambda item: (
+                    item.source_similarity_success,
+                    admet_scores.get(item.canonical_smiles, 0.0),
+                    item.local_success_fraction >= min_success,
+                    item.all_evaluated_local_success,
+                    item.local_success_fraction,
+                    -item.local_property_distance,
+                    item.source_tanimoto if math.isfinite(item.source_tanimoto) else -1.0,
+                    item.score,
+                ),
+                reverse=True,
+            )
         return sorted(
             scored,
             key=lambda item: (

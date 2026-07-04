@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | active planning |
-| **最后更新** | 2026-07-04（MuMO ADMET-prior parallel jobs `17138952`–`17152717`；official SR **54.3%**） |
+| **最后更新** | 2026-07-04（fair-budget de novo jobs `17162873`–`17162880`；MuMO ADMET-prior v2 `17164562`–`17164574`） |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **目标** | 把当前结果整理成可投顶会的 benchmark 结构，并提供可直接提交到服务器的命令 |
 
@@ -232,7 +232,8 @@ Oracle CSV：`outputs/external_oracle_build_v1/generated_properties.csv`（39,52
 
 - Baseline GraphEdit 2-step **top-20**（`16997792`）：SR **48.3%**（IND **28.1%** / OOD **69.0%**）；Sim(success) **0.19**。
 - **ADMET-prior GraphEdit 2-step top-40**（`17152717`）：SR **54.3%**（IND **35.0%** / OOD **73.7%**）；Sim(success) **0.20**；相对 baseline **+6.0pp aggregate** / **+6.9pp IND** / **+4.7pp OOD**。⚠️ candidate budget **top-40 vs top-20**，对外 claim 须标注。
-- 产物：`outputs/external_mumo_graph_edit_admet_prior_v1/benchmark_with_admet_prior_oracle_v1/`。
+- **ADMET-prior v2 `admet_hybrid` top-40**（`17164562`–`17164574`）：SR **12.5%**（IND **~8%** / OOD **~17%**）；Sim(success) **0.52** 但 oracle 满足率崩塌——**negative ablation**，勿写主文；主结果仍用 v1 **54.3%**。产物：`outputs/external_mumo_graph_edit_admet_prior_v2/benchmark_with_admet_prior_oracle_v1/`。
+- 产物 v1：`outputs/external_mumo_graph_edit_admet_prior_v1/benchmark_with_admet_prior_oracle_v1/`。
 
 并行 graph jobs `17138952`–`17138963`（~2.5–4h/task）；merge `17138965` 因 Slurm export 逗号 bug 失败，已修脚本并本地 merge；oracle `17152716`（45m）→ re-eval `17152717`（8m）。
 
@@ -450,6 +451,8 @@ bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_par
 | MuMO IND-hard balanced | **DPQ 18.0%**（+4.5pp）；4-task aggregate **12.4%** |
 | C-MuMO GraphEdit 2-step | **SR 1.4%**（IND **1.7%** / OOD **1.1%**）；Sim≥0.4 **99.95%**（`17081085` + dedicated oracle） |
 | MuMO ADMET-prior GraphEdit | **SR 54.3%**（IND **35.0%** / OOD **73.7%**）；top-40；jobs `17138952`–`17152717` |
+| MuMO ADMET-prior v2 `admet_hybrid` | SR **12.5%**（失败 ablation）；jobs `17164562`–`17164574` |
+| De novo fair-budget @40 | 2p-7p strict **68.1%**；OOD strict **48.1%**；jobs `17162873`–`17162880` |
 
 下一步：单独建 C-MuMO oracle（`external_oracle_build_cmumo_v1`），`BUILD_ORACLE_CSV=0` 重评 C-MuMO official SR。
 
@@ -505,9 +508,18 @@ export SUCC_ADMET_PYTHON_BIN=$HOME/.venvs/admet_ai/bin/python
 
 - `ours-one-shot`: direct-smiles v2 SFT / group RL
 - `ours-assisted`: dualmode + `latent_property_rerank`
+- **fair-budget**（jobs `17162873`–`17162880`，group-RL ckpt inference-only）：
+
+| Split | @1 strict | @40 strict | @40 validity | 备注 |
+| --- | ---: | ---: | ---: | --- |
+| 2p-7p | 10.1% | **68.1%** | 96.9% | @40：2p **91.7%** / 7p **46.5%**（SketchMol ref 7p **68.5%**） |
+| OOD | 3.3% | **48.1%** | 82.2% | @40：2p **29%** / 7p **37%**；valid 候选少，不宜当主结果 |
+
+产物：`outputs/direct_smiles_denovo_v2_fair_budget_suite_v1/fair_budget_report.md`。
 
 ## 当前最值得优先回答的问题
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. ~~Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？~~ → fair **28.6%**；table-success rerank **n=256** **28.9%**（≈ fair）；**n=2048** **79.4%**（+50.8pp，复现 v3 attack）；**n=20** **8.5%**（pool 不足）。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ MuMO official SR **48.3%** baseline；**ADMET-prior top-40 SR 54.3%**（+6.0pp）；C-MuMO official SR **1.4%**（距 GeLLMO-C ~75%/63% 仍远）；IND-hard **DPQ +4.5pp**。
+3. ~~我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？~~ → MuMO **ADMET-prior v1 top-40 SR 54.3%**（+6.0pp vs baseline **48.3%**）；v2 `admet_hybrid` **12.5%** 失败；C-MuMO **1.4%**；IND-hard **DPQ +4.5pp**。
+4. ~~De novo fair-budget 能否对齐 SketchMol@40？~~ → 2p-7p @40 **68.1%**（低 p 强、7p 仍差 ref）；OOD @40 **48.1%**（弱）；@256 仍作 scaling 线。

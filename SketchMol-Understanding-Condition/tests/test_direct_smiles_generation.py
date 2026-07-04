@@ -926,6 +926,59 @@ def test_graph_edit_admet_prior_weight_changes_ranking(monkeypatch, tmp_path):
     assert ranked[0].canonical_smiles == "high"
 
 
+def test_graph_edit_admet_hybrid_prefers_admet_prior_over_local_proxy(monkeypatch, tmp_path):
+    module = _load_graph_edit_agent_module()
+    monkeypatch.setattr(module.revise, "safe_canonical", lambda value: str(value or ""))
+    monkeypatch.setattr(module.revise, "safe_tanimoto", lambda _left, _right: 0.8)
+    monkeypatch.setattr(
+        module.revise,
+        "local_property_components",
+        lambda _row, smiles: {
+            "evaluated_count": 1,
+            "success_fraction": {"local_good": 1.0, "admet_good": 0.0}.get(smiles, 0.0),
+            "all_success": smiles == "local_good",
+            "mean_distance": 0.0,
+            "missing": ("bbbp",),
+        },
+    )
+    monkeypatch.setattr(
+        module,
+        "admet_prior_score",
+        lambda _row, smiles: {"local_good": 0.2, "admet_good": 0.95}.get(smiles, 0.0),
+    )
+    args = module.parse_args(
+        [
+            "--rows-csv",
+            str(tmp_path / "rows.csv"),
+            "--prediction-csv",
+            str(tmp_path / "predictions.csv"),
+            "--selection-mode",
+            "admet_hybrid",
+            "--similarity-first-min-local-success-fraction",
+            "0.85",
+            "--admet-prior-weight",
+            "100",
+        ]
+    )
+    row = {
+        "source_smiles": "source",
+        "external_task_properties": "bbbp,plogp",
+        "external_property_directions_json": json.dumps({"bbbp": "increase", "plogp": "increase"}),
+        "external_property_thresholds_json": json.dumps({"plogp": 0.1}),
+    }
+
+    ranked = module.rank_graph_candidates(
+        row,
+        [
+            module.revise.Candidate("local_good", "local_good", "test"),
+            module.revise.Candidate("admet_good", "admet_good", "test"),
+        ],
+        args=args,
+    )
+
+    assert ranked[0].canonical_smiles == "admet_good"
+
+
 def test_graph_edit_agent_prefers_source_similar_property_success(monkeypatch, tmp_path):
     module = _load_graph_edit_agent_module()
     monkeypatch.setattr(module.revise, "safe_canonical", lambda value: str(value or ""))

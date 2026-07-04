@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| **状态** | MuMO GraphEdit 2-step SR **48.3%**（IND **28.1%** / OOD **69.0%**）；**ADMET-prior top-40 SR 54.3%**（IND **35.0%** / OOD **73.7%**）；C-MuMO GraphEdit 2-step SR **1.4%**；IND-hard **DPQ +4.5pp** |
-| **最后更新** | 2026-07-02（C-MuMO dedicated oracle `b769919` jobs `17081083`–`17081085`；aligned eval `1ba9237`） |
+| **状态** | MuMO **ADMET-prior v1 top-40 SR 54.3%**（主结果）；v2 `admet_hybrid` **12.5%**（失败 ablation）；baseline **48.3%**；C-MuMO **1.4%**；IND-hard **DPQ +4.5pp** |
+| **最后更新** | 2026-07-04（MuMO ADMET-prior v2 jobs `17164562`–`17164574`；fair-budget de novo `17162873`–`17162880`） |
 | **代码范围** | `SketchMol-Understanding-Condition` |
 | **目标** | 把 SUCC direct-SMILES/LLM-conditioned 线接到 GeLLMO/MuMOInstruct 和 GeLLMO-C/C-MuMOInstruct 风格的 source-conditioned multi-property IND/OOD benchmark |
 
@@ -605,6 +605,30 @@ Aggregate 分解：IND **35.0%**（+6.9pp）；OOD **73.7%**（+4.7pp）。
 
 推荐先跑 full MuMO；若想快筛 IND-hard，可设置 `SUCC_MUMO_ADMET_TASKS=BDP,BDPQ,DPQ,BDMQ`。
 
+### MuMO ADMET-prior v2：`admet_hybrid` ranking ❌（jobs `17164562`–`17164574`）
+
+v1 的 `similarity_first` 用 `local_success_fraction` 排序，但 local proxy 只覆盖 plogp/qed/sa。v2 在 Sim≥0.4 桶内**优先按 `admet_prior_score` 排序**（`admet_hybrid`），超参对齐 IND-hard balanced sweep。
+
+**Official SR（`17164574`，top-40）**：
+
+| Task | Split | v1 SR | v2 SR | Δ |
+| --- | --- | ---: | ---: | ---: |
+| BDP | ind | 6.0% | 4.5% | −1.5pp |
+| BDPQ | ind | 21.0% | 0.5% | −20.5pp |
+| BDQ | ind | 32.5% | 0.5% | −32.0pp |
+| BPQ | ind | 93.0% | 34.0% | −59.0pp |
+| DPQ | ind | 22.5% | 0.5% | −22.0pp |
+| BDMQ | ood | 26.0% | 0% | −26.0pp |
+| BHMQ | ood | 63.0% | 11.0% | −52.0pp |
+| BMPQ | ood | 91.5% | 22.5% | −69.0pp |
+| HMPQ | ood | 94.8% | 12.0% | −82.8pp |
+| MPQ | ood | 94.0% | 40.0% | −54.0pp |
+| **all** | | **54.3%** | **12.5%** | **−41.8pp** |
+
+Aggregate 分解：IND **~8%**；OOD **~17%**。Sim(success) **0.52**（v1 **0.20**）——prior 选出高相似、descriptor 看似合理但 **过不了 oracle** 的候选。
+
+**结论**：v2 是 negative ablation；MuMO 主结果仍用 v1 **54.3%**。入口保留：`submit_external_mumo_admet_prior_v2_repair.sh`；产物：`outputs/external_mumo_graph_edit_admet_prior_v2/benchmark_with_admet_prior_oracle_v1/`。
+
 默认提交 4 条：
 
 | Suite | 线 | 输出目录 | 说明 |
@@ -898,9 +922,11 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_external_mul
 13. ~~**parallel followup**~~ → **完成**（`17050708`–`17052468`）：IND-hard balanced **DPQ +4.5pp**；C-MuMO source oracle 覆盖 bug 已定位。
 14. ~~**C-MuMO dedicated oracle**~~ → **完成**（`17081083`–`17081085`）：official SR **1.4%**（IND **1.7%** / OOD **1.1%**）；Sim≥0.4 **99.95%**。
 15. ~~**MuMO method repair**~~ → **完成**（`17138952`–`17152717`）：ADMET-prior top-40 SR **54.3%**（IND **35.0%** / OOD **73.7%**）；+6.0pp vs baseline **48.3%**（⚠️ top-40 vs top-20）。
-16. **GeLLMO official baseline**（`17081866`–`17081876` pending GPU）；完成后用 aligned eval 与 ours 并排。
-17. **MolEdit Table1 direct group RL**（`17161387` pending GPU）。
-18. C-MuMO 专用 maintain/improve planner；GraphEditDSL similarity/property 平衡或 LLM planner。
+16. ~~**MuMO ADMET-prior v2 `admet_hybrid`**~~ → **完成**（`17164562`–`17164574`）：SR **12.5%**（−41.8pp vs v1）；negative ablation；主结果仍 v1。
+17. ~~**De novo fair-budget suite**~~ → **完成**（`17162873`–`17162880`）：2p-7p @40 **68.1%**；OOD @40 **48.1%**。
+18. **GeLLMO official baseline**（`17081866`–`17081876` pending GPU）；完成后用 aligned eval 与 ours 并排。
+19. **MolEdit Table1 direct group RL**（`17161387` pending GPU）。
+20. C-MuMO 专用 maintain/improve planner；GraphEditDSL similarity/property 平衡或 LLM planner。
 
 ## 外部来源
 
