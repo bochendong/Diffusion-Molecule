@@ -21,7 +21,7 @@
 | `understanding-condition/` | [materializer-random-sanity-sweep.md](understanding-condition/materializer-random-sanity-sweep.md) | **完成** random shortlist sanity sweep（`16075242`–`16075253`） |
 | `understanding-condition/` | [direct-smiles-denovo-v0.md](understanding-condition/direct-smiles-denovo-v0.md) | **完成** direct SMILES de novo v0（`16079256`/`16079257`；strict≈0，mode collapse） |
 | `understanding-condition/` | [direct-smiles-denovo-v1-sampled-rerank.md](understanding-condition/direct-smiles-denovo-v1-sampled-rerank.md) | **完成** direct SMILES v1（best SFT n=256 **56.2%**；DPO v1 **52.1%** 未提升；RL **23.2%** collapse） |
-| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO SR 48.3%**；**C-MuMO SR 1.4%**；IND-hard **DPQ +4.5pp** |
+| `understanding-condition/` | [external-multiproperty-benchmark.md](understanding-condition/external-multiproperty-benchmark.md) | **MuMO SR 48.3%**；**ADMET-prior SR 54.3%**；**C-MuMO SR 1.4%**；IND-hard **DPQ +4.5pp** |
 | `understanding-condition/` | [external-paper-baselines.md](understanding-condition/external-paper-baselines.md) | **新增** 外部论文 baseline 数值目标（MolEditRL / GeLLM3O / GeLLMO-C / C-MORAL） |
 | `understanding-condition/` | [paper-benchmark-plan.md](understanding-condition/paper-benchmark-plan.md) | **active** 论文 benchmark 执行计划（P0 已完成） |
 | `understanding-condition/` | [direct-smiles-denovo-v2-mixed-condition.md](understanding-condition/direct-smiles-denovo-v2-mixed-condition.md) | **完成** direct SMILES v2（2p7p group RL n=256 **90.9%**；OOD conservative n=256 **89.4%**） |
@@ -291,6 +291,17 @@ Parallel followup **全链完成**。IND-hard balanced：**DPQ 18.0%**（+4.5pp 
 | `17081085` | `succ-cmumo-official-graph` | 完成（~6h） | 同上 |
 
 C-MuMO dedicated oracle：**source_smiles 1776/1776** 覆盖。GraphEdit 2-step official SR **1.4%**（IND **1.7%** / OOD **1.1%**）；Sim≥0.4 **99.95%**。相对 GeLLMO-C（IND ~75% / OOD ~63%）差距巨大；瓶颈在 maintain/improve 多性质满足，不在 Sim。
+
+## 近期 Slurm Job 一览（2026-07-03/04 MuMO ADMET-prior parallel）
+
+| Job ID | 名称 | 状态 | 报告 |
+| --- | --- | --- | --- |
+| `17138952`–`17138963` | `succ-mumo-admet-{task}` ×10 | 完成（~2.5–4h/task） | [external multiproperty](understanding-condition/external-multiproperty-benchmark.md) |
+| `17138965` | `succ-mumo-admet-merge` | 失败（Slurm export 逗号 bug；已修脚本） | 同上 |
+| `17152716` | `succ-mumo-admet-prior-oracle` | 完成（~45m） | 同上 |
+| `17152717` | `succ-mumo-admet-prior-reeval` | 完成（~8m） | 同上 |
+
+Merge 后本地重跑 + oracle/re-eval 链。**Official SR 54.3%**（IND **35.0%** / OOD **73.7%**）；top-40 vs baseline top-20 **48.3%**（+6.0pp）。
 
 ```bash
 git pull --ff-only

@@ -80,25 +80,67 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--top-k-candidates", type=int, default=20)
     parser.add_argument("--method", default="external_graph_edit_agent")
     parser.add_argument("--seed", type=int, default=17)
+    parser.add_argument("--checkpoint", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--checkpoint-dir", type=Path, default=None)
+    parser.add_argument("--checkpoint-every", type=int, default=10)
+    parser.add_argument("--resume", action=argparse.BooleanOptionalAction, default=True)
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = parse_args(argv)
-    rng = random.Random(int(args.seed))
-    rows = revise.read_rows(args.rows_csv)
-    direct_rows = revise.read_direct_predictions(args.direct_prediction_csv) if args.direct_prediction_csv else {}
-    output_rows = []
-    candidate_rows = []
-    plan_records = []
-    for index, row in enumerate(rows):
-        direct_row = direct_rows.get(revise.row_key(row), {})
-        output_row, records, row_candidates = predict_row_full(row, direct_row=direct_row, args=args, rng=rng)
-        output_rows.append(output_row)
-        candidate_rows.extend(row_candidates)
-        plan_records.extend(records)
-        if (index + 1) % 100 == 0 or index + 1 == len(rows):
-            print(f"[graph-edit-agent] wrote {index + 1}/{len(rows)} rows", flush=True)
+def resolve_checkpoint_dir(args: argparse.Namespace) -> Path | None:
+    if not args.checkpoint:
+        return None
+    if args.checkpoint_dir is not None:
+        return args.checkpoint_dir
+    return args.prediction_csv.parent / "checkpoints"
+
+
+def load_checkpoint_state(checkpoint_dir: Path) -> tuple[list[dict[str, object]], list[dict[str, object]], list[dict[str, object]], set[str]]:
+    predictions_path = checkpoint_dir / "predictions.partial.csv"
+    candidates_path = checkpoint_dir / "candidates.partial.csv"
+    plans_path = checkpoint_dir / "plans.partial.jsonl"
+    output_rows: list[dict[str, object]] = []
+    candidate_rows: list[dict[str, object]] = []
+    plan_records: list[dict[str, object]] = []
+    if predictions_path.exists():
+        output_rows = [dict(row) for row in revise.read_rows(predictions_path)]
+    if candidates_path.exists():
+        candidate_rows = [dict(row) for row in revise.read_rows(candidates_path)]
+    if plans_path.exists():
+        for line in plans_path.read_text(encoding="utf-8").splitlines():
+            if line.strip():
+                plan_records.append(json.loads(line))
+    completed_keys = {revise.row_key(row) for row in output_rows if revise.row_key(row)}
+    return output_rows, candidate_rows, plan_records, completed_keys
+
+
+def write_checkpoint_state(
+    checkpoint_dir: Path,
+    *,
+    output_rows: list[dict[str, object]],
+    candidate_rows: list[dict[str, object]],
+    plan_records: list[dict[str, object]],
+) -> None:
+    checkpoint_dir.mkdir(parents=True, exist_ok=True)
+    revise.write_rows(checkpoint_dir / "predictions.partial.csv", output_rows)
+    revise.write_rows(checkpoint_dir / "candidates.partial.csv", candidate_rows)
+    with (checkpoint_dir / "plans.partial.jsonl").open("w", encoding="utf-8") as handle:
+        for record in plan_records:
+            handle.write(json.dumps(record, sort_keys=True) + "\n")
+    progress = {
+        "completed_rows": len(output_rows),
+        "completed_keys": [revise.row_key(row) for row in output_rows if revise.row_key(row)],
+    }
+    (checkpoint_dir / "progress.json").write_text(json.dumps(progress, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def finalize_graph_edit_outputs(
+    args: argparse.Namespace,
+    *,
+    output_rows: list[dict[str, object]],
+    candidate_rows: list[dict[str, object]],
+    plan_records: list[dict[str, object]],
+) -> None:
     revise.write_rows(args.prediction_csv, output_rows)
     if args.candidate_output_csv:
         revise.write_rows(args.candidate_output_csv, candidate_rows)
@@ -113,6 +155,55 @@ def main(argv: Sequence[str] | None = None) -> int:
         encoding="utf-8",
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    rng = random.Random(int(args.seed))
+    rows = revise.read_rows(args.rows_csv)
+    direct_rows = revise.read_direct_predictions(args.direct_prediction_csv) if args.direct_prediction_csv else {}
+    checkpoint_dir = resolve_checkpoint_dir(args)
+    output_rows: list[dict[str, object]] = []
+    candidate_rows: list[dict[str, object]] = []
+    plan_records: list[dict[str, object]] = []
+    completed_keys: set[str] = set()
+    if checkpoint_dir and args.resume and checkpoint_dir.exists():
+        output_rows, candidate_rows, plan_records, completed_keys = load_checkpoint_state(checkpoint_dir)
+        if completed_keys:
+            print(
+                f"[graph-edit-agent] resume: loaded {len(completed_keys)} completed rows from {checkpoint_dir}",
+                flush=True,
+            )
+    checkpoint_every = max(1, int(args.checkpoint_every))
+    for index, row in enumerate(rows):
+        row_key = revise.row_key(row)
+        if row_key and row_key in completed_keys:
+            continue
+        direct_row = direct_rows.get(row_key, {})
+        output_row, records, row_candidates = predict_row_full(row, direct_row=direct_row, args=args, rng=rng)
+        output_rows.append(output_row)
+        candidate_rows.extend(row_candidates)
+        plan_records.extend(records)
+        done = len(output_rows)
+        if checkpoint_dir and (done % checkpoint_every == 0 or done == len(rows)):
+            write_checkpoint_state(
+                checkpoint_dir,
+                output_rows=output_rows,
+                candidate_rows=candidate_rows,
+                plan_records=plan_records,
+            )
+            print(f"[graph-edit-agent] checkpoint {done}/{len(rows)} rows", flush=True)
+        elif not checkpoint_dir and (done % 100 == 0 or done == len(rows)):
+            print(f"[graph-edit-agent] wrote {done}/{len(rows)} rows", flush=True)
+    if len(output_rows) != len(rows):
+        missing = len(rows) - len(output_rows)
+        raise RuntimeError(f"graph-edit-agent finished with {len(output_rows)}/{len(rows)} rows ({missing} missing)")
+    finalize_graph_edit_outputs(
+        args,
+        output_rows=output_rows,
+        candidate_rows=candidate_rows,
+        plan_records=plan_records,
+    )
     return 0
 
 

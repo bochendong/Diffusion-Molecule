@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | active planning |
-| **最后更新** | 2026-07-03（Table1 candidate sweep n=2048 jobs `17116806`–`17116807`；复现 v3 attack **0.794**） |
+| **最后更新** | 2026-07-04（MuMO ADMET-prior parallel jobs `17138952`–`17152717`；official SR **54.3%**） |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **目标** | 把当前结果整理成可投顶会的 benchmark 结构，并提供可直接提交到服务器的命令 |
 
@@ -111,6 +111,23 @@ Pack：`table1_benchmark_synthetic/`（10 tasks × 100 = 1000 rows）；**复用
 3. **n=2048 在同一 synthetic pack 上逐 task 复现旧 v3 attack 0.794 / 0.854**——历史数字差异来自 **candidate budget**，不是 materialization bug。
 4. 对外 claim 必须标注 **candidate budget n**；n=256 仍低于 MolEditRL 10-task mean **45%**；n=2048 **超过** MolEditRL（**79.4%** vs **45%**）。
 
+### 1c. MolEdit Table1 direct-SMILES edit group RL（job `17161387` pending GPU）
+
+目的：在 Table1 source-conditioned edit 上跑 **SFT warm-start → group-relative RL → n=20/256 eval**（`reward-mode table1_edit`），与 latent attack / fair rerank 并排。
+
+入口：
+
+```bash
+bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_moledit_table1_group_rl.sh
+```
+
+| Job | GPU | 状态 |
+| --- | --- | --- |
+| `17120371` / `17139815` | 40GB / 20GB MIG | 取消（GPU 排队过久） |
+| **`17161387`** | **A100** | **PENDING (Priority)** |
+
+输出目录：`outputs/direct_smiles_moledit_table1_group_rl_v1/`（跑完后有 SFT/RL ckpt + `moledit_table_metrics_n20/n256`）。
+
 ### 2. OOD group RL + conservative decoding（n=128）✅（job `16768168`）
 
 目的：检验 group RL checkpoint 在 conservative decoding 下，是否能同时保持 OOD overall 提升并修复 7p bucket。
@@ -188,6 +205,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_direct_smiles_group_rl_ood
 | Job | 变体 | SR (all) | IND avg | OOD avg | Sim(success) |
 | --- | --- | ---: | ---: | ---: | ---: |
 | **`16997792`** | **MuMO GraphEdit 2-step** | **48.3%** | **28.1%** | **69.0%** | **0.19** |
+| **`17152717`** | **MuMO ADMET-prior 2-step top-40** | **54.3%** | **35.0%** | **73.7%** | **0.20** |
 | `17010444` | source-only | 8.1% | — | — | 0.51 |
 | `17010445` | 1-step | 3.0% | — | — | 0.49 |
 | `17010957` | C-MuMO 2-step | 0%† | — | — | — |
@@ -210,7 +228,15 @@ Oracle CSV：`outputs/external_oracle_build_v1/generated_properties.csv`（39,52
 
 † candidate-level proxy；‡ 旧 selected-prediction 口径。上表 SR=0 列为 proxy-only 时代；**oracle-backed MuMO GraphEdit 2-step SR=48.3%** 见上表。
 
-**MuMO 主结果（oracle-backed，`16997792`）**：GraphEdit 2-step top-20 SR **48.3%**（IND **28.1%** / OOD **69.0%**）；Sim(success) **0.19**。下一项：C-MuMO sourcefix oracle 重跑 + MuMO IND hard-task repair。
+**MuMO 主结果（oracle-backed）**：
+
+- Baseline GraphEdit 2-step **top-20**（`16997792`）：SR **48.3%**（IND **28.1%** / OOD **69.0%**）；Sim(success) **0.19**。
+- **ADMET-prior GraphEdit 2-step top-40**（`17152717`）：SR **54.3%**（IND **35.0%** / OOD **73.7%**）；Sim(success) **0.20**；相对 baseline **+6.0pp aggregate** / **+6.9pp IND** / **+4.7pp OOD**。⚠️ candidate budget **top-40 vs top-20**，对外 claim 须标注。
+- 产物：`outputs/external_mumo_graph_edit_admet_prior_v1/benchmark_with_admet_prior_oracle_v1/`。
+
+并行 graph jobs `17138952`–`17138963`（~2.5–4h/task）；merge `17138965` 因 Slurm export 逗号 bug 失败，已修脚本并本地 merge；oracle `17152716`（45m）→ re-eval `17152717`（8m）。
+
+下一项：C-MuMO planner；GeLLMO official baseline（`17081866`–`76` pending GPU）；MolEdit Table1 direct group RL（`17161387` pending GPU）。
 
 数据：`/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/{train,test}.json`（HuggingFace 官方）。
 
@@ -423,6 +449,7 @@ bash SketchMol-Understanding-Condition/scripts/submit_external_multiproperty_par
 | MuMO full suite | SR **48.3%**（不变，oracle v1） |
 | MuMO IND-hard balanced | **DPQ 18.0%**（+4.5pp）；4-task aggregate **12.4%** |
 | C-MuMO GraphEdit 2-step | **SR 1.4%**（IND **1.7%** / OOD **1.1%**）；Sim≥0.4 **99.95%**（`17081085` + dedicated oracle） |
+| MuMO ADMET-prior GraphEdit | **SR 54.3%**（IND **35.0%** / OOD **73.7%**）；top-40；jobs `17138952`–`17152717` |
 
 下一步：单独建 C-MuMO oracle（`external_oracle_build_cmumo_v1`），`BUILD_ORACLE_CSV=0` 重评 C-MuMO official SR。
 
@@ -483,4 +510,4 @@ export SUCC_ADMET_PYTHON_BIN=$HOME/.venvs/admet_ai/bin/python
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
 2. ~~Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？~~ → fair **28.6%**；table-success rerank **n=256** **28.9%**（≈ fair）；**n=2048** **79.4%**（+50.8pp，复现 v3 attack）；**n=20** **8.5%**（pool 不足）。
-3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ MuMO official SR **48.3%**（OOD **69%** 接近论文量级）；C-MuMO official SR **1.4%**（距 GeLLMO-C ~75%/63% 仍远）；IND-hard **DPQ +4.5pp**。
+3. 我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？→ MuMO official SR **48.3%** baseline；**ADMET-prior top-40 SR 54.3%**（+6.0pp）；C-MuMO official SR **1.4%**（距 GeLLMO-C ~75%/63% 仍远）；IND-hard **DPQ +4.5pp**。

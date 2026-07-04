@@ -6,6 +6,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+PARALLEL="${SUCC_MUMO_ADMET_PARALLEL_TASKS:-1}"
+if [[ "$PARALLEL" == "1" ]]; then
+  exec bash "$PROJECT_DIR/scripts/submit_external_mumo_admet_prior_repair_parallel.sh"
+fi
+
 SOURCE_FILE="${SUCC_MUMO_ADMET_SOURCE_FILE:-/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/test.json}"
 TASKS="${SUCC_MUMO_ADMET_TASKS:-}"
 TASK_SPLIT="${SUCC_MUMO_ADMET_TASK_SPLIT:-all}"
@@ -18,7 +23,7 @@ TOP_K="${SUCC_MUMO_ADMET_TOP_K_CANDIDATES:-40}"
 RUN_ORACLE_AFTER="${SUCC_MUMO_ADMET_RUN_ORACLE_AFTER:-1}"
 RUN_REEVAL_AFTER="${SUCC_MUMO_ADMET_RUN_REEVAL_AFTER:-1}"
 
-echo "MuMO ADMET-prior GraphEdit repair"
+echo "MuMO ADMET-prior GraphEdit repair (single job)"
 echo "  source_file=$SOURCE_FILE"
 echo "  tasks=${TASKS:-all}"
 echo "  task_split=$TASK_SPLIT"
@@ -56,6 +61,9 @@ if ! graph_output="$(
   SUCC_EXTERNAL_GRAPH_EDIT_BUILD_ORACLE_CSV=0 \
   SUCC_EXTERNAL_GRAPH_EDIT_SLURM_TIME="${SUCC_MUMO_ADMET_GRAPH_SLURM_TIME:-24:00:00}" \
   SUCC_EXTERNAL_GRAPH_EDIT_SLURM_MEM="${SUCC_MUMO_ADMET_GRAPH_SLURM_MEM:-128G}" \
+  SUCC_EXTERNAL_GRAPH_EDIT_CHECKPOINT=1 \
+  SUCC_EXTERNAL_GRAPH_EDIT_CHECKPOINT_EVERY="${SUCC_MUMO_ADMET_CHECKPOINT_EVERY:-10}" \
+  SUCC_EXTERNAL_GRAPH_EDIT_RESUME=1 \
   bash "$PROJECT_DIR/scripts/submit_direct_smiles_external_mumo_graph_edit_heuristic_2step.sh" 2>&1
 )"; then
   echo "$graph_output"

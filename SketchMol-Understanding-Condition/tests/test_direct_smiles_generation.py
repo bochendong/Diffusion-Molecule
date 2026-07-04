@@ -54,6 +54,9 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_cmumo_dedicated_oracle_fix.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_cmumo_dedicated_oracle_fix.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_admet_prior_repair.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/submit_external_mumo_admet_prior_repair_parallel.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/run_external_mumo_admet_prior_merge_task_shards.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/scripts/merge_external_graph_edit_task_shards.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/convert_external_gellmo_responses.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_gellmo_official_task.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/run_external_gellmo_official_postprocess.sh").exists()
@@ -968,6 +971,134 @@ def test_graph_edit_agent_emits_top_k_candidate_rows(monkeypatch, tmp_path):
     assert candidates[0]["condition_id"] == "external_mumo_dpq_000000"
     assert candidates[0]["candidate_rank"] == 1
     assert candidates[0]["candidate_selected"] == "True"
+
+
+def test_graph_edit_agent_checkpoint_resume(monkeypatch, tmp_path):
+    module = _load_graph_edit_agent_module()
+    rows_csv = tmp_path / "rows.csv"
+    prediction_csv = tmp_path / "predictions.csv"
+    candidate_csv = tmp_path / "candidate_predictions.csv"
+    checkpoint_dir = tmp_path / "checkpoints"
+    rows = [
+        {
+            "condition_id": "external_mumo_bdp_000001",
+            "source_smiles": "CCO",
+            "external_task_properties": "plogp",
+            "external_property_directions_json": json.dumps({"plogp": "increase"}),
+            "external_property_thresholds_json": json.dumps({"plogp": 1.0}),
+        },
+        {
+            "condition_id": "external_mumo_bdp_000002",
+            "source_smiles": "CCN",
+            "external_task_properties": "plogp",
+            "external_property_directions_json": json.dumps({"plogp": "increase"}),
+            "external_property_thresholds_json": json.dumps({"plogp": 1.0}),
+        },
+    ]
+    revise = module.revise
+    revise.write_rows(rows_csv, rows)
+
+    calls = {"count": 0}
+
+    def fake_predict_row_full(row, *, direct_row, args, rng):
+        calls["count"] += 1
+        key = revise.row_key(row)
+        return (
+            {**row, "generated_smiles": f"gen_{key}", "method": "external_graph_edit_agent"},
+            [{"condition_id": key, "generated_smiles": f"gen_{key}"}],
+            [{**row, "generated_smiles": f"gen_{key}", "candidate_rank": 1, "candidate_selected": "True"}],
+        )
+
+    monkeypatch.setattr(module, "predict_row_full", fake_predict_row_full)
+
+    assert module.main(
+        [
+            "--rows-csv",
+            str(rows_csv),
+            "--prediction-csv",
+            str(prediction_csv),
+            "--candidate-output-csv",
+            str(candidate_csv),
+            "--checkpoint-dir",
+            str(checkpoint_dir),
+            "--checkpoint-every",
+            "1",
+        ]
+    ) == 0
+    assert calls["count"] == 2
+    assert (checkpoint_dir / "predictions.partial.csv").exists()
+
+    calls["count"] = 0
+    (checkpoint_dir / "predictions.partial.csv").unlink()
+    (checkpoint_dir / "candidates.partial.csv").unlink()
+    (checkpoint_dir / "plans.partial.jsonl").write_text(
+        json.dumps({"condition_id": rows[0]["condition_id"], "generated_smiles": "gen_external_mumo_bdp_000001"}) + "\n",
+        encoding="utf-8",
+    )
+    revise.write_rows(checkpoint_dir / "predictions.partial.csv", [{**rows[0], "generated_smiles": "gen_external_mumo_bdp_000001"}])
+    revise.write_rows(
+        checkpoint_dir / "candidates.partial.csv",
+        [{**rows[0], "generated_smiles": "gen_external_mumo_bdp_000001", "candidate_rank": 1, "candidate_selected": "True"}],
+    )
+
+    assert module.main(["--rows-csv", str(rows_csv), "--prediction-csv", str(prediction_csv), "--candidate-output-csv", str(candidate_csv), "--checkpoint-dir", str(checkpoint_dir), "--checkpoint-every", "1", "--resume"]) == 0
+    assert calls["count"] == 1
+    merged_rows = revise.read_rows(prediction_csv)
+    assert [revise.row_key(row) for row in merged_rows] == [
+        "external_mumo_bdp_000001",
+        "external_mumo_bdp_000002",
+    ]
+
+
+def test_merge_external_graph_edit_task_shards(tmp_path):
+    merge_path = Path("SketchMol-Understanding-Condition/scripts/merge_external_graph_edit_task_shards.py")
+    spec = importlib.util.spec_from_file_location("merge_external_graph_edit_task_shards", merge_path)
+    assert spec is not None
+    assert spec.loader is not None
+    merge_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(merge_module)
+
+    rows = [
+        {"condition_id": "external_mumo_bdp_000001", "source_smiles": "CCO"},
+        {"condition_id": "external_mumo_bdq_000001", "source_smiles": "CCN"},
+    ]
+    rows_csv = tmp_path / "rows.csv"
+    revise = _load_agentic_revise_module()
+    revise.write_rows(rows_csv, rows)
+
+    shard_a = tmp_path / "tasks" / "BDP" / "benchmark_graph_edit_agent"
+    shard_b = tmp_path / "tasks" / "BDQ" / "benchmark_graph_edit_agent"
+    shard_a.mkdir(parents=True)
+    shard_b.mkdir(parents=True)
+    revise.write_rows(shard_a / "graph_edit_agent_predictions.csv", [{**rows[0], "generated_smiles": "gen_bdp"}])
+    revise.write_rows(shard_b / "graph_edit_agent_predictions.csv", [{**rows[1], "generated_smiles": "gen_bdq"}])
+    revise.write_rows(
+        shard_a / "graph_edit_agent_candidate_predictions.csv",
+        [{**rows[0], "generated_smiles": "gen_bdp", "candidate_rank": 1, "candidate_selected": "True"}],
+    )
+    revise.write_rows(
+        shard_b / "graph_edit_agent_candidate_predictions.csv",
+        [{**rows[1], "generated_smiles": "gen_bdq", "candidate_rank": 1, "candidate_selected": "True"}],
+    )
+
+    prediction_csv = tmp_path / "merged_predictions.csv"
+    candidate_csv = tmp_path / "merged_candidates.csv"
+    assert merge_module.main(
+        [
+            "--rows-csv",
+            str(rows_csv),
+            "--shard-dir",
+            str(tmp_path / "tasks" / "BDP"),
+            "--shard-dir",
+            str(tmp_path / "tasks" / "BDQ"),
+            "--prediction-csv",
+            str(prediction_csv),
+            "--candidate-output-csv",
+            str(candidate_csv),
+        ]
+    ) == 0
+    merged = revise.read_rows(prediction_csv)
+    assert [row["generated_smiles"] for row in merged] == ["gen_bdp", "gen_bdq"]
 
 
 def test_graph_edit_policy_agent_expands_from_beam_parent(monkeypatch, tmp_path):

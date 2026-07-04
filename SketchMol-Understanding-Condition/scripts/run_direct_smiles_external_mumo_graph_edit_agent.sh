@@ -60,6 +60,10 @@ SIMILARITY_BONUS="${SUCC_EXTERNAL_GRAPH_EDIT_SIMILARITY_BONUS:-80}"
 ADMET_PRIOR_WEIGHT="${SUCC_EXTERNAL_GRAPH_EDIT_ADMET_PRIOR_WEIGHT:-0}"
 COPY_PENALTY="${SUCC_EXTERNAL_GRAPH_EDIT_COPY_PENALTY:-8}"
 TOP_K_CANDIDATES="${SUCC_EXTERNAL_GRAPH_EDIT_TOP_K_CANDIDATES:-20}"
+CHECKPOINT="${SUCC_EXTERNAL_GRAPH_EDIT_CHECKPOINT:-1}"
+CHECKPOINT_DIR="${SUCC_EXTERNAL_GRAPH_EDIT_CHECKPOINT_DIR:-$BENCHMARK_OUTPUT_DIR/checkpoints}"
+CHECKPOINT_EVERY="${SUCC_EXTERNAL_GRAPH_EDIT_CHECKPOINT_EVERY:-10}"
+RESUME="${SUCC_EXTERNAL_GRAPH_EDIT_RESUME:-1}"
 
 export PYTHONPATH="$PROJECT_DIR:$REPO_DIR/SketchMol-MultiProperty-EditDataset${PYTHONPATH:+:$PYTHONPATH}"
 
@@ -83,6 +87,10 @@ echo "  max_candidates_per_row=$MAX_CANDIDATES_PER_ROW"
 echo "  top_k_candidates=$TOP_K_CANDIDATES"
 echo "  admet_prior_weight=$ADMET_PRIOR_WEIGHT"
 echo "  min_source_tanimoto=$MIN_SOURCE_TANIMOTO"
+echo "  checkpoint=$CHECKPOINT"
+echo "  checkpoint_dir=$CHECKPOINT_DIR"
+echo "  checkpoint_every=$CHECKPOINT_EVERY"
+echo "  resume=$RESUME"
 echo "  build_oracle_csv=$BUILD_ORACLE_CSV"
 echo "  generated_properties_csv=${GENERATED_PROPERTIES_CSV:-none}"
 echo "  source_properties_csv=${SOURCE_PROPERTIES_CSV:-none}"
@@ -113,6 +121,18 @@ else
   echo "WARN: direct proposal CSV missing; running GraphEditDSL from source-copy seed only." >&2
 fi
 
+CHECKPOINT_ARGS=()
+if [[ "$CHECKPOINT" == "1" ]]; then
+  CHECKPOINT_ARGS+=(--checkpoint --checkpoint-dir "$CHECKPOINT_DIR" --checkpoint-every "$CHECKPOINT_EVERY")
+  if [[ "$RESUME" == "1" ]]; then
+    CHECKPOINT_ARGS+=(--resume)
+  else
+    CHECKPOINT_ARGS+=(--no-resume)
+  fi
+else
+  CHECKPOINT_ARGS+=(--no-checkpoint)
+fi
+
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/build_external_graph_edit_agent_predictions.py" \
   --rows-csv "$ROWS_CSV" \
   --prediction-csv "$PREDICTION_CSV" \
@@ -136,6 +156,7 @@ fi
   --copy-penalty "$COPY_PENALTY" \
   --top-k-candidates "$TOP_K_CANDIDATES" \
   --seed "$SEED" \
+  "${CHECKPOINT_ARGS[@]}" \
   "${DIRECT_ARGS[@]}"
 
 if [[ "$BUILD_ORACLE_CSV" == "1" ]]; then
