@@ -1,0 +1,4 @@
+condition_id,task_mode,instruction,prompt,source_smiles,target_smiles,condition_properties,property_count,target_MW,MW_active,MW_direction,target_LogP,LogP_active,LogP_direction
+smoke_denovo_1,de_novo,Generate a small molecule near MW 46 and LogP -0.1,Generate a small molecule near MW 46 and LogP -0.1,,CCO,MW,1,46,1,,,-,
+smoke_denovo_2,de_novo,Generate a small molecule near MW 60,Generate a small molecule near MW 60,,CCCO,MW,1,60,1,,,,
+smoke_edit_1,edit,Edit the source molecule while keeping it similar,Edit the source molecule while keeping it similar,CCO,CCCO,MW,1,60,1,increase,,,

@@ -1,0 +1,2307 @@
+#!/usr/bin/env python3
+"""Standalone unified SMILES generator experiment line.
+
+This file intentionally copies the direct-SMILES building blocks into the new
+experiment folder instead of importing repo-internal training utilities.  The
+only hard non-stdlib dependencies are numpy and torch. RDKit and TDC are used
+opportunistically for molecular/reward scoring when available.
+"""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import hashlib
+import json
+import math
+import random
+import re
+import sys
+from collections.abc import Mapping as MappingABC
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Iterable, Mapping, Sequence
+
+import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+
+PAD = "<pad>"
+BOS = "<bos>"
+EOS = "<eos>"
+UNK = "<unk>"
+SPECIAL_TOKENS = [PAD, BOS, EOS, UNK]
+DE_NOVO_MODE = "de_novo"
+EDIT_MODE = "edit"
+
+PROPERTY_COLUMNS = [
+    "MW",
+    "LogP",
+    "QED",
+    "TPSA",
+    "HBD",
+    "HBA",
+    "RB",
+    "SA",
+    "BBBP",
+    "DRD2",
+    "GSK3B",
+    "JNK3",
+    "HIA",
+    "mutagenicity",
+    "hERG",
+    "DILI",
+    "PAMPA",
+]
+PROPERTY_ALIASES = {
+    "mw": "MW",
+    "molwt": "MW",
+    "molecular_weight": "MW",
+    "logp": "LogP",
+    "plogp": "LogP",
+    "qed": "QED",
+    "tpsa": "TPSA",
+    "hbd": "HBD",
+    "hba": "HBA",
+    "rb": "RB",
+    "rotatable": "RB",
+    "rotbonds": "RB",
+    "sa": "SA",
+    "sas": "SA",
+    "bbbp": "BBBP",
+    "drd2": "DRD2",
+    "gsk3b": "GSK3B",
+    "gsk3β": "GSK3B",
+    "gsk3": "GSK3B",
+    "jnk3": "JNK3",
+    "hia": "HIA",
+    "mutagenicity": "mutagenicity",
+    "ames": "mutagenicity",
+    "herg": "hERG",
+    "dili": "DILI",
+    "pampa": "PAMPA",
+}
+PROPERTY_NORMALIZERS = {
+    "MW": 500.0,
+    "LogP": 6.0,
+    "QED": 1.0,
+    "TPSA": 160.0,
+    "HBD": 8.0,
+    "HBA": 12.0,
+    "RB": 12.0,
+    "SA": 8.0,
+    "BBBP": 1.0,
+    "DRD2": 1.0,
+    "GSK3B": 1.0,
+    "JNK3": 1.0,
+    "HIA": 1.0,
+    "mutagenicity": 1.0,
+    "hERG": 1.0,
+    "DILI": 1.0,
+    "PAMPA": 1.0,
+}
+STRICT_TOLERANCE = {
+    "MW": 35.0,
+    "LogP": 1.0,
+    "QED": 0.10,
+    "TPSA": 20.0,
+    "HBD": 1.0,
+    "HBA": 1.0,
+    "RB": 1.0,
+    "SA": 1.0,
+    "BBBP": 0.5,
+    "DRD2": 0.5,
+    "GSK3B": 0.5,
+    "JNK3": 0.5,
+    "HIA": 0.5,
+    "mutagenicity": 0.5,
+    "hERG": 0.5,
+    "DILI": 0.5,
+    "PAMPA": 0.5,
+}
+SMILES_TOKEN_RE = re.compile(
+    r"(\[[^\]]+\]|"
+    r"Br|Cl|Si|Se|Na|Li|Mg|Ca|Al|Fe|Zn|Cu|Mn|"
+    r"@@?|%\d{2}|\d|"
+    r"\.|=|#|-|/|\\|\+|:|~|\(|\)|"
+    r"[BCNOFPSIHK]|[bcnops]|.)"
+)
+_TDC_ORACLE_CACHE: dict[str, object | None] = {}
+_PROPERTY_VALUE_CACHE: dict[tuple[str, str], float | None] = {}
+
+
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    train = subparsers.add_parser("train", help="Train and optionally sample a unified generator.")
+    add_common_data_args(train)
+    add_model_args(train)
+    add_sampling_args(train)
+    train.add_argument("--train-csv", required=True, type=Path)
+    train.add_argument("--eval-csv", type=Path, default=None)
+    train.add_argument("--output-dir", required=True, type=Path)
+    train.add_argument("--epochs", type=int, default=8)
+    train.add_argument("--batch-size", type=int, default=64)
+    train.add_argument("--eval-batch-size", type=int, default=128)
+    train.add_argument("--lr", type=float, default=3e-4)
+    train.add_argument("--weight-decay", type=float, default=1e-4)
+    train.add_argument("--grad-clip", type=float, default=1.0)
+    train.add_argument("--limit", type=int, default=0)
+    train.add_argument("--eval-limit", type=int, default=0)
+    train.add_argument("--resume-checkpoint", type=Path, default=None)
+    train.add_argument("--seed", type=int, default=7)
+    train.add_argument("--device", default="auto")
+
+    group_rl = subparsers.add_parser("group-rl", help="Task-aware group-relative RL for the unified generator.")
+    add_common_data_args(group_rl)
+    add_sampling_args(group_rl)
+    add_group_rl_args(group_rl)
+    group_rl.add_argument("--train-csv", required=True, type=Path)
+    group_rl.add_argument("--eval-csv", type=Path, default=None)
+    group_rl.add_argument("--output-dir", required=True, type=Path)
+    group_rl.add_argument("--resume-checkpoint", required=True, type=Path)
+    group_rl.add_argument("--epochs", type=int, default=1)
+    group_rl.add_argument("--batch-size", type=int, default=8)
+    group_rl.add_argument("--eval-batch-size", type=int, default=32)
+    group_rl.add_argument("--lr", type=float, default=1e-6)
+    group_rl.add_argument("--weight-decay", type=float, default=1e-4)
+    group_rl.add_argument("--grad-clip", type=float, default=1.0)
+    group_rl.add_argument("--limit", type=int, default=0)
+    group_rl.add_argument("--eval-limit", type=int, default=0)
+    group_rl.add_argument("--seed", type=int, default=7)
+    group_rl.add_argument("--device", default="auto")
+
+    sample = subparsers.add_parser("sample", help="Sample selected/candidate SMILES from a checkpoint.")
+    add_common_data_args(sample)
+    add_sampling_args(sample)
+    sample.add_argument("--checkpoint", required=True, type=Path)
+    sample.add_argument("--eval-csv", required=True, type=Path)
+    sample.add_argument("--output-dir", required=True, type=Path)
+    sample.add_argument("--eval-limit", type=int, default=0)
+    sample.add_argument("--seed", type=int, default=7)
+    sample.add_argument("--device", default="auto")
+    return parser.parse_args(argv)
+
+
+def add_common_data_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--condition-features-dir", type=Path, default=None)
+    parser.add_argument("--eval-condition-features-dir", type=Path, default=None)
+    parser.add_argument("--condition-feature-array", choices=("query_tokens", "pooled"), default="query_tokens")
+    parser.add_argument(
+        "--condition-feature-variant",
+        default="full",
+        help="Feature variant to read from exported condition features, e.g. full or text_only.",
+    )
+    parser.add_argument(
+        "--input-modality",
+        default="",
+        help="Optional report label such as with_image or no_image. Derived from variant when omitted.",
+    )
+    parser.add_argument("--condition-dim", type=int, default=256)
+    parser.add_argument("--max-smiles-length", type=int, default=160)
+    parser.add_argument("--max-source-tokens", type=int, default=96)
+    parser.add_argument("--method", default="unified_smiles_generator")
+
+
+def add_model_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--d-model", type=int, default=256)
+    parser.add_argument("--num-layers", type=int, default=4)
+    parser.add_argument("--num-heads", type=int, default=8)
+    parser.add_argument("--dim-feedforward", type=int, default=1024)
+    parser.add_argument("--dropout", type=float, default=0.1)
+
+
+def add_sampling_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--prediction-csv", type=Path, default=None)
+    parser.add_argument("--candidate-output-csv", type=Path, default=None)
+    parser.add_argument(
+        "--decoding-mode",
+        choices=("sample", "beam", "sample_beam"),
+        default="sample",
+        help="Candidate generation mode: stochastic sampling, deterministic beam search, or both.",
+    )
+    parser.add_argument("--num-samples", type=int, default=20)
+    parser.add_argument("--beam-size", type=int, default=20)
+    parser.add_argument("--beam-expand-size", type=int, default=64)
+    parser.add_argument("--beam-length-penalty", type=float, default=0.8)
+    parser.add_argument("--max-new-tokens", type=int, default=160)
+    parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument("--top-k", type=int, default=24)
+    parser.add_argument("--top-p", type=float, default=0.9)
+    parser.add_argument("--parallel-samples", type=int, default=16)
+    parser.add_argument("--max-parallel-sequences", type=int, default=512)
+    parser.add_argument("--repetition-penalty", type=float, default=1.15)
+    parser.add_argument("--no-repeat-ngram-size", type=int, default=6)
+    parser.add_argument("--min-new-tokens", type=int, default=6)
+    parser.add_argument("--top-k-candidates", type=int, default=40)
+    parser.add_argument("--disable-finalizer", action="store_true")
+    parser.add_argument("--source-similarity-threshold", type=float, default=0.4)
+
+
+def add_group_rl_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--rollouts-per-prompt", type=int, default=16)
+    parser.add_argument("--sft-weight", type=float, default=0.25)
+    parser.add_argument("--advantage-mode", choices=("group_center", "group_zscore"), default="group_zscore")
+    parser.add_argument("--advantage-clip", type=float, default=3.0)
+    parser.add_argument("--sequence-logprob-reduction", choices=("sum", "mean"), default="mean")
+    parser.add_argument("--reference-kl-weight", type=float, default=0.05)
+    parser.add_argument(
+        "--reward-mode",
+        choices=("auto", "property_strict", "table1_edit"),
+        default="auto",
+        help="auto routes de_novo rows to property_strict and edit rows to table1_edit.",
+    )
+    parser.add_argument("--reward-valid-weight", type=float, default=0.25)
+    parser.add_argument("--reward-strict-weight", type=float, default=2.0)
+    parser.add_argument("--reward-distance-weight", type=float, default=0.05)
+    parser.add_argument("--reward-distance-clip", type=float, default=10.0)
+    parser.add_argument("--reward-source-similarity-weight", type=float, default=0.5)
+    parser.add_argument("--reward-source-similarity-threshold", type=float, default=None)
+    parser.add_argument("--reward-source-copy-penalty", type=float, default=0.5)
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    seed_everything(int(args.seed))
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    device = resolve_device(str(args.device))
+
+    if args.command == "train":
+        return train_command(args, device)
+    if args.command == "group-rl":
+        return group_rl_command(args, device)
+    if args.command == "sample":
+        return sample_command(args, device)
+    raise ValueError(f"Unsupported command: {args.command}")
+
+
+def train_command(args: argparse.Namespace, device: torch.device) -> int:
+    train_rows = read_rows(args.train_csv, limit=int(args.limit))
+    eval_rows = read_rows(args.eval_csv, limit=int(args.eval_limit)) if args.eval_csv else []
+    train_store = FeatureStore(
+        args.condition_features_dir,
+        array_name=str(args.condition_feature_array),
+        variant=str(args.condition_feature_variant),
+    )
+    eval_store = FeatureStore(
+        args.eval_condition_features_dir or args.condition_features_dir,
+        array_name=str(args.condition_feature_array),
+        variant=str(args.condition_feature_variant),
+    )
+    checkpoint = load_checkpoint(args.resume_checkpoint)
+
+    if checkpoint:
+        vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
+        config = dict(checkpoint["model_config"])
+    else:
+        vocab = build_vocabulary(
+            [row.get("target_smiles", "") for row in train_rows + eval_rows]
+            + [row.get("source_smiles", "") for row in train_rows + eval_rows]
+        )
+        condition_dim = infer_condition_dim(train_store, eval_store, default=int(args.condition_dim))
+        config = {
+            "vocab_size": len(vocab.token_to_id),
+            "condition_dim": condition_dim,
+            "d_model": int(args.d_model),
+            "num_layers": int(args.num_layers),
+            "num_heads": int(args.num_heads),
+            "dim_feedforward": int(args.dim_feedforward),
+            "dropout": float(args.dropout),
+            "pad_id": vocab.pad_id,
+            "max_length": int(args.max_smiles_length) + 8,
+        }
+
+    model = ConditionedSmilesDecoder(**config).to(device)
+    if checkpoint:
+        model.load_state_dict(checkpoint["model_state"])
+
+    train_dataset = build_dataset(
+        train_rows,
+        vocab,
+        train_store,
+        int(config["condition_dim"]),
+        max_smiles_length=int(args.max_smiles_length),
+        max_source_tokens=int(args.max_source_tokens),
+    )
+    eval_dataset = build_dataset(
+        eval_rows,
+        vocab,
+        eval_store,
+        int(config["condition_dim"]),
+        max_smiles_length=int(args.max_smiles_length),
+        max_source_tokens=int(args.max_source_tokens),
+    )
+    if not train_dataset:
+        raise ValueError("No trainable rows found. Rows need target_smiles.")
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
+    if checkpoint and checkpoint.get("optimizer_state"):
+        optimizer.load_state_dict(checkpoint["optimizer_state"])
+    history = list(checkpoint.get("history", [])) if checkpoint else []
+    start_epoch = int(checkpoint.get("epoch", 0)) + 1 if checkpoint else 1
+
+    for epoch in range(start_epoch, int(args.epochs) + 1):
+        record = train_epoch(
+            model,
+            train_dataset,
+            optimizer,
+            batch_size=int(args.batch_size),
+            grad_clip=float(args.grad_clip),
+            device=device,
+            seed=int(args.seed) + epoch,
+        )
+        record["epoch"] = epoch
+        if eval_dataset:
+            eval_record = evaluate_loss(model, eval_dataset, batch_size=int(args.eval_batch_size), device=device)
+            record.update({f"eval_{key}": value for key, value in eval_record.items()})
+        history.append(record)
+        save_checkpoint(args.output_dir / "latest_checkpoint.pt", model, optimizer, vocab, config, epoch, history, args)
+
+    checkpoint_path = args.output_dir / "unified_smiles_generator.pt"
+    save_checkpoint(
+        checkpoint_path,
+        model,
+        optimizer,
+        vocab,
+        config,
+        int(history[-1]["epoch"]) if history else 0,
+        history,
+        args,
+    )
+
+    prediction_summary = None
+    if eval_rows:
+        prediction_summary = write_predictions(
+            model,
+            eval_rows,
+            eval_store,
+            vocab,
+            int(config["condition_dim"]),
+            args=args,
+            device=device,
+        )
+
+    summary = {
+        "checkpoint": str(checkpoint_path),
+        "train_csv": str(args.train_csv),
+        "eval_csv": str(args.eval_csv) if args.eval_csv else None,
+        "train_rows": len(train_dataset),
+        "eval_rows": len(eval_rows),
+        "condition_dim": int(config["condition_dim"]),
+        "condition_feature_variant": str(args.condition_feature_variant),
+        "input_modality": input_modality_for_args(args),
+        "vocab_size": len(vocab.token_to_id),
+        "history": history,
+        "prediction_summary": prediction_summary,
+    }
+    (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
+    train_rows = read_rows(args.train_csv, limit=int(args.limit))
+    eval_rows = read_rows(args.eval_csv, limit=int(args.eval_limit)) if args.eval_csv else []
+    train_store = FeatureStore(
+        args.condition_features_dir,
+        array_name=str(args.condition_feature_array),
+        variant=str(args.condition_feature_variant),
+    )
+    eval_store = FeatureStore(
+        args.eval_condition_features_dir or args.condition_features_dir,
+        array_name=str(args.condition_feature_array),
+        variant=str(args.condition_feature_variant),
+    )
+    checkpoint = load_checkpoint(args.resume_checkpoint)
+    if not checkpoint:
+        raise ValueError(f"Missing warm-start checkpoint: {args.resume_checkpoint}")
+    vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
+    config = dict(checkpoint["model_config"])
+
+    model = ConditionedSmilesDecoder(**config).to(device)
+    model.load_state_dict(checkpoint["model_state"])
+    reference_model = None
+    if float(args.reference_kl_weight) > 0:
+        reference_model = ConditionedSmilesDecoder(**config).to(device)
+        reference_model.load_state_dict(checkpoint["model_state"])
+        reference_model.eval()
+        for param in reference_model.parameters():
+            param.requires_grad_(False)
+
+    train_dataset = build_dataset(
+        train_rows,
+        vocab,
+        train_store,
+        int(config["condition_dim"]),
+        max_smiles_length=int(args.max_smiles_length),
+        max_source_tokens=int(args.max_source_tokens),
+    )
+    eval_dataset = build_dataset(
+        eval_rows,
+        vocab,
+        eval_store,
+        int(config["condition_dim"]),
+        max_smiles_length=int(args.max_smiles_length),
+        max_source_tokens=int(args.max_source_tokens),
+    )
+    if not train_dataset:
+        raise ValueError("No trainable rows found. Rows need target_smiles.")
+
+    optimizer = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
+    history: list[dict[str, object]] = []
+    for epoch in range(1, int(args.epochs) + 1):
+        record = train_epoch_group_rl(
+            model,
+            reference_model,
+            train_dataset,
+            optimizer,
+            vocab,
+            batch_size=int(args.batch_size),
+            device=device,
+            rollouts_per_prompt=int(args.rollouts_per_prompt),
+            max_new_tokens=int(args.max_new_tokens),
+            temperature=float(args.temperature),
+            top_k=int(args.top_k),
+            top_p=float(args.top_p),
+            parallel_samples=int(args.parallel_samples),
+            max_parallel_sequences=int(args.max_parallel_sequences),
+            repetition_penalty=float(args.repetition_penalty),
+            no_repeat_ngram_size=int(args.no_repeat_ngram_size),
+            min_new_tokens=int(args.min_new_tokens),
+            sft_weight=float(args.sft_weight),
+            advantage_mode=str(args.advantage_mode),
+            advantage_clip=float(args.advantage_clip),
+            sequence_logprob_reduction=str(args.sequence_logprob_reduction),
+            reference_kl_weight=float(args.reference_kl_weight),
+            reward_mode=str(args.reward_mode),
+            reward_valid_weight=float(args.reward_valid_weight),
+            reward_strict_weight=float(args.reward_strict_weight),
+            reward_distance_weight=float(args.reward_distance_weight),
+            reward_distance_clip=float(args.reward_distance_clip),
+            reward_source_similarity_weight=float(args.reward_source_similarity_weight),
+            reward_source_similarity_threshold=effective_reward_source_similarity_threshold(args),
+            reward_source_copy_penalty=float(args.reward_source_copy_penalty),
+            grad_clip=float(args.grad_clip),
+            seed=int(args.seed) + epoch,
+        )
+        record["epoch"] = epoch
+        if eval_dataset:
+            eval_record = evaluate_group_rl(
+                model,
+                eval_dataset,
+                vocab,
+                batch_size=int(args.eval_batch_size),
+                device=device,
+                rollouts_per_prompt=int(args.rollouts_per_prompt),
+                max_new_tokens=int(args.max_new_tokens),
+                temperature=float(args.temperature),
+                top_k=int(args.top_k),
+                top_p=float(args.top_p),
+                parallel_samples=int(args.parallel_samples),
+                max_parallel_sequences=int(args.max_parallel_sequences),
+                repetition_penalty=float(args.repetition_penalty),
+                no_repeat_ngram_size=int(args.no_repeat_ngram_size),
+                min_new_tokens=int(args.min_new_tokens),
+                reward_mode=str(args.reward_mode),
+                reward_valid_weight=float(args.reward_valid_weight),
+                reward_strict_weight=float(args.reward_strict_weight),
+                reward_distance_weight=float(args.reward_distance_weight),
+                reward_distance_clip=float(args.reward_distance_clip),
+                reward_source_similarity_weight=float(args.reward_source_similarity_weight),
+                reward_source_similarity_threshold=effective_reward_source_similarity_threshold(args),
+                reward_source_copy_penalty=float(args.reward_source_copy_penalty),
+            )
+            record.update({f"eval_{key}": value for key, value in eval_record.items()})
+        history.append(record)
+        save_checkpoint(args.output_dir / "latest_group_rl_checkpoint.pt", model, optimizer, vocab, config, epoch, history, args)
+
+    checkpoint_path = args.output_dir / "unified_smiles_generator_group_rl.pt"
+    save_checkpoint(checkpoint_path, model, optimizer, vocab, config, len(history), history, args)
+
+    prediction_summary = None
+    if eval_rows:
+        prediction_summary = write_predictions(
+            model,
+            eval_rows,
+            eval_store,
+            vocab,
+            int(config["condition_dim"]),
+            args=args,
+            device=device,
+        )
+
+    summary = {
+        "checkpoint": str(checkpoint_path),
+        "warm_start_checkpoint": str(args.resume_checkpoint),
+        "train_csv": str(args.train_csv),
+        "eval_csv": str(args.eval_csv) if args.eval_csv else None,
+        "train_rows": len(train_dataset),
+        "eval_rows": len(eval_dataset),
+        "task_mode_counts": task_mode_counts(train_dataset),
+        "eval_task_mode_counts": task_mode_counts(eval_dataset),
+        "condition_dim": int(config["condition_dim"]),
+        "condition_feature_variant": str(args.condition_feature_variant),
+        "input_modality": input_modality_for_args(args),
+        "vocab_size": len(vocab.token_to_id),
+        "reward_mode": str(args.reward_mode),
+        "reward_source_similarity_threshold": effective_reward_source_similarity_threshold(args),
+        "history": history,
+        "prediction_summary": prediction_summary,
+    }
+    (args.output_dir / "group_rl_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def sample_command(args: argparse.Namespace, device: torch.device) -> int:
+    checkpoint = load_checkpoint(args.checkpoint)
+    if not checkpoint:
+        raise ValueError(f"Missing checkpoint: {args.checkpoint}")
+    vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
+    config = dict(checkpoint["model_config"])
+    model = ConditionedSmilesDecoder(**config).to(device)
+    model.load_state_dict(checkpoint["model_state"])
+    rows = read_rows(args.eval_csv, limit=int(args.eval_limit))
+    store = FeatureStore(
+        args.eval_condition_features_dir or args.condition_features_dir,
+        array_name=str(args.condition_feature_array),
+        variant=str(args.condition_feature_variant),
+    )
+    summary = write_predictions(
+        model,
+        rows,
+        store,
+        vocab,
+        int(config["condition_dim"]),
+        args=args,
+        device=device,
+    )
+    (args.output_dir / "sample_summary.json").write_text(
+        json.dumps(summary, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def read_rows(path: Path | None, *, limit: int = 0) -> list[dict[str, str]]:
+    if path is None:
+        return []
+    with path.open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    return rows[:limit] if limit and limit > 0 else rows
+
+
+def seed_everything(seed: int) -> None:
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
+
+
+def resolve_device(value: str) -> torch.device:
+    if value == "auto":
+        return torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    return torch.device(value)
+
+
+def load_checkpoint(path: Path | None) -> dict[str, object] | None:
+    if path is None:
+        return None
+    return torch.load(path, map_location="cpu", weights_only=False)
+
+
+class FeatureStore:
+    def __init__(self, feature_dir: Path | None, *, array_name: str = "query_tokens", variant: str = "full") -> None:
+        self.feature_dir = Path(feature_dir) if feature_dir else None
+        self.array_name = array_name
+        self.variant = str(variant or "").strip()
+        self.features: np.ndarray | None = None
+        self.index: dict[str, int] = {}
+        self.input_hidden_dim: int | None = None
+        if self.feature_dir is not None:
+            self._load()
+
+    def _load(self) -> None:
+        assert self.feature_dir is not None
+        index_path = self.feature_dir / "index.csv"
+        array_path = self.feature_dir / ("pooled.npy" if self.array_name == "pooled" else "query_tokens.npy")
+        if not index_path.exists():
+            raise FileNotFoundError(index_path)
+        if not array_path.exists():
+            raise FileNotFoundError(array_path)
+        with index_path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+        features = np.load(array_path).astype(np.float32)
+        if len(rows) != int(features.shape[0]):
+            raise ValueError(f"Feature row mismatch: {index_path} vs {array_path}")
+        self.features = features
+        self.input_hidden_dim = int(features.shape[-1])
+        for idx, row in enumerate(rows):
+            row_variant = str(row.get("variant", "") or "").strip()
+            if self.variant and row_variant and row_variant != self.variant:
+                continue
+            for key in ("variant_id", "condition_id", "sample_id", "pair_id"):
+                value = str(row.get(key, "") or "").strip()
+                if value and value not in self.index:
+                    self.index[value] = idx
+
+    def get(self, row: Mapping[str, str]) -> np.ndarray | None:
+        if self.features is None:
+            return None
+        explicit_variant_id = str(row.get("variant_id", "") or "").strip()
+        if explicit_variant_id:
+            explicit_parts = [explicit_variant_id]
+        else:
+            condition_id = str(row.get("condition_id", "") or row.get("sample_id", "") or row.get("pair_id", "") or "").strip()
+            explicit_parts = [f"{condition_id}:{self.variant}"] if condition_id and self.variant else []
+        for value in explicit_parts:
+            if value in self.index:
+                arr = np.asarray(self.features[self.index[value]], dtype=np.float32)
+                if arr.ndim == 1:
+                    arr = arr[None, :]
+                return arr
+        for key in ("condition_id", "sample_id", "pair_id"):
+            value = str(row.get(key, "") or "").strip()
+            if value and value in self.index:
+                arr = np.asarray(self.features[self.index[value]], dtype=np.float32)
+                if arr.ndim == 1:
+                    arr = arr[None, :]
+                return arr
+        return None
+
+
+def infer_condition_dim(*stores: FeatureStore, default: int) -> int:
+    for store in stores:
+        if store.input_hidden_dim is not None:
+            return int(store.input_hidden_dim)
+    return int(default)
+
+
+def tokenize_smiles(smiles: str) -> list[str]:
+    text = str(smiles or "").strip()
+    if not text:
+        return []
+    return [token for token in SMILES_TOKEN_RE.findall(text) if token]
+
+
+def detokenize_smiles(tokens: Iterable[str]) -> str:
+    skip = {PAD, BOS, EOS}
+    return "".join(token for token in tokens if token not in skip)
+
+
+@dataclass
+class SmilesVocabulary:
+    token_to_id: dict[str, int] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for token in SPECIAL_TOKENS:
+            self.add(token)
+
+    @property
+    def id_to_token(self) -> list[str]:
+        return [token for token, _ in sorted(self.token_to_id.items(), key=lambda item: item[1])]
+
+    @property
+    def pad_id(self) -> int:
+        return self.token_to_id[PAD]
+
+    @property
+    def bos_id(self) -> int:
+        return self.token_to_id[BOS]
+
+    @property
+    def eos_id(self) -> int:
+        return self.token_to_id[EOS]
+
+    def add(self, token: str) -> int:
+        if token not in self.token_to_id:
+            self.token_to_id[token] = len(self.token_to_id)
+        return self.token_to_id[token]
+
+    def update(self, token_sequences: Iterable[Iterable[str]]) -> None:
+        for tokens in token_sequences:
+            for token in tokens:
+                self.add(token)
+
+    def encode(self, tokens: Iterable[str], *, add_bos: bool = False, add_eos: bool = False) -> list[int]:
+        ids = []
+        if add_bos:
+            ids.append(self.bos_id)
+        ids.extend(self.token_to_id.get(token, self.token_to_id[UNK]) for token in tokens)
+        if add_eos:
+            ids.append(self.eos_id)
+        return ids
+
+    def decode(self, ids: Iterable[int]) -> list[str]:
+        tokens = self.id_to_token
+        out = []
+        for value in ids:
+            idx = int(value)
+            if idx == self.eos_id:
+                break
+            out.append(tokens[idx] if 0 <= idx < len(tokens) else UNK)
+        return out
+
+    def to_dict(self) -> dict[str, int]:
+        return dict(self.token_to_id)
+
+    @classmethod
+    def from_dict(cls, payload: dict[str, int]) -> "SmilesVocabulary":
+        vocab = cls()
+        vocab.token_to_id = dict(payload)
+        return vocab
+
+
+def build_vocabulary(smiles_values: Sequence[str]) -> SmilesVocabulary:
+    vocab = SmilesVocabulary()
+    vocab.update(tokenize_smiles(value) for value in smiles_values)
+    return vocab
+
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, dim: int, max_len: int = 512) -> None:
+        super().__init__()
+        positions = torch.arange(max_len, dtype=torch.float32).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, dim, 2, dtype=torch.float32) * (-math.log(10000.0) / max(dim, 1)))
+        pe = torch.zeros(max_len, dim, dtype=torch.float32)
+        pe[:, 0::2] = torch.sin(positions * div_term)
+        if dim > 1:
+            pe[:, 1::2] = torch.cos(positions * div_term[: pe[:, 1::2].shape[1]])
+        self.register_buffer("pe", pe.unsqueeze(0), persistent=False)
+
+    def forward(self, values: torch.Tensor) -> torch.Tensor:
+        return values + self.pe[:, : values.shape[1]].to(dtype=values.dtype, device=values.device)
+
+
+class ConditionedSmilesDecoder(nn.Module):
+    def __init__(
+        self,
+        *,
+        vocab_size: int,
+        condition_dim: int,
+        d_model: int = 256,
+        num_layers: int = 4,
+        num_heads: int = 8,
+        dim_feedforward: int = 1024,
+        dropout: float = 0.1,
+        pad_id: int = 0,
+        max_length: int = 192,
+    ) -> None:
+        super().__init__()
+        self.pad_id = int(pad_id)
+        self.condition_proj = nn.Sequential(
+            nn.LayerNorm(condition_dim),
+            nn.Linear(condition_dim, d_model),
+            nn.GELU(),
+            nn.Dropout(dropout),
+            nn.Linear(d_model, d_model),
+        )
+        self.token_embedding = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
+        self.position = PositionalEncoding(d_model, max_len=max_length + 8)
+        layer = nn.TransformerDecoderLayer(
+            d_model=d_model,
+            nhead=num_heads,
+            dim_feedforward=dim_feedforward,
+            dropout=dropout,
+            batch_first=True,
+            norm_first=True,
+        )
+        self.decoder = nn.TransformerDecoder(layer, num_layers=num_layers)
+        self.output = nn.Linear(d_model, vocab_size)
+
+    def forward(
+        self,
+        condition_tokens: torch.Tensor,
+        decoder_input_ids: torch.Tensor,
+        *,
+        condition_mask: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        memory = self.condition_proj(condition_tokens)
+        target = self.position(self.token_embedding(decoder_input_ids))
+        seq_len = decoder_input_ids.shape[1]
+        causal = torch.triu(
+            torch.ones(seq_len, seq_len, device=decoder_input_ids.device, dtype=torch.bool),
+            diagonal=1,
+        )
+        target_padding = decoder_input_ids.eq(self.pad_id)
+        memory_padding = None if condition_mask is None else ~condition_mask.bool()
+        decoded = self.decoder(
+            target,
+            memory,
+            tgt_mask=causal,
+            tgt_key_padding_mask=target_padding,
+            memory_key_padding_mask=memory_padding,
+        )
+        return self.output(decoded)
+
+    @torch.no_grad()
+    def generate(
+        self,
+        condition_tokens: torch.Tensor,
+        *,
+        bos_id: int,
+        eos_id: int,
+        max_new_tokens: int,
+        condition_mask: torch.Tensor | None = None,
+        temperature: float = 1.0,
+        top_k: int = 0,
+        top_p: float = 1.0,
+        repetition_penalty: float = 1.0,
+        no_repeat_ngram_size: int = 0,
+        min_new_tokens: int = 0,
+    ) -> torch.Tensor:
+        batch = condition_tokens.shape[0]
+        device = condition_tokens.device
+        generated = torch.full((batch, 1), int(bos_id), dtype=torch.long, device=device)
+        finished = torch.zeros(batch, dtype=torch.bool, device=device)
+        blocked_ids = {int(bos_id), self.pad_id}
+        for step in range(max(1, int(max_new_tokens))):
+            logits = self(condition_tokens, generated, condition_mask=condition_mask)[:, -1, :]
+            logits[:, list(blocked_ids)] = -torch.inf
+            if step < max(0, int(min_new_tokens)):
+                logits[:, int(eos_id)] = -torch.inf
+            if repetition_penalty and repetition_penalty > 1.0:
+                apply_repetition_penalty_(logits, generated, float(repetition_penalty))
+            if no_repeat_ngram_size and no_repeat_ngram_size > 0:
+                mask_repeated_ngrams_(logits, generated, int(no_repeat_ngram_size))
+            if temperature and temperature > 0:
+                logits = logits / float(temperature)
+                if top_k > 0 and top_k < logits.shape[-1]:
+                    threshold = torch.topk(logits, int(top_k), dim=-1).values[:, -1:]
+                    logits = logits.masked_fill(logits < threshold, -torch.inf)
+                logits = top_p_filter(logits, top_p=float(top_p))
+                probs = torch.softmax(logits, dim=-1)
+                probs = torch.nan_to_num(probs, nan=0.0, posinf=0.0, neginf=0.0)
+                zero_rows = probs.sum(dim=-1).le(0)
+                if bool(zero_rows.any()):
+                    fallback = torch.zeros_like(probs)
+                    fallback[:, int(eos_id)] = 1.0
+                    probs = torch.where(zero_rows[:, None], fallback, probs)
+                next_ids = torch.multinomial(probs, num_samples=1).squeeze(1)
+            else:
+                next_ids = logits.argmax(dim=-1)
+            next_ids = torch.where(finished, torch.full_like(next_ids, int(eos_id)), next_ids)
+            generated = torch.cat([generated, next_ids[:, None]], dim=1)
+            finished |= next_ids.eq(int(eos_id))
+            if bool(finished.all()):
+                break
+        return generated
+
+    @torch.no_grad()
+    def beam_search(
+        self,
+        condition_tokens: torch.Tensor,
+        *,
+        bos_id: int,
+        eos_id: int,
+        max_new_tokens: int,
+        condition_mask: torch.Tensor | None = None,
+        beam_size: int = 20,
+        expand_size: int = 64,
+        length_penalty: float = 0.8,
+        repetition_penalty: float = 1.0,
+        no_repeat_ngram_size: int = 0,
+        min_new_tokens: int = 0,
+    ) -> torch.Tensor:
+        if condition_tokens.shape[0] != 1:
+            raise ValueError("beam_search expects one condition row at a time")
+        device = condition_tokens.device
+        beam_size = max(1, int(beam_size))
+        expand_size = max(1, int(expand_size))
+        beams: list[tuple[list[int], float, bool]] = [([int(bos_id)], 0.0, False)]
+        blocked_ids = {int(bos_id), self.pad_id}
+        for step in range(max(1, int(max_new_tokens))):
+            active: list[tuple[list[int], float, bool]] = []
+            finished: list[tuple[list[int], float, bool]] = []
+            for sequence, score, done in beams:
+                if done:
+                    finished.append((sequence, score, True))
+                    continue
+                seq_tensor = torch.tensor([sequence], dtype=torch.long, device=device)
+                logits = self(condition_tokens, seq_tensor, condition_mask=condition_mask)[:, -1, :]
+                logits[:, list(blocked_ids)] = -torch.inf
+                if step < max(0, int(min_new_tokens)):
+                    logits[:, int(eos_id)] = -torch.inf
+                if repetition_penalty and repetition_penalty > 1.0:
+                    apply_repetition_penalty_(logits, seq_tensor, float(repetition_penalty))
+                if no_repeat_ngram_size and no_repeat_ngram_size > 0:
+                    mask_repeated_ngrams_(logits, seq_tensor, int(no_repeat_ngram_size))
+                log_probs = torch.log_softmax(logits, dim=-1)
+                top_count = min(max(expand_size, beam_size), log_probs.shape[-1])
+                values, indices = torch.topk(log_probs, top_count, dim=-1)
+                for value, token_id in zip(values[0].tolist(), indices[0].tolist()):
+                    if not math.isfinite(float(value)):
+                        continue
+                    next_sequence = sequence + [int(token_id)]
+                    next_done = int(token_id) == int(eos_id)
+                    active.append((next_sequence, score + float(value), next_done))
+            pool = finished + active
+            if not pool:
+                break
+            beams = sorted(
+                pool,
+                key=lambda item: normalized_beam_score(item[1], len(item[0]), length_penalty),
+                reverse=True,
+            )[:beam_size]
+            if all(done for _, _, done in beams):
+                break
+        if not beams:
+            beams = [([int(bos_id), int(eos_id)], 0.0, True)]
+        max_len = max(len(sequence) for sequence, _, _ in beams)
+        output = torch.full((len(beams), max_len), int(eos_id), dtype=torch.long, device=device)
+        for idx, (sequence, _, _) in enumerate(beams):
+            output[idx, : len(sequence)] = torch.tensor(sequence, dtype=torch.long, device=device)
+        return output
+
+
+def apply_repetition_penalty_(logits: torch.Tensor, generated: torch.Tensor, penalty: float) -> None:
+    for row_idx in range(generated.shape[0]):
+        for token_id in set(int(value) for value in generated[row_idx].tolist()):
+            value = logits[row_idx, token_id]
+            logits[row_idx, token_id] = value / penalty if value > 0 else value * penalty
+
+
+def normalized_beam_score(score: float, length: int, length_penalty: float) -> float:
+    length_value = max(int(length) - 1, 1)
+    if length_penalty <= 0:
+        return float(score)
+    return float(score) / (float(length_value) ** float(length_penalty))
+
+
+def mask_repeated_ngrams_(logits: torch.Tensor, generated: torch.Tensor, ngram_size: int) -> None:
+    if ngram_size <= 0:
+        return
+    for row_idx in range(generated.shape[0]):
+        banned = banned_ngram_tokens(generated[row_idx].tolist(), ngram_size)
+        if banned:
+            logits[row_idx, sorted(banned)] = -torch.inf
+
+
+def banned_ngram_tokens(sequence: list[int], ngram_size: int) -> set[int]:
+    if len(sequence) + 1 < ngram_size:
+        return set()
+    prefix_len = ngram_size - 1
+    prefix = tuple(sequence[-prefix_len:]) if prefix_len > 0 else tuple()
+    banned: set[int] = set()
+    for idx in range(0, len(sequence) - ngram_size + 1):
+        ngram = tuple(sequence[idx : idx + ngram_size])
+        if prefix_len == 0 or ngram[:-1] == prefix:
+            banned.add(int(ngram[-1]))
+    return banned
+
+
+def top_p_filter(logits: torch.Tensor, *, top_p: float) -> torch.Tensor:
+    if top_p >= 1.0:
+        return logits
+    sorted_logits, sorted_indices = torch.sort(logits, descending=True, dim=-1)
+    sorted_probs = torch.softmax(sorted_logits, dim=-1)
+    cumulative = torch.cumsum(sorted_probs, dim=-1)
+    remove = cumulative > float(top_p)
+    remove[..., 1:] = remove[..., :-1].clone()
+    remove[..., 0] = False
+    filtered = logits.clone()
+    filtered.scatter_(dim=-1, index=sorted_indices, src=sorted_logits.masked_fill(remove, -torch.inf))
+    return filtered
+
+
+def build_dataset(
+    rows: list[dict[str, str]],
+    vocab: SmilesVocabulary,
+    store: FeatureStore,
+    condition_dim: int,
+    *,
+    max_smiles_length: int,
+    max_source_tokens: int,
+) -> list[dict[str, object]]:
+    dataset = []
+    for row in rows:
+        target = str(row.get("target_smiles", "") or "").strip()
+        if not target:
+            continue
+        tokens = tokenize_smiles(target)[: max(1, int(max_smiles_length))]
+        decoder_input = vocab.encode(tokens, add_bos=True, add_eos=False)
+        target_ids = vocab.encode(tokens, add_bos=False, add_eos=True)
+        condition = condition_array_for_row(row, store, condition_dim, max_source_tokens=max_source_tokens)
+        dataset.append(
+            {
+                "row": dict(row),
+                "condition": condition.astype(np.float32),
+                "decoder_input_ids": np.asarray(decoder_input, dtype=np.int64),
+                "target_ids": np.asarray(target_ids, dtype=np.int64),
+                "task_mode": task_mode_for_row(row),
+            }
+        )
+    return dataset
+
+
+def condition_array_for_row(
+    row: Mapping[str, str],
+    store: FeatureStore,
+    condition_dim: int,
+    *,
+    max_source_tokens: int,
+) -> np.ndarray:
+    base = store.get(row)
+    if base is None:
+        base = fallback_condition_features(row, condition_dim)
+    if int(base.shape[-1]) != int(condition_dim):
+        raise ValueError(f"Condition feature dim mismatch: {base.shape[-1]} != {condition_dim}")
+    mode = task_mode_for_row(row)
+    mode_token = mode_condition_token(mode, condition_dim)
+    program = property_program_tokens(row, condition_dim)
+    if mode == EDIT_MODE:
+        source = source_smiles_condition_tokens(row, condition_dim, max_source_tokens=max_source_tokens)
+        return np.concatenate([base, mode_token, source, program], axis=0)
+    return np.concatenate([base, mode_token, program], axis=0)
+
+
+def task_mode_for_row(row: Mapping[str, str]) -> str:
+    raw = str(row.get("task_mode", "") or row.get("unified_task_mode", "") or "").strip().lower()
+    normalized = raw.replace("-", "_").replace(" ", "_")
+    if normalized in {"de_novo", "denovo", "generate", "generation"}:
+        return DE_NOVO_MODE
+    if normalized in {"edit", "conditional_edit", "source_edit", "edit_generation"}:
+        return EDIT_MODE
+    source = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
+    return EDIT_MODE if source else DE_NOVO_MODE
+
+
+def mode_condition_token(mode: str, condition_dim: int) -> np.ndarray:
+    is_edit = 1.0 if mode == EDIT_MODE else 0.0
+    is_denovo = 1.0 - is_edit
+    return expand_condition_token([3.0, is_denovo, is_edit, 0.0], condition_dim)[None, :].astype(np.float32)
+
+
+def fallback_condition_features(row: Mapping[str, str], condition_dim: int) -> np.ndarray:
+    values = []
+    active_props = set(selected_properties(row))
+    for prop in PROPERTY_COLUMNS:
+        value = parse_float(first_present(row, [f"target_{prop}", f"target_{prop.lower()}"]))
+        normalizer = PROPERTY_NORMALIZERS.get(prop, 1.0)
+        values.append(0.0 if math.isnan(value) else float(value) / normalizer)
+    for prop in PROPERTY_COLUMNS:
+        active = truthy(first_present(row, [f"{prop}_active", f"{prop.lower()}_active"]))
+        values.append(1.0 if (active if active is not None else prop in active_props) else 0.0)
+    for prop in PROPERTY_COLUMNS:
+        direction = property_direction(row, prop)
+        values.append(float(direction))
+    values.append(float(len(active_props)) / max(len(PROPERTY_COLUMNS), 1))
+    values.extend(hash_text_features(str(row.get("instruction", "") or row.get("prompt", "")), 16))
+    return expand_condition_token(values, condition_dim)[None, :].astype(np.float32)
+
+
+def property_program_tokens(row: Mapping[str, str], condition_dim: int) -> np.ndarray:
+    selected = selected_properties(row)
+    selected_set = set(selected)
+    count_norm = float(len(selected)) / max(len(PROPERTY_COLUMNS), 1)
+    direction_values = [property_direction(row, prop) for prop in PROPERTY_COLUMNS]
+    positive_fraction = sum(1 for value in direction_values if value > 0) / max(len(direction_values), 1)
+    negative_fraction = sum(1 for value in direction_values if value < 0) / max(len(direction_values), 1)
+    raw_task_text = ",".join(
+        str(row.get(key, "") or "")
+        for key in ("condition_properties", "external_task_properties", "external_property_directions_json")
+    )
+    tokens = [
+        expand_condition_token(
+            [
+                0.25,
+                count_norm,
+                positive_fraction,
+                negative_fraction,
+                float(task_mode_for_row(row) == EDIT_MODE),
+            ]
+            + hash_text_features(raw_task_text, 11),
+            condition_dim,
+        )
+    ]
+    for idx, prop in enumerate(PROPERTY_COLUMNS):
+        target = parse_float(first_present(row, [f"target_{prop}", f"target_{prop.lower()}"]))
+        normalizer = PROPERTY_NORMALIZERS.get(prop, 1.0)
+        direction = property_direction(row, prop)
+        tokens.append(
+            expand_condition_token(
+                [
+                    1.0,
+                    float(idx + 1) / max(len(PROPERTY_COLUMNS), 1),
+                    1.0 if prop in selected_set else 0.0,
+                    0.0 if math.isnan(target) else float(target) / max(normalizer, 1e-8),
+                    float(direction),
+                    STRICT_TOLERANCE.get(prop, normalizer) / max(normalizer, 1e-8),
+                    count_norm,
+                    0.0 if math.isnan(target) else 1.0,
+                ],
+                condition_dim,
+            )
+        )
+    return np.stack(tokens, axis=0).astype(np.float32)
+
+
+def source_smiles_condition_tokens(
+    row: Mapping[str, str],
+    condition_dim: int,
+    *,
+    max_source_tokens: int,
+) -> np.ndarray:
+    source_smiles = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
+    if not source_smiles:
+        return np.zeros((1, max(1, int(condition_dim))), dtype=np.float32)
+    tokens = tokenize_smiles(source_smiles)[: max(1, int(max_source_tokens))]
+    if not tokens:
+        return np.zeros((1, max(1, int(condition_dim))), dtype=np.float32)
+    source_length = max(len(tokens), 1)
+    rows = [source_token_feature(token, idx, source_length, condition_dim) for idx, token in enumerate(tokens)]
+    return np.stack(rows, axis=0).astype(np.float32)
+
+
+def source_token_feature(token: str, index: int, source_length: int, condition_dim: int) -> np.ndarray:
+    dim = max(1, int(condition_dim))
+    vec = np.zeros(dim, dtype=np.float32)
+    safe_set(vec, 0, 2.0)
+    safe_set(vec, 1, float(index + 1) / max(float(source_length), 1.0))
+    safe_set(vec, 2, float(source_length) / 160.0)
+    safe_set(vec, 3, float(len(str(token))) / 16.0)
+    safe_set(vec, 4, 1.0 if is_atom_token(token) else 0.0)
+    safe_set(vec, 5, 1.0 if str(token).islower() else 0.0)
+    safe_set(vec, 6, 1.0 if is_bond_token(token) else 0.0)
+    safe_set(vec, 7, 1.0 if str(token).isdigit() or str(token).startswith("%") else 0.0)
+    safe_set(vec, 8, 1.0 if str(token) in {"(", ")"} else 0.0)
+    safe_set(vec, 9, 1.0 if str(token).startswith("[") and str(token).endswith("]") else 0.0)
+    bucket_space = max(dim - 16, 1)
+    token_hash = stable_hash_int(str(token))
+    bucket = 16 + (token_hash % bucket_space)
+    if bucket < dim:
+        vec[bucket] = 1.0
+    second_bucket = 16 + ((token_hash // max(bucket_space, 1)) % bucket_space)
+    if second_bucket < dim:
+        vec[second_bucket] = max(vec[second_bucket], 0.5)
+    return vec
+
+
+def selected_properties(row: Mapping[str, str]) -> list[str]:
+    raw_values = [
+        row.get("condition_properties", ""),
+        row.get("external_task_properties", ""),
+        row.get("property_name", ""),
+        row.get("objective", ""),
+    ]
+    out = []
+    for raw in raw_values:
+        text = str(raw or "").replace(";", ",").replace("|", ",")
+        for part in text.split(","):
+            prop = canonical_prop(part)
+            if prop and prop in PROPERTY_COLUMNS and prop not in out:
+                out.append(prop)
+    for prop, _direction in instruction_task_specs(row):
+        if prop and prop in PROPERTY_COLUMNS and prop not in out:
+            out.append(prop)
+    for prop, _direction in external_direction_specs(row):
+        if prop and prop in PROPERTY_COLUMNS and prop not in out:
+            out.append(prop)
+    for prop in PROPERTY_COLUMNS:
+        active = truthy(first_present(row, [f"{prop}_active", f"{prop.lower()}_active"]))
+        if active and prop not in out:
+            out.append(prop)
+    return out
+
+
+def canonical_prop(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    return PROPERTY_ALIASES.get(text.lower(), text)
+
+
+def parse_direction_value(value: object) -> int:
+    text = str(value or "").strip().lower()
+    if text in {"increase", "up", "+", "higher", "improve", "maximize", "max", "positive"}:
+        return 1
+    if text in {"decrease", "down", "-", "lower", "minimize", "min", "negative", "reduce"}:
+        return -1
+    return 0
+
+
+def property_direction(row: Mapping[str, str], prop: str) -> int:
+    canonical = canonical_prop(prop)
+    direct = parse_direction_value(first_present(row, [f"{canonical}_direction", f"{canonical.lower()}_direction"]))
+    if direct:
+        return direct
+    for item_prop, direction in instruction_task_specs(row):
+        if item_prop == canonical and direction:
+            return direction
+    for item_prop, direction in external_direction_specs(row):
+        if item_prop == canonical and direction:
+            return direction
+    return 0
+
+
+def instruction_task_specs(row: Mapping[str, str]) -> list[tuple[str, int]]:
+    raw = str(row.get("instruction_tasks", "") or "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    out: list[tuple[str, int]] = []
+    if isinstance(parsed, list):
+        for item in parsed:
+            if not isinstance(item, MappingABC):
+                continue
+            prop = canonical_prop(item.get("property", "") or item.get("name", "") or item.get("prop", ""))
+            direction = parse_direction_value(item.get("direction", "") or item.get("operation", "") or item.get("trend", ""))
+            if prop:
+                out.append((prop, direction))
+    elif isinstance(parsed, MappingABC):
+        for key, value in parsed.items():
+            prop = canonical_prop(key)
+            direction = parse_direction_value(value)
+            if prop:
+                out.append((prop, direction))
+    return out
+
+
+def external_direction_specs(row: Mapping[str, str]) -> list[tuple[str, int]]:
+    raw = str(row.get("external_property_directions_json", "") or row.get("property_directions_json", "") or "").strip()
+    if not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    out: list[tuple[str, int]] = []
+    if isinstance(parsed, MappingABC):
+        for key, value in parsed.items():
+            prop = canonical_prop(key)
+            direction = parse_direction_value(value)
+            if prop:
+                out.append((prop, direction))
+    elif isinstance(parsed, list):
+        for item in parsed:
+            if isinstance(item, MappingABC):
+                prop = canonical_prop(item.get("property", "") or item.get("name", "") or item.get("prop", ""))
+                direction = parse_direction_value(item.get("direction", "") or item.get("operation", "") or item.get("trend", ""))
+                if prop:
+                    out.append((prop, direction))
+    return out
+
+
+def expand_condition_token(values: Sequence[float], condition_dim: int) -> np.ndarray:
+    source = np.asarray(list(values), dtype=np.float32)
+    if source.size == 0:
+        return np.zeros(max(1, int(condition_dim)), dtype=np.float32)
+    repeats = int(math.ceil(max(1, int(condition_dim)) / max(source.size, 1)))
+    return np.tile(source, repeats)[: max(1, int(condition_dim))].astype(np.float32)
+
+
+def hash_text_features(text: str, dim: int) -> list[float]:
+    if dim <= 0:
+        return []
+    digest = hashlib.sha256(str(text or "").encode("utf-8")).digest()
+    values = []
+    for idx in range(dim):
+        byte = digest[idx % len(digest)]
+        values.append((float(byte) / 127.5) - 1.0)
+    return values
+
+
+def stable_hash_int(text: str) -> int:
+    digest = hashlib.sha1(str(text).encode("utf-8")).hexdigest()
+    return int(digest[:12], 16)
+
+
+def safe_set(vec: np.ndarray, index: int, value: float) -> None:
+    if 0 <= int(index) < vec.shape[0]:
+        vec[int(index)] = float(value)
+
+
+def is_atom_token(token: str) -> bool:
+    text = str(token)
+    if not text:
+        return False
+    if text.startswith("[") and text.endswith("]"):
+        return True
+    return any(ch.isalpha() for ch in text)
+
+
+def is_bond_token(token: str) -> bool:
+    return str(token) in {"=", "#", "-", "/", "\\", ":", "~", "."}
+
+
+def first_present(row: Mapping[str, str], keys: Sequence[str]) -> object:
+    for key in keys:
+        value = row.get(key, "")
+        if value not in ("", None):
+            return value
+    return ""
+
+
+def parse_float(value: object) -> float:
+    try:
+        text = str(value).strip()
+        if not text:
+            return math.nan
+        return float(text)
+    except (TypeError, ValueError):
+        return math.nan
+
+
+def truthy(value: object) -> bool | None:
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    if text in {"1", "true", "yes", "y", "active"}:
+        return True
+    if text in {"0", "false", "no", "n", "inactive"}:
+        return False
+    return None
+
+
+def collate_batch(rows: list[dict[str, object]], pad_id: int) -> dict[str, torch.Tensor]:
+    max_condition = max(np.asarray(row["condition"]).shape[0] for row in rows)
+    condition_dim = np.asarray(rows[0]["condition"]).shape[-1]
+    max_len = max(len(row["decoder_input_ids"]) for row in rows)
+    condition = np.zeros((len(rows), max_condition, condition_dim), dtype=np.float32)
+    condition_mask = np.zeros((len(rows), max_condition), dtype=bool)
+    decoder_input = np.full((len(rows), max_len), int(pad_id), dtype=np.int64)
+    target = np.full((len(rows), max_len), int(pad_id), dtype=np.int64)
+    for idx, row in enumerate(rows):
+        cond = np.asarray(row["condition"], dtype=np.float32)
+        seq_in = np.asarray(row["decoder_input_ids"], dtype=np.int64)
+        seq_out = np.asarray(row["target_ids"], dtype=np.int64)
+        condition[idx, : cond.shape[0], :] = cond
+        condition_mask[idx, : cond.shape[0]] = True
+        decoder_input[idx, : seq_in.shape[0]] = seq_in
+        target[idx, : seq_out.shape[0]] = seq_out
+    return {
+        "condition": torch.from_numpy(condition),
+        "condition_mask": torch.from_numpy(condition_mask),
+        "decoder_input_ids": torch.from_numpy(decoder_input),
+        "target_ids": torch.from_numpy(target),
+    }
+
+
+def train_epoch(
+    model: ConditionedSmilesDecoder,
+    dataset: list[dict[str, object]],
+    optimizer: torch.optim.Optimizer,
+    *,
+    batch_size: int,
+    grad_clip: float,
+    device: torch.device,
+    seed: int,
+) -> dict[str, float]:
+    model.train()
+    rng = random.Random(seed)
+    order = list(range(len(dataset)))
+    rng.shuffle(order)
+    total_loss = 0.0
+    total_tokens = 0
+    for start in range(0, len(order), batch_size):
+        batch_rows = [dataset[idx] for idx in order[start : start + batch_size]]
+        batch = {key: value.to(device) for key, value in collate_batch(batch_rows, model.pad_id).items()}
+        optimizer.zero_grad(set_to_none=True)
+        logits = model(
+            batch["condition"],
+            batch["decoder_input_ids"],
+            condition_mask=batch["condition_mask"],
+        )
+        loss = F.cross_entropy(
+            logits.reshape(-1, logits.shape[-1]),
+            batch["target_ids"].reshape(-1),
+            ignore_index=model.pad_id,
+            reduction="sum",
+        )
+        token_count = int(batch["target_ids"].ne(model.pad_id).sum().item())
+        (loss / max(token_count, 1)).backward()
+        if grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), float(grad_clip))
+        optimizer.step()
+        total_loss += float(loss.item())
+        total_tokens += token_count
+    return {"loss": total_loss / max(total_tokens, 1), "tokens": float(total_tokens)}
+
+
+@torch.no_grad()
+def evaluate_loss(
+    model: ConditionedSmilesDecoder,
+    dataset: list[dict[str, object]],
+    *,
+    batch_size: int,
+    device: torch.device,
+) -> dict[str, float]:
+    model.eval()
+    total_loss = 0.0
+    total_tokens = 0
+    for start in range(0, len(dataset), batch_size):
+        batch_rows = dataset[start : start + batch_size]
+        batch = {key: value.to(device) for key, value in collate_batch(batch_rows, model.pad_id).items()}
+        logits = model(
+            batch["condition"],
+            batch["decoder_input_ids"],
+            condition_mask=batch["condition_mask"],
+        )
+        loss = F.cross_entropy(
+            logits.reshape(-1, logits.shape[-1]),
+            batch["target_ids"].reshape(-1),
+            ignore_index=model.pad_id,
+            reduction="sum",
+        )
+        total_loss += float(loss.item())
+        total_tokens += int(batch["target_ids"].ne(model.pad_id).sum().item())
+    return {"loss": total_loss / max(total_tokens, 1), "tokens": float(total_tokens)}
+
+
+def train_epoch_group_rl(
+    model: ConditionedSmilesDecoder,
+    reference_model: ConditionedSmilesDecoder | None,
+    dataset: list[dict[str, object]],
+    optimizer: torch.optim.Optimizer,
+    vocab: SmilesVocabulary,
+    *,
+    batch_size: int,
+    device: torch.device,
+    rollouts_per_prompt: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    parallel_samples: int,
+    max_parallel_sequences: int,
+    repetition_penalty: float,
+    no_repeat_ngram_size: int,
+    min_new_tokens: int,
+    sft_weight: float,
+    advantage_mode: str,
+    advantage_clip: float,
+    sequence_logprob_reduction: str,
+    reference_kl_weight: float,
+    reward_mode: str,
+    reward_valid_weight: float,
+    reward_strict_weight: float,
+    reward_distance_weight: float,
+    reward_distance_clip: float,
+    reward_source_similarity_weight: float,
+    reward_source_similarity_threshold: float,
+    reward_source_copy_penalty: float,
+    grad_clip: float,
+    seed: int,
+) -> dict[str, object]:
+    model.train()
+    order = list(range(len(dataset)))
+    random.Random(seed).shuffle(order)
+    totals = {
+        "loss": 0.0,
+        "pg_loss": 0.0,
+        "sft_loss": 0.0,
+        "reference_loss": 0.0,
+        "mean_reward": 0.0,
+        "batches": 0.0,
+    }
+    mode_rewards: dict[str, list[float]] = {DE_NOVO_MODE: [], EDIT_MODE: []}
+    for start in range(0, len(order), batch_size):
+        batch_rows = [dataset[idx] for idx in order[start : start + batch_size]]
+        batch = {key: value.to(device) for key, value in collate_batch(batch_rows, model.pad_id).items()}
+        metadata_rows = [dict(row.get("row", {})) for row in batch_rows]
+        generated = sample_group_rollouts(
+            model,
+            batch,
+            bos_id=vocab.bos_id,
+            eos_id=vocab.eos_id,
+            rollouts_per_prompt=rollouts_per_prompt,
+            parallel_samples=parallel_samples,
+            max_parallel_sequences=max_parallel_sequences,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            min_new_tokens=min_new_tokens,
+        )
+        expanded = repeat_generation_batch(batch, repeats=rollouts_per_prompt)
+        seq_logprob = sequence_logprobs(
+            model,
+            expanded["condition"],
+            expanded["condition_mask"],
+            generated.to(device),
+            eos_id=vocab.eos_id,
+            reduction=sequence_logprob_reduction,
+        )
+        rewards = compute_group_rl_rewards(
+            metadata_rows,
+            generated,
+            vocab,
+            reward_mode=reward_mode,
+            reward_valid_weight=reward_valid_weight,
+            reward_strict_weight=reward_strict_weight,
+            reward_distance_weight=reward_distance_weight,
+            reward_distance_clip=reward_distance_clip,
+            reward_source_similarity_weight=reward_source_similarity_weight,
+            reward_source_similarity_threshold=reward_source_similarity_threshold,
+            reward_source_copy_penalty=reward_source_copy_penalty,
+        ).to(device)
+        reward_groups = rewards.view(len(batch_rows), rollouts_per_prompt)
+        advantages = group_relative_advantages(
+            reward_groups,
+            mode=advantage_mode,
+            clip=advantage_clip,
+        ).reshape(-1)
+        pg_loss = -(advantages.detach() * seq_logprob).mean()
+        reference_loss = torch.zeros((), dtype=pg_loss.dtype, device=device)
+        if reference_model is not None and float(reference_kl_weight) > 0:
+            with torch.no_grad():
+                ref_logprob = sequence_logprobs(
+                    reference_model,
+                    expanded["condition"],
+                    expanded["condition_mask"],
+                    generated.to(device),
+                    eos_id=vocab.eos_id,
+                    reduction=sequence_logprob_reduction,
+                )
+            reference_loss = float(reference_kl_weight) * (seq_logprob - ref_logprob).pow(2).mean()
+
+        logits = model(batch["condition"], batch["decoder_input_ids"], condition_mask=batch["condition_mask"])
+        sft_loss = F.cross_entropy(
+            logits.reshape(-1, logits.shape[-1]),
+            batch["target_ids"].reshape(-1),
+            ignore_index=model.pad_id,
+        )
+        loss = pg_loss + float(sft_weight) * sft_loss + reference_loss
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        if grad_clip > 0:
+            torch.nn.utils.clip_grad_norm_(model.parameters(), float(grad_clip))
+        optimizer.step()
+
+        totals["loss"] += float(loss.detach().cpu())
+        totals["pg_loss"] += float(pg_loss.detach().cpu())
+        totals["sft_loss"] += float(sft_loss.detach().cpu())
+        totals["reference_loss"] += float(reference_loss.detach().cpu())
+        totals["mean_reward"] += float(rewards.mean().detach().cpu())
+        totals["batches"] += 1.0
+        for row_idx, row in enumerate(metadata_rows):
+            mode = task_mode_for_row(row)
+            mode_rewards.setdefault(mode, []).append(float(reward_groups[row_idx].mean().detach().cpu()))
+    denom = max(totals["batches"], 1.0)
+    out: dict[str, object] = {key: (value / denom if key != "batches" else int(value)) for key, value in totals.items()}
+    for mode, values in mode_rewards.items():
+        if values:
+            out[f"mean_reward_{mode}"] = sum(values) / len(values)
+    return out
+
+
+@torch.no_grad()
+def evaluate_group_rl(
+    model: ConditionedSmilesDecoder,
+    dataset: list[dict[str, object]],
+    vocab: SmilesVocabulary,
+    *,
+    batch_size: int,
+    device: torch.device,
+    rollouts_per_prompt: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    parallel_samples: int,
+    max_parallel_sequences: int,
+    repetition_penalty: float,
+    no_repeat_ngram_size: int,
+    min_new_tokens: int,
+    reward_mode: str,
+    reward_valid_weight: float,
+    reward_strict_weight: float,
+    reward_distance_weight: float,
+    reward_distance_clip: float,
+    reward_source_similarity_weight: float,
+    reward_source_similarity_threshold: float,
+    reward_source_copy_penalty: float,
+) -> dict[str, object]:
+    model.eval()
+    rewards_out: list[float] = []
+    mode_rewards: dict[str, list[float]] = {DE_NOVO_MODE: [], EDIT_MODE: []}
+    for start in range(0, len(dataset), batch_size):
+        batch_rows = dataset[start : start + batch_size]
+        batch = {key: value.to(device) for key, value in collate_batch(batch_rows, model.pad_id).items()}
+        metadata_rows = [dict(row.get("row", {})) for row in batch_rows]
+        generated = sample_group_rollouts(
+            model,
+            batch,
+            bos_id=vocab.bos_id,
+            eos_id=vocab.eos_id,
+            rollouts_per_prompt=rollouts_per_prompt,
+            parallel_samples=parallel_samples,
+            max_parallel_sequences=max_parallel_sequences,
+            max_new_tokens=max_new_tokens,
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            min_new_tokens=min_new_tokens,
+        )
+        rewards = compute_group_rl_rewards(
+            metadata_rows,
+            generated,
+            vocab,
+            reward_mode=reward_mode,
+            reward_valid_weight=reward_valid_weight,
+            reward_strict_weight=reward_strict_weight,
+            reward_distance_weight=reward_distance_weight,
+            reward_distance_clip=reward_distance_clip,
+            reward_source_similarity_weight=reward_source_similarity_weight,
+            reward_source_similarity_threshold=reward_source_similarity_threshold,
+            reward_source_copy_penalty=reward_source_copy_penalty,
+        )
+        grouped = rewards.view(len(batch_rows), rollouts_per_prompt)
+        rewards_out.extend(float(value) for value in rewards.tolist())
+        for row_idx, row in enumerate(metadata_rows):
+            mode_rewards.setdefault(task_mode_for_row(row), []).append(float(grouped[row_idx].mean()))
+    out: dict[str, object] = {"mean_reward": sum(rewards_out) / max(len(rewards_out), 1)}
+    for mode, values in mode_rewards.items():
+        if values:
+            out[f"mean_reward_{mode}"] = sum(values) / len(values)
+    return out
+
+
+@torch.no_grad()
+def sample_group_rollouts(
+    model: ConditionedSmilesDecoder,
+    batch: Mapping[str, torch.Tensor],
+    *,
+    bos_id: int,
+    eos_id: int,
+    rollouts_per_prompt: int,
+    parallel_samples: int,
+    max_parallel_sequences: int,
+    max_new_tokens: int,
+    temperature: float,
+    top_k: int,
+    top_p: float,
+    repetition_penalty: float,
+    no_repeat_ngram_size: int,
+    min_new_tokens: int,
+) -> torch.Tensor:
+    prompt_count = int(batch["condition"].shape[0])
+    remaining = max(1, int(rollouts_per_prompt))
+    chunks: list[torch.Tensor] = []
+    parallel_samples = max(1, int(parallel_samples))
+    max_parallel_sequences = max(1, int(max_parallel_sequences))
+    while remaining > 0:
+        chunk_limit = max(1, max_parallel_sequences // max(prompt_count, 1))
+        chunk = min(remaining, parallel_samples, chunk_limit)
+        expanded = repeat_generation_batch(batch, repeats=chunk)
+        generated = model.generate(
+            expanded["condition"],
+            bos_id=bos_id,
+            eos_id=eos_id,
+            max_new_tokens=max_new_tokens,
+            condition_mask=expanded["condition_mask"],
+            temperature=temperature,
+            top_k=top_k,
+            top_p=top_p,
+            repetition_penalty=repetition_penalty,
+            no_repeat_ngram_size=no_repeat_ngram_size,
+            min_new_tokens=min_new_tokens,
+        ).detach().cpu()
+        chunks.append(generated.view(prompt_count, chunk, generated.shape[1]))
+        remaining -= chunk
+    max_len = max(tensor.shape[-1] for tensor in chunks)
+    padded = []
+    for tensor in chunks:
+        if tensor.shape[-1] < max_len:
+            pad = torch.full(
+                (tensor.shape[0], tensor.shape[1], max_len - tensor.shape[-1]),
+                int(eos_id),
+                dtype=tensor.dtype,
+            )
+            tensor = torch.cat([tensor, pad], dim=-1)
+        padded.append(tensor)
+    merged = torch.cat(padded, dim=1)
+    return merged.reshape(prompt_count * merged.shape[1], max_len)
+
+
+def repeat_generation_batch(batch: Mapping[str, torch.Tensor], *, repeats: int) -> dict[str, torch.Tensor]:
+    out = {}
+    for key in ("condition", "condition_mask"):
+        out[key] = batch[key].repeat_interleave(max(1, int(repeats)), dim=0)
+    return out
+
+
+def sequence_logprobs(
+    model: ConditionedSmilesDecoder,
+    condition: torch.Tensor,
+    condition_mask: torch.Tensor,
+    generated: torch.Tensor,
+    *,
+    eos_id: int,
+    reduction: str,
+) -> torch.Tensor:
+    generated = generated.to(condition.device)
+    decoder_input = generated[:, :-1]
+    target_ids = generated[:, 1:]
+    logits = model(condition, decoder_input, condition_mask=condition_mask)
+    log_probs = F.log_softmax(logits, dim=-1)
+    token_log_probs = log_probs.gather(dim=-1, index=target_ids.unsqueeze(-1)).squeeze(-1)
+    eos_hits = target_ids.eq(int(eos_id)).cumsum(dim=1)
+    token_mask = eos_hits.le(1).to(token_log_probs.dtype)
+    seq_logprob = (token_log_probs * token_mask).sum(dim=1)
+    if reduction == "mean":
+        seq_logprob = seq_logprob / token_mask.sum(dim=1).clamp_min(1.0)
+    return seq_logprob
+
+
+def group_relative_advantages(rewards: torch.Tensor, *, mode: str, clip: float) -> torch.Tensor:
+    centered = rewards - rewards.mean(dim=1, keepdim=True)
+    if mode == "group_zscore":
+        centered = centered / rewards.std(dim=1, keepdim=True, unbiased=False).clamp_min(1e-6)
+    if clip and clip > 0:
+        centered = torch.clamp(centered, min=-float(clip), max=float(clip))
+    return centered
+
+
+def compute_group_rl_rewards(
+    rows: Sequence[Mapping[str, str]],
+    generated: torch.Tensor,
+    vocab: SmilesVocabulary,
+    *,
+    reward_mode: str,
+    reward_valid_weight: float,
+    reward_strict_weight: float,
+    reward_distance_weight: float,
+    reward_distance_clip: float,
+    reward_source_similarity_weight: float,
+    reward_source_similarity_threshold: float,
+    reward_source_copy_penalty: float,
+) -> torch.Tensor:
+    rollout_count = max(1, int(generated.shape[0] // max(len(rows), 1)))
+    rewards: list[float] = []
+    for row_idx, row in enumerate(rows):
+        start = row_idx * rollout_count
+        end = start + rollout_count
+        for ids in generated[start:end]:
+            smiles = detokenize_smiles(vocab.decode(ids.tolist()))
+            rewards.append(
+                reward_for_smiles(
+                    row,
+                    smiles,
+                    reward_mode=reward_mode,
+                    reward_valid_weight=reward_valid_weight,
+                    reward_strict_weight=reward_strict_weight,
+                    reward_distance_weight=reward_distance_weight,
+                    reward_distance_clip=reward_distance_clip,
+                    reward_source_similarity_weight=reward_source_similarity_weight,
+                    reward_source_similarity_threshold=reward_source_similarity_threshold,
+                    reward_source_copy_penalty=reward_source_copy_penalty,
+                )
+            )
+    return torch.as_tensor(rewards, dtype=torch.float32)
+
+
+def reward_for_smiles(
+    row: Mapping[str, str],
+    smiles: str,
+    *,
+    reward_mode: str,
+    reward_valid_weight: float,
+    reward_strict_weight: float,
+    reward_distance_weight: float,
+    reward_distance_clip: float,
+    reward_source_similarity_weight: float,
+    reward_source_similarity_threshold: float,
+    reward_source_copy_penalty: float,
+) -> float:
+    canonical = safe_canonical_smiles(smiles)
+    if not canonical:
+        return -1.0
+    mode = task_mode_for_row(row)
+    routed_reward = reward_mode_for_row(row, reward_mode)
+    scoring_mode = EDIT_MODE if routed_reward == "table1_edit" else DE_NOVO_MODE
+    strict_fraction, distance = property_success_and_distance(row, canonical, mode=scoring_mode)
+    distance = min(float(distance), float(reward_distance_clip))
+    reward = float(reward_valid_weight)
+    reward += float(reward_strict_weight) * float(strict_fraction)
+    reward -= float(reward_distance_weight) * float(distance)
+    if mode == EDIT_MODE:
+        reward += float(reward_source_similarity_weight) * source_similarity_component(
+            row,
+            canonical,
+            threshold=float(reward_source_similarity_threshold),
+        )
+        reward -= float(reward_source_copy_penalty) * source_copy_component(row, canonical)
+    return float(reward)
+
+
+def reward_mode_for_row(row: Mapping[str, str], reward_mode: str) -> str:
+    if reward_mode != "auto":
+        return str(reward_mode)
+    return "table1_edit" if task_mode_for_row(row) == EDIT_MODE else "property_strict"
+
+
+def source_similarity_component(row: Mapping[str, str], smiles: str, *, threshold: float) -> float:
+    source = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
+    if not source:
+        return 0.0
+    similarity = morgan_tanimoto(source, smiles)
+    if not math.isfinite(similarity):
+        return 0.0
+    threshold = max(0.0, min(0.999, float(threshold)))
+    if threshold <= 0:
+        return max(0.0, min(1.0, float(similarity)))
+    return (max(0.0, min(1.0, float(similarity))) - threshold) / max(1.0 - threshold, 1e-6)
+
+
+def source_copy_component(row: Mapping[str, str], smiles: str) -> float:
+    source = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
+    if not source:
+        return 0.0
+    source_canonical = safe_canonical_smiles(source)
+    smiles_canonical = safe_canonical_smiles(smiles)
+    return 1.0 if source_canonical and source_canonical == smiles_canonical else 0.0
+
+
+def effective_reward_source_similarity_threshold(args: argparse.Namespace) -> float:
+    value = getattr(args, "reward_source_similarity_threshold", None)
+    if value is None:
+        value = getattr(args, "source_similarity_threshold", 0.4)
+    return float(value)
+
+
+def task_mode_counts(dataset: Sequence[Mapping[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for row in dataset:
+        mode = str(row.get("task_mode", ""))
+        counts[mode] = counts.get(mode, 0) + 1
+    return counts
+
+
+def input_modality_for_args(args: argparse.Namespace) -> str:
+    explicit = str(getattr(args, "input_modality", "") or "").strip()
+    if explicit:
+        return explicit
+    variant = str(getattr(args, "condition_feature_variant", "") or "").strip()
+    if variant in {"full", "image_only"}:
+        return "with_image"
+    if variant in {"text_only", "caption_bottleneck"}:
+        return "no_image"
+    if variant == "random_query":
+        return "random_query"
+    return variant or "unknown"
+
+
+def method_for_args(args: argparse.Namespace) -> str:
+    method = str(getattr(args, "method", "") or "unified_smiles_generator")
+    modality = input_modality_for_args(args)
+    if method == "unified_smiles_generator" and modality not in {"", "unknown"}:
+        return f"{method}_{modality}"
+    return method
+
+
+def write_predictions(
+    model: ConditionedSmilesDecoder,
+    rows: list[dict[str, str]],
+    store: FeatureStore,
+    vocab: SmilesVocabulary,
+    condition_dim: int,
+    *,
+    args: argparse.Namespace,
+    device: torch.device,
+) -> dict[str, object]:
+    prediction_csv = args.prediction_csv or args.output_dir / "unified_smiles_predictions.csv"
+    candidate_csv = args.candidate_output_csv or args.output_dir / "unified_smiles_candidate_predictions.csv"
+    model.eval()
+    selected_rows: list[dict[str, object]] = []
+    candidate_rows: list[dict[str, object]] = []
+    for row_index, row in enumerate(rows):
+        candidates = sample_candidates_for_row(
+            model,
+            row,
+            store,
+            vocab,
+            condition_dim,
+            args=args,
+            device=device,
+        )
+        ranked = rank_candidates(row, candidates, source_similarity_threshold=float(args.source_similarity_threshold))
+        if bool(args.disable_finalizer):
+            ranked = candidates
+        top_k = max(1, int(args.top_k_candidates))
+        selected = ranked[0] if ranked else Candidate("", 0.0, {})
+        out = dict(row)
+        out["task_mode"] = task_mode_for_row(row)
+        out["condition_feature_variant"] = str(args.condition_feature_variant)
+        out["input_modality"] = input_modality_for_args(args)
+        out["method"] = method_for_args(args)
+        out["generated_smiles"] = selected.smiles
+        out["candidate_rank"] = 1
+        out["candidate_selected"] = "True"
+        out.update(selected.metrics)
+        selected_rows.append(out)
+        for rank, candidate in enumerate(ranked[:top_k], start=1):
+            c_row = dict(row)
+            c_row["task_mode"] = task_mode_for_row(row)
+            c_row["condition_feature_variant"] = str(args.condition_feature_variant)
+            c_row["input_modality"] = input_modality_for_args(args)
+            c_row["method"] = method_for_args(args)
+            c_row["generated_smiles"] = candidate.smiles
+            c_row["candidate_rank"] = rank
+            c_row["candidate_selected"] = "True" if rank == 1 else "False"
+            c_row.update(candidate.metrics)
+            candidate_rows.append(c_row)
+        if row_index % 100 == 0 and row_index:
+            print(json.dumps({"sampled_rows": row_index, "selected": len(selected_rows), "candidates": len(candidate_rows)}))
+    write_csv(prediction_csv, selected_rows)
+    write_csv(candidate_csv, candidate_rows)
+    return {
+        "rows": len(rows),
+        "selected_rows": len(selected_rows),
+        "candidate_rows": len(candidate_rows),
+        "prediction_csv": str(prediction_csv),
+        "candidate_output_csv": str(candidate_csv),
+    }
+
+
+@dataclass
+class Candidate:
+    smiles: str
+    score: float
+    metrics: dict[str, object]
+
+
+@torch.no_grad()
+def sample_candidates_for_row(
+    model: ConditionedSmilesDecoder,
+    row: Mapping[str, str],
+    store: FeatureStore,
+    vocab: SmilesVocabulary,
+    condition_dim: int,
+    *,
+    args: argparse.Namespace,
+    device: torch.device,
+) -> list[Candidate]:
+    condition = condition_array_for_row(
+        row,
+        store,
+        condition_dim,
+        max_source_tokens=int(args.max_source_tokens),
+    )
+    total = max(1, int(args.num_samples))
+    batch_size = max(1, min(int(args.parallel_samples), int(args.max_parallel_sequences), total))
+    seen: dict[str, Candidate] = {}
+    decoding_mode = str(args.decoding_mode)
+    if decoding_mode in {"sample", "sample_beam"}:
+        for start in range(0, total, batch_size):
+            current = min(batch_size, total - start)
+            condition_batch = np.repeat(condition[None, :, :], current, axis=0)
+            condition_mask = np.ones(condition_batch.shape[:2], dtype=bool)
+            generated = model.generate(
+                torch.from_numpy(condition_batch).to(device),
+                bos_id=vocab.bos_id,
+                eos_id=vocab.eos_id,
+                max_new_tokens=int(args.max_new_tokens),
+                condition_mask=torch.from_numpy(condition_mask).to(device),
+                temperature=float(args.temperature),
+                top_k=int(args.top_k),
+                top_p=float(args.top_p),
+                repetition_penalty=float(args.repetition_penalty),
+                no_repeat_ngram_size=int(args.no_repeat_ngram_size),
+                min_new_tokens=int(args.min_new_tokens),
+            )
+            add_generated_sequences(
+                seen,
+                generated.detach().cpu().tolist(),
+                row,
+                vocab,
+                source_similarity_threshold=float(args.source_similarity_threshold),
+                candidate_source="sample",
+            )
+    if decoding_mode in {"beam", "sample_beam"}:
+        condition_batch = condition[None, :, :]
+        condition_mask = np.ones(condition_batch.shape[:2], dtype=bool)
+        generated = model.beam_search(
+            torch.from_numpy(condition_batch).to(device),
+            bos_id=vocab.bos_id,
+            eos_id=vocab.eos_id,
+            max_new_tokens=int(args.max_new_tokens),
+            condition_mask=torch.from_numpy(condition_mask).to(device),
+            beam_size=int(args.beam_size),
+            expand_size=int(args.beam_expand_size),
+            length_penalty=float(args.beam_length_penalty),
+            repetition_penalty=float(args.repetition_penalty),
+            no_repeat_ngram_size=int(args.no_repeat_ngram_size),
+            min_new_tokens=int(args.min_new_tokens),
+        )
+        add_generated_sequences(
+            seen,
+            generated.detach().cpu().tolist(),
+            row,
+            vocab,
+            source_similarity_threshold=float(args.source_similarity_threshold),
+            candidate_source="beam",
+        )
+    source = str(row.get("source_smiles", "") or "").strip()
+    if task_mode_for_row(row) == EDIT_MODE and source:
+        canonical_source = safe_canonical_smiles(source) or source
+        if canonical_source and canonical_source not in seen:
+            metrics = candidate_metrics(row, canonical_source, source_similarity_threshold=float(args.source_similarity_threshold))
+            metrics["candidate_source_copy"] = "True"
+            metrics["candidate_generation_mode"] = "source_copy"
+            seen[canonical_source] = Candidate(canonical_source, float(metrics.get("unified_finalizer_score", 0.0)), metrics)
+    return list(seen.values())
+
+
+def add_generated_sequences(
+    seen: dict[str, Candidate],
+    sequences: Sequence[Sequence[int]],
+    row: Mapping[str, str],
+    vocab: SmilesVocabulary,
+    *,
+    source_similarity_threshold: float,
+    candidate_source: str,
+) -> None:
+    for ids in sequences:
+        smiles = detokenize_smiles(vocab.decode(ids))
+        canonical = safe_canonical_smiles(smiles) or smiles
+        if not canonical or canonical in seen:
+            continue
+        metrics = candidate_metrics(row, canonical, source_similarity_threshold=source_similarity_threshold)
+        metrics["candidate_generation_mode"] = candidate_source
+        seen[canonical] = Candidate(canonical, float(metrics.get("unified_finalizer_score", 0.0)), metrics)
+
+
+def rank_candidates(row: Mapping[str, str], candidates: list[Candidate], *, source_similarity_threshold: float) -> list[Candidate]:
+    rescored = []
+    for candidate in candidates:
+        metrics = candidate_metrics(row, candidate.smiles, source_similarity_threshold=source_similarity_threshold)
+        rescored.append(Candidate(candidate.smiles, float(metrics.get("unified_finalizer_score", 0.0)), metrics))
+    return sorted(
+        rescored,
+        key=lambda item: (
+            item.metrics.get("valid_smiles") == "True",
+            float(item.metrics.get("unified_property_success_fraction", 0.0)),
+            item.metrics.get("source_similarity_success", "") == "True",
+            float(item.metrics.get("source_tanimoto", -1.0) or -1.0),
+            item.score,
+        ),
+        reverse=True,
+    )
+
+
+def candidate_metrics(
+    row: Mapping[str, str],
+    smiles: str,
+    *,
+    source_similarity_threshold: float,
+) -> dict[str, object]:
+    mode = task_mode_for_row(row)
+    valid = bool(safe_canonical_smiles(smiles))
+    source = str(row.get("source_smiles", "") or "").strip()
+    similarity = morgan_tanimoto(source, smiles) if source and mode == EDIT_MODE else math.nan
+    property_fraction, property_distance = property_success_and_distance(row, smiles, mode=mode)
+    source_success = bool(math.isfinite(similarity) and similarity >= source_similarity_threshold)
+    score = 0.0
+    score += 100.0 if valid else -100.0
+    score += 50.0 * property_fraction
+    score -= 5.0 * property_distance
+    if mode == EDIT_MODE:
+        score += 25.0 if source_success else 0.0
+        score += 10.0 * (similarity if math.isfinite(similarity) else 0.0)
+    return {
+        "valid_smiles": "True" if valid else "False",
+        "unified_finalizer_score": format_float(score),
+        "unified_property_success_fraction": format_float(property_fraction),
+        "unified_property_distance": format_float(property_distance),
+        "source_tanimoto": "" if not math.isfinite(similarity) else format_float(similarity),
+        "source_similarity_success": "True" if source_success else "False",
+    }
+
+
+def property_success_and_distance(row: Mapping[str, str], smiles: str, *, mode: str) -> tuple[float, float]:
+    if not safe_canonical_smiles(smiles):
+        return 0.0, 1e6
+    selected = selected_properties(row)
+    if not selected:
+        return 0.0, 0.0
+    source = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
+    successes = 0
+    distances = []
+    evaluated = 0
+    for prop in selected:
+        value = score_property(smiles, prop)
+        if value is None or math.isnan(float(value)):
+            continue
+        target = parse_float(first_present(row, [f"target_{prop}", f"target_{prop.lower()}"]))
+        direction = property_direction(row, prop)
+        if not math.isnan(target):
+            tolerance = STRICT_TOLERANCE.get(prop, PROPERTY_NORMALIZERS.get(prop, 1.0))
+            distance = abs(float(value) - float(target)) / max(tolerance, 1e-8)
+            success = distance <= 1.0
+        elif mode == EDIT_MODE and direction and source:
+            source_value = score_property(source, prop)
+            if source_value is None or math.isnan(float(source_value)):
+                continue
+            delta = float(value) - float(source_value)
+            distance = max(0.0, -float(direction) * delta)
+            success = (delta * float(direction)) > 0.0
+        else:
+            continue
+        evaluated += 1
+        distances.append(float(distance))
+        successes += 1 if success else 0
+    if evaluated == 0:
+        return 0.0, 0.0
+    return successes / evaluated, sum(distances) / max(len(distances), 1)
+
+
+def score_property(smiles: str, prop: str) -> float | None:
+    canonical_prop_name = canonical_prop(prop)
+    canonical_smiles = safe_canonical_smiles(smiles)
+    if not canonical_smiles or not canonical_prop_name:
+        return None
+    key = (canonical_smiles, canonical_prop_name)
+    if key in _PROPERTY_VALUE_CACHE:
+        return _PROPERTY_VALUE_CACHE[key]
+    props = molecular_properties(canonical_smiles)
+    if canonical_prop_name in props:
+        value = float(props[canonical_prop_name])
+        _PROPERTY_VALUE_CACHE[key] = value if math.isfinite(value) else None
+        return _PROPERTY_VALUE_CACHE[key]
+    oracle = tdc_oracle(canonical_prop_name)
+    if oracle is None:
+        _PROPERTY_VALUE_CACHE[key] = None
+        return None
+    try:
+        value = float(oracle(canonical_smiles))  # type: ignore[operator]
+    except Exception:
+        _PROPERTY_VALUE_CACHE[key] = None
+        return None
+    _PROPERTY_VALUE_CACHE[key] = value if math.isfinite(value) else None
+    return _PROPERTY_VALUE_CACHE[key]
+
+
+def tdc_oracle(prop: str):
+    canonical_prop_name = canonical_prop(prop)
+    if canonical_prop_name in _TDC_ORACLE_CACHE:
+        return _TDC_ORACLE_CACHE[canonical_prop_name]
+    try:
+        ensure_rdkit_six_compat()
+        from tdc import Oracle
+
+        _TDC_ORACLE_CACHE[canonical_prop_name] = Oracle(name=canonical_prop_name)
+    except Exception:
+        _TDC_ORACLE_CACHE[canonical_prop_name] = None
+    return _TDC_ORACLE_CACHE[canonical_prop_name]
+
+
+def ensure_rdkit_six_compat() -> None:
+    if "rdkit.six" in sys.modules:
+        return
+    try:
+        from rdkit.six import iteritems  # noqa: F401
+    except ModuleNotFoundError:
+        import types
+
+        six_mod = types.ModuleType("rdkit.six")
+        six_mod.iteritems = dict.items
+        sys.modules["rdkit.six"] = six_mod
+
+
+def molecular_properties(smiles: str) -> dict[str, float]:
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import Descriptors, QED, rdMolDescriptors
+    except Exception:
+        return {}
+    mol = Chem.MolFromSmiles(str(smiles or ""))
+    if mol is None:
+        return {}
+    return {
+        "MW": float(Descriptors.MolWt(mol)),
+        "LogP": float(Descriptors.MolLogP(mol)),
+        "QED": float(QED.qed(mol)),
+        "TPSA": float(rdMolDescriptors.CalcTPSA(mol)),
+        "HBD": float(rdMolDescriptors.CalcNumHBD(mol)),
+        "HBA": float(rdMolDescriptors.CalcNumHBA(mol)),
+        "RB": float(rdMolDescriptors.CalcNumRotatableBonds(mol)),
+        "SA": 0.0,
+    }
+
+
+def safe_canonical_smiles(smiles: str) -> str:
+    try:
+        from rdkit import Chem
+    except Exception:
+        return str(smiles or "").strip()
+    mol = Chem.MolFromSmiles(str(smiles or ""))
+    if mol is None:
+        return ""
+    return Chem.MolToSmiles(mol, canonical=True)
+
+
+def morgan_tanimoto(left: str, right: str) -> float:
+    try:
+        from rdkit import Chem, DataStructs
+        from rdkit.Chem import AllChem
+    except Exception:
+        return math.nan
+    left_mol = Chem.MolFromSmiles(str(left or ""))
+    right_mol = Chem.MolFromSmiles(str(right or ""))
+    if left_mol is None or right_mol is None:
+        return math.nan
+    left_fp = AllChem.GetMorganFingerprintAsBitVect(left_mol, 2, nBits=2048)
+    right_fp = AllChem.GetMorganFingerprintAsBitVect(right_mol, 2, nBits=2048)
+    return float(DataStructs.TanimotoSimilarity(left_fp, right_fp))
+
+
+def format_float(value: float, digits: int = 6) -> str:
+    if not math.isfinite(float(value)):
+        return ""
+    return f"{float(value):.{digits}g}"
+
+
+def write_csv(path: Path, rows: list[Mapping[str, object]]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fieldnames: list[str] = []
+    seen = set()
+    for row in rows:
+        for key in row.keys():
+            if key not in seen:
+                seen.add(key)
+                fieldnames.append(key)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fieldnames)
+        writer.writeheader()
+        for row in rows:
+            writer.writerow({key: row.get(key, "") for key in fieldnames})
+
+
+def save_checkpoint(
+    path: Path,
+    model: ConditionedSmilesDecoder,
+    optimizer: torch.optim.Optimizer | None,
+    vocab: SmilesVocabulary,
+    config: Mapping[str, object],
+    epoch: int,
+    history: list[dict[str, object]],
+    args: argparse.Namespace,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "model_state": model.state_dict(),
+        "optimizer_state": optimizer.state_dict() if optimizer is not None else None,
+        "vocab": vocab.to_dict(),
+        "model_config": dict(config),
+        "epoch": int(epoch),
+        "history": history,
+        "args": vars(args),
+    }
+    torch.save(payload, path)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
