@@ -50,7 +50,7 @@ if [[ ! -f "$TABLE1_TRAIN_PACK/table1_benchmark_condition_rows.csv" ]]; then
     --moledit-eval-split "$MOLEDIT_EVAL_SPLIT" \
     --output-dir "$TABLE1_TRAIN_PACK" \
     --per-task "$TABLE1_TRAIN_PER_TASK" \
-    --eval-first 0
+    --no-eval-first
 fi
 
 if [[ ! -f "$TABLE1_EVAL_PACK/table1_moledit_rows.csv" ]]; then
