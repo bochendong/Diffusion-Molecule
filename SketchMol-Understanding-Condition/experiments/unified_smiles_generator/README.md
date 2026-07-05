@@ -133,6 +133,31 @@ SUCC_UNIFIED_EXTERNAL_SOURCE_PROPERTIES_CSV
 When input CSVs contain mixed tasks, the runner writes evaluator-specific
 filtered inputs under the benchmark output directory before running metrics.
 
+## Direct Warm-start GRPO Beam Rescue
+
+The first-pass unified smoke is intentionally weak. To test whether the unified
+wrapper can recover benchmark-level de novo performance, reuse the strong
+direct-SMILES group-RL checkpoint, keep the direct-compatible condition layout,
+train only de novo rows with GRPO, and evaluate with beam@40:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_unified_smiles_generator_direct_warmstart_grpo_beam.sh
+```
+
+Key defaults:
+
+```text
+SUCC_UNIFIED_DIRECT_WARMSTART_CHECKPOINT=.../direct_smiles_generator_rl.pt
+SUCC_UNIFIED_DIRECT_WARMSTART_CONDITION_LAYOUT=direct_compat
+SUCC_UNIFIED_RL_OBJECTIVE=grpo
+SUCC_UNIFIED_DIRECT_WARMSTART_BEAM_SIZE=40
+SUCC_UNIFIED_DIRECT_WARMSTART_BEAM_EXPAND_SIZE=128
+```
+
+The script writes to
+`SketchMol-Understanding-Condition/outputs/unified_smiles_generator_direct_warmstart_grpo_beam_v1/`
+and runs both a warm-start beam sanity check and the GRPO beam benchmark.
+
 ## Input Modality Ablation
 
 Run the same generator recipe with different frozen condition-feature variants:

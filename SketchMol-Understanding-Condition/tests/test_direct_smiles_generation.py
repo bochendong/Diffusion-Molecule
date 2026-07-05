@@ -97,6 +97,13 @@ def test_direct_smiles_entrypoints_exist():
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_denovo_v2_fair_budget_suite.sh").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/collect_direct_smiles_denovo_fair_budget_results.py").exists()
     assert Path("SketchMol-Understanding-Condition/scripts/submit_direct_smiles_preference_dpo_2p7p.sh").exists()
+    assert Path("SketchMol-Understanding-Condition/experiments/unified_smiles_generator/filter_unified_smiles_rows.py").exists()
+    assert Path(
+        "SketchMol-Understanding-Condition/experiments/unified_smiles_generator/run_unified_smiles_generator_direct_warmstart_grpo_beam.sh"
+    ).exists()
+    assert Path(
+        "SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_unified_smiles_generator_direct_warmstart_grpo_beam.sh"
+    ).exists()
 
 
 def test_collect_direct_smiles_v2_suite_results(tmp_path):
@@ -243,6 +250,40 @@ def test_collect_direct_smiles_fair_budget_results(tmp_path):
     assert by_variant["2p7p_n40"]["strict_7p"] == "0.600"
     assert by_variant["ood_n1"]["status"] == "missing"
     assert "Ours@40" in report_path.read_text(encoding="utf-8")
+
+
+def test_filter_unified_smiles_rows_de_novo(tmp_path):
+    input_csv = tmp_path / "rows.csv"
+    output_csv = tmp_path / "de_novo.csv"
+    _write_rows(
+        input_csv,
+        [
+            {"condition_id": "a", "task_mode": "de_novo", "target_smiles": "CCO"},
+            {"condition_id": "b", "task_mode": "edit", "source_smiles": "CC", "target_smiles": "CCC"},
+            {"condition_id": "c", "source_smiles": "", "target_smiles": "CCN"},
+        ],
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "experiments/unified_smiles_generator/filter_unified_smiles_rows.py",
+            "--input-csv",
+            str(input_csv),
+            "--output-csv",
+            str(output_csv),
+            "--task-mode",
+            "de_novo",
+        ],
+        cwd="SketchMol-Understanding-Condition",
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    rows = list(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    assert [row["condition_id"] for row in rows] == ["a", "c"]
 
 
 def test_external_multiproperty_exporter_preserves_official_task_properties(tmp_path):

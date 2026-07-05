@@ -538,6 +538,24 @@ RL eval mean reward（同 SFT warm-start）：group_pg **0.50–0.51** → grpo 
 
 脚本：`submit_unified_smiles_generator_fast_parallel_pipeline.sh`（40GB feature + 20GB modality）、`submit_unified_smiles_generator_benchmark_resume.sh`、`submit_unified_smiles_generator_grpo_pipeline.sh`。
 
+### Unified rescue P0：direct warm-start + GRPO + beam（待跑）
+
+v1 smoke 的主要问题不是 benchmark runner，而是从零训练的 unified decoder 把 de novo / edit 混在一起后完全低于 direct strong baseline。P0 rescue 先只恢复 de novo：
+
+- warm-start：复用 `direct_smiles_denovo_2p7p_v2_group_rl_v1/direct_smiles_generator_rl.pt`。
+- condition layout：`direct_compat`，de novo 行使用 direct v2 对齐的 `[MLLM feature + property program]`，避免额外 mode token 破坏 checkpoint 分布。
+- training：只保留 unified train/eval 中的 `de_novo` rows，先不混 Table1/MuMO。
+- RL：`grpo`，默认 `rollouts=16`、`update_epochs=2`、`lr=5e-7`、`SFT_WEIGHT=1.0`、`REFERENCE_KL=0.05`。
+- decode/eval：**beam@40**，`beam_expand=128`，只跑 `denovo_2p7p,denovo_ood`。
+
+入口：
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_unified_smiles_generator_direct_warmstart_grpo_beam.sh
+```
+
+输出：`outputs/unified_smiles_generator_direct_warmstart_grpo_beam_v1/`，默认先跑 warm-start beam sanity，再跑 GRPO beam。
+
 ## 当前最值得优先回答的问题
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。

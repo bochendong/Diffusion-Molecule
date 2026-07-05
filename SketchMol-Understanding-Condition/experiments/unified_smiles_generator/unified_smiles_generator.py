@@ -204,6 +204,16 @@ def add_common_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-smiles-length", type=int, default=160)
     parser.add_argument("--max-source-tokens", type=int, default=96)
     parser.add_argument("--method", default="unified_smiles_generator")
+    parser.add_argument(
+        "--condition-layout",
+        choices=("unified", "direct_compat"),
+        default="unified",
+        help=(
+            "Condition token layout. `unified` adds explicit mode tokens; "
+            "`direct_compat` matches the earlier direct-SMILES property-program layout "
+            "for direct checkpoint warm-starts."
+        ),
+    )
 
 
 def add_model_args(parser: argparse.ArgumentParser) -> None:
@@ -328,6 +338,7 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         int(config["condition_dim"]),
         max_smiles_length=int(args.max_smiles_length),
         max_source_tokens=int(args.max_source_tokens),
+        condition_layout=str(args.condition_layout),
     )
     eval_dataset = build_dataset(
         eval_rows,
@@ -336,6 +347,7 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         int(config["condition_dim"]),
         max_smiles_length=int(args.max_smiles_length),
         max_source_tokens=int(args.max_source_tokens),
+        condition_layout=str(args.condition_layout),
     )
     if not train_dataset:
         raise ValueError("No trainable rows found. Rows need target_smiles.")
@@ -395,6 +407,7 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         "eval_rows": len(eval_rows),
         "condition_dim": int(config["condition_dim"]),
         "condition_feature_variant": str(args.condition_feature_variant),
+        "condition_layout": str(args.condition_layout),
         "input_modality": input_modality_for_args(args),
         "vocab_size": len(vocab.token_to_id),
         "history": history,
@@ -441,6 +454,7 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
         int(config["condition_dim"]),
         max_smiles_length=int(args.max_smiles_length),
         max_source_tokens=int(args.max_source_tokens),
+        condition_layout=str(args.condition_layout),
     )
     eval_dataset = build_dataset(
         eval_rows,
@@ -449,6 +463,7 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
         int(config["condition_dim"]),
         max_smiles_length=int(args.max_smiles_length),
         max_source_tokens=int(args.max_source_tokens),
+        condition_layout=str(args.condition_layout),
     )
     if not train_dataset:
         raise ValueError("No trainable rows found. Rows need target_smiles.")
@@ -550,6 +565,7 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
         "eval_task_mode_counts": task_mode_counts(eval_dataset),
         "condition_dim": int(config["condition_dim"]),
         "condition_feature_variant": str(args.condition_feature_variant),
+        "condition_layout": str(args.condition_layout),
         "input_modality": input_modality_for_args(args),
         "vocab_size": len(vocab.token_to_id),
         "rl_objective": str(args.rl_objective),
@@ -1026,6 +1042,7 @@ def build_dataset(
     *,
     max_smiles_length: int,
     max_source_tokens: int,
+    condition_layout: str = "unified",
 ) -> list[dict[str, object]]:
     dataset = []
     for row in rows:
@@ -1035,7 +1052,13 @@ def build_dataset(
         tokens = tokenize_smiles(target)[: max(1, int(max_smiles_length))]
         decoder_input = vocab.encode(tokens, add_bos=True, add_eos=False)
         target_ids = vocab.encode(tokens, add_bos=False, add_eos=True)
-        condition = condition_array_for_row(row, store, condition_dim, max_source_tokens=max_source_tokens)
+        condition = condition_array_for_row(
+            row,
+            store,
+            condition_dim,
+            max_source_tokens=max_source_tokens,
+            condition_layout=condition_layout,
+        )
         dataset.append(
             {
                 "row": dict(row),
@@ -1054,6 +1077,7 @@ def condition_array_for_row(
     condition_dim: int,
     *,
     max_source_tokens: int,
+    condition_layout: str = "unified",
 ) -> np.ndarray:
     base = store.get(row)
     if base is None:
@@ -1063,6 +1087,11 @@ def condition_array_for_row(
     mode = task_mode_for_row(row)
     mode_token = mode_condition_token(mode, condition_dim)
     program = property_program_tokens(row, condition_dim)
+    if str(condition_layout or "unified") == "direct_compat":
+        if mode == EDIT_MODE:
+            source = source_smiles_condition_tokens(row, condition_dim, max_source_tokens=max_source_tokens)
+            return np.concatenate([base, source, program], axis=0)
+        return np.concatenate([base, program], axis=0)
     if mode == EDIT_MODE:
         source = source_smiles_condition_tokens(row, condition_dim, max_source_tokens=max_source_tokens)
         return np.concatenate([base, mode_token, source, program], axis=0)
@@ -2016,6 +2045,7 @@ def write_predictions(
         out = dict(row)
         out["task_mode"] = task_mode_for_row(row)
         out["condition_feature_variant"] = str(args.condition_feature_variant)
+        out["condition_layout"] = str(args.condition_layout)
         out["input_modality"] = input_modality_for_args(args)
         out["method"] = method_for_args(args)
         out["generated_smiles"] = selected.smiles
@@ -2027,6 +2057,7 @@ def write_predictions(
             c_row = dict(row)
             c_row["task_mode"] = task_mode_for_row(row)
             c_row["condition_feature_variant"] = str(args.condition_feature_variant)
+            c_row["condition_layout"] = str(args.condition_layout)
             c_row["input_modality"] = input_modality_for_args(args)
             c_row["method"] = method_for_args(args)
             c_row["generated_smiles"] = candidate.smiles
@@ -2044,6 +2075,7 @@ def write_predictions(
         "candidate_rows": len(candidate_rows),
         "prediction_csv": str(prediction_csv),
         "candidate_output_csv": str(candidate_csv),
+        "condition_layout": str(args.condition_layout),
     }
 
 
@@ -2070,6 +2102,7 @@ def sample_candidates_for_row(
         store,
         condition_dim,
         max_source_tokens=int(args.max_source_tokens),
+        condition_layout=str(args.condition_layout),
     )
     total = max(1, int(args.num_samples))
     batch_size = max(1, min(int(args.parallel_samples), int(args.max_parallel_sequences), total))

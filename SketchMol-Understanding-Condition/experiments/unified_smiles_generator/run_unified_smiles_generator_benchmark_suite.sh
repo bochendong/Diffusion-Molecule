@@ -21,6 +21,7 @@ CANDIDATE_CSV="${SUCC_UNIFIED_BENCHMARK_CANDIDATE_CSV:-$SAMPLE_OUTPUT_DIR/unifie
 
 CONDITION_FEATURE_ARRAY="${SUCC_UNIFIED_CONDITION_FEATURE_ARRAY:-query_tokens}"
 CONDITION_FEATURE_VARIANT="${SUCC_UNIFIED_CONDITION_FEATURE_VARIANT:-full}"
+CONDITION_LAYOUT="${SUCC_UNIFIED_CONDITION_LAYOUT:-unified}"
 INPUT_MODALITY="${SUCC_UNIFIED_INPUT_MODALITY:-}"
 CONDITION_DIM="${SUCC_UNIFIED_CONDITION_DIM:-256}"
 MAX_SMILES_LENGTH="${SUCC_UNIFIED_MAX_SMILES_LENGTH:-160}"
@@ -75,6 +76,7 @@ if [[ "$RUN_SAMPLE" == "1" ]]; then
     --candidate-output-csv "$CANDIDATE_CSV"
     --condition-feature-array "$CONDITION_FEATURE_ARRAY"
     --condition-feature-variant "$CONDITION_FEATURE_VARIANT"
+    --condition-layout "$CONDITION_LAYOUT"
     --condition-dim "$CONDITION_DIM"
     --max-smiles-length "$MAX_SMILES_LENGTH"
     --max-source-tokens "$MAX_SOURCE_TOKENS"
@@ -141,6 +143,7 @@ echo "  tasks=$TASKS"
 echo "  prediction_csv=$PREDICTION_CSV"
 echo "  candidate_csv=$CANDIDATE_CSV"
 echo "  condition_feature_variant=$CONDITION_FEATURE_VARIANT"
+echo "  condition_layout=$CONDITION_LAYOUT"
 echo "  input_modality=${INPUT_MODALITY:-auto}"
 echo "  output_dir=$OUTPUT_DIR"
 
