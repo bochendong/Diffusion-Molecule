@@ -82,7 +82,7 @@ condition pack
   -> sample G candidates per prompt
   -> score candidates with per-row reward router
   -> normalize rewards within each prompt group
-  -> update the same SMILES decoder with policy-gradient + SFT anchor + reference penalty
+  -> update the same SMILES decoder with group-PG or clipped GRPO + SFT anchor + reference penalty
 ```
 
 Default reward components:
@@ -100,6 +100,15 @@ SketchMol-Understanding-Condition/experiments/unified_smiles_generator/run_unifi
 
 The default `SUCC_UNIFIED_RL_REWARD_MODE=auto` keeps both task lines in one RL
 run. Forced `property_strict` or `table1_edit` modes are only for ablations.
+
+RL objective ablations:
+
+```text
+SUCC_UNIFIED_RL_OBJECTIVE=group_pg  # original group-relative policy gradient
+SUCC_UNIFIED_RL_OBJECTIVE=grpo      # clipped GRPO-style ratio objective
+SUCC_UNIFIED_RL_GRPO_CLIP_EPS=0.2
+SUCC_UNIFIED_RL_GRPO_UPDATE_EPOCHS=2
+```
 
 ## Stage 3: unified sampling and benchmark bridge
 

@@ -16,6 +16,7 @@ VARIANTS="${SUCC_UNIFIED_FEATURE_VARIANTS:-full,text_only}"
 RUN_TRAIN_EXPORT="${SUCC_UNIFIED_FEATURE_VARIANTS_RUN_TRAIN:-1}"
 RUN_EVAL_EXPORT="${SUCC_UNIFIED_FEATURE_VARIANTS_RUN_EVAL:-1}"
 ENCODER="${SUCC_UNIFIED_FEATURE_ENCODER:-hf_vlm}"
+HF_MODEL_NAME_OR_PATH="${SUCC_HF_MODEL_NAME_OR_PATH:-/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct}"
 POOLED_DIM="${SUCC_POOLED_DIM:-3584}"
 NUM_QUERIES="${SUCC_NUM_QUERIES:-32}"
 QUERY_DIM="${SUCC_QUERY_DIM:-256}"
@@ -56,6 +57,7 @@ export_one() {
   SUCC_NUM_QUERIES="$NUM_QUERIES" \
   SUCC_QUERY_DIM="$QUERY_DIM" \
   SUCC_HF_BATCH_SIZE="$HF_BATCH_SIZE" \
+  SUCC_HF_MODEL_NAME_OR_PATH="$HF_MODEL_NAME_OR_PATH" \
   bash "$PROJECT_DIR/scripts/run_condition_encoder_export.sh"
 
   echo "  ${split}_prepared_csv=$prepared_csv"
@@ -68,6 +70,7 @@ echo "  eval_csv=${EVAL_CSV:-none}"
 echo "  output_root=$OUTPUT_ROOT"
 echo "  variants=$VARIANTS"
 echo "  encoder=$ENCODER"
+echo "  hf_model=$HF_MODEL_NAME_OR_PATH"
 echo "  hf_batch_size=$HF_BATCH_SIZE"
 
 if [[ "$RUN_TRAIN_EXPORT" == "1" ]]; then

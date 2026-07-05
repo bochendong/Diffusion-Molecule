@@ -242,6 +242,9 @@ def add_sampling_args(parser: argparse.ArgumentParser) -> None:
 
 
 def add_group_rl_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--rl-objective", choices=("group_pg", "grpo"), default="group_pg")
+    parser.add_argument("--grpo-clip-eps", type=float, default=0.2)
+    parser.add_argument("--grpo-update-epochs", type=int, default=1)
     parser.add_argument("--rollouts-per-prompt", type=int, default=16)
     parser.add_argument("--sft-weight", type=float, default=0.25)
     parser.add_argument("--advantage-mode", choices=("group_center", "group_zscore"), default="group_zscore")
@@ -472,6 +475,9 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
             no_repeat_ngram_size=int(args.no_repeat_ngram_size),
             min_new_tokens=int(args.min_new_tokens),
             sft_weight=float(args.sft_weight),
+            rl_objective=str(args.rl_objective),
+            grpo_clip_eps=float(args.grpo_clip_eps),
+            grpo_update_epochs=int(args.grpo_update_epochs),
             advantage_mode=str(args.advantage_mode),
             advantage_clip=float(args.advantage_clip),
             sequence_logprob_reduction=str(args.sequence_logprob_reduction),
@@ -546,6 +552,9 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
         "condition_feature_variant": str(args.condition_feature_variant),
         "input_modality": input_modality_for_args(args),
         "vocab_size": len(vocab.token_to_id),
+        "rl_objective": str(args.rl_objective),
+        "grpo_clip_eps": float(args.grpo_clip_eps),
+        "grpo_update_epochs": int(args.grpo_update_epochs),
         "reward_mode": str(args.reward_mode),
         "reward_source_similarity_threshold": effective_reward_source_similarity_threshold(args),
         "history": history,
@@ -1476,6 +1485,9 @@ def train_epoch_group_rl(
     no_repeat_ngram_size: int,
     min_new_tokens: int,
     sft_weight: float,
+    rl_objective: str,
+    grpo_clip_eps: float,
+    grpo_update_epochs: int,
     advantage_mode: str,
     advantage_clip: float,
     sequence_logprob_reduction: str,
@@ -1500,9 +1512,14 @@ def train_epoch_group_rl(
         "sft_loss": 0.0,
         "reference_loss": 0.0,
         "mean_reward": 0.0,
+        "mean_policy_ratio": 0.0,
+        "clip_fraction": 0.0,
         "batches": 0.0,
+        "updates": 0.0,
     }
     mode_rewards: dict[str, list[float]] = {DE_NOVO_MODE: [], EDIT_MODE: []}
+    objective = str(rl_objective)
+    update_epochs = max(1, int(grpo_update_epochs)) if objective == "grpo" else 1
     for start in range(0, len(order), batch_size):
         batch_rows = [dataset[idx] for idx in order[start : start + batch_size]]
         batch = {key: value.to(device) for key, value in collate_batch(batch_rows, model.pad_id).items()}
@@ -1524,14 +1541,17 @@ def train_epoch_group_rl(
             min_new_tokens=min_new_tokens,
         )
         expanded = repeat_generation_batch(batch, repeats=rollouts_per_prompt)
-        seq_logprob = sequence_logprobs(
-            model,
-            expanded["condition"],
-            expanded["condition_mask"],
-            generated.to(device),
-            eos_id=vocab.eos_id,
-            reduction=sequence_logprob_reduction,
-        )
+        old_seq_logprob = None
+        if objective == "grpo":
+            with torch.no_grad():
+                old_seq_logprob = sequence_logprobs(
+                    model,
+                    expanded["condition"],
+                    expanded["condition_mask"],
+                    generated.to(device),
+                    eos_id=vocab.eos_id,
+                    reduction=sequence_logprob_reduction,
+                ).detach()
         rewards = compute_group_rl_rewards(
             metadata_rows,
             generated,
@@ -1551,44 +1571,74 @@ def train_epoch_group_rl(
             mode=advantage_mode,
             clip=advantage_clip,
         ).reshape(-1)
-        pg_loss = -(advantages.detach() * seq_logprob).mean()
-        reference_loss = torch.zeros((), dtype=pg_loss.dtype, device=device)
-        if reference_model is not None and float(reference_kl_weight) > 0:
-            with torch.no_grad():
-                ref_logprob = sequence_logprobs(
-                    reference_model,
-                    expanded["condition"],
-                    expanded["condition_mask"],
-                    generated.to(device),
-                    eos_id=vocab.eos_id,
-                    reduction=sequence_logprob_reduction,
-                )
-            reference_loss = float(reference_kl_weight) * (seq_logprob - ref_logprob).pow(2).mean()
+        for _update_idx in range(update_epochs):
+            seq_logprob = sequence_logprobs(
+                model,
+                expanded["condition"],
+                expanded["condition_mask"],
+                generated.to(device),
+                eos_id=vocab.eos_id,
+                reduction=sequence_logprob_reduction,
+            )
+            pg_loss, pg_stats = policy_gradient_loss(
+                seq_logprob,
+                advantages,
+                objective=objective,
+                old_seq_logprob=old_seq_logprob,
+                grpo_clip_eps=grpo_clip_eps,
+            )
+            reference_loss = torch.zeros((), dtype=pg_loss.dtype, device=device)
+            if reference_model is not None and float(reference_kl_weight) > 0:
+                with torch.no_grad():
+                    ref_logprob = sequence_logprobs(
+                        reference_model,
+                        expanded["condition"],
+                        expanded["condition_mask"],
+                        generated.to(device),
+                        eos_id=vocab.eos_id,
+                        reduction=sequence_logprob_reduction,
+                    )
+                reference_loss = float(reference_kl_weight) * (seq_logprob - ref_logprob).pow(2).mean()
 
-        logits = model(batch["condition"], batch["decoder_input_ids"], condition_mask=batch["condition_mask"])
-        sft_loss = F.cross_entropy(
-            logits.reshape(-1, logits.shape[-1]),
-            batch["target_ids"].reshape(-1),
-            ignore_index=model.pad_id,
-        )
-        loss = pg_loss + float(sft_weight) * sft_loss + reference_loss
-        optimizer.zero_grad(set_to_none=True)
-        loss.backward()
-        if grad_clip > 0:
-            torch.nn.utils.clip_grad_norm_(model.parameters(), float(grad_clip))
-        optimizer.step()
+            logits = model(batch["condition"], batch["decoder_input_ids"], condition_mask=batch["condition_mask"])
+            sft_loss = F.cross_entropy(
+                logits.reshape(-1, logits.shape[-1]),
+                batch["target_ids"].reshape(-1),
+                ignore_index=model.pad_id,
+            )
+            loss = pg_loss + float(sft_weight) * sft_loss + reference_loss
+            optimizer.zero_grad(set_to_none=True)
+            loss.backward()
+            if grad_clip > 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), float(grad_clip))
+            optimizer.step()
 
-        totals["loss"] += float(loss.detach().cpu())
-        totals["pg_loss"] += float(pg_loss.detach().cpu())
-        totals["sft_loss"] += float(sft_loss.detach().cpu())
-        totals["reference_loss"] += float(reference_loss.detach().cpu())
+            totals["loss"] += float(loss.detach().cpu())
+            totals["pg_loss"] += float(pg_loss.detach().cpu())
+            totals["sft_loss"] += float(sft_loss.detach().cpu())
+            totals["reference_loss"] += float(reference_loss.detach().cpu())
+            totals["mean_policy_ratio"] += float(pg_stats["mean_policy_ratio"])
+            totals["clip_fraction"] += float(pg_stats["clip_fraction"])
+            totals["updates"] += 1.0
         totals["mean_reward"] += float(rewards.mean().detach().cpu())
         totals["batches"] += 1.0
         for row_idx, row in enumerate(metadata_rows):
             mode = task_mode_for_row(row)
             mode_rewards.setdefault(mode, []).append(float(reward_groups[row_idx].mean().detach().cpu()))
-    denom = max(totals["batches"], 1.0)
-    out: dict[str, object] = {key: (value / denom if key != "batches" else int(value)) for key, value in totals.items()}
+    batch_denom = max(totals["batches"], 1.0)
+    update_denom = max(totals["updates"], 1.0)
+    update_scaled = {"loss", "pg_loss", "sft_loss", "reference_loss", "mean_policy_ratio", "clip_fraction"}
+    out: dict[str, object] = {}
+    for key, value in totals.items():
+        if key in update_scaled:
+            out[key] = value / update_denom
+        elif key == "batches" or key == "updates":
+            out[key] = int(value)
+        else:
+            out[key] = value / batch_denom
+    out["rl_objective"] = objective
+    out["grpo_clip_eps"] = float(grpo_clip_eps)
+    out["grpo_update_epochs"] = int(update_epochs)
     for mode, values in mode_rewards.items():
         if values:
             out[f"mean_reward_{mode}"] = sum(values) / len(values)
@@ -1754,6 +1804,37 @@ def sequence_logprobs(
     if reduction == "mean":
         seq_logprob = seq_logprob / token_mask.sum(dim=1).clamp_min(1.0)
     return seq_logprob
+
+
+def policy_gradient_loss(
+    seq_logprob: torch.Tensor,
+    advantages: torch.Tensor,
+    *,
+    objective: str,
+    old_seq_logprob: torch.Tensor | None,
+    grpo_clip_eps: float,
+) -> tuple[torch.Tensor, dict[str, float]]:
+    detached_advantages = advantages.detach()
+    if objective == "grpo":
+        if old_seq_logprob is None:
+            raise ValueError("GRPO objective requires rollout-time old sequence log-probabilities.")
+        log_ratio = (seq_logprob - old_seq_logprob.detach()).clamp(min=-20.0, max=20.0)
+        ratio = torch.exp(log_ratio)
+        eps = max(0.0, float(grpo_clip_eps))
+        if eps > 0:
+            clipped_ratio = ratio.clamp(min=1.0 - eps, max=1.0 + eps)
+            surrogate = torch.minimum(ratio * detached_advantages, clipped_ratio * detached_advantages)
+            clip_fraction = ratio.sub(1.0).abs().gt(eps).to(seq_logprob.dtype).mean()
+        else:
+            surrogate = ratio * detached_advantages
+            clip_fraction = torch.zeros((), dtype=seq_logprob.dtype, device=seq_logprob.device)
+        loss = -surrogate.mean()
+        return loss, {
+            "mean_policy_ratio": float(ratio.detach().mean().cpu()),
+            "clip_fraction": float(clip_fraction.detach().cpu()),
+        }
+    loss = -(detached_advantages * seq_logprob).mean()
+    return loss, {"mean_policy_ratio": 1.0, "clip_fraction": 0.0}
 
 
 def group_relative_advantages(rewards: torch.Tensor, *, mode: str, clip: float) -> torch.Tensor:

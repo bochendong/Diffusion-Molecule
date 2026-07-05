@@ -67,6 +67,9 @@ SUCC_UNIFIED_RL_EVAL_CSV
 SUCC_UNIFIED_RL_OUTPUT_DIR
 SUCC_UNIFIED_RL_RESUME_CHECKPOINT
 SUCC_UNIFIED_RL_ROLLOUTS_PER_PROMPT
+SUCC_UNIFIED_RL_OBJECTIVE           # group_pg | grpo
+SUCC_UNIFIED_RL_GRPO_CLIP_EPS       # default: 0.2
+SUCC_UNIFIED_RL_GRPO_UPDATE_EPOCHS  # reuse each rollout group for clipped GRPO updates
 SUCC_UNIFIED_CONDITION_FEATURE_VARIANT
 SUCC_UNIFIED_INPUT_MODALITY
 SUCC_UNIFIED_RL_REWARD_MODE        # auto | property_strict | table1_edit
@@ -78,6 +81,24 @@ SUCC_UNIFIED_RL_REWARD_SOURCE_COPY_PENALTY
 
 The default `auto` reward mode routes each row by `task_mode`, so mixed
 de novo/edit batches are valid.
+
+`SUCC_UNIFIED_RL_OBJECTIVE=group_pg` keeps the original group-relative
+REINFORCE-style loss:
+
+```text
+loss = - A_i log pi_theta(y_i | x)
+```
+
+`SUCC_UNIFIED_RL_OBJECTIVE=grpo` switches to a clipped GRPO-style surrogate
+using rollout-time log-probabilities from the same policy:
+
+```text
+ratio = exp(log pi_theta(y_i | x) - log pi_old(y_i | x))
+loss  = - min(ratio * A_i, clip(ratio, 1-eps, 1+eps) * A_i)
+```
+
+Use `SUCC_UNIFIED_RL_GRPO_UPDATE_EPOCHS>1` when you want clipping to matter
+within each sampled rollout group.
 
 ## Benchmark Suite
 

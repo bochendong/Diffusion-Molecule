@@ -517,6 +517,27 @@ export SUCC_ADMET_PYTHON_BIN=$HOME/.venvs/admet_ai/bin/python
 
 产物：`outputs/direct_smiles_denovo_v2_fair_budget_suite_v1/fair_budget_report.md`。
 
+### Unified SMILES generator suite v1（first-pass smoke）
+
+Slurm pipeline：`outputs/unified_smiles_generator_suite_v1/`（`epochs=1`，`n=20`，`rollouts=8`，`batch=4`；feature export 用 Qwen2.5-VL-7B frozen features）。
+
+| 线 | RL | Decode | 2p-7p strict | OOD strict | External SR | MolEdit@20 Acc@0.15 |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| with_image | group_pg | sample | 5.3% | 0.1% | 2.8%† | 1.8% |
+| with_image | group_pg | beam | **8.9%** | 0.0% | 2.8%† | 0.5% |
+| with_image | grpo | sample | 4.8% | 0.1% | 2.8%† | 1.6% |
+| with_image | grpo | beam | — | — | — | — |
+| no_image | group_pg | sample | 5.4% | 0.0% | 2.8%† | 2.1% |
+| no_image | group_pg | beam | **8.9%** | 0.0% | 2.8%† | 0.5% |
+| no_image | grpo | sample | **6.5%** | 0.0% | 2.9%† | 1.6% |
+| no_image | grpo | beam | — | — | — | — |
+
+† External / MolEdit 为 diagnostic：`strict_success_rate=0`（oracle 不全）；MolEdit 跳过 DRD2/GSK3B（缺 TDC）。**不可与 MuMO 主数字对比。**
+
+RL eval mean reward（同 SFT warm-start）：group_pg **0.50–0.51** → grpo **0.53–0.54**（de_novo / edit 均升）。grpo beam job `17196167/168` 在 beam decode 阶段 **NODE_FAIL**（sample 已完成）。
+
+脚本：`submit_unified_smiles_generator_fast_parallel_pipeline.sh`（40GB feature + 20GB modality）、`submit_unified_smiles_generator_benchmark_resume.sh`、`submit_unified_smiles_generator_grpo_pipeline.sh`。
+
 ## 当前最值得优先回答的问题
 
 1. ~~OOD 最优主结果到底是 `group RL`、`conservative decoding`，还是两者叠加？~~ → **conservative n=256 overall 89.4%**；7p peak 在 default n=256 **90.0%**。
