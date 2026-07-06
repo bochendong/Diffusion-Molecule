@@ -12,6 +12,8 @@ Research/Molecule Generation/3M-Diffusion/
 Research/Molecule Generation/Atomas/
 Research/Molecule Generation/smi-editor/
 Research/Molecule Generation/*.png
+Research/Molecule Generation/OfficialBaselines/*/repo/
+Research/Molecule Generation/OfficialBaselines/*/results/
 generated_slides/
 
 # PyTDC oracle model cache (downloaded on first GSK3B/DRD2/SA scoring).

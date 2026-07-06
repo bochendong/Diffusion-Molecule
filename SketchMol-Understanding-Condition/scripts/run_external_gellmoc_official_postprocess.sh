@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Merge official GeLLMO task CSVs, build oracle properties, and evaluate.
+# Merge official GeLLMO-C task CSVs, build oracle properties, and evaluate.
 
 set -euo pipefail
 
@@ -17,23 +17,23 @@ fi
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 ADMET_PYTHON_BIN="${SUCC_ADMET_PYTHON_BIN:-$PYTHON_BIN}"
-OUTPUT_DIR="${SUCC_GELLMO_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/external_gellmo_official_mumo_v1}"
-TASKS="${SUCC_GELLMO_TASKS:-bbbp+drd2+plogp,bbbp+drd2+qed,bbbp+plogp+qed,drd2+plogp+qed,bbbp+drd2+plogp+qed,mutagenicity+plogp+qed,bbbp+drd2+mutagenicity+qed,bbbp+hia+mutagenicity+qed,bbbp+mutagenicity+plogp+qed,hia+mutagenicity+plogp+qed}"
-SETTINGS="${SUCC_GELLMO_SETTINGS:-seen}"
-MERGED_CSV="${SUCC_GELLMO_MERGED_PREDICTION_CSV:-$OUTPUT_DIR/gellmo_candidate_predictions.csv}"
-ORACLE_OUTPUT="${SUCC_GELLMO_ORACLE_OUTPUT_CSV:-$OUTPUT_DIR/generated_properties.csv}"
-ORACLE_WORK_DIR="${SUCC_GELLMO_ORACLE_WORK_DIR:-$OUTPUT_DIR/oracle_work}"
-DEFAULT_MERGE_PROPERTIES_CSV="SketchMol-Understanding-Condition/outputs/external_oracle_build_v1/generated_properties.csv"
-MERGE_PROPERTIES_CSV="${SUCC_GELLMO_MERGE_PROPERTIES_CSV:-}"
+OUTPUT_DIR="${SUCC_GELLMOC_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/external_gellmoc_official_cmumo_v1}"
+TASKS="${SUCC_GELLMOC_TASKS:-BPQ,ELQ,ACEP,BDPQ,DHMQ,CDE,ABMP,BCMQ,BDEQ,HLMPQ}"
+SETTINGS="${SUCC_GELLMOC_SETTINGS:-seen}"
+MERGED_CSV="${SUCC_GELLMOC_MERGED_PREDICTION_CSV:-$OUTPUT_DIR/gellmoc_candidate_predictions.csv}"
+ORACLE_OUTPUT="${SUCC_GELLMOC_ORACLE_OUTPUT_CSV:-$OUTPUT_DIR/generated_properties.csv}"
+ORACLE_WORK_DIR="${SUCC_GELLMOC_ORACLE_WORK_DIR:-$OUTPUT_DIR/oracle_work}"
+DEFAULT_MERGE_PROPERTIES_CSV="SketchMol-Understanding-Condition/outputs/external_oracle_build_cmumo_v1/generated_properties.csv"
+MERGE_PROPERTIES_CSV="${SUCC_GELLMOC_MERGE_PROPERTIES_CSV:-}"
 if [[ -z "$MERGE_PROPERTIES_CSV" && -f "$DEFAULT_MERGE_PROPERTIES_CSV" ]]; then
   MERGE_PROPERTIES_CSV="$DEFAULT_MERGE_PROPERTIES_CSV"
 fi
-EVAL_OUTPUT_DIR="${SUCC_GELLMO_EVAL_OUTPUT_DIR:-$OUTPUT_DIR/eval_official_oracle}"
-SKIP_ORACLE="${SUCC_GELLMO_SKIP_ORACLE:-0}"
+EVAL_OUTPUT_DIR="${SUCC_GELLMOC_EVAL_OUTPUT_DIR:-$OUTPUT_DIR/eval_official_oracle}"
+SKIP_ORACLE="${SUCC_GELLMOC_SKIP_ORACLE:-0}"
 
 export PYTHONPATH="$PROJECT_DIR:$REPO_DIR/SketchMol-MultiProperty-EditDataset${PYTHONPATH:+:$PYTHONPATH}"
 
-echo "Official GeLLMO postprocess"
+echo "Official GeLLMO-C postprocess"
 echo "  output_dir=$OUTPUT_DIR"
 echo "  tasks=$TASKS"
 echo "  settings=$SETTINGS"
@@ -53,7 +53,7 @@ for task in "${task_array[@]}"; do
     setting_trimmed="${setting#"${setting%%[![:space:]]*}"}"
     setting_trimmed="${setting_trimmed%"${setting_trimmed##*[![:space:]]}"}"
     [[ -z "$setting_trimmed" ]] && continue
-    csv_path="$OUTPUT_DIR/tasks/${task_slug}_${setting_trimmed}/gellmo_candidate_predictions.csv"
+    csv_path="$OUTPUT_DIR/tasks/${task_slug}_${setting_trimmed}/gellmoc_candidate_predictions.csv"
     if [[ ! -f "$csv_path" ]]; then
       echo "ERROR: missing task candidate CSV: $csv_path" >&2
       exit 2
@@ -108,7 +108,7 @@ fi
   --smiles-column generated_smiles \
   --source-smiles-column source_smiles \
   --group-column condition_id \
-  --report-title "Official GeLLMO MuMO Baseline"
+  --report-title "Official GeLLMO-C C-MuMO Baseline"
 
 RUN_MANIFEST="$OUTPUT_DIR/official_run_manifest.json"
 "$PYTHON_BIN" - <<'PY' "$RUN_MANIFEST" "$MERGED_CSV" "$ORACLE_OUTPUT" "$EVAL_OUTPUT_DIR" "$TASKS" "$SETTINGS"
@@ -119,8 +119,8 @@ from pathlib import Path
 
 manifest = {
     "created_at": datetime.now(timezone.utc).isoformat(),
-    "benchmark_id": "mumo",
-    "method_id": "GeLLMO",
+    "benchmark_id": "cmumo",
+    "method_id": "GeLLMO-C",
     "reproduction_type": "official_code",
     "tasks": sys.argv[5],
     "settings": sys.argv[6],
@@ -132,7 +132,7 @@ Path(sys.argv[1]).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\
 PY
 
 echo
-echo "Official GeLLMO postprocess ready:"
+echo "Official GeLLMO-C postprocess ready:"
 echo "  merged_csv=$MERGED_CSV"
 echo "  oracle_csv=$ORACLE_OUTPUT"
 echo "  report=$EVAL_OUTPUT_DIR/external_multiproperty_report.md"

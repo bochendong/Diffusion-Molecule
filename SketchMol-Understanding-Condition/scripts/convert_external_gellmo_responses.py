@@ -34,7 +34,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-file", required=True, type=Path)
     parser.add_argument("--output-csv", required=True, type=Path)
     parser.add_argument("--summary-json", type=Path, default=None)
-    parser.add_argument("--suite", choices=("mumo",), default="mumo")
+    parser.add_argument("--suite", choices=("mumo", "cmumo"), default="mumo")
     parser.add_argument("--task", required=True)
     parser.add_argument("--setting", default="seen", help="Official GeLLMO instr_setting filter: seen, unseen, or all.")
     parser.add_argument("--max-rows", type=int, default=0, help="0 keeps all matching official rows.")
@@ -53,7 +53,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     spec = specs[0]
     source_rows = select_official_rows(
         exporter.read_source_rows(args.source_file),
-        task=str(args.task),
+        spec=spec,
         setting=str(args.setting),
         max_rows=int(args.max_rows),
     )
@@ -124,18 +124,23 @@ def main(argv: Sequence[str] | None = None) -> int:
 def select_official_rows(
     rows: Sequence[Mapping[str, object]],
     *,
-    task: str,
+    spec: exporter.ExternalTaskSpec,
     setting: str,
     max_rows: int,
 ) -> list[dict[str, object]]:
-    normalized_task = exporter.normalize_task_name(task)
+    task_aliases = {
+        exporter.normalize_task_name(spec.task_id),
+        exporter.normalize_task_name(spec.task_key),
+        exporter.normalize_task_name(f"{spec.suite}:{spec.task_id}"),
+        exporter.normalize_task_name(f"{spec.suite}:{spec.task_key}"),
+    }
     setting = str(setting or "all").strip().lower()
     out = []
     for row in rows:
         row_task = exporter.normalize_task_name(
             exporter.first_value(row, ("task", "task_key", "external_task_key", "external_task_id"))
         )
-        if row_task != normalized_task:
+        if row_task and row_task not in task_aliases:
             continue
         row_setting = str(row.get("instr_setting") or row.get("setting") or "").strip().lower()
         if setting not in {"", "all"} and row_setting != setting:
@@ -144,7 +149,7 @@ def select_official_rows(
         if max_rows > 0 and len(out) >= max_rows:
             break
     if not out:
-        raise ValueError(f"No source rows matched task={task!r}, setting={setting!r}")
+        raise ValueError(f"No source rows matched task={spec.task_id}/{spec.task_key}, setting={setting!r}")
     return out
 
 

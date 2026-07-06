@@ -32,6 +32,9 @@ Research/Molecule Generation/SketchMol/SketchMol-v1-main
 Research/Molecule Generation/MolEditRL
   MolEditRL / MolEdit-Instruct benchmark 资产登记；cluster 上 raw + enhanced_v1 已构建，详见 MolEditRL/README.md 与 datasets/README.md。
 
+Research/Molecule Generation/OfficialBaselines
+  论文主表 official / paper-faithful baseline 工作区；官方 repo 放在各方法 repo/，无官方代码的方法记录 paper contract。
+
 datasets
   线上数据集布置说明；本地只提交 README，不提交大数据。
 
@@ -458,6 +461,31 @@ bash SketchMol-Understanding-Condition/scripts/submit_succ_ocr_benchmark.sh
 SDEA_PYTHON_BIN=/home/bdong/.venvs/molscribe_overlay/bin/python \
 bash SMILES-DualStream-EditorAtomas/scripts/submit_large_train.sh
 ```
+
+### 6. Official / paper-faithful baselines
+
+本机只维护脚本和契约，不做 benchmark 环境验证。服务器上先同步官方代码：
+
+```bash
+bash SketchMol-Understanding-Condition/scripts/sync_official_code.sh --dry-run
+bash SketchMol-Understanding-Condition/scripts/sync_official_code.sh
+```
+
+统一 dry-run：
+
+```bash
+DRY_RUN=1 \
+bash SketchMol-Understanding-Condition/scripts/submit_official_baseline_suite.sh
+```
+
+完整提交：
+
+```bash
+BENCHMARKS=moledit_table1,mumo,cmumo,sketchmol_denovo \
+bash SketchMol-Understanding-Condition/scripts/submit_official_baseline_suite.sh
+```
+
+MolEditRL 目前走 paper-faithful contract；GeLLMO / GeLLMO-C / SketchMol 走官方代码。
 
 ## 本地检查
 

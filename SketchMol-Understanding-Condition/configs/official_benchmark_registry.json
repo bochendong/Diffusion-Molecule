@@ -1,0 +1,157 @@
+{
+  "schema_version": 1,
+  "server_only_validation": true,
+  "official_code_root_env": "DM_OFFICIAL_CODE_ROOT",
+  "default_official_code_root": "Research/Molecule Generation/OfficialBaselines",
+  "benchmarks": [
+    {
+      "id": "moledit_table1",
+      "display_name": "MolEditRL / MolEdit-Instruct Table1",
+      "method_id": "MolEditRL",
+      "scope": "paper_table",
+      "reproduction_type": "paper_faithful_reconstruction",
+      "official_code": {
+        "public": false,
+        "status": "No confirmed public official implementation; use paper contract plus public dataset.",
+        "repo_url": null,
+        "local_path": null
+      },
+      "paper_contract_path": "Research/Molecule Generation/OfficialBaselines/MolEditRL/paper_contract/moleditrl_table1_contract.json",
+      "data": {
+        "dataset": "FanSiLeC/MolEdit-Instruct",
+        "public_file": "MolEdit-Instruct_3034459.txt",
+        "canonical_raw_path": "$DM_DATA_ROOT/raw/moledit-instruct/MolEdit-Instruct_3034459.txt",
+        "canonical_eval_path": "$DM_DATA_ROOT/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv",
+        "public_fields": [
+          "example_id",
+          "instruction",
+          "source_smiles",
+          "target_smiles"
+        ]
+      },
+      "candidate_budgets": [
+        20,
+        256,
+        2048
+      ],
+      "metrics": [
+        "Validity",
+        "Acc_all(0.65)",
+        "Acc_all(0.15)",
+        "Acc_valid(0.65)",
+        "Acc_valid(0.15)",
+        "FCD"
+      ],
+      "submit_script": "SketchMol-Understanding-Condition/scripts/submit_moleditrl_table1_paper_faithful.sh",
+      "run_script": "SketchMol-Understanding-Condition/scripts/run_moleditrl_table1_paper_faithful.sh"
+    },
+    {
+      "id": "mumo",
+      "display_name": "GeLLMO / MuMOInstruct",
+      "method_id": "GeLLMO",
+      "scope": "external_multiproperty",
+      "reproduction_type": "official_code",
+      "official_code": {
+        "public": true,
+        "repo_url": "https://github.com/ninglab/GeLLMO.git",
+        "local_path": "Research/Molecule Generation/OfficialBaselines/GeLLMO/repo",
+        "expected_entrypoint": "inference.py",
+        "verified_head": "f2bb9f5f529768fe965a588ef97862832fd279bc"
+      },
+      "data": {
+        "dataset": "NingLab/MuMOInstruct",
+        "canonical_source_file": "$DM_DATA_ROOT/external/mumo/test.json",
+        "fetch_script": "SketchMol-Understanding-Condition/scripts/fetch_external_mumo_dataset.sh"
+      },
+      "candidate_budgets": [
+        20
+      ],
+      "tasks": [
+        "bbbp+drd2+plogp",
+        "bbbp+drd2+qed",
+        "bbbp+plogp+qed",
+        "drd2+plogp+qed",
+        "bbbp+drd2+plogp+qed",
+        "mutagenicity+plogp+qed",
+        "bbbp+drd2+mutagenicity+qed",
+        "bbbp+hia+mutagenicity+qed",
+        "bbbp+mutagenicity+plogp+qed",
+        "hia+mutagenicity+plogp+qed"
+      ],
+      "metrics": [
+        "SR",
+        "Similarity(success)",
+        "RI(success)"
+      ],
+      "oracle": "ADMET-AI plus local/TDC properties",
+      "submit_script": "SketchMol-Understanding-Condition/scripts/submit_external_gellmo_official_suite.sh"
+    },
+    {
+      "id": "cmumo",
+      "display_name": "GeLLMO-C / C-MuMOInstruct",
+      "method_id": "GeLLMO-C",
+      "scope": "external_multiproperty",
+      "reproduction_type": "official_code",
+      "official_code": {
+        "public": true,
+        "repo_url": "https://github.com/ninglab/GeLLMO-C.git",
+        "local_path": "Research/Molecule Generation/OfficialBaselines/GeLLMO-C/repo",
+        "expected_entrypoint": "inference.sh",
+        "verified_head": "b3b51e8a6f1abd71e9e471714812fc704785f6e7"
+      },
+      "data": {
+        "dataset": "NingLab/C-MuMOInstruct",
+        "canonical_source_file": "$DM_DATA_ROOT/external/cmumo/test.json",
+        "fetch_script": "SketchMol-Understanding-Condition/scripts/fetch_external_cmumo_dataset.sh"
+      },
+      "candidate_budgets": [
+        20
+      ],
+      "tasks": [
+        "BPQ",
+        "ELQ",
+        "ACEP",
+        "BDPQ",
+        "DHMQ",
+        "CDE",
+        "ABMP",
+        "BCMQ",
+        "BDEQ",
+        "HLMPQ"
+      ],
+      "metrics": [
+        "SR",
+        "Similarity(success)",
+        "RI(success)"
+      ],
+      "oracle": "ADMET-AI plus local/TDC properties, including C-MuMO source-side maintain/improve properties",
+      "submit_script": "SketchMol-Understanding-Condition/scripts/submit_external_gellmoc_official_suite.sh"
+    },
+    {
+      "id": "sketchmol_denovo",
+      "display_name": "SketchMol de novo 2p-7p / OOD",
+      "method_id": "SketchMol",
+      "scope": "image_to_molecule_denovo",
+      "reproduction_type": "official_code",
+      "official_code": {
+        "public": true,
+        "repo_url": "https://github.com/WangZiXubiubi/SketchMol-v1.git",
+        "local_path": "Research/Molecule Generation/OfficialBaselines/SketchMol/repo",
+        "existing_vendored_path": "Research/Molecule Generation/SketchMol/SketchMol-v1-main",
+        "expected_entrypoint": "scripts/sample_diffusion_condition_continuousV2.py"
+      },
+      "data": {
+        "benchmark_package": "SketchMolBenchmark",
+        "requires_checkpoint": true,
+        "requires_molscribe_checkpoint": true
+      },
+      "metrics": [
+        "validity",
+        "OCR present",
+        "property strict success",
+        "benchmark_summary.csv"
+      ],
+      "submit_script": "SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh"
+    }
+  ]
+}

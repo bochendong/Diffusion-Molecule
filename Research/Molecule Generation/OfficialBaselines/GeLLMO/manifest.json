@@ -1,0 +1,15 @@
+{
+  "method_id": "GeLLMO",
+  "benchmark_id": "mumo",
+  "official_repo": "https://github.com/ninglab/GeLLMO.git",
+  "default_local_repo": "Research/Molecule Generation/OfficialBaselines/GeLLMO/repo",
+  "verified_head": "f2bb9f5f529768fe965a588ef97862832fd279bc",
+  "dataset": "NingLab/MuMOInstruct",
+  "candidate_budget": 20,
+  "metrics": [
+    "SR",
+    "Similarity(success)",
+    "RI(success)"
+  ],
+  "status": "official_code"
+}

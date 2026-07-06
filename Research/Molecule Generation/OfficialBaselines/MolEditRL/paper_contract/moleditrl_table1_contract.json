@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "method_id": "MolEditRL",
+  "benchmark_id": "moledit_table1",
+  "reproduction_type": "paper_faithful_reconstruction",
+  "paper": {
+    "title": "MolEditRL: Structure-Preserving Molecular Editing via Discrete Diffusion and Reinforcement Learning",
+    "arxiv_url": "https://arxiv.org/abs/2505.20131",
+    "html_url": "https://arxiv.org/html/2505.20131v1"
+  },
+  "public_dataset": {
+    "name": "FanSiLeC/MolEdit-Instruct",
+    "url": "https://huggingface.co/datasets/FanSiLeC/MolEdit-Instruct",
+    "file": "MolEdit-Instruct_3034459.txt",
+    "rows": 3034459,
+    "fields": [
+      "example_id",
+      "instruction",
+      "source_smiles",
+      "target_smiles"
+    ]
+  },
+  "reported_table1_tasks": [
+    {
+      "task_key": "GSK3B:increase",
+      "label": "GSK3B increase",
+      "mol_edit_rl_acc_all_0_65": 0.342,
+      "mol_edit_rl_acc_all_0_15": 0.514
+    },
+    {
+      "task_key": "RB:decrease",
+      "label": "Rotbonds decrease",
+      "mol_edit_rl_acc_all_0_65": 0.634,
+      "mol_edit_rl_acc_all_0_15": 0.83
+    },
+    {
+      "task_key": "MW:increase",
+      "label": "MW increase",
+      "mol_edit_rl_acc_all_0_65": 0.404,
+      "mol_edit_rl_acc_all_0_15": 0.856
+    },
+    {
+      "task_key": "SA:decrease",
+      "label": "SA decrease",
+      "mol_edit_rl_acc_all_0_65": 0.628,
+      "mol_edit_rl_acc_all_0_15": 0.828
+    },
+    {
+      "task_key": "HBA:decrease+SA:decrease",
+      "label": "Haccept decrease + SA decrease",
+      "mol_edit_rl_acc_all_0_65": null,
+      "mol_edit_rl_acc_all_0_15": null
+    },
+    {
+      "task_key": "QED:increase+SA:decrease",
+      "label": "QED increase + SA decrease",
+      "mol_edit_rl_acc_all_0_65": null,
+      "mol_edit_rl_acc_all_0_15": null
+    },
+    {
+      "task_key": "HBA:decrease+LogP:increase",
+      "label": "Haccept decrease + LogP increase",
+      "mol_edit_rl_acc_all_0_65": 0.316,
+      "mol_edit_rl_acc_all_0_15": 0.8
+    },
+    {
+      "task_key": "HBA:decrease+MW:decrease",
+      "label": "Haccept decrease + MW decrease",
+      "mol_edit_rl_acc_all_0_65": null,
+      "mol_edit_rl_acc_all_0_15": null
+    },
+    {
+      "task_key": "DRD2:decrease+MW:decrease+SA:decrease",
+      "label": "DRD2 decrease + MW decrease + SA decrease",
+      "mol_edit_rl_acc_all_0_65": 0.518,
+      "mol_edit_rl_acc_all_0_15": 0.724
+    },
+    {
+      "task_key": "HBA:increase+MW:increase+QED:decrease",
+      "label": "Haccept increase + MW increase + QED decrease",
+      "mol_edit_rl_acc_all_0_65": null,
+      "mol_edit_rl_acc_all_0_15": null
+    }
+  ],
+  "reported_summary": {
+    "ten_task_mean_acc_all_0_65": 0.45,
+    "ten_task_mean_acc_all_0_15": 0.727,
+    "overlap_three_mean_acc_all_0_65": 0.555,
+    "overlap_three_mean_acc_all_0_15": 0.838
+  },
+  "metrics": [
+    "Validity",
+    "Acc_all(0.65)",
+    "Acc_all(0.15)",
+    "Acc_valid(0.65)",
+    "Acc_valid(0.15)",
+    "FCD"
+  ],
+  "known_gaps": [
+    "No confirmed public official implementation.",
+    "The public dataset exposes instruction/source/target fields but not the structured reward task labels.",
+    "Some local notes contain only aggregate or partial task-level MolEditRL values; missing cells must stay null unless refreshed from the paper or supplement."
+  ],
+  "do_not_claim": [
+    "official_code_reproduction"
+  ]
+}

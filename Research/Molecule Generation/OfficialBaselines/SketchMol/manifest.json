@@ -1,0 +1,14 @@
+{
+  "method_id": "SketchMol",
+  "benchmark_id": "sketchmol_denovo",
+  "official_repo": "https://github.com/WangZiXubiubi/SketchMol-v1.git",
+  "default_local_repo": "Research/Molecule Generation/OfficialBaselines/SketchMol/repo",
+  "existing_vendored_repo": "Research/Molecule Generation/SketchMol/SketchMol-v1-main",
+  "candidate_budget": 40,
+  "metrics": [
+    "validity",
+    "OCR present",
+    "property strict success"
+  ],
+  "status": "official_code_with_existing_vendored_checkout"
+}

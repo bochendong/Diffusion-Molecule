@@ -18,7 +18,7 @@ fi
 PYTHON_BIN="${SUCC_GELLMO_PYTHON_BIN:-${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}}"
 CONVERT_PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 GELLMO_REPO_URL="${SUCC_GELLMO_REPO_URL:-https://github.com/ninglab/GeLLMO.git}"
-GELLMO_REPO_DIR="${SUCC_GELLMO_REPO_DIR:-SketchMol-Understanding-Condition/outputs/external_gellmo_official_repo_v1/GeLLMO}"
+GELLMO_REPO_DIR="${SUCC_GELLMO_REPO_DIR:-Research/Molecule Generation/OfficialBaselines/GeLLMO/repo}"
 GELLMO_ARCHIVE_URL="${SUCC_GELLMO_ARCHIVE_URL:-https://github.com/ninglab/GeLLMO/archive/refs/heads/main.tar.gz}"
 SOURCE_FILE="${SUCC_GELLMO_SOURCE_FILE:-/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/test.json}"
 DATA_PATH="${SUCC_GELLMO_DATA_PATH:-NingLab/MuMOInstruct}"
@@ -59,8 +59,12 @@ ensure_gellmo_repo() {
     echo "exists: $GELLMO_REPO_DIR"
     return
   fi
+  if [[ -e "$GELLMO_REPO_DIR" ]]; then
+    echo "ERROR: GeLLMO repo path exists but has no inference.py: $GELLMO_REPO_DIR" >&2
+    echo "Run: bash SketchMol-Understanding-Condition/scripts/sync_official_code.sh --method mumo" >&2
+    exit 2
+  fi
   mkdir -p "$(dirname "$GELLMO_REPO_DIR")"
-  rm -rf "$GELLMO_REPO_DIR"
   if git clone --depth 1 "$GELLMO_REPO_URL" "$GELLMO_REPO_DIR"; then
     return
   fi
@@ -108,6 +112,34 @@ fi
   --base-model "$BASE_MODEL" \
   --lora-weights "$LORA_WEIGHTS"
 
+RUN_MANIFEST="$TASK_OUTPUT_DIR/official_run_manifest.json"
+repo_commit="$(git -C "$GELLMO_REPO_DIR" rev-parse HEAD 2>/dev/null || true)"
+"$CONVERT_PYTHON_BIN" - <<'PY' "$RUN_MANIFEST" "$GELLMO_REPO_URL" "$GELLMO_REPO_DIR" "$repo_commit" "$DATA_PATH" "$BASE_MODEL" "$LORA_WEIGHTS" "$TASK" "$SETTING" "$NUM_SEQ" "$RESPONSE_JSON" "$PREDICTION_CSV"
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+manifest = {
+    "created_at": datetime.now(timezone.utc).isoformat(),
+    "benchmark_id": "mumo",
+    "method_id": "GeLLMO",
+    "reproduction_type": "official_code",
+    "official_repo_url": sys.argv[2],
+    "official_repo_dir": sys.argv[3],
+    "official_repo_commit": sys.argv[4] or None,
+    "data_path": sys.argv[5],
+    "base_model": sys.argv[6],
+    "lora_weights": sys.argv[7],
+    "task": sys.argv[8],
+    "setting": sys.argv[9],
+    "num_return_sequences": int(sys.argv[10]),
+    "response_json": sys.argv[11],
+    "prediction_csv": sys.argv[12],
+}
+Path(sys.argv[1]).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
 if [[ "$RUN_EVAL" == "1" ]]; then
   if [[ -z "$GENERATED_PROPERTIES_CSV" ]]; then
     echo "ERROR: SUCC_GELLMO_RUN_EVAL=1 requires SUCC_GELLMO_GENERATED_PROPERTIES_CSV." >&2
@@ -132,6 +164,7 @@ echo
 echo "Official GeLLMO task ready:"
 echo "  response_json=$RESPONSE_JSON"
 echo "  prediction_csv=$PREDICTION_CSV"
+echo "  run_manifest=$RUN_MANIFEST"
 if [[ "$RUN_EVAL" == "1" ]]; then
   echo "  eval_report=$EVAL_OUTPUT_DIR/external_multiproperty_report.md"
 fi

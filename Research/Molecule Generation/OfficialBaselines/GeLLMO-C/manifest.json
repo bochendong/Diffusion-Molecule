@@ -1,0 +1,15 @@
+{
+  "method_id": "GeLLMO-C",
+  "benchmark_id": "cmumo",
+  "official_repo": "https://github.com/ninglab/GeLLMO-C.git",
+  "default_local_repo": "Research/Molecule Generation/OfficialBaselines/GeLLMO-C/repo",
+  "verified_head": "b3b51e8a6f1abd71e9e471714812fc704785f6e7",
+  "dataset": "NingLab/C-MuMOInstruct",
+  "candidate_budget": 20,
+  "metrics": [
+    "SR",
+    "Similarity(success)",
+    "RI(success)"
+  ],
+  "status": "official_code"
+}

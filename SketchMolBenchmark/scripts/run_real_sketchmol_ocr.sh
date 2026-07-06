@@ -209,8 +209,50 @@ SKETCHMOL_REPO="$SKETCHMOL_REPO" \
 SKETCHMOL_BENCHMARK_PYTHON_BIN="${SKETCHMOL_BENCHMARK_PYTHON_BIN:-$SKETCHMOL_MOLSCRIBE_PYTHON_BIN}" \
 bash "$PROJECT_DIR/scripts/materialize_current.sh" | tee -a "$RUN_LOG"
 
+OFFICIAL_RUN_MANIFEST="${SKETCHMOL_OFFICIAL_RUN_MANIFEST:-$SKETCHMOL_BENCHMARK_OUTPUT_DIR/official_run_manifest.json}"
+repo_commit="$(git -C "$SKETCHMOL_REPO" rev-parse HEAD 2>/dev/null || true)"
+"${SKETCHMOL_BENCHMARK_PYTHON_BIN:-$SKETCHMOL_MOLSCRIBE_PYTHON_BIN}" - \
+  "$OFFICIAL_RUN_MANIFEST" \
+  "$SKETCHMOL_REPO" \
+  "$repo_commit" \
+  "$SKETCHMOL_CKPT" \
+  "$SKETCHMOL_MOLSCRIBE_MODEL" \
+  "$SKETCHMOL_RUN_NAME" \
+  "$SKETCHMOL_SAMPLING_MODE" \
+  "$SKETCHMOL_PRESET_STR" \
+  "$SKETCHMOL_NEGATIVE_PRESET_STR" \
+  "$IMAGE_CSV" \
+  "$RUN_LOG" \
+  "$SKETCHMOL_BENCHMARK_OUTPUT_DIR" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+manifest = {
+    "created_at": datetime.now(timezone.utc).isoformat(),
+    "benchmark_id": "sketchmol_denovo",
+    "method_id": "SketchMol",
+    "reproduction_type": "official_code_with_ocr",
+    "official_repo_url": "https://github.com/WangZiXubiubi/SketchMol-v1",
+    "sketchmol_repo": sys.argv[2],
+    "sketchmol_repo_commit": sys.argv[3] or None,
+    "sketchmol_ckpt": sys.argv[4],
+    "molscribe_model": sys.argv[5],
+    "run_name": sys.argv[6],
+    "sampling_mode": sys.argv[7],
+    "preset": sys.argv[8],
+    "negative_preset": sys.argv[9] or None,
+    "image_csv": sys.argv[10],
+    "run_log": sys.argv[11],
+    "benchmark_output_dir": sys.argv[12],
+}
+Path(sys.argv[1]).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+PY
+
 echo
 echo "Real SketchMol + OCR benchmark finished: $SKETCHMOL_BENCHMARK_OUTPUT_DIR"
 echo "  image_csv=$IMAGE_CSV"
 echo "  log=$RUN_LOG"
 echo "  metrics=$SKETCHMOL_BENCHMARK_OUTPUT_DIR/metrics.json"
+echo "  run_manifest=$OFFICIAL_RUN_MANIFEST"

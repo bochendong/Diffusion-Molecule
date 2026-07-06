@@ -1,0 +1,23 @@
+{
+  "method_id": "MolEditRL",
+  "benchmark_id": "moledit_table1",
+  "official_repo": null,
+  "public_code_status": "No confirmed public official implementation; use paper-faithful reconstruction.",
+  "paper": "https://arxiv.org/abs/2505.20131",
+  "dataset": "FanSiLeC/MolEdit-Instruct",
+  "paper_contract": "Research/Molecule Generation/OfficialBaselines/MolEditRL/paper_contract/moleditrl_table1_contract.json",
+  "candidate_budgets": [
+    20,
+    256,
+    2048
+  ],
+  "metrics": [
+    "Validity",
+    "Acc_all(0.65)",
+    "Acc_all(0.15)",
+    "Acc_valid(0.65)",
+    "Acc_valid(0.15)",
+    "FCD"
+  ],
+  "status": "paper_faithful_reconstruction"
+}
