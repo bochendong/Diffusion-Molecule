@@ -38,6 +38,11 @@ BEAM_LENGTH_PENALTY="${SUCC_UNIFIED_BEAM_LENGTH_PENALTY:-0.8}"
 TOP_K_CANDIDATES="${SUCC_UNIFIED_TOP_K_CANDIDATES:-40}"
 SEED="${SUCC_UNIFIED_SEED:-7}"
 DEVICE="${SUCC_DEVICE:-${SUCC_UNIFIED_DEVICE:-auto}}"
+SAMPLING_MODE="${SUCC_UNIFIED_SAMPLING_MODE:-random}"
+SAMPLES_PER_EPOCH="${SUCC_UNIFIED_SAMPLES_PER_EPOCH:-0}"
+TEACHER_CHECKPOINT="${SUCC_UNIFIED_TEACHER_CHECKPOINT:-}"
+DISTILL_WEIGHT="${SUCC_UNIFIED_DISTILL_WEIGHT:-0}"
+DISTILL_TEMPERATURE="${SUCC_UNIFIED_DISTILL_TEMPERATURE:-1.0}"
 
 if [[ -z "$TRAIN_CSV" ]]; then
   echo "ERROR: set SUCC_UNIFIED_TRAIN_CSV" >&2
@@ -73,6 +78,10 @@ args=(
   --top-k-candidates "$TOP_K_CANDIDATES"
   --seed "$SEED"
   --device "$DEVICE"
+  --sampling-mode "$SAMPLING_MODE"
+  --samples-per-epoch "$SAMPLES_PER_EPOCH"
+  --distill-weight "$DISTILL_WEIGHT"
+  --distill-temperature "$DISTILL_TEMPERATURE"
 )
 
 if [[ -n "$INPUT_MODALITY" ]]; then
@@ -89,6 +98,9 @@ if [[ -n "$EVAL_FEATURES_DIR" ]]; then
 fi
 if [[ -n "${SUCC_UNIFIED_RESUME_CHECKPOINT:-}" ]]; then
   args+=(--resume-checkpoint "$SUCC_UNIFIED_RESUME_CHECKPOINT")
+fi
+if [[ -n "$TEACHER_CHECKPOINT" ]]; then
+  args+=(--teacher-checkpoint "$TEACHER_CHECKPOINT")
 fi
 if [[ "${SUCC_UNIFIED_RESET_TRAINING_STATE:-0}" == "1" ]]; then
   args+=(--reset-training-state)
@@ -110,5 +122,9 @@ echo "  condition_feature_variant=$CONDITION_FEATURE_VARIANT"
 echo "  condition_layout=$CONDITION_LAYOUT"
 echo "  input_modality=${INPUT_MODALITY:-auto}"
 echo "  decoding_mode=$DECODING_MODE"
+echo "  sampling_mode=$SAMPLING_MODE"
+echo "  samples_per_epoch=$SAMPLES_PER_EPOCH"
+echo "  teacher_checkpoint=${TEACHER_CHECKPOINT:-none}"
+echo "  distill_weight=$DISTILL_WEIGHT"
 
 "$PYTHON_BIN" "${args[@]}"

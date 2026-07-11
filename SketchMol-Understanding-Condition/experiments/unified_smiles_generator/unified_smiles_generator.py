@@ -163,6 +163,26 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Load model/vocab weights from --resume-checkpoint but restart epoch, history, and optimizer state.",
     )
+    train.add_argument(
+        "--sampling-mode",
+        choices=("random", "task_balanced"),
+        default="random",
+        help="random shuffles rows once per epoch; task_balanced balances de_novo/edit modes and their task groups.",
+    )
+    train.add_argument(
+        "--samples-per-epoch",
+        type=int,
+        default=0,
+        help="Number of sampled rows per epoch for task_balanced training. 0 uses the input row count.",
+    )
+    train.add_argument(
+        "--teacher-checkpoint",
+        type=Path,
+        default=None,
+        help="Optional frozen teacher checkpoint used for protected de novo logit distillation.",
+    )
+    train.add_argument("--distill-weight", type=float, default=0.0)
+    train.add_argument("--distill-temperature", type=float, default=1.0)
     train.add_argument("--seed", type=int, default=7)
     train.add_argument("--device", default="auto")
 
@@ -344,6 +364,15 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
     if checkpoint:
         model.load_state_dict(checkpoint["model_state"])
 
+    teacher_model = build_distillation_teacher(
+        args.teacher_checkpoint,
+        expected_vocab=vocab,
+        expected_config=config,
+        device=device,
+    )
+    if float(args.distill_weight) > 0 and teacher_model is None:
+        raise ValueError("--distill-weight requires --teacher-checkpoint")
+
     train_dataset = build_dataset(
         train_rows,
         vocab,
@@ -375,12 +404,17 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
     for epoch in range(start_epoch, int(args.epochs) + 1):
         record = train_epoch(
             model,
+            teacher_model,
             train_dataset,
             optimizer,
             batch_size=int(args.batch_size),
             grad_clip=float(args.grad_clip),
             device=device,
             seed=int(args.seed) + epoch,
+            sampling_mode=str(args.sampling_mode),
+            samples_per_epoch=int(args.samples_per_epoch),
+            distill_weight=float(args.distill_weight),
+            distill_temperature=float(args.distill_temperature),
         )
         record["epoch"] = epoch
         if eval_dataset:
@@ -423,6 +457,13 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         "condition_feature_variant": str(args.condition_feature_variant),
         "condition_layout": str(args.condition_layout),
         "input_modality": input_modality_for_args(args),
+        "sampling_mode": str(args.sampling_mode),
+        "samples_per_epoch": int(args.samples_per_epoch),
+        "teacher_checkpoint": str(args.teacher_checkpoint) if args.teacher_checkpoint else None,
+        "distill_weight": float(args.distill_weight),
+        "distill_temperature": float(args.distill_temperature),
+        "task_mode_counts": task_mode_counts(train_dataset),
+        "training_group_counts": training_group_counts(train_dataset),
         "vocab_size": len(vocab.token_to_id),
         "history": history,
         "prediction_summary": prediction_summary,
@@ -652,6 +693,30 @@ def load_checkpoint(path: Path | None) -> dict[str, object] | None:
     if path is None:
         return None
     return torch.load(path, map_location="cpu", weights_only=False)
+
+
+def build_distillation_teacher(
+    checkpoint_path: Path | None,
+    *,
+    expected_vocab: SmilesVocabulary,
+    expected_config: Mapping[str, object],
+    device: torch.device,
+) -> ConditionedSmilesDecoder | None:
+    checkpoint = load_checkpoint(checkpoint_path)
+    if checkpoint is None:
+        return None
+    teacher_vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
+    if teacher_vocab.to_dict() != expected_vocab.to_dict():
+        raise ValueError("Teacher and student vocabularies differ; protected distillation requires identical token ids.")
+    teacher_config = dict(checkpoint["model_config"])
+    if teacher_config != dict(expected_config):
+        raise ValueError("Teacher and student model configs differ; protected distillation requires matching architectures.")
+    teacher = ConditionedSmilesDecoder(**teacher_config).to(device)
+    teacher.load_state_dict(checkpoint["model_state"])
+    teacher.eval()
+    for parameter in teacher.parameters():
+        parameter.requires_grad_(False)
+    return teacher
 
 
 class FeatureStore:
@@ -1431,6 +1496,7 @@ def collate_batch(rows: list[dict[str, object]], pad_id: int) -> dict[str, torch
     condition_mask = np.zeros((len(rows), max_condition), dtype=bool)
     decoder_input = np.full((len(rows), max_len), int(pad_id), dtype=np.int64)
     target = np.full((len(rows), max_len), int(pad_id), dtype=np.int64)
+    task_is_denovo = np.zeros(len(rows), dtype=bool)
     for idx, row in enumerate(rows):
         cond = np.asarray(row["condition"], dtype=np.float32)
         seq_in = np.asarray(row["decoder_input_ids"], dtype=np.int64)
@@ -1439,16 +1505,127 @@ def collate_batch(rows: list[dict[str, object]], pad_id: int) -> dict[str, torch
         condition_mask[idx, : cond.shape[0]] = True
         decoder_input[idx, : seq_in.shape[0]] = seq_in
         target[idx, : seq_out.shape[0]] = seq_out
+        task_is_denovo[idx] = str(row.get("task_mode", "")) == DE_NOVO_MODE
     return {
         "condition": torch.from_numpy(condition),
         "condition_mask": torch.from_numpy(condition_mask),
         "decoder_input_ids": torch.from_numpy(decoder_input),
         "target_ids": torch.from_numpy(target),
+        "task_is_denovo": torch.from_numpy(task_is_denovo),
     }
+
+
+def training_group_key(item: Mapping[str, object]) -> str:
+    mode = str(item.get("task_mode", "") or "unknown")
+    raw_row = item.get("row", {})
+    row = raw_row if isinstance(raw_row, MappingABC) else {}
+    if mode == DE_NOVO_MODE:
+        count = parse_float(row.get("property_count", ""))
+        if math.isnan(count):
+            count = float(len(selected_properties(row)))
+        return f"{DE_NOVO_MODE}:{int(count) if math.isfinite(count) else 0}p"
+    specs = sorted((prop, direction) for prop, direction in instruction_task_specs(row) if prop)
+    if not specs:
+        specs = sorted((prop, property_direction(row, prop)) for prop in selected_properties(row))
+    task = "+".join(f"{prop}:{direction:+d}" for prop, direction in specs) or str(
+        row.get("benchmark_task", "edit") or "edit"
+    )
+    return f"{EDIT_MODE}:{task}"
+
+
+def training_group_counts(dataset: Sequence[Mapping[str, object]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in dataset:
+        key = training_group_key(item)
+        counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def build_epoch_order(
+    dataset: Sequence[Mapping[str, object]],
+    *,
+    sampling_mode: str,
+    samples_per_epoch: int,
+    seed: int,
+) -> list[int]:
+    rng = random.Random(seed)
+    if sampling_mode == "random":
+        order = list(range(len(dataset)))
+        rng.shuffle(order)
+        if samples_per_epoch > 0:
+            if not order:
+                return []
+            return [order[idx % len(order)] for idx in range(int(samples_per_epoch))]
+        return order
+    if sampling_mode != "task_balanced":
+        raise ValueError(f"Unsupported sampling_mode={sampling_mode!r}")
+
+    modes: dict[str, dict[str, list[int]]] = {}
+    for index, item in enumerate(dataset):
+        mode = str(item.get("task_mode", "") or "unknown")
+        modes.setdefault(mode, {}).setdefault(training_group_key(item), []).append(index)
+    if not modes:
+        return []
+
+    mode_names = sorted(modes)
+    target_size = int(samples_per_epoch) if samples_per_epoch > 0 else len(dataset)
+    pools: dict[tuple[str, str], list[int]] = {}
+    cursors: dict[tuple[str, str], int] = {}
+    group_names: dict[str, list[str]] = {}
+    for mode, groups in modes.items():
+        group_names[mode] = sorted(groups)
+        for group, indices in groups.items():
+            pool = list(indices)
+            rng.shuffle(pool)
+            pools[(mode, group)] = pool
+            cursors[(mode, group)] = 0
+
+    order: list[int] = []
+    mode_steps = {mode: 0 for mode in mode_names}
+    for step in range(target_size):
+        mode = mode_names[step % len(mode_names)]
+        groups = group_names[mode]
+        group = groups[mode_steps[mode] % len(groups)]
+        mode_steps[mode] += 1
+        key = (mode, group)
+        cursor = cursors[key]
+        pool = pools[key]
+        if cursor >= len(pool):
+            rng.shuffle(pool)
+            cursor = 0
+        order.append(pool[cursor])
+        cursors[key] = cursor + 1
+    return order
+
+
+def de_novo_distillation_loss(
+    student_logits: torch.Tensor,
+    teacher_model: ConditionedSmilesDecoder,
+    batch: Mapping[str, torch.Tensor],
+    *,
+    pad_id: int,
+    temperature: float,
+) -> tuple[torch.Tensor, int]:
+    temp = max(float(temperature), 1e-6)
+    with torch.no_grad():
+        teacher_logits = teacher_model(
+            batch["condition"],
+            batch["decoder_input_ids"],
+            condition_mask=batch["condition_mask"],
+        )
+    token_mask = batch["target_ids"].ne(int(pad_id)) & batch["task_is_denovo"].bool().unsqueeze(1)
+    token_count = int(token_mask.sum().item())
+    if token_count == 0:
+        return student_logits.new_zeros(()), 0
+    student_log_probs = F.log_softmax(student_logits / temp, dim=-1)
+    teacher_probs = F.softmax(teacher_logits / temp, dim=-1)
+    token_kl = F.kl_div(student_log_probs, teacher_probs, reduction="none").sum(dim=-1) * (temp * temp)
+    return token_kl.masked_select(token_mask).mean(), token_count
 
 
 def train_epoch(
     model: ConditionedSmilesDecoder,
+    teacher_model: ConditionedSmilesDecoder | None,
     dataset: list[dict[str, object]],
     optimizer: torch.optim.Optimizer,
     *,
@@ -1456,12 +1633,21 @@ def train_epoch(
     grad_clip: float,
     device: torch.device,
     seed: int,
+    sampling_mode: str = "random",
+    samples_per_epoch: int = 0,
+    distill_weight: float = 0.0,
+    distill_temperature: float = 1.0,
 ) -> dict[str, float]:
     model.train()
-    rng = random.Random(seed)
-    order = list(range(len(dataset)))
-    rng.shuffle(order)
+    order = build_epoch_order(
+        dataset,
+        sampling_mode=sampling_mode,
+        samples_per_epoch=samples_per_epoch,
+        seed=seed,
+    )
     total_loss = 0.0
+    total_distill_loss = 0.0
+    total_distill_tokens = 0
     total_tokens = 0
     for start in range(0, len(order), batch_size):
         batch_rows = [dataset[idx] for idx in order[start : start + batch_size]]
@@ -1472,20 +1658,40 @@ def train_epoch(
             batch["decoder_input_ids"],
             condition_mask=batch["condition_mask"],
         )
-        loss = F.cross_entropy(
+        sft_loss = F.cross_entropy(
             logits.reshape(-1, logits.shape[-1]),
             batch["target_ids"].reshape(-1),
             ignore_index=model.pad_id,
             reduction="sum",
         )
         token_count = int(batch["target_ids"].ne(model.pad_id).sum().item())
-        (loss / max(token_count, 1)).backward()
+        objective = sft_loss / max(token_count, 1)
+        distill_loss = logits.new_zeros(())
+        distill_tokens = 0
+        if teacher_model is not None and float(distill_weight) > 0:
+            distill_loss, distill_tokens = de_novo_distillation_loss(
+                logits,
+                teacher_model,
+                batch,
+                pad_id=model.pad_id,
+                temperature=float(distill_temperature),
+            )
+            objective = objective + float(distill_weight) * distill_loss
+        objective.backward()
         if grad_clip > 0:
             torch.nn.utils.clip_grad_norm_(model.parameters(), float(grad_clip))
         optimizer.step()
-        total_loss += float(loss.item())
+        total_loss += float(sft_loss.item())
+        total_distill_loss += float(distill_loss.item()) * max(distill_tokens, 1)
+        total_distill_tokens += distill_tokens
         total_tokens += token_count
-    return {"loss": total_loss / max(total_tokens, 1), "tokens": float(total_tokens)}
+    return {
+        "loss": total_loss / max(total_tokens, 1),
+        "distill_loss": total_distill_loss / max(total_distill_tokens, 1),
+        "distill_tokens": float(total_distill_tokens),
+        "tokens": float(total_tokens),
+        "sampled_rows": float(len(order)),
+    }
 
 
 @torch.no_grad()

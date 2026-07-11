@@ -108,6 +108,9 @@ if [[ "$RUN_SAMPLE" == "1" ]]; then
   if [[ -n "${SUCC_UNIFIED_EVAL_LIMIT:-}" ]]; then
     sample_args+=(--eval-limit "$SUCC_UNIFIED_EVAL_LIMIT")
   fi
+  if [[ "${SUCC_UNIFIED_DISABLE_FINALIZER:-0}" == "1" ]]; then
+    sample_args+=(--disable-finalizer)
+  fi
   echo "Unified benchmark suite: sampling first"
   echo "  checkpoint=$CHECKPOINT"
   echo "  eval_csv=$EVAL_CSV"

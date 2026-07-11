@@ -238,6 +238,68 @@ bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/subm
 
 GPU memory guidance is in `gpu_memory_plan.md`.
 
+## Joint v2: one protected Unified checkpoint
+
+`Joint v2` is the first training protocol in this folder that puts de novo
+2p-7p rows and Table1 source-edit rows into the same checkpoint. It deliberately
+excludes OOD rows from training and writes a hashed data manifest before the
+trainer starts.
+
+Stages:
+
+```text
+u0  frozen Direct 2p-7p SFT checkpoint; evaluation baseline only
+u1  task-balanced joint SFT from the same u0 checkpoint
+u2  task-balanced joint SFT plus de novo-only frozen-teacher KL protection
+```
+
+The balanced sampler gives de novo and edit equal row probability. Within de
+novo it cycles uniformly over property counts; within edit it cycles uniformly
+over instruction task groups. The default 24,000 samples/epoch therefore
+replays the full 12k de novo set while oversampling the smaller edit set.
+
+Train U1 or U2:
+
+```bash
+SUCC_UNIFIED_JOINT_STAGE=u1 \
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/run_unified_joint_v2_train.sh
+
+SUCC_UNIFIED_JOINT_STAGE=u2 \
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/run_unified_joint_v2_train.sh
+```
+
+Slurm:
+
+```bash
+SUCC_UNIFIED_JOINT_STAGE=u1 \
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_unified_joint_v2_train.sh
+
+SUCC_UNIFIED_JOINT_STAGE=u2 \
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_unified_joint_v2_train.sh
+```
+
+The default protected stage uses `distill_weight=0.3`, `direct_compat`, four
+SFT epochs, and a fresh optimizer at `1e-4`. U1 and U2 both start from the same
+base checkpoint so their difference is attributable to teacher protection.
+
+Full evaluation uses all 2p-7p rows, OOD rows, and Table1 rows at identical
+candidate budgets. It reports both property-finalized and raw generation runs:
+
+```bash
+SUCC_UNIFIED_JOINT_STAGE=u2 \
+SUCC_UNIFIED_JOINT_EVAL_BUDGETS=20,128 \
+SUCC_UNIFIED_JOINT_SELECTION_MODES=finalizer,raw \
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/run_unified_joint_v2_eval_suite.sh
+```
+
+All per-task summary rows are collected into
+`eval/<stage>/unified_joint_v2_summary.csv` after the matrix completes.
+
+The data preparation step defaults to `drop_train` for any train/eval molecule
+or edit-pair collision and records all removals in
+`unified_joint_manifest.json`. Set
+`SUCC_UNIFIED_JOINT_OVERLAP_POLICY=fail` when auditing a newly rebuilt corpus.
+
 ## Output contract
 
 The sampler writes:

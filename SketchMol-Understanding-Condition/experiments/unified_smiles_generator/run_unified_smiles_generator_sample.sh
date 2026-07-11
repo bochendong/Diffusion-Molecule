@@ -70,6 +70,9 @@ fi
 if [[ -n "${SUCC_UNIFIED_EVAL_LIMIT:-}" ]]; then
   args+=(--eval-limit "$SUCC_UNIFIED_EVAL_LIMIT")
 fi
+if [[ "${SUCC_UNIFIED_DISABLE_FINALIZER:-0}" == "1" ]]; then
+  args+=(--disable-finalizer)
+fi
 
 echo "Unified SMILES generator sampling"
 echo "  checkpoint=$CHECKPOINT"
