@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | Design line opened; no run claimed yet |
+| Status | Phase1 de novo + Table1 edit benchmarks completed (reports below) |
 | Scope | One generator for de novo generation and conditional/source-preserving edit |
 | Code base | `SketchMol-Understanding-Condition` |
 | Code folder | `SketchMol-Understanding-Condition/experiments/unified_smiles_generator/` |
@@ -49,7 +49,14 @@ Current results show a split:
 - Source-conditioned editing is not solved by zero-source direct generation alone; current MuMO gains come from GraphEditDSL search and source-aware ranking.
 - The paper story is stronger if we define a unified generator that can learn both modes, then benchmark it under the same candidate budgets and official evaluators already used in the repo.
 
-This folder is the experiment-line home for that unified-generator idea. It does not overwrite previous reports or claim a new result until actual runs exist.
+This folder is the experiment-line home for that unified-generator idea.
+
+## Completed reports
+
+| Report | Summary |
+| --- | --- |
+| [`phase1-denovo-direct-compat-v1.md`](phase1-denovo-direct-compat-v1.md) | De novo 2p7p **97%** / OOD **74%** 2p · **45%** 7p |
+| [`table1-edit-v1.md`](table1-edit-v1.md) | Direct Table1 RL **57%** / **81%** Acc@0.15; Unified gap documented |
 
 ## Current-code grounding
 
@@ -68,3 +75,5 @@ The new standalone experiment line makes the mode token, source-token path, task
 | `architecture.md` | Network/input-output definition for the unified generator |
 | `benchmark_alignment.md` | Benchmark-by-benchmark alignment matrix |
 | `runbook.md` | Proposed rollout stages, output schema, and script-entrypoint plan |
+| `phase1-denovo-direct-compat-v1.md` | Phase1 de novo direct_compat benchmark results |
+| `table1-edit-v1.md` | Table1 edit metrics/oracle fixes and RL benchmark results |

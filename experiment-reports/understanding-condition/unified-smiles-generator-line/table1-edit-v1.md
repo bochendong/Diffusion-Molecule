@@ -63,6 +63,10 @@ Checkpoint：同上 Table1 RL ckpt。Layout：`direct_edit_compat`。
 - Feature export fix：`scripts/export_condition_features.py`（Table1 rows 无 `variant` 列）
 - RL 训练 fallback ckpt：`scripts/run_direct_smiles_moledit_table1_group_rl.sh`
 
+## 相关报告
+
+- De novo Phase1（direct_compat）：[`phase1-denovo-direct-compat-v1.md`](phase1-denovo-direct-compat-v1.md) — 2p7p **97%** 2p strict，OOD **74%** / **45%**。
+
 ## 下一步
 
 1. 主表 Table1 数字优先报 **Direct Table1 RL**（57%/81%）。
