@@ -48,7 +48,33 @@ SYNTHESIZE_MISSING_TASKS="${SUCC_DIRECT_MOLEDIT_GROUP_RL_SYNTHESIZE_MISSING_TASK
 SYNTHETIC_MIN_SOURCE_TANIMOTO="${SUCC_DIRECT_MOLEDIT_GROUP_RL_SYNTHETIC_MIN_SOURCE_TANIMOTO:-0.4}"
 SYNTHETIC_CANDIDATE_LIMIT="${SUCC_DIRECT_MOLEDIT_GROUP_RL_SYNTHETIC_CANDIDATE_LIMIT:-8000}"
 
-BASE_CHECKPOINT="${SUCC_DIRECT_MOLEDIT_GROUP_RL_BASE_CHECKPOINT:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/direct_smiles_model_group_rl/direct_smiles_generator_rl.pt}"
+BASE_CHECKPOINT="${SUCC_DIRECT_MOLEDIT_GROUP_RL_BASE_CHECKPOINT:-}"
+GROUP_RL_CHECKPOINT="${SUCC_DIRECT_MOLEDIT_GROUP_RL_GROUP_RL_CHECKPOINT:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/direct_smiles_model_group_rl/direct_smiles_generator_rl.pt}"
+SFT_FALLBACK_CHECKPOINT="${SUCC_DIRECT_MOLEDIT_GROUP_RL_SFT_FALLBACK_CHECKPOINT:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_mixed_condition/direct_smiles_model/direct_smiles_generator.pt}"
+
+resolve_base_checkpoint() {
+  local candidate="$1"
+  if [[ -n "$candidate" && -f "$candidate" ]]; then
+    echo "$candidate"
+    return 0
+  fi
+  if [[ -f "$GROUP_RL_CHECKPOINT" ]]; then
+    echo "$GROUP_RL_CHECKPOINT"
+    return 0
+  fi
+  if [[ -f "$SFT_FALLBACK_CHECKPOINT" ]]; then
+    echo "WARNING: group RL warm-start missing; falling back to de novo SFT: $SFT_FALLBACK_CHECKPOINT" >&2
+    echo "$SFT_FALLBACK_CHECKPOINT"
+    return 0
+  fi
+  echo "ERROR: no warm-start checkpoint found (tried custom, group RL, and de novo SFT)" >&2
+  echo "  custom=$candidate" >&2
+  echo "  group_rl=$GROUP_RL_CHECKPOINT" >&2
+  echo "  sft_fallback=$SFT_FALLBACK_CHECKPOINT" >&2
+  return 1
+}
+
+BASE_CHECKPOINT="$(resolve_base_checkpoint "$BASE_CHECKPOINT")"
 SFT_CHECKPOINT="${SUCC_DIRECT_MOLEDIT_GROUP_RL_SFT_CHECKPOINT:-$SFT_MODEL_DIR/direct_smiles_generator.pt}"
 RL_CHECKPOINT="${SUCC_DIRECT_MOLEDIT_GROUP_RL_RL_CHECKPOINT:-$RL_MODEL_DIR/direct_smiles_generator_rl.pt}"
 CONDITION_MIXING_MODE="${SUCC_DIRECT_MOLEDIT_GROUP_RL_CONDITION_MIXING_MODE:-append_source_property_program}"

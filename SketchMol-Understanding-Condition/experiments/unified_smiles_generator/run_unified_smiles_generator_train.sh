@@ -90,6 +90,9 @@ fi
 if [[ -n "${SUCC_UNIFIED_RESUME_CHECKPOINT:-}" ]]; then
   args+=(--resume-checkpoint "$SUCC_UNIFIED_RESUME_CHECKPOINT")
 fi
+if [[ "${SUCC_UNIFIED_RESET_TRAINING_STATE:-0}" == "1" ]]; then
+  args+=(--reset-training-state)
+fi
 if [[ -n "${SUCC_UNIFIED_LIMIT:-}" ]]; then
   args+=(--limit "$SUCC_UNIFIED_LIMIT")
 fi

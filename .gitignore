@@ -18,3 +18,12 @@ generated_slides/
 
 # PyTDC oracle model cache (downloaded on first GSK3B/DRD2/SA scoring).
 oracle/
+
+# yansun SketchMol pilot: keep scripts, ignore run artifacts and large inputs.
+yansun/outputs/
+yansun/logs/
+yansun/sketchmol_targets_single.csv
+yansun/sketchmol_targets_multi.csv
+yansun/**/sketchmol_logs/
+yansun/**/*.done
+yansun/**/shard_candidates.csv

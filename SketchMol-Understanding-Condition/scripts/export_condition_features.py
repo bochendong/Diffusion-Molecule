@@ -45,9 +45,18 @@ def main() -> None:
     rows = read_variant_rows(args.baseline_variants_csv)
     if args.variants:
         keep_variants = {item.strip() for item in args.variants.split(",") if item.strip()}
-        rows = [row for row in rows if row.get("variant") in keep_variants]
+        rows = [
+            row
+            for row in rows
+            if (not str(row.get("variant", "")).strip()) or row.get("variant") in keep_variants
+        ]
     if args.limit is not None:
         rows = rows[: args.limit]
+    if not rows:
+        raise ValueError(
+            f"No rows to export from {args.baseline_variants_csv} "
+            f"(encoder={args.encoder}, variants={args.variants or 'all'})"
+        )
 
     encoder_kwargs = {
         "pooled_dim": args.pooled_dim,

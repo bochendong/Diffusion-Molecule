@@ -12,6 +12,8 @@ import argparse
 import csv
 import json
 import math
+import os
+import shlex
 import subprocess
 import sys
 from collections import defaultdict
@@ -62,6 +64,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--moledit-model-name", default="UnifiedSMILES")
     parser.add_argument("--moledit-missing-oracle-policy", choices=("fail", "skip-task", "mark-false"), default="fail")
     parser.add_argument("--moledit-require-table1-coverage", action="store_true")
+    parser.add_argument(
+        "--moledit-rdkit-modules",
+        default=os.environ.get("SUCC_UNIFIED_MOLEDIT_RDKIT_MODULES", "gcc/12.3 rdkit/2024.09.6"),
+        help="EasyBuild modules to load before running evaluate_moledit_table_metrics.py",
+    )
     return parser.parse_args(argv)
 
 
@@ -243,7 +250,7 @@ def run_moledit_table1_benchmarks(args: argparse.Namespace) -> list[dict[str, ob
         ]
         if bool(args.moledit_require_table1_coverage):
             cmd.append("--require-table1-coverage")
-        run_cmd(cmd)
+        run_cmd(cmd, rdkit_modules=str(args.moledit_rdkit_modules))
         records.append(
             {
                 "task": "moledit_table1",
@@ -405,7 +412,14 @@ def require_file(path: Path | None, flag_name: str) -> None:
         raise SystemExit(f"{flag_name} is required and must exist: {path}")
 
 
-def run_cmd(cmd: Sequence[str]) -> None:
+def run_cmd(cmd: Sequence[str], *, rdkit_modules: str = "") -> None:
+    modules = str(rdkit_modules).strip()
+    if modules:
+        quoted = " ".join(shlex.quote(str(part)) for part in cmd)
+        shell_cmd = f"module load {modules} && {quoted}"
+        print(f"+ {shell_cmd}", flush=True)
+        subprocess.run(["bash", "-lc", shell_cmd], check=True)
+        return
     print("+ " + " ".join(cmd), flush=True)
     subprocess.run(list(cmd), check=True)
 

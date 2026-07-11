@@ -27,6 +27,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = SCRIPT_DIR.parents[1]
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
+
+from sketchmol_understanding_condition import direct_condition_tokens as direct_cond  # noqa: E402
 
 PAD = "<pad>"
 BOS = "<bos>"
@@ -152,6 +158,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     train.add_argument("--limit", type=int, default=0)
     train.add_argument("--eval-limit", type=int, default=0)
     train.add_argument("--resume-checkpoint", type=Path, default=None)
+    train.add_argument(
+        "--reset-training-state",
+        action="store_true",
+        help="Load model/vocab weights from --resume-checkpoint but restart epoch, history, and optimizer state.",
+    )
     train.add_argument("--seed", type=int, default=7)
     train.add_argument("--device", default="auto")
 
@@ -206,12 +217,14 @@ def add_common_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--method", default="unified_smiles_generator")
     parser.add_argument(
         "--condition-layout",
-        choices=("unified", "direct_compat"),
+        choices=("unified", "direct_compat", "direct_edit_compat", "property_program_only"),
         default="unified",
         help=(
             "Condition token layout. `unified` adds explicit mode tokens; "
             "`direct_compat` matches the earlier direct-SMILES property-program layout "
-            "for direct checkpoint warm-starts."
+            "for direct checkpoint warm-starts (edit rows append source SMILES tokens); "
+            "`direct_edit_compat` is an alias of `direct_compat` for source-edit eval; "
+            "`property_program_only` drops frozen VLM features and keeps only the property-program tokens."
         ),
     )
 
@@ -353,10 +366,11 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         raise ValueError("No trainable rows found. Rows need target_smiles.")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
-    if checkpoint and checkpoint.get("optimizer_state"):
+    warm_start = bool(getattr(args, "reset_training_state", False)) and checkpoint is not None
+    if checkpoint and checkpoint.get("optimizer_state") and not warm_start:
         optimizer.load_state_dict(checkpoint["optimizer_state"])
-    history = list(checkpoint.get("history", [])) if checkpoint else []
-    start_epoch = int(checkpoint.get("epoch", 0)) + 1 if checkpoint else 1
+    history = [] if warm_start else (list(checkpoint.get("history", [])) if checkpoint else [])
+    start_epoch = 1 if warm_start else (int(checkpoint.get("epoch", 0)) + 1 if checkpoint else 1)
 
     for epoch in range(start_epoch, int(args.epochs) + 1):
         record = train_epoch(
@@ -1079,19 +1093,29 @@ def condition_array_for_row(
     max_source_tokens: int,
     condition_layout: str = "unified",
 ) -> np.ndarray:
+    layout = str(condition_layout or "unified")
+    if layout in {"direct_compat", "direct_edit_compat", "property_program_only"}:
+        if layout == "property_program_only":
+            return direct_cond.property_program_tokens(row, condition_dim)
+        base = store.get(row)
+        if base is None:
+            base = direct_cond.fallback_condition_features(row, condition_dim)
+        if int(base.shape[-1]) != int(condition_dim):
+            raise ValueError(f"Condition feature dim mismatch: {base.shape[-1]} != {condition_dim}")
+        program = direct_cond.property_program_tokens(row, condition_dim)
+        if task_mode_for_row(row) == EDIT_MODE:
+            source = source_smiles_condition_tokens(row, condition_dim, max_source_tokens=max_source_tokens)
+            return np.concatenate([base, source, program], axis=0)
+        return np.concatenate([base, program], axis=0)
+
+    mode = task_mode_for_row(row)
+    mode_token = mode_condition_token(mode, condition_dim)
+    program = property_program_tokens(row, condition_dim)
     base = store.get(row)
     if base is None:
         base = fallback_condition_features(row, condition_dim)
     if int(base.shape[-1]) != int(condition_dim):
         raise ValueError(f"Condition feature dim mismatch: {base.shape[-1]} != {condition_dim}")
-    mode = task_mode_for_row(row)
-    mode_token = mode_condition_token(mode, condition_dim)
-    program = property_program_tokens(row, condition_dim)
-    if str(condition_layout or "unified") == "direct_compat":
-        if mode == EDIT_MODE:
-            source = source_smiles_condition_tokens(row, condition_dim, max_source_tokens=max_source_tokens)
-            return np.concatenate([base, source, program], axis=0)
-        return np.concatenate([base, program], axis=0)
     if mode == EDIT_MODE:
         source = source_smiles_condition_tokens(row, condition_dim, max_source_tokens=max_source_tokens)
         return np.concatenate([base, mode_token, source, program], axis=0)

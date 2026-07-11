@@ -7,7 +7,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$REPO_DIR"
 
-PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
+PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}}"
 OUTPUT_DIR="${SUCC_UNIFIED_BENCHMARK_OUTPUT_DIR:-SketchMol-Understanding-Condition/outputs/unified_smiles_generator_benchmark_suite}"
 TASKS="${SUCC_UNIFIED_BENCHMARK_TASKS:-denovo_2p7p,external_multiproperty,moledit_table1}"
 RUN_SAMPLE="${SUCC_UNIFIED_BENCHMARK_RUN_SAMPLE:-0}"
@@ -58,8 +58,15 @@ MOLEDIT_SELECTION_MODE="${SUCC_UNIFIED_MOLEDIT_SELECTION_MODE:-unified_score}"
 MOLEDIT_THRESHOLDS="${SUCC_UNIFIED_MOLEDIT_THRESHOLDS:-0.65,0.15}"
 MOLEDIT_MISSING_ORACLE_POLICY="${SUCC_UNIFIED_MOLEDIT_MISSING_ORACLE_POLICY:-fail}"
 MOLEDIT_REQUIRE_TABLE1_COVERAGE="${SUCC_UNIFIED_MOLEDIT_REQUIRE_TABLE1_COVERAGE:-0}"
+MOLEDIT_RDKIT_MODULES="${SUCC_UNIFIED_MOLEDIT_RDKIT_MODULES:-gcc/12.3 rdkit/2024.09.6}"
 
 mkdir -p "$OUTPUT_DIR" "$SAMPLE_OUTPUT_DIR"
+
+if [[ "$TASKS" == *moledit_table1* ]]; then
+  # shellcheck source=/dev/null
+  source "$SCRIPT_DIR/ensure_moledit_oracle_env.sh"
+  ensure_moledit_oracle_env "$PYTHON_BIN"
+fi
 
 if [[ "$RUN_SAMPLE" == "1" ]]; then
   if [[ -z "$EVAL_CSV" ]]; then
@@ -123,6 +130,7 @@ runner_args=(
   --moledit-selection-mode "$MOLEDIT_SELECTION_MODE"
   --moledit-thresholds "$MOLEDIT_THRESHOLDS"
   --moledit-missing-oracle-policy "$MOLEDIT_MISSING_ORACLE_POLICY"
+  --moledit-rdkit-modules "$MOLEDIT_RDKIT_MODULES"
 )
 
 if [[ -n "$EXTERNAL_GENERATED_PROPERTIES_CSV" ]]; then
