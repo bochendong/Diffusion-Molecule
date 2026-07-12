@@ -36,6 +36,7 @@ BEAM_SIZE="${SUCC_UNIFIED_BEAM_SIZE:-20}"
 BEAM_EXPAND_SIZE="${SUCC_UNIFIED_BEAM_EXPAND_SIZE:-64}"
 BEAM_LENGTH_PENALTY="${SUCC_UNIFIED_BEAM_LENGTH_PENALTY:-0.8}"
 TOP_K_CANDIDATES="${SUCC_UNIFIED_TOP_K_CANDIDATES:-40}"
+MAX_CANDIDATES="${SUCC_UNIFIED_MAX_CANDIDATES:-0}"
 SEED="${SUCC_UNIFIED_SEED:-7}"
 DEVICE="${SUCC_DEVICE:-${SUCC_UNIFIED_DEVICE:-auto}}"
 SAMPLING_MODE="${SUCC_UNIFIED_SAMPLING_MODE:-random}"
@@ -76,6 +77,7 @@ args=(
   --beam-expand-size "$BEAM_EXPAND_SIZE"
   --beam-length-penalty "$BEAM_LENGTH_PENALTY"
   --top-k-candidates "$TOP_K_CANDIDATES"
+  --max-candidates "$MAX_CANDIDATES"
   --seed "$SEED"
   --device "$DEVICE"
   --sampling-mode "$SAMPLING_MODE"
@@ -101,6 +103,9 @@ if [[ -n "${SUCC_UNIFIED_RESUME_CHECKPOINT:-}" ]]; then
 fi
 if [[ -n "$TEACHER_CHECKPOINT" ]]; then
   args+=(--teacher-checkpoint "$TEACHER_CHECKPOINT")
+fi
+if [[ "${SUCC_UNIFIED_INCLUDE_SOURCE_COPY_CANDIDATE:-0}" == "1" ]]; then
+  args+=(--include-source-copy-candidate)
 fi
 if [[ "${SUCC_UNIFIED_RESET_TRAINING_STATE:-0}" == "1" ]]; then
   args+=(--reset-training-state)

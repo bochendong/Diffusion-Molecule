@@ -25,6 +25,7 @@ BEAM_SIZE="${SUCC_UNIFIED_BEAM_SIZE:-20}"
 BEAM_EXPAND_SIZE="${SUCC_UNIFIED_BEAM_EXPAND_SIZE:-64}"
 BEAM_LENGTH_PENALTY="${SUCC_UNIFIED_BEAM_LENGTH_PENALTY:-0.8}"
 TOP_K_CANDIDATES="${SUCC_UNIFIED_TOP_K_CANDIDATES:-40}"
+MAX_CANDIDATES="${SUCC_UNIFIED_MAX_CANDIDATES:-0}"
 TEMPERATURE="${SUCC_UNIFIED_TEMPERATURE:-0.7}"
 TOP_K="${SUCC_UNIFIED_TOP_K:-24}"
 TOP_P="${SUCC_UNIFIED_TOP_P:-0.9}"
@@ -54,6 +55,7 @@ args=(
   --beam-expand-size "$BEAM_EXPAND_SIZE"
   --beam-length-penalty "$BEAM_LENGTH_PENALTY"
   --top-k-candidates "$TOP_K_CANDIDATES"
+  --max-candidates "$MAX_CANDIDATES"
   --temperature "$TEMPERATURE"
   --top-k "$TOP_K"
   --top-p "$TOP_P"
@@ -72,6 +74,9 @@ if [[ -n "${SUCC_UNIFIED_EVAL_LIMIT:-}" ]]; then
 fi
 if [[ "${SUCC_UNIFIED_DISABLE_FINALIZER:-0}" == "1" ]]; then
   args+=(--disable-finalizer)
+fi
+if [[ "${SUCC_UNIFIED_INCLUDE_SOURCE_COPY_CANDIDATE:-0}" == "1" ]]; then
+  args+=(--include-source-copy-candidate)
 fi
 
 echo "Unified SMILES generator sampling"

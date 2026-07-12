@@ -136,6 +136,7 @@ SMILES_TOKEN_RE = re.compile(
 )
 _TDC_ORACLE_CACHE: dict[str, object | None] = {}
 _PROPERTY_VALUE_CACHE: dict[tuple[str, str], float | None] = {}
+_FILE_SHA256_CACHE: dict[str, str] = {}
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -280,7 +281,18 @@ def add_sampling_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-repeat-ngram-size", type=int, default=6)
     parser.add_argument("--min-new-tokens", type=int, default=6)
     parser.add_argument("--top-k-candidates", type=int, default=40)
+    parser.add_argument(
+        "--max-candidates",
+        type=int,
+        default=0,
+        help="Maximum unique candidates written per row. 0 preserves the legacy --top-k-candidates limit.",
+    )
     parser.add_argument("--disable-finalizer", action="store_true")
+    parser.add_argument(
+        "--include-source-copy-candidate",
+        action="store_true",
+        help="Append the source molecule as a diagnostic candidate for edit rows. Disabled by default for fair evaluation.",
+    )
     parser.add_argument("--source-similarity-threshold", type=float, default=0.4)
 
 
@@ -422,6 +434,16 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
             record.update({f"eval_{key}": value for key, value in eval_record.items()})
         history.append(record)
         save_checkpoint(args.output_dir / "latest_checkpoint.pt", model, optimizer, vocab, config, epoch, history, args)
+        save_checkpoint(
+            args.output_dir / f"checkpoint_epoch_{epoch:03d}.pt",
+            model,
+            optimizer,
+            vocab,
+            config,
+            epoch,
+            history,
+            args,
+        )
 
     checkpoint_path = args.output_dir / "unified_smiles_generator.pt"
     save_checkpoint(
@@ -2242,6 +2264,74 @@ def method_for_args(args: argparse.Namespace) -> str:
     return method
 
 
+def file_sha256(path: Path) -> str:
+    resolved = str(path.resolve())
+    if resolved in _FILE_SHA256_CACHE:
+        return _FILE_SHA256_CACHE[resolved]
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    value = digest.hexdigest()
+    _FILE_SHA256_CACHE[resolved] = value
+    return value
+
+
+def checkpoint_fingerprint_for_args(args: argparse.Namespace) -> str:
+    for name in ("checkpoint", "resume_checkpoint"):
+        value = getattr(args, name, None)
+        if value:
+            path = Path(value)
+            if path.is_file():
+                return file_sha256(path)
+            return hashlib.sha256(str(path).encode("utf-8")).hexdigest()
+    return hashlib.sha256(str(getattr(args, "output_dir", "in_memory")).encode("utf-8")).hexdigest()
+
+
+def candidate_pool_id_for_row(row: Mapping[str, str], args: argparse.Namespace) -> str:
+    row_id = first_present(row, ["condition_id", "sample_id", "example_id", "pair_id"])
+    row_sha256 = hashlib.sha256(
+        json.dumps(dict(row), sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    payload = {
+        "checkpoint_sha256": checkpoint_fingerprint_for_args(args),
+        "row_id": str(row_id or ""),
+        "row_sha256": row_sha256,
+        "seed": int(args.seed),
+        "decoding_mode": str(args.decoding_mode),
+        "condition_layout": str(args.condition_layout),
+        "condition_feature_variant": str(args.condition_feature_variant),
+        "condition_feature_array": str(args.condition_feature_array),
+        "num_samples": int(args.num_samples),
+        "beam_size": int(args.beam_size),
+        "max_new_tokens": int(args.max_new_tokens),
+        "temperature": float(args.temperature),
+        "top_k": int(args.top_k),
+        "top_p": float(args.top_p),
+        "source_similarity_threshold": float(args.source_similarity_threshold),
+        "include_source_copy_candidate": bool(args.include_source_copy_candidate),
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()[:24]
+
+
+def sampling_seed_for_row(row: Mapping[str, str], base_seed: int) -> int:
+    row_id = first_present(row, ["condition_id", "sample_id", "example_id", "pair_id"])
+    digest = hashlib.sha256(f"{base_seed}|{row_id}".encode("utf-8")).digest()
+    return int.from_bytes(digest[:4], "big")
+
+
+def candidate_pool_hash(candidates: Sequence["Candidate"]) -> str:
+    ordered = sorted(candidates, key=lambda candidate: candidate.generation_rank)
+    payload = [
+        {"generation_rank": candidate.generation_rank, "smiles": candidate.smiles}
+        for candidate in ordered
+    ]
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
 def write_predictions(
     model: ConditionedSmilesDecoder,
     rows: list[dict[str, str]],
@@ -2258,6 +2348,7 @@ def write_predictions(
     selected_rows: list[dict[str, object]] = []
     candidate_rows: list[dict[str, object]] = []
     for row_index, row in enumerate(rows):
+        seed_everything(sampling_seed_for_row(row, int(args.seed)))
         candidates = sample_candidates_for_row(
             model,
             row,
@@ -2270,8 +2361,11 @@ def write_predictions(
         ranked = rank_candidates(row, candidates, source_similarity_threshold=float(args.source_similarity_threshold))
         if bool(args.disable_finalizer):
             ranked = candidates
-        top_k = max(1, int(args.top_k_candidates))
-        selected = ranked[0] if ranked else Candidate("", 0.0, {})
+        candidate_limit = int(args.max_candidates) if int(args.max_candidates) > 0 else int(args.top_k_candidates)
+        candidate_limit = max(1, candidate_limit)
+        pool_id = candidate_pool_id_for_row(row, args)
+        pool_hash = candidate_pool_hash(candidates)
+        selected = ranked[0] if ranked else Candidate("", 0.0, {}, 0)
         out = dict(row)
         out["task_mode"] = task_mode_for_row(row)
         out["condition_feature_variant"] = str(args.condition_feature_variant)
@@ -2280,10 +2374,13 @@ def write_predictions(
         out["method"] = method_for_args(args)
         out["generated_smiles"] = selected.smiles
         out["candidate_rank"] = 1
+        out["generation_rank"] = selected.generation_rank
+        out["candidate_pool_id"] = pool_id
+        out["candidate_pool_hash"] = pool_hash
         out["candidate_selected"] = "True"
         out.update(selected.metrics)
         selected_rows.append(out)
-        for rank, candidate in enumerate(ranked[:top_k], start=1):
+        for rank, candidate in enumerate(ranked[:candidate_limit], start=1):
             c_row = dict(row)
             c_row["task_mode"] = task_mode_for_row(row)
             c_row["condition_feature_variant"] = str(args.condition_feature_variant)
@@ -2292,6 +2389,9 @@ def write_predictions(
             c_row["method"] = method_for_args(args)
             c_row["generated_smiles"] = candidate.smiles
             c_row["candidate_rank"] = rank
+            c_row["generation_rank"] = candidate.generation_rank
+            c_row["candidate_pool_id"] = pool_id
+            c_row["candidate_pool_hash"] = pool_hash
             c_row["candidate_selected"] = "True" if rank == 1 else "False"
             c_row.update(candidate.metrics)
             candidate_rows.append(c_row)
@@ -2306,6 +2406,8 @@ def write_predictions(
         "prediction_csv": str(prediction_csv),
         "candidate_output_csv": str(candidate_csv),
         "condition_layout": str(args.condition_layout),
+        "max_candidates": int(args.max_candidates) if int(args.max_candidates) > 0 else int(args.top_k_candidates),
+        "include_source_copy_candidate": bool(args.include_source_copy_candidate),
     }
 
 
@@ -2314,6 +2416,7 @@ class Candidate:
     smiles: str
     score: float
     metrics: dict[str, object]
+    generation_rank: int
 
 
 @torch.no_grad()
@@ -2389,13 +2492,18 @@ def sample_candidates_for_row(
             candidate_source="beam",
         )
     source = str(row.get("source_smiles", "") or "").strip()
-    if task_mode_for_row(row) == EDIT_MODE and source:
+    if bool(args.include_source_copy_candidate) and task_mode_for_row(row) == EDIT_MODE and source:
         canonical_source = safe_canonical_smiles(source) or source
         if canonical_source and canonical_source not in seen:
             metrics = candidate_metrics(row, canonical_source, source_similarity_threshold=float(args.source_similarity_threshold))
             metrics["candidate_source_copy"] = "True"
             metrics["candidate_generation_mode"] = "source_copy"
-            seen[canonical_source] = Candidate(canonical_source, float(metrics.get("unified_finalizer_score", 0.0)), metrics)
+            seen[canonical_source] = Candidate(
+                canonical_source,
+                float(metrics.get("unified_finalizer_score", 0.0)),
+                metrics,
+                len(seen) + 1,
+            )
     return list(seen.values())
 
 
@@ -2415,14 +2523,27 @@ def add_generated_sequences(
             continue
         metrics = candidate_metrics(row, canonical, source_similarity_threshold=source_similarity_threshold)
         metrics["candidate_generation_mode"] = candidate_source
-        seen[canonical] = Candidate(canonical, float(metrics.get("unified_finalizer_score", 0.0)), metrics)
+        seen[canonical] = Candidate(
+            canonical,
+            float(metrics.get("unified_finalizer_score", 0.0)),
+            metrics,
+            len(seen) + 1,
+        )
 
 
 def rank_candidates(row: Mapping[str, str], candidates: list[Candidate], *, source_similarity_threshold: float) -> list[Candidate]:
     rescored = []
     for candidate in candidates:
-        metrics = candidate_metrics(row, candidate.smiles, source_similarity_threshold=source_similarity_threshold)
-        rescored.append(Candidate(candidate.smiles, float(metrics.get("unified_finalizer_score", 0.0)), metrics))
+        metrics = dict(candidate.metrics)
+        metrics.update(candidate_metrics(row, candidate.smiles, source_similarity_threshold=source_similarity_threshold))
+        rescored.append(
+            Candidate(
+                candidate.smiles,
+                float(metrics.get("unified_finalizer_score", 0.0)),
+                metrics,
+                candidate.generation_rank,
+            )
+        )
     return sorted(
         rescored,
         key=lambda item: (

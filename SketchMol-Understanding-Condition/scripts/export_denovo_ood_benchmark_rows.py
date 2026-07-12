@@ -95,6 +95,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-limit", type=int, default=0, help="0 keeps all candidate rows.")
     parser.add_argument("--include-eval-in-candidates", action="store_true")
     parser.add_argument(
+        "--exclude-molecule-csv",
+        action="append",
+        default=[],
+        type=Path,
+        help="CSV whose source/target/canonical SMILES must be excluded from the OOD molecule pool. Repeatable.",
+    )
+    parser.add_argument(
         "--train-rows-per-spec",
         type=int,
         default=0,
@@ -114,6 +121,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.rows_per_spec <= 0:
         raise ValueError("--rows-per-spec must be positive")
     molecules = read_molecules(args.molecule_db_csv, smiles_column=args.smiles_column, id_column=args.id_column)
+    excluded_smiles = read_excluded_smiles(args.exclude_molecule_csv)
+    input_molecules_before_exclusion = len(molecules)
+    if excluded_smiles:
+        molecules = [molecule for molecule in molecules if str(molecule["smiles"]) not in excluded_smiles]
     if not molecules:
         raise ValueError(f"No usable molecules with complete {PROPERTY_COLUMNS} properties in {args.molecule_db_csv}")
     specs = load_specs(args.spec_json)
@@ -159,6 +170,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "negative_output_csv": str(negative_output),
         "candidate_output_csv": str(candidate_output),
         "input_molecules": len(molecules),
+        "input_molecules_before_exclusion": input_molecules_before_exclusion,
+        "excluded_molecule_csvs": [str(path) for path in args.exclude_molecule_csv],
+        "excluded_smiles": len(excluded_smiles),
         "eval_rows": len(eval_rows),
         "negative_rows": len(negative_rows),
         "candidate_rows": len(candidate_rows),
@@ -227,6 +241,19 @@ def read_molecules(path: Path, *, smiles_column: str | None, id_column: str | No
                 }
             )
     return rows
+
+
+def read_excluded_smiles(paths: Sequence[Path]) -> set[str]:
+    excluded = set()
+    candidate_columns = ("target_smiles", "source_smiles", "canonical_smiles", "smiles", "SMILES")
+    for path in paths:
+        with path.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                for column in candidate_columns:
+                    value = str(row.get(column, "") or "").strip()
+                    if value:
+                        excluded.add(value)
+    return excluded
 
 
 def build_ood_rows(

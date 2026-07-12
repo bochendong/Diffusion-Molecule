@@ -32,6 +32,7 @@ BEAM_SIZE="${SUCC_UNIFIED_BEAM_SIZE:-40}"
 BEAM_EXPAND_SIZE="${SUCC_UNIFIED_BEAM_EXPAND_SIZE:-64}"
 BEAM_LENGTH_PENALTY="${SUCC_UNIFIED_BEAM_LENGTH_PENALTY:-0.8}"
 TOP_K_CANDIDATES="${SUCC_UNIFIED_TOP_K_CANDIDATES:-40}"
+MAX_CANDIDATES="${SUCC_UNIFIED_MAX_CANDIDATES:-0}"
 TEMPERATURE="${SUCC_UNIFIED_TEMPERATURE:-0.7}"
 TOP_K="${SUCC_UNIFIED_TOP_K:-24}"
 TOP_P="${SUCC_UNIFIED_TOP_P:-0.9}"
@@ -59,6 +60,8 @@ MOLEDIT_THRESHOLDS="${SUCC_UNIFIED_MOLEDIT_THRESHOLDS:-0.65,0.15}"
 MOLEDIT_MISSING_ORACLE_POLICY="${SUCC_UNIFIED_MOLEDIT_MISSING_ORACLE_POLICY:-fail}"
 MOLEDIT_REQUIRE_TABLE1_COVERAGE="${SUCC_UNIFIED_MOLEDIT_REQUIRE_TABLE1_COVERAGE:-0}"
 MOLEDIT_RDKIT_MODULES="${SUCC_UNIFIED_MOLEDIT_RDKIT_MODULES:-gcc/12.3 rdkit/2024.09.6}"
+CANDIDATE_BUDGETS="${SUCC_UNIFIED_CANDIDATE_BUDGETS:-}"
+SELECTION_MODES="${SUCC_UNIFIED_SELECTION_MODES:-raw,finalizer}"
 
 mkdir -p "$OUTPUT_DIR" "$SAMPLE_OUTPUT_DIR"
 
@@ -93,6 +96,7 @@ if [[ "$RUN_SAMPLE" == "1" ]]; then
     --beam-expand-size "$BEAM_EXPAND_SIZE"
     --beam-length-penalty "$BEAM_LENGTH_PENALTY"
     --top-k-candidates "$TOP_K_CANDIDATES"
+    --max-candidates "$MAX_CANDIDATES"
     --temperature "$TEMPERATURE"
     --top-k "$TOP_K"
     --top-p "$TOP_P"
@@ -110,6 +114,9 @@ if [[ "$RUN_SAMPLE" == "1" ]]; then
   fi
   if [[ "${SUCC_UNIFIED_DISABLE_FINALIZER:-0}" == "1" ]]; then
     sample_args+=(--disable-finalizer)
+  fi
+  if [[ "${SUCC_UNIFIED_INCLUDE_SOURCE_COPY_CANDIDATE:-0}" == "1" ]]; then
+    sample_args+=(--include-source-copy-candidate)
   fi
   echo "Unified benchmark suite: sampling first"
   echo "  checkpoint=$CHECKPOINT"
@@ -134,6 +141,8 @@ runner_args=(
   --moledit-thresholds "$MOLEDIT_THRESHOLDS"
   --moledit-missing-oracle-policy "$MOLEDIT_MISSING_ORACLE_POLICY"
   --moledit-rdkit-modules "$MOLEDIT_RDKIT_MODULES"
+  --candidate-budgets "$CANDIDATE_BUDGETS"
+  --selection-modes "$SELECTION_MODES"
 )
 
 if [[ -n "$EXTERNAL_GENERATED_PROPERTIES_CSV" ]]; then

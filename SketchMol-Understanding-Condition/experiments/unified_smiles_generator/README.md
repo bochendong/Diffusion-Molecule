@@ -5,6 +5,55 @@ line.  It intentionally avoids importing repo-internal training modules; the
 SMILES tokenizer, vocabulary, Transformer decoder, condition packer, training
 loop, sampler, and finalizer are copied into `unified_smiles_generator.py`.
 
+## Unified Joint v2 fair protocol
+
+Joint v2 compares only Unified U0/U1/U2. Historical SketchMol, Direct,
+UniVideo, Phase1, and Fair v1 numbers are reference-only and are not used for
+direct superiority claims.
+
+The formal protocol uses train seeds `7,17,27`, evaluation seeds
+`101,202,303`, and candidate budgets `1,20,128,256`. Each
+checkpoint/benchmark/evaluation-seed combination samples one maximum pool of
+256 candidates. `raw` takes the first generated candidate in each prefix;
+`finalizer` applies the RDKit/TDC property scorer to the same prefix. Source
+copy augmentation is disabled unless explicitly requested for diagnostics.
+
+Prepare data, train U1/U2, evaluate every epoch on validation@20, and select a
+checkpoint without reading formal test metrics:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_unified_joint_v2_train_matrix.sh
+```
+
+Validation@20 is averaged across evaluation seeds `101,202,303`. The forgetting
+gate requires de novo macro strict success to remain within
+2 percentage points of U0. Eligible epochs are ranked by mean Table1
+`Acc_all(0.15)`. A seed with no eligible epoch is written as
+`forgetting_failure` and receives no formal-test checkpoint symlink.
+
+After all six U1/U2 seed jobs have selected checkpoints, submit the formal
+test matrix:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_unified_joint_v2_eval_suite.sh
+```
+
+The task jobs run independently and a dependent collector writes:
+
+```text
+unified_joint_v2_runs.csv
+unified_joint_v2_aggregate.csv
+unified_joint_v2_paired_deltas.csv
+unified_joint_v2_summary.json
+```
+
+Each run also has `joint_v2_run_metadata.json` with checkpoint/input/candidate
+SHA256, seed, modality, budgets, selection modes, candidate-pool counts, and a
+source-copy audit. The dataset manifest records row/group counts, SHA256,
+target-molecule overlap, source-target edit-pair overlap, and Bemis-Murcko
+scaffold overlap. Formal input modalities are `text_property` for de novo/OOD
+and `source_structure_text` for Table1.
+
 ## Train
 
 ```bash
