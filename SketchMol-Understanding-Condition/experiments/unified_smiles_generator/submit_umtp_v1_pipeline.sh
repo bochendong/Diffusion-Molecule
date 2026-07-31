@@ -11,6 +11,7 @@ cd "$REPO_DIR"
 command -v sbatch >/dev/null 2>&1 || { echo "ERROR: sbatch not found" >&2; exit 2; }
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
+export SUCC_PYTHON_BIN="$PYTHON_BIN"
 # Nibi requires the allocation name (not the legacy *_gpu association name).
 # Use the RAC allocation by default; select RAS with UMTP_SLURM_ACCOUNT=def-hup-ab.
 ACCOUNT="${UMTP_SLURM_ACCOUNT:-rrg-hup}"
