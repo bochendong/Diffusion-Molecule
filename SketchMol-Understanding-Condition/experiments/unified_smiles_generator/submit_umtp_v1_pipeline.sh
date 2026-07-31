@@ -15,6 +15,7 @@ export SUCC_PYTHON_BIN="$PYTHON_BIN"
 # Nibi requires the allocation name (not the legacy *_gpu association name).
 # Use the RAC allocation by default; select RAS with UMTP_SLURM_ACCOUNT=def-hup-ab.
 ACCOUNT="${UMTP_SLURM_ACCOUNT:-rrg-hup}"
+COLLECT_ACCOUNT="${UMTP_COLLECT_SLURM_ACCOUNT:-def-hup-ab}"
 GPU="${UMTP_SLURM_GPUS:-h100:1}"
 MEM="${UMTP_SLURM_MEM:-64G}"
 CPUS="${UMTP_SLURM_CPUS:-8}"
@@ -86,7 +87,7 @@ done
 
 dependency="$(IFS=:; echo "${eval_ids[*]}")"
 collect_cmd="'$PYTHON_BIN' '$SCRIPT_DIR/collect_umtp_v1_results.py' --eval-root '$POLICY_ROOT/eval' --output-prefix '$POLICY_ROOT/eval/umtp_v1'"
-collect_output="$(sbatch --parsable --account="$ACCOUNT" "${end_mail[@]}" --time=01:00:00 --mem=8G --cpus-per-task=2 \
+collect_output="$(sbatch --parsable --account="$COLLECT_ACCOUNT" "${end_mail[@]}" --time=01:00:00 --mem=8G --cpus-per-task=2 \
   --job-name=umtp-collect --dependency="afterok:$dependency" \
   --output="$LOG_DIR/umtp-collect-%j.log" --wrap="$collect_cmd")"
 
