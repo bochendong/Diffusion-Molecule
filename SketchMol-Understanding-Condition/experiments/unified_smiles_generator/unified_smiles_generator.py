@@ -184,6 +184,21 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     train.add_argument("--distill-weight", type=float, default=0.0)
     train.add_argument("--distill-temperature", type=float, default=1.0)
+    train.add_argument(
+        "--distill-control",
+        choices=("fixed", "adaptive"),
+        default="fixed",
+        help="Keep a fixed teacher-KL weight or update it as a dual variable around --distill-target-kl.",
+    )
+    train.add_argument("--distill-target-kl", type=float, default=0.02)
+    train.add_argument("--distill-dual-lr", type=float, default=0.5)
+    train.add_argument("--distill-min-weight", type=float, default=0.0)
+    train.add_argument("--distill-max-weight", type=float, default=2.0)
+    train.add_argument(
+        "--allow-architecture-warmstart",
+        action="store_true",
+        help="Load compatible legacy decoder weights while initializing newly requested source-aware modules.",
+    )
     train.add_argument("--seed", type=int, default=7)
     train.add_argument("--device", default="auto")
 
@@ -238,10 +253,11 @@ def add_common_data_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--method", default="unified_smiles_generator")
     parser.add_argument(
         "--condition-layout",
-        choices=("unified", "direct_compat", "direct_edit_compat", "property_program_only"),
+        choices=("unified", "transformation", "direct_compat", "direct_edit_compat", "property_program_only"),
         default="unified",
         help=(
             "Condition token layout. `unified` adds explicit mode tokens; "
+            "`transformation` uses one goal plus optional-source contract while preserving the legacy de novo goal layout; "
             "`direct_compat` matches the earlier direct-SMILES property-program layout "
             "for direct checkpoint warm-starts (edit rows append source SMILES tokens); "
             "`direct_edit_compat` is an alias of `direct_compat` for source-edit eval; "
@@ -256,6 +272,13 @@ def add_model_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--num-heads", type=int, default=8)
     parser.add_argument("--dim-feedforward", type=int, default=1024)
     parser.add_argument("--dropout", type=float, default=0.1)
+    parser.add_argument(
+        "--source-aware",
+        action="store_true",
+        help="Route source-marked condition tokens through a dedicated molecular memory before shared decoding.",
+    )
+    parser.add_argument("--source-encoder-layers", type=int, default=2)
+    parser.add_argument("--source-residual-scale", type=float, default=1.0)
 
 
 def add_sampling_args(parser: argparse.ArgumentParser) -> None:
@@ -354,6 +377,20 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
     if checkpoint:
         vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
         config = dict(checkpoint["model_config"])
+        requested_source_aware = bool(args.source_aware)
+        checkpoint_source_aware = bool(config.get("source_aware", False))
+        if requested_source_aware and not checkpoint_source_aware:
+            if not bool(args.allow_architecture_warmstart):
+                raise ValueError(
+                    "--source-aware with a legacy checkpoint requires --allow-architecture-warmstart"
+                )
+            config.update(
+                {
+                    "source_aware": True,
+                    "source_encoder_layers": int(args.source_encoder_layers),
+                    "source_residual_scale": float(args.source_residual_scale),
+                }
+            )
     else:
         vocab = build_vocabulary(
             [row.get("target_smiles", "") for row in train_rows + eval_rows]
@@ -370,17 +407,26 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
             "dropout": float(args.dropout),
             "pad_id": vocab.pad_id,
             "max_length": int(args.max_smiles_length) + 8,
+            "source_aware": bool(args.source_aware),
+            "source_encoder_layers": int(args.source_encoder_layers),
+            "source_residual_scale": float(args.source_residual_scale),
         }
 
     model = ConditionedSmilesDecoder(**config).to(device)
     if checkpoint:
-        model.load_state_dict(checkpoint["model_state"])
+        incompatible = model.load_state_dict(
+            checkpoint["model_state"],
+            strict=not bool(args.allow_architecture_warmstart),
+        )
+        if bool(args.allow_architecture_warmstart) and incompatible.unexpected_keys:
+            raise ValueError(f"Unexpected warm-start parameters: {incompatible.unexpected_keys}")
 
     teacher_model = build_distillation_teacher(
         args.teacher_checkpoint,
         expected_vocab=vocab,
         expected_config=config,
         device=device,
+        allow_architecture_mismatch=bool(args.allow_architecture_warmstart),
     )
     if float(args.distill_weight) > 0 and teacher_model is None:
         raise ValueError("--distill-weight requires --teacher-checkpoint")
@@ -407,12 +453,16 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         raise ValueError("No trainable rows found. Rows need target_smiles.")
 
     optimizer = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
-    warm_start = bool(getattr(args, "reset_training_state", False)) and checkpoint is not None
+    warm_start = (
+        bool(getattr(args, "reset_training_state", False))
+        or bool(getattr(args, "allow_architecture_warmstart", False))
+    ) and checkpoint is not None
     if checkpoint and checkpoint.get("optimizer_state") and not warm_start:
         optimizer.load_state_dict(checkpoint["optimizer_state"])
     history = [] if warm_start else (list(checkpoint.get("history", [])) if checkpoint else [])
     start_epoch = 1 if warm_start else (int(checkpoint.get("epoch", 0)) + 1 if checkpoint else 1)
 
+    current_distill_weight = float(args.distill_weight)
     for epoch in range(start_epoch, int(args.epochs) + 1):
         record = train_epoch(
             model,
@@ -425,10 +475,21 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
             seed=int(args.seed) + epoch,
             sampling_mode=str(args.sampling_mode),
             samples_per_epoch=int(args.samples_per_epoch),
-            distill_weight=float(args.distill_weight),
+            distill_weight=current_distill_weight,
             distill_temperature=float(args.distill_temperature),
         )
         record["epoch"] = epoch
+        record["distill_weight"] = current_distill_weight
+        if str(args.distill_control) == "adaptive" and teacher_model is not None:
+            current_distill_weight = update_adaptive_distill_weight(
+                current_distill_weight,
+                observed_kl=float(record["distill_loss"]),
+                target_kl=float(args.distill_target_kl),
+                dual_lr=float(args.distill_dual_lr),
+                min_weight=float(args.distill_min_weight),
+                max_weight=float(args.distill_max_weight),
+            )
+        record["next_distill_weight"] = current_distill_weight
         if eval_dataset:
             eval_record = evaluate_loss(model, eval_dataset, batch_size=int(args.eval_batch_size), device=device)
             record.update({f"eval_{key}": value for key, value in eval_record.items()})
@@ -484,6 +545,13 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         "teacher_checkpoint": str(args.teacher_checkpoint) if args.teacher_checkpoint else None,
         "distill_weight": float(args.distill_weight),
         "distill_temperature": float(args.distill_temperature),
+        "distill_control": str(args.distill_control),
+        "distill_target_kl": float(args.distill_target_kl),
+        "distill_dual_lr": float(args.distill_dual_lr),
+        "final_distill_weight": current_distill_weight,
+        "source_aware": bool(config.get("source_aware", False)),
+        "source_encoder_layers": int(config.get("source_encoder_layers", 0)),
+        "source_residual_scale": float(config.get("source_residual_scale", 0.0)),
         "task_mode_counts": task_mode_counts(train_dataset),
         "training_group_counts": training_group_counts(train_dataset),
         "vocab_size": len(vocab.token_to_id),
@@ -723,6 +791,7 @@ def build_distillation_teacher(
     expected_vocab: SmilesVocabulary,
     expected_config: Mapping[str, object],
     device: torch.device,
+    allow_architecture_mismatch: bool = False,
 ) -> ConditionedSmilesDecoder | None:
     checkpoint = load_checkpoint(checkpoint_path)
     if checkpoint is None:
@@ -731,8 +800,11 @@ def build_distillation_teacher(
     if teacher_vocab.to_dict() != expected_vocab.to_dict():
         raise ValueError("Teacher and student vocabularies differ; protected distillation requires identical token ids.")
     teacher_config = dict(checkpoint["model_config"])
-    if teacher_config != dict(expected_config):
+    if teacher_config != dict(expected_config) and not allow_architecture_mismatch:
         raise ValueError("Teacher and student model configs differ; protected distillation requires matching architectures.")
+    for key in ("vocab_size", "condition_dim", "d_model", "num_layers", "num_heads", "dim_feedforward"):
+        if teacher_config.get(key) != dict(expected_config).get(key):
+            raise ValueError(f"Teacher/student core config mismatch for {key}")
     teacher = ConditionedSmilesDecoder(**teacher_config).to(device)
     teacher.load_state_dict(checkpoint["model_state"])
     teacher.eval()
@@ -917,9 +989,14 @@ class ConditionedSmilesDecoder(nn.Module):
         dropout: float = 0.1,
         pad_id: int = 0,
         max_length: int = 192,
+        source_aware: bool = False,
+        source_encoder_layers: int = 2,
+        source_residual_scale: float = 1.0,
     ) -> None:
         super().__init__()
         self.pad_id = int(pad_id)
+        self.source_aware = bool(source_aware)
+        self.source_residual_scale = float(source_residual_scale)
         self.condition_proj = nn.Sequential(
             nn.LayerNorm(condition_dim),
             nn.Linear(condition_dim, d_model),
@@ -927,6 +1004,33 @@ class ConditionedSmilesDecoder(nn.Module):
             nn.Dropout(dropout),
             nn.Linear(d_model, d_model),
         )
+        if self.source_aware:
+            self.source_condition_proj = nn.Sequential(
+                nn.LayerNorm(condition_dim),
+                nn.Linear(condition_dim, d_model),
+                nn.GELU(),
+                nn.Dropout(dropout),
+                nn.Linear(d_model, d_model),
+            )
+            source_layer = nn.TransformerEncoderLayer(
+                d_model=d_model,
+                nhead=num_heads,
+                dim_feedforward=dim_feedforward,
+                dropout=dropout,
+                batch_first=True,
+                norm_first=True,
+            )
+            self.source_encoder = nn.TransformerEncoder(
+                source_layer,
+                num_layers=max(1, int(source_encoder_layers)),
+            )
+            self.source_type = nn.Parameter(torch.zeros(1, 1, d_model))
+            self.null_source = nn.Parameter(torch.zeros(1, 1, d_model))
+            self.source_gate = nn.Linear(d_model * 2, d_model)
+            self.source_output = nn.Linear(d_model, vocab_size, bias=False)
+            nn.init.normal_(self.source_type, std=0.02)
+            nn.init.normal_(self.null_source, std=0.02)
+            nn.init.zeros_(self.source_output.weight)
         self.token_embedding = nn.Embedding(vocab_size, d_model, padding_idx=pad_id)
         self.position = PositionalEncoding(d_model, max_len=max_length + 8)
         layer = nn.TransformerDecoderLayer(
@@ -947,7 +1051,10 @@ class ConditionedSmilesDecoder(nn.Module):
         *,
         condition_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        memory = self.condition_proj(condition_tokens)
+        memory, memory_padding, source_summary, source_present = self.encode_condition_memory(
+            condition_tokens,
+            condition_mask=condition_mask,
+        )
         target = self.position(self.token_embedding(decoder_input_ids))
         seq_len = decoder_input_ids.shape[1]
         causal = torch.triu(
@@ -955,7 +1062,6 @@ class ConditionedSmilesDecoder(nn.Module):
             diagonal=1,
         )
         target_padding = decoder_input_ids.eq(self.pad_id)
-        memory_padding = None if condition_mask is None else ~condition_mask.bool()
         decoded = self.decoder(
             target,
             memory,
@@ -963,7 +1069,61 @@ class ConditionedSmilesDecoder(nn.Module):
             tgt_key_padding_mask=target_padding,
             memory_key_padding_mask=memory_padding,
         )
-        return self.output(decoded)
+        logits = self.output(decoded)
+        if self.source_aware and source_summary is not None and source_present is not None:
+            expanded_source = source_summary[:, None, :].expand(-1, decoded.shape[1], -1)
+            gate = torch.sigmoid(self.source_gate(torch.cat([decoded, expanded_source], dim=-1)))
+            source_delta = self.source_output(torch.tanh(decoded + gate * expanded_source))
+            logits = logits + (
+                float(self.source_residual_scale)
+                * source_present[:, None, None].to(dtype=logits.dtype)
+                * source_delta
+            )
+        return logits
+
+    def encode_condition_memory(
+        self,
+        condition_tokens: torch.Tensor,
+        *,
+        condition_mask: torch.Tensor | None,
+    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+        valid = (
+            torch.ones(condition_tokens.shape[:2], dtype=torch.bool, device=condition_tokens.device)
+            if condition_mask is None
+            else condition_mask.bool()
+        )
+        base_memory = self.condition_proj(condition_tokens)
+        if not self.source_aware:
+            return base_memory, ~valid, None, None
+
+        # Source token features are emitted by source_token_feature with an exact
+        # leading marker of 2.0. Goal/VLM/property tokens stay in the other stream.
+        source_valid = valid & condition_tokens[..., 0].sub(2.0).abs().lt(1e-6)
+        goal_valid = valid & ~source_valid
+        source_present = source_valid.any(dim=1)
+
+        safe_source_valid = source_valid.clone()
+        missing = ~source_present
+        if bool(missing.any()):
+            safe_source_valid[missing, 0] = True
+        source_memory = self.source_condition_proj(condition_tokens) + self.source_type
+        if bool(missing.any()):
+            source_memory = source_memory.clone()
+            source_memory[missing, 0, :] = self.null_source[0, 0, :]
+        source_memory = self.source_encoder(
+            source_memory,
+            src_key_padding_mask=~safe_source_valid,
+        )
+
+        source_weights = source_valid.to(dtype=source_memory.dtype)
+        source_summary = (source_memory * source_weights[..., None]).sum(dim=1)
+        source_summary = source_summary / source_weights.sum(dim=1, keepdim=True).clamp_min(1.0)
+
+        # Keep the null source out of decoder attention so de novo behavior is
+        # exactly the legacy goal-conditioned path after a compatible warm-start.
+        memory = torch.cat([base_memory, source_memory], dim=1)
+        memory_valid = torch.cat([goal_valid, source_valid], dim=1)
+        return memory, ~memory_valid, source_summary, source_present
 
     @torch.no_grad()
     def generate(
@@ -1181,7 +1341,7 @@ def condition_array_for_row(
     condition_layout: str = "unified",
 ) -> np.ndarray:
     layout = str(condition_layout or "unified")
-    if layout in {"direct_compat", "direct_edit_compat", "property_program_only"}:
+    if layout in {"transformation", "direct_compat", "direct_edit_compat", "property_program_only"}:
         if layout == "property_program_only":
             return direct_cond.property_program_tokens(row, condition_dim)
         base = store.get(row)
@@ -1643,6 +1803,22 @@ def de_novo_distillation_loss(
     teacher_probs = F.softmax(teacher_logits / temp, dim=-1)
     token_kl = F.kl_div(student_log_probs, teacher_probs, reduction="none").sum(dim=-1) * (temp * temp)
     return token_kl.masked_select(token_mask).mean(), token_count
+
+
+def update_adaptive_distill_weight(
+    current_weight: float,
+    *,
+    observed_kl: float,
+    target_kl: float,
+    dual_lr: float,
+    min_weight: float,
+    max_weight: float,
+) -> float:
+    """Dual ascent for the de novo retention constraint E[KL] <= target."""
+    lower = float(min(min_weight, max_weight))
+    upper = float(max(min_weight, max_weight))
+    updated = float(current_weight) + float(dual_lr) * (float(observed_kl) - float(target_kl))
+    return max(lower, min(upper, updated))
 
 
 def train_epoch(

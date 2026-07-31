@@ -44,6 +44,13 @@ SAMPLES_PER_EPOCH="${SUCC_UNIFIED_SAMPLES_PER_EPOCH:-0}"
 TEACHER_CHECKPOINT="${SUCC_UNIFIED_TEACHER_CHECKPOINT:-}"
 DISTILL_WEIGHT="${SUCC_UNIFIED_DISTILL_WEIGHT:-0}"
 DISTILL_TEMPERATURE="${SUCC_UNIFIED_DISTILL_TEMPERATURE:-1.0}"
+DISTILL_CONTROL="${SUCC_UNIFIED_DISTILL_CONTROL:-fixed}"
+DISTILL_TARGET_KL="${SUCC_UNIFIED_DISTILL_TARGET_KL:-0.02}"
+DISTILL_DUAL_LR="${SUCC_UNIFIED_DISTILL_DUAL_LR:-0.5}"
+DISTILL_MIN_WEIGHT="${SUCC_UNIFIED_DISTILL_MIN_WEIGHT:-0.0}"
+DISTILL_MAX_WEIGHT="${SUCC_UNIFIED_DISTILL_MAX_WEIGHT:-2.0}"
+SOURCE_ENCODER_LAYERS="${SUCC_UNIFIED_SOURCE_ENCODER_LAYERS:-2}"
+SOURCE_RESIDUAL_SCALE="${SUCC_UNIFIED_SOURCE_RESIDUAL_SCALE:-1.0}"
 
 if [[ -z "$TRAIN_CSV" ]]; then
   echo "ERROR: set SUCC_UNIFIED_TRAIN_CSV" >&2
@@ -84,6 +91,13 @@ args=(
   --samples-per-epoch "$SAMPLES_PER_EPOCH"
   --distill-weight "$DISTILL_WEIGHT"
   --distill-temperature "$DISTILL_TEMPERATURE"
+  --distill-control "$DISTILL_CONTROL"
+  --distill-target-kl "$DISTILL_TARGET_KL"
+  --distill-dual-lr "$DISTILL_DUAL_LR"
+  --distill-min-weight "$DISTILL_MIN_WEIGHT"
+  --distill-max-weight "$DISTILL_MAX_WEIGHT"
+  --source-encoder-layers "$SOURCE_ENCODER_LAYERS"
+  --source-residual-scale "$SOURCE_RESIDUAL_SCALE"
 )
 
 if [[ -n "$INPUT_MODALITY" ]]; then
@@ -110,6 +124,12 @@ fi
 if [[ "${SUCC_UNIFIED_RESET_TRAINING_STATE:-0}" == "1" ]]; then
   args+=(--reset-training-state)
 fi
+if [[ "${SUCC_UNIFIED_SOURCE_AWARE:-0}" == "1" ]]; then
+  args+=(--source-aware)
+fi
+if [[ "${SUCC_UNIFIED_ALLOW_ARCHITECTURE_WARMSTART:-0}" == "1" ]]; then
+  args+=(--allow-architecture-warmstart)
+fi
 if [[ -n "${SUCC_UNIFIED_LIMIT:-}" ]]; then
   args+=(--limit "$SUCC_UNIFIED_LIMIT")
 fi
@@ -131,5 +151,7 @@ echo "  sampling_mode=$SAMPLING_MODE"
 echo "  samples_per_epoch=$SAMPLES_PER_EPOCH"
 echo "  teacher_checkpoint=${TEACHER_CHECKPOINT:-none}"
 echo "  distill_weight=$DISTILL_WEIGHT"
+echo "  distill_control=$DISTILL_CONTROL target_kl=$DISTILL_TARGET_KL"
+echo "  source_aware=${SUCC_UNIFIED_SOURCE_AWARE:-0} source_encoder_layers=$SOURCE_ENCODER_LAYERS"
 
 "$PYTHON_BIN" "${args[@]}"

@@ -22,6 +22,8 @@ PREPARE_PATH = UNIFIED_PATH.with_name("prepare_unified_joint_rows.py")
 COLLECT_PATH = UNIFIED_PATH.with_name("collect_unified_joint_v2_results.py")
 RUNNER_PATH = UNIFIED_PATH.with_name("unified_benchmark_runner.py")
 SELECT_PATH = UNIFIED_PATH.with_name("select_unified_joint_checkpoint.py")
+DISTILL_PATH = UNIFIED_PATH.with_name("build_transformation_search_distillation_rows.py")
+SEARCH_POOL_PATH = UNIFIED_PATH.with_name("prepare_transformation_search_pool.py")
 
 
 def load_module(path: Path, name: str):
@@ -38,6 +40,8 @@ prepare = load_module(PREPARE_PATH, "prepare_unified_joint_rows_module")
 collect = load_module(COLLECT_PATH, "collect_unified_joint_v2_results_module")
 runner = load_module(RUNNER_PATH, "unified_joint_benchmark_runner_module")
 selector = load_module(SELECT_PATH, "select_unified_joint_checkpoint_module")
+distill = load_module(DISTILL_PATH, "build_transformation_search_distillation_rows_module")
+search_pool = load_module(SEARCH_POOL_PATH, "prepare_transformation_search_pool_module")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -87,6 +91,33 @@ def test_task_balanced_order_balances_modes_and_groups() -> None:
     }
 
 
+def test_transformation_layout_preserves_legacy_denovo_goal_tokens() -> None:
+    row = {
+        "condition_id": "denovo-1",
+        "task_mode": "de_novo",
+        "condition_properties": "MW,QED",
+        "property_count": "2",
+        "target_MW": "350",
+        "target_QED": "0.8",
+    }
+    store = unified.FeatureStore(None)
+    legacy = unified.condition_array_for_row(
+        row,
+        store,
+        32,
+        max_source_tokens=16,
+        condition_layout="direct_compat",
+    )
+    transformation = unified.condition_array_for_row(
+        row,
+        store,
+        32,
+        max_source_tokens=16,
+        condition_layout="transformation",
+    )
+    assert np.array_equal(legacy, transformation)
+
+
 def test_de_novo_distillation_masks_edit_rows() -> None:
     config = {
         "vocab_size": 7,
@@ -133,6 +164,62 @@ def test_de_novo_distillation_masks_edit_rows() -> None:
     assert float(loss.item()) < 1e-6
 
 
+def test_source_aware_decoder_preserves_de_novo_warmstart_and_reads_source() -> None:
+    base_config = {
+        "vocab_size": 11,
+        "condition_dim": 4,
+        "d_model": 8,
+        "num_layers": 1,
+        "num_heads": 2,
+        "dim_feedforward": 16,
+        "dropout": 0.0,
+        "pad_id": 0,
+        "max_length": 16,
+    }
+    base = unified.ConditionedSmilesDecoder(**base_config).eval()
+    source_aware = unified.ConditionedSmilesDecoder(
+        **base_config,
+        source_aware=True,
+        source_encoder_layers=1,
+    ).eval()
+    incompatible = source_aware.load_state_dict(base.state_dict(), strict=False)
+    assert not incompatible.unexpected_keys
+
+    denovo_condition = torch.tensor([[[0.25, 0.1, 0.0, 0.0], [1.0, 0.2, 1.0, 0.0]]])
+    condition_mask = torch.ones((1, 2), dtype=torch.bool)
+    decoder_ids = torch.tensor([[1, 4, 5]])
+    base_logits = base(denovo_condition, decoder_ids, condition_mask=condition_mask)
+    source_aware_logits = source_aware(denovo_condition, decoder_ids, condition_mask=condition_mask)
+    assert torch.allclose(base_logits, source_aware_logits, atol=1e-6)
+
+    edit_a = torch.tensor([[[0.25, 0.1, 0.0, 0.0], [2.0, 0.1, 1.0, 0.0]]])
+    edit_b = torch.tensor([[[0.25, 0.1, 0.0, 0.0], [2.0, 0.9, 0.0, 1.0]]])
+    edit_a_logits = source_aware(edit_a, decoder_ids, condition_mask=condition_mask)
+    edit_b_logits = source_aware(edit_b, decoder_ids, condition_mask=condition_mask)
+    assert not torch.allclose(edit_a_logits, edit_b_logits)
+
+
+def test_adaptive_distill_weight_is_a_bounded_dual_update() -> None:
+    increased = unified.update_adaptive_distill_weight(
+        0.3,
+        observed_kl=0.08,
+        target_kl=0.02,
+        dual_lr=0.5,
+        min_weight=0.0,
+        max_weight=1.0,
+    )
+    decreased = unified.update_adaptive_distill_weight(
+        increased,
+        observed_kl=0.0,
+        target_kl=0.02,
+        dual_lr=1.0,
+        min_weight=0.0,
+        max_weight=1.0,
+    )
+    assert increased > 0.3
+    assert 0.0 <= decreased < increased
+
+
 def test_prepare_rows_drops_train_eval_overlap() -> None:
     eval_row = {
         "sample_id": "eval-1",
@@ -157,6 +244,74 @@ def test_prepare_rows_drops_train_eval_overlap() -> None:
     kept, dropped = prepare.remove_train_eval_overlap(train_rows, [eval_row], policy="drop_train")
     assert [row["sample_id"] for row in kept] == ["train-clean"]
     assert len(dropped) == 1
+
+
+def test_search_distillation_keeps_only_authorized_feasible_edit(tmp_path: Path) -> None:
+    source_csv = tmp_path / "source.csv"
+    candidate_csv = tmp_path / "candidates.csv"
+    write_csv(
+        source_csv,
+        [
+            {
+                "condition_id": "edit-1",
+                "task_mode": "edit",
+                "source_smiles": "CC",
+                "target_smiles": "CCC",
+                "instruction_tasks": '[{"property":"QED","direction":"increase"}]',
+            }
+        ],
+    )
+    write_csv(
+        candidate_csv,
+        [
+            {
+                "condition_id": "edit-1",
+                "generated_smiles": "CCC",
+                "valid_smiles": "True",
+                "unified_property_success_fraction": "1.0",
+                "source_tanimoto": "0.70",
+                "unified_finalizer_score": "8.0",
+                "generation_rank": "2",
+            },
+            {
+                "condition_id": "edit-1",
+                "generated_smiles": "CCCC",
+                "valid_smiles": "True",
+                "unified_property_success_fraction": "1.0",
+                "source_tanimoto": "0.40",
+                "unified_finalizer_score": "9.0",
+                "generation_rank": "1",
+            },
+        ],
+    )
+    args = Namespace(
+        source_rows_csv=source_csv,
+        candidate_csv=candidate_csv,
+        output_csv=tmp_path / "distill.csv",
+        manifest_json=tmp_path / "manifest.json",
+        min_property_success=1.0,
+        min_edit_similarity=0.65,
+        winners_per_condition=1,
+        source_replay_ratio=0.0,
+        seed=73,
+    )
+    rows, manifest = distill.build_rows(args)
+    assert len(rows) == 1
+    assert rows[0]["target_smiles"] == "CCC"
+    assert rows[0]["distillation_origin"] == "verifier_search"
+    assert manifest["rejection_counts"] == {"similarity": 1}
+
+
+def test_transformation_search_pool_balances_de_novo_and_edit_groups() -> None:
+    denovo = {"task_mode": "de_novo", "property_count": "2", "target_smiles": "CC"}
+    edit = {
+        "task_mode": "edit",
+        "source_smiles": "CC",
+        "target_smiles": "CCC",
+        "instruction_tasks": '[{"property":"MW","direction":"increase"}]',
+    }
+    assert search_pool.group_key(denovo) == "de_novo:2p"
+    assert search_pool.group_key(edit) == "edit:MW:+1"
 
 
 def test_collector_reads_stage_metadata() -> None:

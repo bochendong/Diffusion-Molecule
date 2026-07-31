@@ -57,6 +57,7 @@ This folder is the experiment-line home for that unified-generator idea.
 | --- | --- |
 | [`phase1-denovo-direct-compat-v1.md`](phase1-denovo-direct-compat-v1.md) | De novo 2p7p **97%** / OOD **74%** 2p · **45%** 7p |
 | [`table1-edit-v1.md`](table1-edit-v1.md) | Direct Table1 RL **57%** / **81%** Acc@0.15; Unified gap documented |
+| [`umtp-v1.md`](umtp-v1.md) | Unified Molecular Transformation Policy v1: source-aware shared decoder, adaptive retention, and train-only search distillation |
 
 ## Current-code grounding
 

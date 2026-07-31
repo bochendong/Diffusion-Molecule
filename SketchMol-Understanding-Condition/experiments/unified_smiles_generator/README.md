@@ -5,6 +5,46 @@ line.  It intentionally avoids importing repo-internal training modules; the
 SMILES tokenizer, vocabulary, Transformer decoder, condition packer, training
 loop, sampler, and finalizer are copied into `unified_smiles_generator.py`.
 
+## Unified Molecular Transformation Policy v1
+
+UMTP v1 is the clean successor to the compatibility-based UJV2 path. It uses
+one `(goal, source_or_null) -> molecule` contract:
+
+- `--source-aware` separates source-marked condition tokens into a dedicated
+  molecular memory while retaining one shared decoder;
+- `--condition-layout transformation` keeps the proven de novo goal layout and
+  adds source memory only when a source molecule exists;
+- de novo rows contain no source memory and therefore bypass the edit residual;
+- `--distill-control adaptive` treats frozen-teacher retention as a KL
+  constraint with a dual variable instead of a fixed penalty;
+- verifier search is run only on a balanced train pool and is distilled back
+  into the same policy.
+
+One-seed cluster pipeline:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_umtp_v1_pipeline.sh
+```
+
+Full paper matrix:
+
+```bash
+UMTP_TRAIN_SEEDS=7,17,27 UMTP_EVAL_SEEDS=101,202,303 \
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_umtp_v1_pipeline.sh
+```
+
+Primary entrypoints:
+
+```text
+run_umtp_v1_train.sh
+run_umtp_v1_search_distill.sh
+run_umtp_v1_eval_one.sh
+submit_umtp_v1_pipeline.sh
+prepare_transformation_search_pool.py
+build_transformation_search_distillation_rows.py
+collect_umtp_v1_results.py
+```
+
 ## Unified Joint v2 fair protocol
 
 Joint v2 compares only Unified U0/U1/U2. Historical SketchMol, Direct,
