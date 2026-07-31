@@ -11,13 +11,15 @@ cd "$REPO_DIR"
 command -v sbatch >/dev/null 2>&1 || { echo "ERROR: sbatch not found" >&2; exit 2; }
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
-ACCOUNT="${UMTP_SLURM_ACCOUNT:-${SUCC_SLURM_ACCOUNT:-def-hup-ab_gpu}}"
+# Nibi requires the allocation name (not the legacy *_gpu association name).
+# Use the RAC allocation by default; select RAS with UMTP_SLURM_ACCOUNT=def-hup-ab.
+ACCOUNT="${UMTP_SLURM_ACCOUNT:-rrg-hup}"
 GPU="${UMTP_SLURM_GPUS:-h100:1}"
 MEM="${UMTP_SLURM_MEM:-64G}"
 CPUS="${UMTP_SLURM_CPUS:-8}"
 PARTITION="${UMTP_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
-TRAIN_TIME="${UMTP_TRAIN_SLURM_TIME:-48:00:00}"
-DISTILL_TIME="${UMTP_DISTILL_SLURM_TIME:-48:00:00}"
+TRAIN_TIME="${UMTP_TRAIN_SLURM_TIME:-24:00:00}"
+DISTILL_TIME="${UMTP_DISTILL_SLURM_TIME:-12:00:00}"
 EVAL_TIME="${UMTP_EVAL_SLURM_TIME:-24:00:00}"
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 POLICY_ROOT="${UMTP_OUTPUT_ROOT:-SketchMol-Understanding-Condition/outputs/unified_molecular_transformation_policy_v1}"
