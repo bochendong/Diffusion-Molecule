@@ -39,6 +39,16 @@ import build_external_graph_edit_agent_predictions as graph  # noqa: E402
 import unified_smiles_generator as unified  # noqa: E402
 
 
+try:
+    from rdkit import RDLogger
+
+    # Invalid local edits are an expected part of grammar enumeration and are
+    # filtered by the executor. Keep pilot logs focused on progress/metrics.
+    RDLogger.DisableLog("rdApp.*")
+except ImportError:
+    pass
+
+
 EDIT_TOKEN = "<EDIT>"
 OP_TOKENS = {
     "add_atom": "<ADD_ATOM>",
