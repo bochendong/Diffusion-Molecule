@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | seed-7 SFT/search distillation complete; formal eval queued; short RL pilot ready |
+| Status | seed-7 SFT/search distillation complete; formal eval queued; short RL pilot completed (`stop`) |
 | Scope | one goal-conditioned policy for de novo generation and source-conditioned editing |
 | Input contract | `(goal, source_or_null) -> target molecule` |
 | Primary checkpoint | `outputs/unified_molecular_transformation_policy_v1/seed_<seed>/policy/unified_smiles_generator.pt` |
@@ -109,6 +109,11 @@ The pilot is `go` only when Table1 raw `n=1` improves by at least 2 points at
 rows are not used for this decision. This is a diagnostic for the current
 source-aware checkpoint, not a claim that similarity-reward GRPO is a new
 method.
+
+Result: Nibi job `19073785` completed in **9m25s**. Table1-style raw
+`Acc@0.15` moved from **10.0% to 12.5%**, strict `Acc@0.65` remained **0**,
+and held-out de novo raw strict moved from **5.83% to 7.50%**. The automatic
+decision was **stop**; see [`umtp-v1-rl-pilot.md`](umtp-v1-rl-pilot.md).
 
 ## Success criteria
 

@@ -59,6 +59,7 @@ This folder is the experiment-line home for that unified-generator idea.
 | [`table1-edit-v1.md`](table1-edit-v1.md) | Direct Table1 RL **57%** / **81%** Acc@0.15; Unified gap documented |
 | [`umtp-v1.md`](umtp-v1.md) | Unified Molecular Transformation Policy v1: source-aware shared decoder, adaptive retention, and train-only search distillation |
 | [`umtp-v1.md#fast-source-aware-rl-go-no-go`](umtp-v1.md#fast-source-aware-rl-go-no-go) | One-MIG paired raw@1 RL pilot with an automatic retention-aware stop rule |
+| [`umtp-v1-rl-pilot.md`](umtp-v1-rl-pilot.md) | 9m25s source-aware GRPO pilot: no strict edit gain, no observed de novo forgetting, decision stop |
 
 ## Current-code grounding
 
