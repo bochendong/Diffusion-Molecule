@@ -1140,12 +1140,14 @@ class ConditionedSmilesDecoder(nn.Module):
         repetition_penalty: float = 1.0,
         no_repeat_ngram_size: int = 0,
         min_new_tokens: int = 0,
+        blocked_token_ids: Sequence[int] | None = None,
     ) -> torch.Tensor:
         batch = condition_tokens.shape[0]
         device = condition_tokens.device
         generated = torch.full((batch, 1), int(bos_id), dtype=torch.long, device=device)
         finished = torch.zeros(batch, dtype=torch.bool, device=device)
         blocked_ids = {int(bos_id), self.pad_id}
+        blocked_ids.update(int(value) for value in (blocked_token_ids or ()))
         for step in range(max(1, int(max_new_tokens))):
             logits = self(condition_tokens, generated, condition_mask=condition_mask)[:, -1, :]
             logits[:, list(blocked_ids)] = -torch.inf
@@ -1193,6 +1195,7 @@ class ConditionedSmilesDecoder(nn.Module):
         repetition_penalty: float = 1.0,
         no_repeat_ngram_size: int = 0,
         min_new_tokens: int = 0,
+        blocked_token_ids: Sequence[int] | None = None,
     ) -> torch.Tensor:
         if condition_tokens.shape[0] != 1:
             raise ValueError("beam_search expects one condition row at a time")
@@ -1201,6 +1204,7 @@ class ConditionedSmilesDecoder(nn.Module):
         expand_size = max(1, int(expand_size))
         beams: list[tuple[list[int], float, bool]] = [([int(bos_id)], 0.0, False)]
         blocked_ids = {int(bos_id), self.pad_id}
+        blocked_ids.update(int(value) for value in (blocked_token_ids or ()))
         for step in range(max(1, int(max_new_tokens))):
             active: list[tuple[list[int], float, bool]] = []
             finished: list[tuple[list[int], float, bool]] = []
@@ -2633,6 +2637,14 @@ def sample_candidates_for_row(
     batch_size = max(1, min(int(args.parallel_samples), int(args.max_parallel_sequences), total))
     seen: dict[str, Candidate] = {}
     decoding_mode = str(args.decoding_mode)
+    # Normal sampling represents a molecule as SMILES. Structured edit
+    # programs use their grammar-constrained ranking path, so appended action
+    # tokens must never leak into the de-novo SMILES contract.
+    action_token_ids = [
+        int(token_id)
+        for token, token_id in vocab.token_to_id.items()
+        if token.startswith("<") and token not in SPECIAL_TOKENS
+    ]
     if decoding_mode in {"sample", "sample_beam"}:
         for start in range(0, total, batch_size):
             current = min(batch_size, total - start)
@@ -2650,6 +2662,7 @@ def sample_candidates_for_row(
                 repetition_penalty=float(args.repetition_penalty),
                 no_repeat_ngram_size=int(args.no_repeat_ngram_size),
                 min_new_tokens=int(args.min_new_tokens),
+                blocked_token_ids=action_token_ids,
             )
             add_generated_sequences(
                 seen,
@@ -2674,6 +2687,7 @@ def sample_candidates_for_row(
             repetition_penalty=float(args.repetition_penalty),
             no_repeat_ngram_size=int(args.no_repeat_ngram_size),
             min_new_tokens=int(args.min_new_tokens),
+            blocked_token_ids=action_token_ids,
         )
         add_generated_sequences(
             seen,

@@ -115,6 +115,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     train.add_argument("--grad-clip", type=float, default=1.0)
     train.add_argument("--distill-weight", type=float, default=0.3)
     train.add_argument("--distill-temperature", type=float, default=1.0)
+    train.add_argument(
+        "--trainable-scope",
+        choices=("all", "source_action"),
+        default="source_action",
+        help="source_action freezes the legacy de-novo path and trains only source-conditioned/action parameters.",
+    )
     train.add_argument("--seed", type=int, default=7)
     train.add_argument("--device", default="auto")
 
@@ -582,6 +588,50 @@ def load_teacher(checkpoint: Mapping[str, object], device: torch.device) -> unif
     return teacher
 
 
+def configure_trainable_scope(
+    model: unified.ConditionedSmilesDecoder,
+    *,
+    scope: str,
+    old_vocab_size: int,
+) -> dict[str, object]:
+    if str(scope) == "all":
+        for parameter in model.parameters():
+            parameter.requires_grad_(True)
+        return {
+            "scope": "all",
+            "trainable_parameters": sum(parameter.numel() for parameter in model.parameters()),
+            "frozen_parameters": 0,
+        }
+    if str(scope) != "source_action":
+        raise ValueError(f"Unsupported trainable scope: {scope}")
+    safe_prefixes = (
+        "source_condition_proj.",
+        "source_encoder.",
+        "source_type",
+        "null_source",
+        "source_gate.",
+        "source_output.",
+    )
+    for name, parameter in model.named_parameters():
+        parameter.requires_grad_(name.startswith(safe_prefixes))
+
+    # Action embeddings are edit-only decoder inputs. Train just their appended
+    # rows while keeping every legacy SMILES embedding bit-identical.
+    model.token_embedding.weight.requires_grad_(True)
+    gradient_mask = torch.zeros_like(model.token_embedding.weight)
+    gradient_mask[int(old_vocab_size) :, :] = 1.0
+    model.token_embedding.weight.register_hook(lambda gradient: gradient * gradient_mask)
+
+    trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+    total = sum(parameter.numel() for parameter in model.parameters())
+    return {
+        "scope": "source_action",
+        "trainable_parameters": trainable,
+        "frozen_parameters": total - trainable,
+        "protected_legacy_vocab_rows": int(old_vocab_size),
+    }
+
+
 def train_command(args: argparse.Namespace) -> int:
     unified.seed_everything(int(args.seed))
     device = unified.resolve_device(str(args.device))
@@ -594,6 +644,11 @@ def train_command(args: argparse.Namespace) -> int:
         device=device,
     )
     teacher = load_teacher(checkpoint, device)
+    trainable_scope = configure_trainable_scope(
+        model,
+        scope=str(args.trainable_scope),
+        old_vocab_size=old_vocab_size,
+    )
     train_store = unified.FeatureStore(
         args.train_features_dir,
         array_name=str(args.condition_feature_array),
@@ -624,7 +679,14 @@ def train_command(args: argparse.Namespace) -> int:
     )
     if not train_dataset:
         raise ValueError("No policy training rows")
-    optimizer = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
+    trainable_parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
+    optimizer = torch.optim.AdamW(
+        trainable_parameters,
+        lr=float(args.lr),
+        # Decoupled decay would move protected embedding rows even with masked
+        # gradients, so the source-only contract uses no weight decay.
+        weight_decay=0.0 if str(args.trainable_scope) == "source_action" else float(args.weight_decay),
+    )
     history: list[dict[str, object]] = []
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for epoch in range(1, int(args.epochs) + 1):
@@ -693,6 +755,7 @@ def train_command(args: argparse.Namespace) -> int:
         "base_checkpoint": str(args.base_checkpoint),
         "old_vocab_size": old_vocab_size,
         "new_vocab_size": len(vocab.token_to_id),
+        "trainable_scope": trainable_scope,
         "train_rows": len(train_dataset),
         "eval_rows": len(eval_dataset),
         "train_mode_counts": unified.task_mode_counts(train_dataset),

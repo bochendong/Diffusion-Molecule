@@ -274,6 +274,60 @@ def test_graph_action_checkpoint_expansion_preserves_legacy_logits() -> None:
     )
 
 
+def test_source_action_scope_masks_legacy_embedding_gradients() -> None:
+    config = {
+        "vocab_size": 10,
+        "condition_dim": 4,
+        "d_model": 8,
+        "num_layers": 1,
+        "num_heads": 2,
+        "dim_feedforward": 16,
+        "dropout": 0.0,
+        "pad_id": 0,
+        "max_length": 16,
+        "source_aware": True,
+        "source_encoder_layers": 1,
+    }
+    model = unified.ConditionedSmilesDecoder(**config)
+    summary = graph_action.configure_trainable_scope(model, scope="source_action", old_vocab_size=7)
+    model.token_embedding.weight.sum().backward()
+    assert summary["scope"] == "source_action"
+    assert torch.count_nonzero(model.token_embedding.weight.grad[:7]) == 0
+    assert torch.count_nonzero(model.token_embedding.weight.grad[7:]) > 0
+    assert not model.output.weight.requires_grad
+    assert model.source_output.weight.requires_grad
+
+
+def test_generation_can_block_appended_action_tokens() -> None:
+    config = {
+        "vocab_size": 8,
+        "condition_dim": 4,
+        "d_model": 8,
+        "num_layers": 1,
+        "num_heads": 2,
+        "dim_feedforward": 16,
+        "dropout": 0.0,
+        "pad_id": 0,
+        "max_length": 16,
+    }
+    model = unified.ConditionedSmilesDecoder(**config).eval()
+    with torch.no_grad():
+        model.output.weight.zero_()
+        model.output.bias.zero_()
+        model.output.bias[7] = 100.0
+        model.output.bias[4] = 10.0
+    generated = model.generate(
+        torch.ones((1, 2, 4)),
+        bos_id=1,
+        eos_id=2,
+        max_new_tokens=1,
+        condition_mask=torch.ones((1, 2), dtype=torch.bool),
+        temperature=0.0,
+        blocked_token_ids=[7],
+    )
+    assert int(generated[0, 1]) == 4
+
+
 def test_source_aware_decoder_preserves_de_novo_warmstart_and_reads_source() -> None:
     base_config = {
         "vocab_size": 11,

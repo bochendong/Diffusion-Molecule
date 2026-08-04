@@ -96,6 +96,7 @@ echo "=== Train the same decoder on de novo SMILES plus edit programs ==="
   --samples-per-epoch "${UMTP_GRAPH_ACTION_SAMPLES_PER_EPOCH:-4096}" \
   --lr "${UMTP_GRAPH_ACTION_LR:-5e-5}" \
   --distill-weight "${UMTP_GRAPH_ACTION_DISTILL_WEIGHT:-0.3}" \
+  --trainable-scope "${UMTP_GRAPH_ACTION_TRAINABLE_SCOPE:-source_action}" \
   --seed "$SEED" \
   --device auto
 
