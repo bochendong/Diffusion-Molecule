@@ -466,6 +466,50 @@ def test_search_distillation_keeps_only_authorized_feasible_edit(tmp_path: Path)
     assert manifest["rejection_counts"] == {"similarity": 1}
 
 
+def test_table1_finalizer_uses_instruction_direction_not_absolute_targets(monkeypatch) -> None:
+    row = {
+        "task_mode": "edit",
+        "source_smiles": "source",
+        "condition_properties": "MW,RB",
+        "target_MW": "999",
+        "target_RB": "9",
+        "instruction_tasks": '[{"property":"RB","direction":"decrease"}]',
+    }
+    scores = {
+        ("source", "RB"): 4.0,
+        ("rb-improved", "RB"): 3.0,
+        ("target-distractor", "RB"): 5.0,
+    }
+    monkeypatch.setattr(unified, "safe_canonical_smiles", lambda smiles: str(smiles))
+    monkeypatch.setattr(unified, "score_property", lambda smiles, prop: scores.get((smiles, prop)))
+    monkeypatch.setattr(
+        unified,
+        "morgan_tanimoto",
+        lambda _source, candidate: 0.70 if candidate == "rb-improved" else 0.90,
+    )
+
+    improved = unified.candidate_metrics(row, "rb-improved", source_similarity_threshold=0.65)
+    distractor = unified.candidate_metrics(row, "target-distractor", source_similarity_threshold=0.65)
+
+    assert improved["table1_instruction_property_count"] == 1
+    assert improved["table1_instruction_evaluated_count"] == 1
+    assert improved["table1_instruction_success"] == "True"
+    assert improved["table1_strict_success"] == "True"
+    assert distractor["table1_instruction_success"] == "False"
+    assert float(improved["unified_finalizer_score"]) > float(distractor["unified_finalizer_score"])
+    assert runner.select_candidate_row([distractor, improved], selection_mode="finalizer") is improved
+
+
+def test_sa_scoring_is_not_a_constant_placeholder() -> None:
+    unified._PROPERTY_VALUE_CACHE.clear()
+    unified._TDC_ORACLE_CACHE.pop("SA", None)
+    easy = unified.score_property("CCO", "SA")
+    complex_ring = unified.score_property("C1CC2CCC1C2", "SA")
+    assert easy is not None
+    assert complex_ring is not None
+    assert easy != complex_ring
+
+
 def test_transformation_search_pool_balances_de_novo_and_edit_groups() -> None:
     denovo = {"task_mode": "de_novo", "property_count": "2", "target_smiles": "CC"}
     edit = {

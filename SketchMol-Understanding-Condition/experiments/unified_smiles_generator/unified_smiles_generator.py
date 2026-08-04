@@ -2754,6 +2754,8 @@ def rank_candidates(row: Mapping[str, str], candidates: list[Candidate], *, sour
         rescored,
         key=lambda item: (
             item.metrics.get("valid_smiles") == "True",
+            item.metrics.get("table1_strict_success") == "True",
+            item.metrics.get("table1_instruction_success") == "True",
             float(item.metrics.get("unified_property_success_fraction", 0.0)),
             item.metrics.get("source_similarity_success", "") == "True",
             float(item.metrics.get("source_tanimoto", -1.0) or -1.0),
@@ -2773,16 +2775,43 @@ def candidate_metrics(
     valid = bool(safe_canonical_smiles(smiles))
     source = str(row.get("source_smiles", "") or "").strip()
     similarity = morgan_tanimoto(source, smiles) if source and mode == EDIT_MODE else math.nan
-    property_fraction, property_distance = property_success_and_distance(row, smiles, mode=mode)
     source_success = bool(math.isfinite(similarity) and similarity >= source_similarity_threshold)
+    task_specs = instruction_task_specs(row) if mode == EDIT_MODE else []
+    instruction_metrics: dict[str, object] = {}
+    if task_specs:
+        property_fraction, property_distance, evaluated, all_success = instruction_success_and_distance(
+            row,
+            smiles,
+            task_specs=task_specs,
+        )
+        strict_success = bool(valid and all_success and source_success)
+        instruction_metrics = {
+            "table1_instruction_property_count": len(task_specs),
+            "table1_instruction_evaluated_count": evaluated,
+            "table1_instruction_success": "True" if all_success else "False",
+            "table1_strict_success": "True" if strict_success else "False",
+        }
+    else:
+        property_fraction, property_distance = property_success_and_distance(row, smiles, mode=mode)
+        all_success = False
+        strict_success = False
     score = 0.0
     score += 100.0 if valid else -100.0
     score += 50.0 * property_fraction
     score -= 5.0 * property_distance
     if mode == EDIT_MODE:
-        score += 25.0 if source_success else 0.0
+        if task_specs:
+            # Match the official MolEdit Table1 predicate: every requested
+            # property must improve strictly relative to the source, and the
+            # source-similarity gate must pass. Large lexicographic bonuses
+            # keep offline selection faithful when it sorts by this scalar.
+            score += 400.0 if strict_success else 0.0
+            score += 200.0 if all_success else 0.0
+            score += 100.0 if source_success else 0.0
+        else:
+            score += 25.0 if source_success else 0.0
         score += 10.0 * (similarity if math.isfinite(similarity) else 0.0)
-    return {
+    metrics = {
         "valid_smiles": "True" if valid else "False",
         "unified_finalizer_score": format_float(score),
         "unified_property_success_fraction": format_float(property_fraction),
@@ -2790,6 +2819,50 @@ def candidate_metrics(
         "source_tanimoto": "" if not math.isfinite(similarity) else format_float(similarity),
         "source_similarity_success": "True" if source_success else "False",
     }
+    metrics.update(instruction_metrics)
+    return metrics
+
+
+def instruction_success_and_distance(
+    row: Mapping[str, str],
+    smiles: str,
+    *,
+    task_specs: Sequence[tuple[str, int]] | None = None,
+) -> tuple[float, float, int, bool]:
+    """Score an edit with the exact source-relative MolEdit Table1 predicate."""
+    specs = list(task_specs if task_specs is not None else instruction_task_specs(row))
+    if not specs:
+        return 0.0, 0.0, 0, False
+    if not safe_canonical_smiles(smiles):
+        return 0.0, 1e6, 0, False
+    source = str(row.get("source_smiles", "") or "").strip()
+    if not safe_canonical_smiles(source):
+        return 0.0, 1e6, 0, False
+    successes = 0
+    evaluated = 0
+    distances: list[float] = []
+    for prop, direction in specs:
+        if not direction:
+            distances.append(1.0)
+            continue
+        source_value = score_property(source, prop)
+        predicted_value = score_property(smiles, prop)
+        if source_value is None or predicted_value is None:
+            distances.append(1.0)
+            continue
+        if not math.isfinite(float(source_value)) or not math.isfinite(float(predicted_value)):
+            distances.append(1.0)
+            continue
+        evaluated += 1
+        signed_delta = float(direction) * (float(predicted_value) - float(source_value))
+        normalizer = max(float(PROPERTY_NORMALIZERS.get(prop, 1.0)), 1e-8)
+        distances.append(max(0.0, -signed_delta) / normalizer)
+        if signed_delta > 0.0:
+            successes += 1
+    property_count = len(specs)
+    fraction = successes / max(property_count, 1)
+    all_success = evaluated == property_count and successes == property_count
+    return fraction, sum(distances) / max(property_count, 1), evaluated, all_success
 
 
 def property_success_and_distance(row: Mapping[str, str], smiles: str, *, mode: str) -> tuple[float, float]:
@@ -2859,6 +2932,30 @@ def tdc_oracle(prop: str):
     canonical_prop_name = canonical_prop(prop)
     if canonical_prop_name in _TDC_ORACLE_CACHE:
         return _TDC_ORACLE_CACHE[canonical_prop_name]
+    if canonical_prop_name == "SA":
+        try:
+            import importlib.util
+
+            from rdkit import Chem
+            from rdkit.Chem import RDConfig
+
+            scorer_path = Path(RDConfig.RDContribDir) / "SA_Score" / "sascorer.py"
+            spec = importlib.util.spec_from_file_location("unified_sascorer", scorer_path)
+            if not scorer_path.is_file() or spec is None or spec.loader is None:
+                raise FileNotFoundError(scorer_path)
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+
+            def score_sa(smiles: str) -> float:
+                mol = Chem.MolFromSmiles(smiles)
+                if mol is None:
+                    raise ValueError("invalid SMILES")
+                return float(module.calculateScore(mol))
+
+            _TDC_ORACLE_CACHE[canonical_prop_name] = score_sa
+        except Exception:
+            _TDC_ORACLE_CACHE[canonical_prop_name] = None
+        return _TDC_ORACLE_CACHE[canonical_prop_name]
     try:
         ensure_rdkit_six_compat()
         from tdc import Oracle
@@ -2899,7 +2996,6 @@ def molecular_properties(smiles: str) -> dict[str, float]:
         "HBD": float(rdMolDescriptors.CalcNumHBD(mol)),
         "HBA": float(rdMolDescriptors.CalcNumHBA(mol)),
         "RB": float(rdMolDescriptors.CalcNumRotatableBonds(mol)),
-        "SA": 0.0,
     }
 
 

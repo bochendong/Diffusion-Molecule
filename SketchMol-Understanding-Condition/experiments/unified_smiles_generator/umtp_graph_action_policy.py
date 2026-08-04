@@ -139,6 +139,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     rank.add_argument("--top-candidates", type=int, default=64)
     rank.add_argument("--score-batch-size", type=int, default=256)
     rank.add_argument("--source-similarity-threshold", type=float, default=0.65)
+    rank.add_argument(
+        "--compact-output",
+        action="store_true",
+        help="Write only candidate identity/ranking fields instead of duplicating every reference column.",
+    )
     rank.add_argument("--device", default="auto")
     return parser.parse_args(argv)
 
@@ -870,7 +875,14 @@ def rank_command(args: argparse.Namespace) -> int:
             default=math.nan,
         )
         for rank, ((action, smiles, program), score) in enumerate(top, start=1):
-            candidate_row: dict[str, object] = dict(row)
+            if bool(args.compact_output):
+                candidate_row = {
+                    key: row[key]
+                    for key in ("example_id", "condition_id", "sample_id", "pair_hash", "variant_id", "pair_id")
+                    if str(row.get(key, "") or "").strip()
+                }
+            else:
+                candidate_row = dict(row)
             candidate_row.update(
                 {
                     "generated_smiles": smiles,
