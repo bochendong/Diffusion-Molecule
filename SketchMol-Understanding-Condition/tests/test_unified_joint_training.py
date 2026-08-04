@@ -25,6 +25,7 @@ SELECT_PATH = UNIFIED_PATH.with_name("select_unified_joint_checkpoint.py")
 DISTILL_PATH = UNIFIED_PATH.with_name("build_transformation_search_distillation_rows.py")
 SEARCH_POOL_PATH = UNIFIED_PATH.with_name("prepare_transformation_search_pool.py")
 RL_PILOT_COLLECT_PATH = UNIFIED_PATH.with_name("collect_umtp_v1_rl_pilot.py")
+GRAPH_ACTION_PATH = UNIFIED_PATH.with_name("umtp_graph_action_policy.py")
 
 
 def load_module(path: Path, name: str):
@@ -44,6 +45,7 @@ selector = load_module(SELECT_PATH, "select_unified_joint_checkpoint_module")
 distill = load_module(DISTILL_PATH, "build_transformation_search_distillation_rows_module")
 search_pool = load_module(SEARCH_POOL_PATH, "prepare_transformation_search_pool_module")
 rl_pilot_collect = load_module(RL_PILOT_COLLECT_PATH, "collect_umtp_v1_rl_pilot_module")
+graph_action = load_module(GRAPH_ACTION_PATH, "umtp_graph_action_policy_module")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -164,6 +166,112 @@ def test_de_novo_distillation_masks_edit_rows() -> None:
     )
     assert token_count == 2
     assert float(loss.item()) < 1e-6
+
+
+def test_de_novo_distillation_supports_appended_action_vocabulary() -> None:
+    teacher_config = {
+        "vocab_size": 7,
+        "condition_dim": 4,
+        "d_model": 8,
+        "num_layers": 1,
+        "num_heads": 2,
+        "dim_feedforward": 16,
+        "dropout": 0.0,
+        "pad_id": 0,
+        "max_length": 16,
+    }
+    teacher = unified.ConditionedSmilesDecoder(**teacher_config)
+    student = unified.ConditionedSmilesDecoder(**{**teacher_config, "vocab_size": 10})
+    rows = [
+        {
+            "condition": np.ones((2, 4), dtype=np.float32),
+            "decoder_input_ids": np.asarray([1, 4], dtype=np.int64),
+            "target_ids": np.asarray([4, 2], dtype=np.int64),
+            "task_mode": "de_novo",
+        },
+        {
+            "condition": np.ones((2, 4), dtype=np.float32),
+            "decoder_input_ids": np.asarray([1, 8], dtype=np.int64),
+            "target_ids": np.asarray([8, 2], dtype=np.int64),
+            "task_mode": "edit",
+        },
+    ]
+    batch = unified.collate_batch(rows, pad_id=0)
+    logits = student(
+        batch["condition"],
+        batch["decoder_input_ids"],
+        condition_mask=batch["condition_mask"],
+    )
+    loss, token_count = unified.de_novo_distillation_loss(
+        logits,
+        teacher,
+        batch,
+        pad_id=0,
+        temperature=1.0,
+    )
+    assert token_count == 2
+    assert torch.isfinite(loss)
+
+
+def test_graph_action_program_round_trip_and_oracle_projection() -> None:
+    row = {
+        "condition_id": "edit-cc-ccc",
+        "source_smiles": "CC",
+        "target_smiles": "CCC",
+        "instruction_tasks": '[{"property":"MW","direction":"increase"}]',
+    }
+    action = graph_action.graph.GraphEditAction("add_fragment", site=0, fragment="C")
+    assert graph_action.action_program_tokens(action) == [
+        "<EDIT>",
+        "<ADD_FRAGMENT>",
+        "<SITE_000>",
+        "<FRAG_METHYL>",
+    ]
+    assert graph_action.graph.execute_graph_edit_action("CC", action) == "CCC"
+
+    rows, manifest = graph_action.prepare_action_rows([row], site_limit=8, max_actions_per_row=128)
+    assert len(rows) == 1
+    assert rows[0]["policy_target_exact"] == "True"
+    assert manifest["exact_reconstruction_rate"] == 1.0
+
+
+def test_graph_action_checkpoint_expansion_preserves_legacy_logits() -> None:
+    vocab = unified.SmilesVocabulary()
+    vocab.update([["C", "O"]])
+    config = {
+        "vocab_size": len(vocab.token_to_id),
+        "condition_dim": 4,
+        "d_model": 8,
+        "num_layers": 1,
+        "num_heads": 2,
+        "dim_feedforward": 16,
+        "dropout": 0.0,
+        "pad_id": vocab.pad_id,
+        "max_length": 16,
+    }
+    base = unified.ConditionedSmilesDecoder(**config).eval()
+    checkpoint = {
+        "vocab": vocab.to_dict(),
+        "model_config": config,
+        "model_state": base.state_dict(),
+    }
+    expanded, expanded_vocab, expanded_config, old_vocab_size = graph_action.expand_checkpoint_model(
+        checkpoint,
+        max_site_index=8,
+        device=torch.device("cpu"),
+    )
+    expanded.eval()
+    condition = torch.ones((1, 2, 4))
+    mask = torch.ones((1, 2), dtype=torch.bool)
+    decoder_ids = torch.tensor([[vocab.bos_id, vocab.token_to_id["C"]]])
+    assert old_vocab_size == len(vocab.token_to_id)
+    assert expanded_config["vocab_size"] == len(expanded_vocab.token_to_id)
+    assert len(expanded_vocab.token_to_id) > old_vocab_size
+    assert torch.allclose(
+        base(condition, decoder_ids, condition_mask=mask),
+        expanded(condition, decoder_ids, condition_mask=mask)[..., :old_vocab_size],
+        atol=1e-6,
+    )
 
 
 def test_source_aware_decoder_preserves_de_novo_warmstart_and_reads_source() -> None:

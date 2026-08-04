@@ -1789,17 +1789,33 @@ def de_novo_distillation_loss(
     temperature: float,
 ) -> tuple[torch.Tensor, int]:
     temp = max(float(temperature), 1e-6)
+    denovo_rows = batch["task_is_denovo"].bool()
+    if not bool(denovo_rows.any()):
+        return student_logits.new_zeros(()), 0
     with torch.no_grad():
         teacher_logits = teacher_model(
-            batch["condition"],
-            batch["decoder_input_ids"],
-            condition_mask=batch["condition_mask"],
+            batch["condition"][denovo_rows],
+            batch["decoder_input_ids"][denovo_rows],
+            condition_mask=batch["condition_mask"][denovo_rows],
         )
-    token_mask = batch["target_ids"].ne(int(pad_id)) & batch["task_is_denovo"].bool().unsqueeze(1)
+    student_logits = student_logits[denovo_rows]
+    target_ids = batch["target_ids"][denovo_rows]
+    token_mask = target_ids.ne(int(pad_id))
     token_count = int(token_mask.sum().item())
     if token_count == 0:
         return student_logits.new_zeros(()), 0
-    student_log_probs = F.log_softmax(student_logits / temp, dim=-1)
+    # A structured-action policy may append edit-only tokens to the student's
+    # vocabulary while retaining the legacy de-novo teacher.  Existing token
+    # ids stay prefix-compatible, so compare the teacher against that prefix.
+    # The log-softmax is intentionally computed over the *full* student vocab:
+    # probability leaked into edit-only tokens is therefore still penalized.
+    teacher_vocab_size = int(teacher_logits.shape[-1])
+    if int(student_logits.shape[-1]) < teacher_vocab_size:
+        raise ValueError(
+            "Student vocabulary is smaller than the protected de-novo teacher vocabulary: "
+            f"{student_logits.shape[-1]} < {teacher_vocab_size}"
+        )
+    student_log_probs = F.log_softmax(student_logits / temp, dim=-1)[..., :teacher_vocab_size]
     teacher_probs = F.softmax(teacher_logits / temp, dim=-1)
     token_kl = F.kl_div(student_log_probs, teacher_probs, reduction="none").sum(dim=-1) * (temp * temp)
     return token_kl.masked_select(token_mask).mean(), token_count
