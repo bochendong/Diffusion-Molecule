@@ -59,27 +59,38 @@ RETENTION_POOL="$PILOT_ROOT/data/retention_pool.csv"
 ACTION_TRAIN="$PILOT_ROOT/data/action_train.csv"
 ACTION_VALIDATION="$PILOT_ROOT/data/action_validation.csv"
 ACTION_ORACLE="$PILOT_ROOT/data/action_train.manifest.json"
+REUSE_DATA_ROOT="${UMTP_GRAPH_ACTION_REUSE_DATA_ROOT:-}"
 
-prepare_pool "$JOINT_TRAIN" "$TRAIN_POOL" "${UMTP_GRAPH_ACTION_TRAIN_ROWS_PER_GROUP:-48}" 1201
-prepare_pool "$JOINT_VALIDATION" "$VALIDATION_POOL" "${UMTP_GRAPH_ACTION_VALIDATION_ROWS_PER_GROUP:-8}" 1203
-prepare_pool "$JOINT_VALIDATION" "$TABLE1_POOL" "${UMTP_GRAPH_ACTION_TABLE1_ROWS_PER_GROUP:-20}" 1205 edit
-prepare_pool "$JOINT_VALIDATION" "$RETENTION_POOL" "${UMTP_GRAPH_ACTION_RETENTION_ROWS_PER_GROUP:-20}" 1207 de_novo
+if [[ -n "$REUSE_DATA_ROOT" ]]; then
+  echo "=== Reuse audited GraphEditDSL pools and oracle labels ==="
+  for filename in \
+    train_pool.csv validation_pool.csv table1_pool.csv retention_pool.csv \
+    action_train.csv action_validation.csv action_train.manifest.json action_validation.manifest.json; do
+    [[ -f "$REUSE_DATA_ROOT/$filename" ]] || { echo "ERROR: missing reusable data: $REUSE_DATA_ROOT/$filename" >&2; exit 2; }
+    cp "$REUSE_DATA_ROOT/$filename" "$PILOT_ROOT/data/$filename"
+  done
+else
+  prepare_pool "$JOINT_TRAIN" "$TRAIN_POOL" "${UMTP_GRAPH_ACTION_TRAIN_ROWS_PER_GROUP:-48}" 1201
+  prepare_pool "$JOINT_VALIDATION" "$VALIDATION_POOL" "${UMTP_GRAPH_ACTION_VALIDATION_ROWS_PER_GROUP:-8}" 1203
+  prepare_pool "$JOINT_VALIDATION" "$TABLE1_POOL" "${UMTP_GRAPH_ACTION_TABLE1_ROWS_PER_GROUP:-20}" 1205 edit
+  prepare_pool "$JOINT_VALIDATION" "$RETENTION_POOL" "${UMTP_GRAPH_ACTION_RETENTION_ROWS_PER_GROUP:-20}" 1207 de_novo
 
-echo "=== Project paired edits into executable GraphEditDSL labels ==="
-"$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" prepare \
-  --input-csv "$TRAIN_POOL" \
-  --output-csv "$ACTION_TRAIN" \
-  --manifest-json "$ACTION_ORACLE" \
-  --site-limit "${UMTP_GRAPH_ACTION_SITE_LIMIT:-32}" \
-  --max-actions-per-row "${UMTP_GRAPH_ACTION_MAX_ACTIONS:-512}" \
-  --seed "$SEED"
-"$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" prepare \
-  --input-csv "$VALIDATION_POOL" \
-  --output-csv "$ACTION_VALIDATION" \
-  --manifest-json "$PILOT_ROOT/data/action_validation.manifest.json" \
-  --site-limit "${UMTP_GRAPH_ACTION_SITE_LIMIT:-32}" \
-  --max-actions-per-row "${UMTP_GRAPH_ACTION_MAX_ACTIONS:-512}" \
-  --seed "$((SEED + 1))"
+  echo "=== Project paired edits into executable GraphEditDSL labels ==="
+  "$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" prepare \
+    --input-csv "$TRAIN_POOL" \
+    --output-csv "$ACTION_TRAIN" \
+    --manifest-json "$ACTION_ORACLE" \
+    --site-limit "${UMTP_GRAPH_ACTION_SITE_LIMIT:-32}" \
+    --max-actions-per-row "${UMTP_GRAPH_ACTION_MAX_ACTIONS:-512}" \
+    --seed "$SEED"
+  "$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" prepare \
+    --input-csv "$VALIDATION_POOL" \
+    --output-csv "$ACTION_VALIDATION" \
+    --manifest-json "$PILOT_ROOT/data/action_validation.manifest.json" \
+    --site-limit "${UMTP_GRAPH_ACTION_SITE_LIMIT:-32}" \
+    --max-actions-per-row "${UMTP_GRAPH_ACTION_MAX_ACTIONS:-512}" \
+    --seed "$((SEED + 1))"
+fi
 
 echo "=== Train the same decoder on de novo SMILES plus edit programs ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" train \
