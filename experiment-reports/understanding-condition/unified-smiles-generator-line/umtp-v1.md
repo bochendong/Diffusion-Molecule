@@ -2,7 +2,7 @@
 
 | Field | Value |
 | --- | --- |
-| Status | implementation ready; cluster run pending |
+| Status | seed-7 SFT/search distillation complete; formal eval queued; short RL pilot ready |
 | Scope | one goal-conditioned policy for de novo generation and source-conditioned editing |
 | Input contract | `(goal, source_or_null) -> target molecule` |
 | Primary checkpoint | `outputs/unified_molecular_transformation_policy_v1/seed_<seed>/policy/unified_smiles_generator.pt` |
@@ -80,6 +80,35 @@ source-aware joint SFT
 
 Candidate budgets `1,20,128,256` share one maximum candidate pool. `raw` and
 `finalizer` are derived from identical prefixes.
+
+## Fast source-aware RL go/no-go
+
+The short RL pilot is deliberately smaller than a paper run. It answers one
+question before more H100 time is committed: can the current UMTP checkpoint
+improve strict source-conditioned editing at raw `n=1` without losing held-out
+de novo generation?
+
+```bash
+git pull --ff-only
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_umtp_v1_rl_pilot.sh
+```
+
+One 20 GB H100 MIG runs a paired protocol in a single job:
+
+```text
+fixed stratified edit/de novo validation subsets + fixed eval seed
+  -> baseline raw/finalizer n=1,8
+  -> 1 epoch GRPO on 24 rows per train group, 8 rollouts per prompt
+  -> post-RL raw/finalizer n=1,8 on the identical candidate protocol
+  -> automatic go/stop report with checkpoint hashes
+```
+
+The pilot is `go` only when Table1 raw `n=1` improves by at least 2 points at
+`Acc_all(0.65)` or 5 points at `Acc_all(0.15)`, while held-out de novo raw
+`n=1` strict success drops by no more than 2 points. Formal Table1/OOD test
+rows are not used for this decision. This is a diagnostic for the current
+source-aware checkpoint, not a claim that similarity-reward GRPO is a new
+method.
 
 ## Success criteria
 

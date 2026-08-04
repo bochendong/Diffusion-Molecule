@@ -27,6 +27,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--manifest-json", required=True, type=Path)
     parser.add_argument("--rows-per-group", type=int, default=100)
     parser.add_argument("--seed", type=int, default=71)
+    parser.add_argument(
+        "--task-mode",
+        choices=("all", core.DE_NOVO_MODE, core.EDIT_MODE),
+        default="all",
+        help="Optionally keep only de novo or edit groups before balanced sampling.",
+    )
     return parser.parse_args(argv)
 
 
@@ -60,6 +66,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in read_rows(args.input_csv):
+        if str(args.task_mode) != "all" and core.task_mode_for_row(row) != str(args.task_mode):
+            continue
         grouped[group_key(row)].append(row)
     rng = random.Random(int(args.seed))
     selected = []
@@ -80,6 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "output_csv": str(args.output_csv),
         "rows_per_group": int(args.rows_per_group),
         "seed": int(args.seed),
+        "task_mode": str(args.task_mode),
         "group_counts": counts,
         "output_rows": len(selected),
     }

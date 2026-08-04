@@ -24,6 +24,7 @@ RUNNER_PATH = UNIFIED_PATH.with_name("unified_benchmark_runner.py")
 SELECT_PATH = UNIFIED_PATH.with_name("select_unified_joint_checkpoint.py")
 DISTILL_PATH = UNIFIED_PATH.with_name("build_transformation_search_distillation_rows.py")
 SEARCH_POOL_PATH = UNIFIED_PATH.with_name("prepare_transformation_search_pool.py")
+RL_PILOT_COLLECT_PATH = UNIFIED_PATH.with_name("collect_umtp_v1_rl_pilot.py")
 
 
 def load_module(path: Path, name: str):
@@ -42,6 +43,7 @@ runner = load_module(RUNNER_PATH, "unified_joint_benchmark_runner_module")
 selector = load_module(SELECT_PATH, "select_unified_joint_checkpoint_module")
 distill = load_module(DISTILL_PATH, "build_transformation_search_distillation_rows_module")
 search_pool = load_module(SEARCH_POOL_PATH, "prepare_transformation_search_pool_module")
+rl_pilot_collect = load_module(RL_PILOT_COLLECT_PATH, "collect_umtp_v1_rl_pilot_module")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -312,6 +314,74 @@ def test_transformation_search_pool_balances_de_novo_and_edit_groups() -> None:
     }
     assert search_pool.group_key(denovo) == "de_novo:2p"
     assert search_pool.group_key(edit) == "edit:MW:+1"
+
+
+def test_transformation_search_pool_can_select_validation_mode(tmp_path: Path) -> None:
+    input_csv = tmp_path / "validation.csv"
+    output_csv = tmp_path / "edit.csv"
+    manifest_json = tmp_path / "edit.manifest.json"
+    write_csv(
+        input_csv,
+        [
+            {"condition_id": "d1", "task_mode": "de_novo", "property_count": "2", "target_smiles": "CC"},
+            {
+                "condition_id": "e1",
+                "task_mode": "edit",
+                "source_smiles": "CC",
+                "target_smiles": "CCC",
+                "instruction_tasks": '[{"property":"MW","direction":"increase"}]',
+            },
+        ],
+    )
+    search_pool.main(
+        [
+            "--input-csv",
+            str(input_csv),
+            "--output-csv",
+            str(output_csv),
+            "--manifest-json",
+            str(manifest_json),
+            "--rows-per-group",
+            "1",
+            "--task-mode",
+            "edit",
+        ]
+    )
+    rows = list(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    assert [row["condition_id"] for row in rows] == ["e1"]
+
+
+def test_rl_pilot_decision_requires_edit_gain_and_ood_retention() -> None:
+    records = []
+    for variant, relaxed, strict, retention in (
+        ("baseline", 0.10, 0.00, 0.40),
+        ("rl", 0.16, 0.02, 0.39),
+    ):
+        for budget in (1, 8):
+            for selection in ("raw", "finalizer"):
+                records.append(
+                    {
+                        "variant": variant,
+                        "task": "table1",
+                        "budget": budget,
+                        "selection": selection,
+                        "acc_all_0_65": strict,
+                        "acc_all_0_15": relaxed,
+                    }
+                )
+                records.append(
+                    {
+                        "variant": variant,
+                        "task": "retention",
+                        "budget": budget,
+                        "selection": selection,
+                        "strict_success_rate": retention,
+                    }
+                )
+    decision = rl_pilot_collect.pilot_decision(records)
+    assert decision["decision"] == "go"
+    assert decision["edit_gain"] is True
+    assert decision["retention_ok"] is True
 
 
 def test_collector_reads_stage_metadata() -> None:
