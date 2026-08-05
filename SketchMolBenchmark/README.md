@@ -178,12 +178,39 @@ SKETCHMOL_MOLSCRIBE_WORKDIR="Research/Molecule Generation/SketchMol/SketchMol-v1
 SKETCHMOL_ONMT_OVERLAY=/scratch/bdong/python_overlays/onmt220 \
 SKETCHMOL_CKPT=/scratch/bdong/checkpoints/sketchmol/model_weights.ckpt \
 SKETCHMOL_MOLSCRIBE_MODEL=/scratch/bdong/checkpoints/molscribe/swin_base_char_aux_200k.pth \
+SKETCHMOL_PRESET_STR="MW:400" \
+SKETCHMOL_CONDITIONAL_COUNT=40 \
+SKETCHMOL_SCALE=1.2 \
+SKETCHMOL_SCALE_PRO=6.3 \
+SKETCHMOL_TRI=false \
+bash SketchMolBenchmark/scripts/submit_real_sketchmol_ocr.sh
+```
+
 Legacy paper-repro wrapper (archived):
 
 ```bash
 bash SketchMolBenchmark/scripts/archive/legacy/submit_paper_repro.sh
 ```
+
+### De novo 2p-7p @40 on H100 MIGs
+
+The full benchmark uses 600 shards (10 conditions per shard) and preserves a
+total budget of 40 candidates per condition. To avoid waiting for full H100s,
+the sampler supports equivalent diffusion micro-batches: 20 GB MIG jobs use
+`5 x 8`, while 40 GB MIG jobs use `20 x 2`. Completed shards and existing
+40-image condition outputs are reused.
+
+```bash
+cd /scratch/bdong/projects/Diffusion-Molecule
+bash SketchMolBenchmark/scripts/submit_denovo_2p7p_sketchmol_mig_resume.sh
 ```
+
+The default resume point is shard 271 because shards 0-270 are already
+complete in `SketchMolBenchmark/outputs/sketchmol_denovo_2p7p_at40_v1`.
+Override `SKETCHMOL_DENOVO_START_SHARD`, `SKETCHMOL_DENOVO_MIG_SPLIT_SHARD`,
+and `SKETCHMOL_DENOVO_END_SHARD` after auditing the output directory. The final
+CPU evaluator depends on both MIG arrays and sends begin/end/fail mail to
+`dongbochen1218@gmail.com` by default.
 
 The `/home/bdong/.venvs/molscribe_overlay` interpreter reuses the `phystabmol` torch
 stack and adds module-backed OpenCV/RDKit paths. OCR scripts also prepend the

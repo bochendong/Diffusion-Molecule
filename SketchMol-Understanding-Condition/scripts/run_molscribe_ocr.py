@@ -41,7 +41,7 @@ def _prepend_sys_path_ordered(entries: list[Path]) -> None:
 
 
 def _ensure_vendored_molscribe_path() -> Path | None:
-    """Prefer SketchMol evaluate/molscribe and the onmt220 overlay over pip copies."""
+    """Configure sys.path for the selected MolScribe implementation."""
 
     path_entries: list[Path] = []
     onmt_overlay = os.environ.get("SUCC_ONMT_OVERLAY") or os.environ.get(
@@ -51,6 +51,20 @@ def _ensure_vendored_molscribe_path() -> Path | None:
         overlay_dir = Path(onmt_overlay)
         if overlay_dir.is_dir():
             path_entries.append(overlay_dir)
+
+    prefer_pip = os.environ.get("SUCC_PREFER_PIP_MOLSCRIBE", "0").strip() in {
+        "1",
+        "true",
+        "TRUE",
+        "yes",
+    }
+    pip_overlay = Path(
+        os.environ.get("SUCC_MOLSCRIBE_PIP_OVERLAY", "/scratch/bdong/python_overlays/molscribe111")
+    )
+    if prefer_pip and (pip_overlay / "molscribe").is_dir():
+        path_entries.append(pip_overlay)
+        _prepend_sys_path_ordered(path_entries)
+        return None
 
     candidates = [
         os.environ.get("SUCC_MOLSCRIBE_WORKDIR"),
@@ -132,6 +146,10 @@ def main() -> None:
 
     if evaluate_dir is not None:
         print(f"Using SketchMol MolScribe from {evaluate_dir}", flush=True)
+    else:
+        import molscribe as _molscribe_mod
+
+        print(f"Using pip MolScribe from {_molscribe_mod.__file__}", flush=True)
     if args.device != "cpu" and not torch.cuda.is_available():
         print("WARNING: CUDA unavailable; MolScribe OCR requires GPU for reliable decoding.", flush=True)
 
@@ -260,19 +278,14 @@ def _predict(
     preprocess_images: bool = True,
     raw_smiles_fallback: bool = False,
 ) -> tuple[list[str], list[float | None], list[dict[str, object]]]:
-    if _looks_like_vendored_molscribe(model):
-        return _predict_vendored(
-            model,
-            paths,
-            batch_size=batch_size,
-            preprocess_images=preprocess_images,
-            raw_smiles_fallback=raw_smiles_fallback,
-        )
-
+    outputs = None
     try:
         outputs = model.predict_image_files(paths, return_atoms_bonds=False, return_confidence=True)
     except TypeError:
-        outputs = None
+        try:
+            outputs = model.predict_image_files(paths)
+        except TypeError:
+            outputs = None
 
     if outputs is not None:
         if isinstance(outputs, tuple):
@@ -284,23 +297,27 @@ def _predict(
         return smiles, scores, _empty_diagnostics(len(smiles), source="predict_image_files_dict")
 
     if hasattr(model, "predict_images_from_csv"):
-        result = model.predict_images_from_csv(paths, batch_size=batch_size)
+        result = model.predict_images_from_csv(paths, batch_size)
         if isinstance(result, tuple) and len(result) >= 3:
             smiles = [_clean_smiles(value) for value in result[0]]
-            return smiles, [float(score) for score in result[2]], _empty_diagnostics(
-                len(smiles),
-                source="predict_images_from_csv",
-            )
+            scores = [float(score) for score in result[2]]
+            smiles, _broken, _low = _postprocess_smiles_sketchmol(smiles, scores)
+            return smiles, scores, _empty_diagnostics(len(smiles), source="predict_images_from_csv")
         if isinstance(result, tuple):
             smiles = [_clean_smiles(value) for value in result[0]]
             return smiles, [None] * len(smiles), _empty_diagnostics(len(smiles), source="predict_images_from_csv")
 
-    result = model.predict_image_files(paths)
-    if isinstance(result, tuple):
-        smiles = [_clean_smiles(value) for value in result[0]]
-        return smiles, [None] * len(smiles), _empty_diagnostics(len(smiles), source="predict_image_files_plain")
-    smiles = [_clean_smiles(str(item)) for item in result]
-    return smiles, [None] * len(smiles), _empty_diagnostics(len(smiles), source="predict_image_files_plain")
+    if _looks_like_vendored_molscribe(model):
+        return _predict_vendored(
+            model,
+            paths,
+            batch_size=batch_size,
+            preprocess_images=preprocess_images,
+            raw_smiles_fallback=raw_smiles_fallback,
+        )
+
+    smiles = ["" for _ in paths]
+    return smiles, [None] * len(smiles), _empty_diagnostics(len(smiles), source="empty")
 
 
 def _looks_like_vendored_molscribe(model: Any) -> bool:
