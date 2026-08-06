@@ -8,6 +8,21 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$PROJECT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
 
+# The benchmark evaluator canonicalizes and scores SMILES with RDKit. Compute
+# jobs do not inherit the interactive module environment, so initialize the
+# same cluster RDKit module used by the shard runner.
+SKETCHMOL_BENCHMARK_MODULES="${SKETCHMOL_BENCHMARK_MODULES:-gcc rdkit/2024.09.6}"
+if ! command -v module >/dev/null 2>&1; then
+  if [[ -f /cvmfs/soft.computecanada.ca/config/profile/bash.sh ]]; then
+    # shellcheck source=/dev/null
+    source /cvmfs/soft.computecanada.ca/config/profile/bash.sh
+  fi
+fi
+if command -v module >/dev/null 2>&1; then
+  # shellcheck disable=SC2086
+  module load $SKETCHMOL_BENCHMARK_MODULES
+fi
+
 PYTHON_BIN="${SKETCHMOL_BENCHMARK_PYTHON_BIN:-/scratch/bdong/venvs/phystabmol/bin/python}"
 EVAL_CSV="${SKETCHMOL_DENOVO_EVAL_CSV:-SketchMol-Understanding-Condition/outputs/direct_smiles_denovo_2p7p_v2_mixed_condition/denovo_2p7p_eval_rows.csv}"
 OUTPUT_DIR="${SKETCHMOL_DENOVO_OUTPUT_DIR:-SketchMolBenchmark/outputs/sketchmol_denovo_2p7p_at40_v1}"
@@ -18,6 +33,7 @@ SHARDS_DIR="$OUTPUT_DIR/shards"
 
 export PYTHONPATH="$REPO_ROOT/SketchMol-Understanding-Condition${PYTHONPATH:+:$PYTHONPATH}"
 
+echo "Benchmark modules: $SKETCHMOL_BENCHMARK_MODULES"
 echo "Joining SketchMol shard candidates..."
 "$PYTHON_BIN" "$SCRIPT_DIR/join_denovo_2p7p_sketchmol_candidates.py" \
   --eval-csv "$EVAL_CSV" \
