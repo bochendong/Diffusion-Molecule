@@ -28,7 +28,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-csv", required=True, type=Path)
     parser.add_argument("--candidate-summary", required=True, type=Path)
     parser.add_argument("--output-prefix", required=True, type=Path)
-    parser.add_argument("--budgets", default="1,8,64,256")
+    parser.add_argument("--budgets", default="1,8,20,64,256")
     return parser.parse_args(argv)
 
 

@@ -168,6 +168,20 @@ SUCC_UNIFIED_RL_REWARD_SOURCE_SIMILARITY_WEIGHT
 SUCC_UNIFIED_RL_REWARD_SOURCE_COPY_PENALTY
 ```
 
+## Protected GraphEditDSL paper-budget reconciliation
+
+The protected common-decoder action policy writes one maximum candidate pool.
+Reuse that immutable pool for the paper-facing `n=20` result without requesting
+another GPU or rerunning candidate generation:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_umtp_graph_action_budget_reconcile.sh
+```
+
+The default prefix budgets are `1,8,20,64,256`. The reconciliation job is CPU
+only, requires the existing candidate CSV and summary, and fails instead of
+silently regenerating them when either artifact is missing.
+
 The default `auto` reward mode routes each row by `task_mode`, so mixed
 de novo/edit batches are valid.
 
