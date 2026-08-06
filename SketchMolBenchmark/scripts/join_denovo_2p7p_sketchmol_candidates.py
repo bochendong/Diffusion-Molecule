@@ -14,8 +14,10 @@ from typing import Mapping, Sequence
 BENCH_ROOT = Path(__file__).resolve().parents[1]
 REPO_ROOT = BENCH_ROOT.parent
 PROJECT_DIR = REPO_ROOT / "SketchMol-Understanding-Condition"
-if str(PROJECT_DIR) not in sys.path:
-    sys.path.insert(0, str(PROJECT_DIR))
+PROJECT_SCRIPTS_DIR = PROJECT_DIR / "scripts"
+for import_dir in (PROJECT_SCRIPTS_DIR, PROJECT_DIR):
+    if str(import_dir) not in sys.path:
+        sys.path.insert(0, str(import_dir))
 
 from train_direct_smiles_generator import select_generated_candidate  # noqa: E402
 
