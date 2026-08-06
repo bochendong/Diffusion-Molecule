@@ -4,6 +4,14 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Slurm copies a directly submitted batch script into its spool directory.
+# Recover the repository script directory from the submission directory in
+# that case so sibling Python entrypoints remain discoverable.
+if [[ ! -f "$SCRIPT_DIR/join_denovo_2p7p_sketchmol_candidates.py" \
+  && -n "${SLURM_SUBMIT_DIR:-}" \
+  && -f "$SLURM_SUBMIT_DIR/SketchMolBenchmark/scripts/join_denovo_2p7p_sketchmol_candidates.py" ]]; then
+  SCRIPT_DIR="$SLURM_SUBMIT_DIR/SketchMolBenchmark/scripts"
+fi
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$PROJECT_DIR/.." && pwd)"
 cd "$REPO_ROOT"
