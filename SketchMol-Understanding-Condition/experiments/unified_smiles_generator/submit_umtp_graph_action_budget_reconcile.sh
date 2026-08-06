@@ -11,7 +11,7 @@ cd "$REPO_DIR"
 command -v sbatch >/dev/null 2>&1 || { echo "ERROR: sbatch not found" >&2; exit 2; }
 
 export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
-ACCOUNT="${UMTP_GRAPH_ACTION_RECONCILE_SLURM_ACCOUNT:-rrg-hup}"
+ACCOUNT="${UMTP_GRAPH_ACTION_RECONCILE_SLURM_ACCOUNT:-def-hup-ab}"
 MEM="${UMTP_GRAPH_ACTION_RECONCILE_SLURM_MEM:-32G}"
 CPUS="${UMTP_GRAPH_ACTION_RECONCILE_SLURM_CPUS:-8}"
 TIME="${UMTP_GRAPH_ACTION_RECONCILE_SLURM_TIME:-01:00:00}"
