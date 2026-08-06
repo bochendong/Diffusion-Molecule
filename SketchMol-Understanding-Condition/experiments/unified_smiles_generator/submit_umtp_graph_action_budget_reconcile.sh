@@ -23,6 +23,12 @@ BUDGETS="${UMTP_GRAPH_ACTION_FULL_BUDGETS:-1,8,20,64,256}"
 
 mkdir -p "$LOG_DIR"
 
+# Export comma-delimited budgets through the parent environment. Embedding the
+# value inside Slurm's comma-delimited --export list truncates it to `1`.
+export UMTP_GRAPH_ACTION_RUN_RANK=0
+export UMTP_GRAPH_ACTION_FORCE=1
+export UMTP_GRAPH_ACTION_FULL_BUDGETS="$BUDGETS"
+
 args=(
   --parsable
   --account="$ACCOUNT"
@@ -31,7 +37,7 @@ args=(
   --mem="$MEM"
   --cpus-per-task="$CPUS"
   --output="$LOG_DIR/umtp-action-k20-s${SEED}-%j.log"
-  --export="ALL,UMTP_GRAPH_ACTION_RUN_RANK=0,UMTP_GRAPH_ACTION_FORCE=1,UMTP_GRAPH_ACTION_FULL_BUDGETS=$BUDGETS"
+  --export=ALL
 )
 [[ -n "$PARTITION" ]] && args+=(--partition="$PARTITION")
 if [[ -n "$MAIL_USER" ]]; then
