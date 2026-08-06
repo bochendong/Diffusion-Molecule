@@ -22,6 +22,8 @@ JOB_NAME="${SUCC_DIRECT_GROUP_RL_SLURM_JOB_NAME:-succ-direct-smiles-2p7p-v2-grou
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs}"
 PARTITION="${SUCC_DIRECT_GROUP_RL_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
 GPU_PROFILE="${SUCC_DIRECT_GROUP_RL_GPU_PROFILE:-${SUCC_GPU_PROFILE:-h100_40gb_mig}}"
+MAIL_USER="${SUCC_DIRECT_GROUP_RL_MAIL_USER:-${SUCC_MAIL_USER:-}}"
+MAIL_TYPE="${SUCC_DIRECT_GROUP_RL_MAIL_TYPE:-BEGIN,END,FAIL}"
 
 if [[ ! -x "$SUCC_PYTHON_BIN" ]]; then
   echo "ERROR: SUCC_PYTHON_BIN is not executable: $SUCC_PYTHON_BIN" >&2
@@ -60,6 +62,7 @@ echo "  reference_kl_weight=${SUCC_DIRECT_GROUP_RL_REFERENCE_KL_WEIGHT:-0.05}"
 echo "  benchmark_num_samples=${SUCC_DIRECT_GROUP_RL_BENCHMARK_NUM_SAMPLES:-128}"
 echo "  run_train=${SUCC_DIRECT_GROUP_RL_RUN_TRAIN:-1}"
 echo "  gpu_candidates=${GPU_CANDIDATES[*]:-none}"
+echo "  mail_user=${MAIL_USER:-disabled}"
 
 SBATCH_ARGS=(
   --account="$ACCOUNT"
@@ -72,6 +75,9 @@ SBATCH_ARGS=(
 )
 if [[ -n "$PARTITION" ]]; then
   SBATCH_ARGS+=(--partition="$PARTITION")
+fi
+if [[ -n "$MAIL_USER" ]]; then
+  SBATCH_ARGS+=(--mail-user="$MAIL_USER" --mail-type="$MAIL_TYPE")
 fi
 
 job_id=""

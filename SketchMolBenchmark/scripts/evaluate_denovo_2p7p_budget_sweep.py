@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate raw, average, and best-of-K SketchMol de novo candidates."""
+"""Evaluate raw, average, and best-of-K de novo candidate pools."""
 
 from __future__ import annotations
 
@@ -64,9 +64,17 @@ class CandidateScore:
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--eval-csv", required=True, type=Path)
-    parser.add_argument("--shards-dir", required=True, type=Path)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--shards-dir", type=Path, help="SketchMol shard root containing shard_candidates.csv files.")
+    source.add_argument("--candidate-csv", type=Path, help="Direct-SMILES candidate CSV emitted by --candidate-output-csv.")
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--budgets", default="1,2,4,8,20,40")
+    parser.add_argument("--report-title", default="De Novo 2p-7p Candidate-Budget Sweep")
+    parser.add_argument(
+        "--candidate-description",
+        default="generated candidates",
+        help="Short source description included in the Markdown report.",
+    )
     return parser.parse_args(argv)
 
 
@@ -77,6 +85,22 @@ def read_rows(path: Path) -> list[dict[str, str]]:
 
 def condition_key(row: Mapping[str, str]) -> str:
     return str(row.get("condition_id") or row.get("sample_id") or "").strip()
+
+
+def candidate_index(row: Mapping[str, str]) -> int:
+    value = row.get("direct_candidate_index")
+    if value in {None, ""}:
+        value = row.get("candidate_index")
+    return int(value or 0)
+
+
+def candidate_smiles(row: Mapping[str, str]) -> str:
+    return str(
+        row.get("direct_candidate_raw_smiles")
+        or row.get("SMILES")
+        or row.get("generated_smiles")
+        or ""
+    ).strip()
 
 
 def selected_properties(row: Mapping[str, str]) -> list[str]:
@@ -161,29 +185,35 @@ def main(argv: Sequence[str] | None = None) -> int:
     eval_rows = read_rows(args.eval_csv)
     eval_by_key = {condition_key(row): row for row in eval_rows}
     candidates: dict[str, list[dict[str, str]]] = defaultdict(list)
-    for shard_csv in sorted(args.shards_dir.glob("shard_*/shard_candidates.csv")):
-        for row in read_rows(shard_csv):
+    candidate_paths = (
+        [args.candidate_csv]
+        if args.candidate_csv is not None
+        else sorted(args.shards_dir.glob("shard_*/shard_candidates.csv"))
+    )
+    for candidate_path in candidate_paths:
+        for row in read_rows(candidate_path):
             key = condition_key(row)
             if key:
                 candidates[key].append(row)
 
     detail: list[dict[str, object]] = []
+    max_budget = budgets[-1]
+    average_setting = f"average_of_{max_budget}"
     for key, eval_row in eval_by_key.items():
-        group = sorted(candidates.get(key, []), key=lambda item: int(item.get("candidate_index") or 0))
-        group = [item for item in group if str(item.get("SMILES") or "").strip()]
-        if len(group) < budgets[-1]:
-            raise RuntimeError(f"{key}: expected at least {budgets[-1]} candidates, found {len(group)}")
-        scored = [score_candidate(eval_row, item.get("SMILES", ""), rank) for rank, item in enumerate(group)]
+        group = sorted(candidates.get(key, []), key=candidate_index)
+        if len(group) < max_budget:
+            raise RuntimeError(f"{key}: expected at least {max_budget} candidates, found {len(group)}")
+        scored = [score_candidate(eval_row, candidate_smiles(item), rank) for rank, item in enumerate(group)]
         property_count = int(float(eval_row.get("property_count") or len(selected_properties(eval_row))))
 
         detail.append(
             {
-                "setting": "average_of_40",
+                "setting": average_setting,
                 "condition_id": key,
                 "property_count": property_count,
-                "candidate_budget": 40,
-                "validity_value": sum(item.valid for item in scored[:40]) / 40.0,
-                "strict_value": sum(item.strict for item in scored[:40]) / 40.0,
+                "candidate_budget": max_budget,
+                "validity_value": sum(item.valid for item in scored[:max_budget]) / max_budget,
+                "strict_value": sum(item.strict for item in scored[:max_budget]) / max_budget,
                 "selected_rank": "",
             }
         )
@@ -201,7 +231,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 }
             )
 
-    settings = ["average_of_40", "raw_at_1"] + [f"best_of_{value}" for value in budgets if value != 1]
+    settings = [average_setting, "raw_at_1"] + [f"best_of_{value}" for value in budgets if value != 1]
     summary_rows: list[dict[str, object]] = []
     for setting in settings:
         setting_rows = [row for row in detail if row["setting"] == setting]
@@ -230,10 +260,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     by_key = {(row["setting"], row["property_count"]): row for row in summary_rows}
     lines = [
-        "# SketchMol De Novo 2p-7p Candidate-Budget Sweep",
+        f"# {args.report_title}",
         "",
-        "All settings reuse the same 6,000 conditions and 240,000 OCR candidates.",
-        "`average_of_40` scores every generated candidate; `best_of_K` applies the property-aware finalizer.",
+        f"All settings reuse the same {len(eval_rows):,} conditions and {sum(len(group) for group in candidates.values()):,} {args.candidate_description}.",
+        f"`{average_setting}` scores every generated candidate; `best_of_K` applies the property-aware finalizer.",
         "",
         "| setting | validity | overall strict | 2p | 3p | 4p | 5p | 6p | 7p |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",

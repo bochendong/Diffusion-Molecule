@@ -29,6 +29,9 @@ RUN_BENCHMARK_AFTER_TRAIN="${SUCC_DIRECT_GROUP_RL_RUN_BENCHMARK_AFTER_TRAIN:-1}"
 BENCHMARK_OUTPUT_DIR="${SUCC_DIRECT_GROUP_RL_BENCHMARK_OUTPUT_DIR:-$OUTPUT_DIR/benchmark_direct_smiles_group_rl}"
 BENCHMARK_MODEL_DIR="${SUCC_DIRECT_GROUP_RL_BENCHMARK_MODEL_DIR:-$OUTPUT_DIR/direct_smiles_model_group_rl_eval}"
 BENCHMARK_PREDICTION_CSV="${SUCC_DIRECT_GROUP_RL_BENCHMARK_PREDICTION_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_predictions.csv}"
+BENCHMARK_CANDIDATE_CSV="${SUCC_DIRECT_GROUP_RL_BENCHMARK_CANDIDATE_CSV:-$BENCHMARK_OUTPUT_DIR/direct_smiles_candidates.csv}"
+RUN_BUDGET_SWEEP="${SUCC_DIRECT_GROUP_RL_RUN_BUDGET_SWEEP:-1}"
+BUDGET_SWEEP_OUTPUT_DIR="${SUCC_DIRECT_GROUP_RL_BUDGET_SWEEP_OUTPUT_DIR:-$BENCHMARK_OUTPUT_DIR/budget_sweep}"
 CONDITION_MIXING_MODE="${SUCC_DIRECT_GROUP_RL_CONDITION_MIXING_MODE:-append_property_program}"
 
 RL_EPOCHS="${SUCC_DIRECT_GROUP_RL_EPOCHS:-1}"
@@ -92,6 +95,8 @@ echo "  reward_distance_weight=$RL_REWARD_DISTANCE_WEIGHT"
 echo "  run_train=$RUN_TRAIN"
 echo "  run_benchmark_after_train=$RUN_BENCHMARK_AFTER_TRAIN"
 echo "  benchmark_num_samples=$BENCHMARK_NUM_SAMPLES"
+echo "  benchmark_candidate_csv=$BENCHMARK_CANDIDATE_CSV"
+echo "  run_budget_sweep=$RUN_BUDGET_SWEEP"
 
 if [[ "$RUN_TRAIN" == "1" ]]; then
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_direct_smiles_generator_rl.py" \
@@ -151,6 +156,7 @@ if [[ "$RUN_BENCHMARK_AFTER_TRAIN" == "1" ]]; then
     --condition-mixing-mode "$CONDITION_MIXING_MODE" \
     --output-dir "$BENCHMARK_MODEL_DIR" \
     --prediction-csv "$BENCHMARK_PREDICTION_CSV" \
+    --candidate-output-csv "$BENCHMARK_CANDIDATE_CSV" \
     --eval-batch-size "$RL_EVAL_BATCH_SIZE" \
     --max-new-tokens "$BENCHMARK_MAX_NEW_TOKENS" \
     --temperature "$BENCHMARK_TEMPERATURE" \
@@ -176,10 +182,24 @@ if [[ "$RUN_BENCHMARK_AFTER_TRAIN" == "1" ]]; then
     --accept-direct-smiles \
     --hide-source-similarity-section
 
+  if [[ "$RUN_BUDGET_SWEEP" == "1" ]]; then
+    "$PYTHON_BIN" "$REPO_DIR/SketchMolBenchmark/scripts/evaluate_denovo_2p7p_budget_sweep.py" \
+      --eval-csv "$EVAL_ROWS_CSV" \
+      --candidate-csv "$BENCHMARK_CANDIDATE_CSV" \
+      --output-dir "$BUDGET_SWEEP_OUTPUT_DIR" \
+      --budgets "1,2,4,8,20,40" \
+      --report-title "Ours Group-RL De Novo 2p-7p Candidate-Budget Sweep" \
+      --candidate-description "Direct-SMILES candidates"
+  fi
+
   echo
   echo "Direct-SMILES group-relative RL benchmark ready:"
   echo "  report=$BENCHMARK_OUTPUT_DIR/benchmark_report.md"
   echo "  summary=$BENCHMARK_OUTPUT_DIR/benchmark_summary.csv"
   echo "  prediction_csv=$BENCHMARK_PREDICTION_CSV"
+  echo "  candidate_csv=$BENCHMARK_CANDIDATE_CSV"
+  if [[ "$RUN_BUDGET_SWEEP" == "1" ]]; then
+    echo "  budget_sweep=$BUDGET_SWEEP_OUTPUT_DIR/budget_sweep_report.md"
+  fi
   sed -n '1,100p' "$BENCHMARK_OUTPUT_DIR/benchmark_report.md"
 fi
