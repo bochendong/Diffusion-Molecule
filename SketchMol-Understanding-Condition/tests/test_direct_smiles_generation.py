@@ -1413,6 +1413,35 @@ def test_direct_smiles_property_rerank_prefers_strict_candidate(monkeypatch):
     assert selected["strict_fraction"] == 1.0
 
 
+def test_direct_smiles_property_rerank_preserves_zero_property_values(monkeypatch):
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required to import the direct SMILES training script")
+
+    module = _load_train_module()
+    monkeypatch.setattr(module, "canonical_smiles", lambda value: str(value or "") or None)
+
+    def fake_properties(smiles: str):
+        if smiles == "zero_tpsa":
+            return {"TPSA": 0.0}
+        if smiles == "far_tpsa":
+            return {"TPSA": 30.0}
+        return None
+
+    monkeypatch.setattr(module, "molecular_properties", fake_properties)
+    selected = module.select_generated_candidate(
+        {
+            "condition_properties": "TPSA",
+            "target_TPSA": "3.24",
+            "TPSA_active": "True",
+        },
+        ["zero_tpsa", "far_tpsa"],
+    )
+
+    assert module.parse_float(0.0) == 0.0
+    assert selected["generated_smiles"] == "zero_tpsa"
+    assert selected["strict_fraction"] == 1.0
+
+
 def test_mixed_condition_appends_property_program_tokens():
     if not TORCH_AVAILABLE:
         pytest.skip("torch is required to import the direct SMILES training script")

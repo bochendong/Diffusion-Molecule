@@ -1101,9 +1101,14 @@ def append_csv_rows(
 
 
 def parse_float(value: object) -> float:
+    if value is None:
+        return math.nan
+    text = str(value).strip()
+    if not text:
+        return math.nan
     try:
-        return float(str(value or "").strip())
-    except ValueError:
+        return float(text)
+    except (TypeError, ValueError):
         return math.nan
 
 
