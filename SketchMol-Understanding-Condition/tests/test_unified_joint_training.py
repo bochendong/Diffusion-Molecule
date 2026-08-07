@@ -235,6 +235,38 @@ def test_graph_action_program_round_trip_and_oracle_projection() -> None:
     assert manifest["exact_reconstruction_rate"] == 1.0
 
 
+def test_graph_action_oracle_uses_assay_instruction_before_target_similarity(monkeypatch) -> None:
+    row = {
+        "source_smiles": "source",
+        "target_smiles": "paired-target",
+        "instruction_tasks": '[{"property":"GSK3B","direction":"increase"}]',
+    }
+    scores = {
+        ("source", "GSK3B"): 0.2,
+        ("gsk-improved", "GSK3B"): 0.8,
+        ("target-like-failure", "GSK3B"): 0.1,
+    }
+    similarities = {
+        ("source", "gsk-improved"): 0.75,
+        ("source", "target-like-failure"): 0.90,
+        ("paired-target", "gsk-improved"): 0.30,
+        ("paired-target", "target-like-failure"): 0.99,
+    }
+    monkeypatch.setattr(unified, "safe_canonical_smiles", lambda value: str(value))
+    monkeypatch.setattr(unified, "score_property", lambda smiles, prop: scores.get((smiles, prop)))
+    monkeypatch.setattr(unified, "morgan_tanimoto", lambda left, right: similarities[(left, right)])
+
+    action = graph_action.graph.GraphEditAction("replace_atom", site=0, atom="N")
+    improved = graph_action.action_oracle_record(row, (action, "gsk-improved", ["<EDIT>"]))
+    target_like = graph_action.action_oracle_record(row, (action, "target-like-failure", ["<EDIT>"]))
+
+    assert improved["instruction_evaluated_count"] == 1
+    assert improved["instruction_all_success"] is True
+    assert improved["strict_success"] is True
+    assert target_like["target_similarity"] > improved["target_similarity"]
+    assert graph_action.oracle_rank_key(improved) > graph_action.oracle_rank_key(target_like)
+
+
 def test_graph_action_checkpoint_expansion_preserves_legacy_logits() -> None:
     vocab = unified.SmilesVocabulary()
     vocab.update([["C", "O"]])

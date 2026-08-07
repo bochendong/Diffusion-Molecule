@@ -182,6 +182,23 @@ The default prefix budgets are `1,8,20,64,256`. The reconciliation job is CPU
 only, requires the existing candidate CSV and summary, and fails instead of
 silently regenerating them when either artifact is missing.
 
+## Instruction-aligned GraphEditDSL v2 pilot
+
+The v1 action labels prioritize paired-target similarity and only treat local
+RDKit properties as supported supervision. The v2 pilot instead ranks action
+labels by the official source-relative instruction predicate, includes cached
+TDC/SA scorers such as GSK3B and DRD2, and records per-task one-step oracle
+reachability before training.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_umtp_graph_action_instruction_pilot.sh
+```
+
+The single-seed run is validation-only. It compares the protected v1 and v2
+action checkpoints at `n=1,8,20`, freezes the legacy de novo path, and stops
+before training unless GSK3B is at least 95% oracle-evaluable with at least 5%
+strict one-step reachability. Formal Table1 test rows are not used for the gate.
+
 The default `auto` reward mode routes each row by `task_mode`, so mixed
 de novo/edit batches are valid.
 

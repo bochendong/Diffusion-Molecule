@@ -72,7 +72,7 @@ FRAGMENT_TOKENS = {
     "c1ccccc1": "<FRAG_PHENYL>",
 }
 BOND_ORDERS = ("single", "double", "triple")
-LOCAL_PROPERTIES = {"MW", "LogP", "QED", "TPSA", "HBD", "HBA", "RB"}
+DEFAULT_SOURCE_SIMILARITY_THRESHOLD = 0.65
 VOCAB_PARAMETER_NAMES = {
     "token_embedding.weight",
     "output.weight",
@@ -91,6 +91,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     prepare.add_argument("--manifest-json", required=True, type=Path)
     prepare.add_argument("--site-limit", type=int, default=32)
     prepare.add_argument("--max-actions-per-row", type=int, default=512)
+    prepare.add_argument("--source-similarity-threshold", type=float, default=DEFAULT_SOURCE_SIMILARITY_THRESHOLD)
     prepare.add_argument("--seed", type=int, default=7)
 
     train = subparsers.add_parser("train", help="Warm-start the common decoder with mixed SMILES/action SFT.")
@@ -342,25 +343,50 @@ def enumerate_action_candidates(
     return out
 
 
-def supported_instruction_success(row: Mapping[str, str], smiles: str) -> tuple[float, int]:
+def instruction_score_components(row: Mapping[str, str], smiles: str) -> dict[str, object]:
+    """Score every official Table1 instruction, including TDC/SA oracles."""
     source = str(row.get("source_smiles", "") or row.get("molecule_smiles", "")).strip()
     successes = 0
     evaluated = 0
-    for prop, direction in unified.instruction_task_specs(row):
-        if prop not in LOCAL_PROPERTIES or direction == 0:
-            continue
+    normalized_margins: list[float] = []
+    specs = [(prop, direction) for prop, direction in unified.instruction_task_specs(row) if direction]
+    for prop, direction in specs:
         candidate_value = unified.score_property(smiles, prop)
         source_value = unified.score_property(source, prop)
         if candidate_value is None or source_value is None:
+            normalized_margins.append(-1.0)
             continue
         evaluated += 1
-        successes += int((float(candidate_value) - float(source_value)) * int(direction) > 0.0)
-    return (successes / evaluated if evaluated else math.nan), evaluated
+        signed_delta = (float(candidate_value) - float(source_value)) * int(direction)
+        successes += int(signed_delta > 0.0)
+        normalizer = max(float(unified.PROPERTY_NORMALIZERS.get(prop, 1.0)), 1e-8)
+        normalized_margins.append(signed_delta / normalizer)
+    property_count = len(specs)
+    success_fraction = successes / property_count if property_count else math.nan
+    all_success = bool(property_count and evaluated == property_count and successes == property_count)
+    return {
+        "instruction_property_count": property_count,
+        "instruction_evaluated_count": evaluated,
+        "instruction_success_fraction": success_fraction,
+        "instruction_all_success": all_success,
+        "instruction_mean_margin": mean(normalized_margins) if normalized_margins else math.nan,
+        "instruction_distance": (
+            mean(max(0.0, -value) for value in normalized_margins) if normalized_margins else math.inf
+        ),
+    }
+
+
+def supported_instruction_success(row: Mapping[str, str], smiles: str) -> tuple[float, int]:
+    """Backward-compatible view of the now full-oracle instruction score."""
+    score = instruction_score_components(row, smiles)
+    return float(score["instruction_success_fraction"]), int(score["instruction_evaluated_count"])
 
 
 def action_oracle_record(
     row: Mapping[str, str],
     candidate: tuple[graph.GraphEditAction, str, list[str]],
+    *,
+    source_similarity_threshold: float = DEFAULT_SOURCE_SIMILARITY_THRESHOLD,
 ) -> dict[str, object]:
     action, smiles, program = candidate
     source = str(row.get("source_smiles", "") or row.get("molecule_smiles", "")).strip()
@@ -368,7 +394,11 @@ def action_oracle_record(
     canonical_target = unified.safe_canonical_smiles(target)
     target_similarity = unified.morgan_tanimoto(canonical_target, smiles) if canonical_target else math.nan
     source_similarity = unified.morgan_tanimoto(source, smiles)
-    success_fraction, evaluated = supported_instruction_success(row, smiles)
+    instruction = instruction_score_components(row, smiles)
+    source_similarity_success = bool(
+        math.isfinite(source_similarity) and source_similarity >= float(source_similarity_threshold)
+    )
+    strict_success = bool(instruction["instruction_all_success"] and source_similarity_success)
     return {
         "action": action,
         "smiles": smiles,
@@ -376,8 +406,12 @@ def action_oracle_record(
         "exact": bool(canonical_target and canonical_target == smiles),
         "target_similarity": target_similarity,
         "source_similarity": source_similarity,
-        "supported_success_fraction": success_fraction,
-        "supported_property_count": evaluated,
+        "source_similarity_success": source_similarity_success,
+        "strict_success": strict_success,
+        **instruction,
+        # Preserve the v1 output names for downstream compatibility.
+        "supported_success_fraction": instruction["instruction_success_fraction"],
+        "supported_property_count": instruction["instruction_evaluated_count"],
     }
 
 
@@ -389,10 +423,15 @@ def oracle_rank_key(record: Mapping[str, object]) -> tuple[float, ...]:
     action = record["action"]
     policy_score = float(action.policy_score) if isinstance(action, graph.GraphEditAction) else 0.0
     return (
+        float(bool(record["strict_success"])),
+        float(bool(record["source_similarity_success"])),
+        finite(record["instruction_success_fraction"]),
+        float(bool(record["instruction_all_success"])),
+        finite(record["source_similarity"]),
+        -finite(record["instruction_distance"], fallback=1e6),
+        finite(record["instruction_mean_margin"]),
         float(bool(record["exact"])),
         finite(record["target_similarity"]),
-        finite(record["supported_success_fraction"]),
-        finite(record["source_similarity"]),
         policy_score,
     )
 
@@ -402,11 +441,22 @@ def prepare_action_rows(
     *,
     site_limit: int,
     max_actions_per_row: int,
+    source_similarity_threshold: float = DEFAULT_SOURCE_SIMILARITY_THRESHOLD,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     output: list[dict[str, object]] = []
     oracle_records: list[dict[str, object]] = []
     skipped = Counter()
     op_counts = Counter()
+    task_oracle_stats: dict[str, dict[str, object]] = defaultdict(
+        lambda: {
+            "rows": 0,
+            "fully_evaluable_rows": 0,
+            "source_feasible_rows": 0,
+            "strict_reachable_rows": 0,
+            "selected_strict_rows": 0,
+            "best_success_fractions": [],
+        }
+    )
     for index, row in enumerate(rows):
         mode = unified.task_mode_for_row(row)
         if mode == unified.DE_NOVO_MODE:
@@ -420,7 +470,14 @@ def prepare_action_rows(
         if not candidates:
             skipped["no_executable_action"] += 1
             continue
-        records = [action_oracle_record(row, candidate) for candidate in candidates]
+        records = [
+            action_oracle_record(
+                row,
+                candidate,
+                source_similarity_threshold=float(source_similarity_threshold),
+            )
+            for candidate in candidates
+        ]
         best = max(records, key=oracle_rank_key)
         action = best["action"]
         assert isinstance(action, graph.GraphEditAction)
@@ -436,11 +493,44 @@ def prepare_action_rows(
                 "policy_target_source_tanimoto": format_float(best["source_similarity"]),
                 "policy_target_supported_success_fraction": format_float(best["supported_success_fraction"]),
                 "policy_target_supported_property_count": int(best["supported_property_count"]),
+                "policy_target_instruction_property_count": int(best["instruction_property_count"]),
+                "policy_target_instruction_evaluated_count": int(best["instruction_evaluated_count"]),
+                "policy_target_instruction_all_success": str(bool(best["instruction_all_success"])),
+                "policy_target_source_similarity_success": str(bool(best["source_similarity_success"])),
+                "policy_target_strict_success": str(bool(best["strict_success"])),
+                "policy_target_instruction_distance": format_float(best["instruction_distance"]),
+                "policy_target_instruction_mean_margin": format_float(best["instruction_mean_margin"]),
                 "policy_action_candidate_count": len(candidates),
             }
         )
         output.append(out)
         oracle_records.append(best)
+        task_key = str(row.get("moledit_task_key", "") or "").strip()
+        if not task_key:
+            task_key = "+".join(
+                f"{prop}:{'increase' if direction > 0 else 'decrease'}"
+                for prop, direction in unified.instruction_task_specs(row)
+            ) or "unknown"
+        task_stats = task_oracle_stats[task_key]
+        task_stats["rows"] = int(task_stats["rows"]) + 1
+        property_count = int(records[0]["instruction_property_count"])
+        if property_count and any(int(record["instruction_evaluated_count"]) == property_count for record in records):
+            task_stats["fully_evaluable_rows"] = int(task_stats["fully_evaluable_rows"]) + 1
+        if any(bool(record["source_similarity_success"]) for record in records):
+            task_stats["source_feasible_rows"] = int(task_stats["source_feasible_rows"]) + 1
+        if any(bool(record["strict_success"]) for record in records):
+            task_stats["strict_reachable_rows"] = int(task_stats["strict_reachable_rows"]) + 1
+        if bool(best["strict_success"]):
+            task_stats["selected_strict_rows"] = int(task_stats["selected_strict_rows"]) + 1
+        finite_fractions = [
+            float(record["instruction_success_fraction"])
+            for record in records
+            if math.isfinite(float(record["instruction_success_fraction"]))
+        ]
+        if finite_fractions:
+            cast_fractions = task_stats["best_success_fractions"]
+            assert isinstance(cast_fractions, list)
+            cast_fractions.append(max(finite_fractions))
         if (index + 1) % 50 == 0:
             print(f"[graph-action-prepare] {index + 1}/{len(rows)} rows", flush=True)
 
@@ -456,6 +546,18 @@ def prepare_action_rows(
         if int(record["supported_property_count"]) > 0
         and math.isfinite(float(record["supported_success_fraction"]))
     ]
+    per_task_oracle = {}
+    for task_key, raw_stats in sorted(task_oracle_stats.items()):
+        row_count = int(raw_stats["rows"])
+        best_fractions = list(raw_stats.pop("best_success_fractions"))
+        per_task_oracle[task_key] = {
+            **raw_stats,
+            "fully_evaluable_rate": int(raw_stats["fully_evaluable_rows"]) / max(row_count, 1),
+            "source_feasible_rate": int(raw_stats["source_feasible_rows"]) / max(row_count, 1),
+            "strict_reachability": int(raw_stats["strict_reachable_rows"]) / max(row_count, 1),
+            "selected_strict_rate": int(raw_stats["selected_strict_rows"]) / max(row_count, 1),
+            "mean_best_instruction_success_fraction": mean(best_fractions) if best_fractions else math.nan,
+        }
     manifest = {
         "input_rows": len(rows),
         "output_rows": len(output),
@@ -471,6 +573,12 @@ def prepare_action_rows(
         "best_source_similarity_at_0_65": sum(value >= 0.65 for value in source_sims) / max(len(source_sims), 1),
         "supported_instruction_rows": len(supported),
         "mean_supported_instruction_success": mean(supported) if supported else math.nan,
+        "selected_strict_instruction_rows": sum(bool(record["strict_success"]) for record in oracle_records),
+        "selected_strict_instruction_rate": (
+            sum(bool(record["strict_success"]) for record in oracle_records) / max(len(oracle_records), 1)
+        ),
+        "source_similarity_threshold": float(source_similarity_threshold),
+        "instruction_oracle_by_task": per_task_oracle,
         "selected_action_ops": dict(sorted(op_counts.items())),
         "skipped": dict(sorted(skipped.items())),
         "site_limit": int(site_limit),
@@ -485,6 +593,7 @@ def prepare_command(args: argparse.Namespace) -> int:
         read_rows(args.input_csv),
         site_limit=int(args.site_limit),
         max_actions_per_row=int(args.max_actions_per_row),
+        source_similarity_threshold=float(args.source_similarity_threshold),
     )
     write_rows(args.output_csv, rows)
     manifest.update({"input_csv": str(args.input_csv), "output_csv": str(args.output_csv), "seed": int(args.seed)})
