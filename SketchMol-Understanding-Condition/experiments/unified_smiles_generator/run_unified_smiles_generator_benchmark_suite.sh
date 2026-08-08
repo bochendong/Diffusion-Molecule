@@ -118,6 +118,9 @@ if [[ "$RUN_SAMPLE" == "1" ]]; then
   if [[ "${SUCC_UNIFIED_INCLUDE_SOURCE_COPY_CANDIDATE:-0}" == "1" ]]; then
     sample_args+=(--include-source-copy-candidate)
   fi
+  if [[ "${SUCC_UNIFIED_SMILES_GRAMMAR_CONSTRAINT:-0}" == "1" ]]; then
+    sample_args+=(--smiles-grammar-constraint)
+  fi
   echo "Unified benchmark suite: sampling first"
   echo "  checkpoint=$CHECKPOINT"
   echo "  eval_csv=$EVAL_CSV"

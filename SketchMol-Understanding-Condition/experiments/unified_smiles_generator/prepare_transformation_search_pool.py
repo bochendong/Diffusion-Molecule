@@ -26,6 +26,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-csv", required=True, type=Path)
     parser.add_argument("--manifest-json", required=True, type=Path)
     parser.add_argument("--rows-per-group", type=int, default=100)
+    parser.add_argument("--denovo-high-count-min", type=int, default=0)
+    parser.add_argument("--denovo-high-count-multiplier", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=71)
     parser.add_argument(
         "--task-mode",
@@ -75,7 +77,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     for key, rows in sorted(grouped.items()):
         pool = list(rows)
         rng.shuffle(pool)
-        chosen = pool[: max(1, int(args.rows_per_group))]
+        target_rows = max(1, int(args.rows_per_group))
+        if key.startswith("de_novo:") and int(args.denovo_high_count_min) > 0:
+            count_text = key.split(":", 1)[1].removesuffix("p")
+            if count_text.isdigit() and int(count_text) >= int(args.denovo_high_count_min):
+                target_rows = max(1, int(round(target_rows * float(args.denovo_high_count_multiplier))))
+        chosen = pool[:target_rows]
         selected.extend(chosen)
         counts[key] = len(chosen)
     rng.shuffle(selected)
@@ -87,6 +94,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "input_csv": str(args.input_csv),
         "output_csv": str(args.output_csv),
         "rows_per_group": int(args.rows_per_group),
+        "denovo_high_count_min": int(args.denovo_high_count_min),
+        "denovo_high_count_multiplier": float(args.denovo_high_count_multiplier),
         "seed": int(args.seed),
         "task_mode": str(args.task_mode),
         "group_counts": counts,

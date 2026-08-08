@@ -162,13 +162,16 @@ SUCC_UNIFIED_RL_GRPO_UPDATE_EPOCHS  # reuse each rollout group for clipped GRPO 
 SUCC_UNIFIED_CONDITION_FEATURE_VARIANT
 SUCC_UNIFIED_INPUT_MODALITY
 SUCC_UNIFIED_RL_REWARD_MODE        # auto | property_strict | table1_edit
-SUCC_UNIFIED_RL_REWARD_AGGREGATION # mean | joint_bottleneck
+SUCC_UNIFIED_RL_REWARD_AGGREGATION # mean | joint_bottleneck | dense_softmin
 SUCC_UNIFIED_RL_REWARD_JOINT_BONUS_WEIGHT
 SUCC_UNIFIED_RL_REWARD_BOTTLENECK_WEIGHT
+SUCC_UNIFIED_RL_REWARD_SOFTMIN_WEIGHT
+SUCC_UNIFIED_RL_REWARD_SOFTMIN_TEMPERATURE
 SUCC_UNIFIED_RL_SFT_WEIGHT
 SUCC_UNIFIED_RL_REFERENCE_KL_WEIGHT
 SUCC_UNIFIED_RL_REWARD_SOURCE_SIMILARITY_WEIGHT
 SUCC_UNIFIED_RL_REWARD_SOURCE_COPY_PENALTY
+SUCC_UNIFIED_SMILES_GRAMMAR_CONSTRAINT # 1 enables lightweight syntax masking
 ```
 
 `joint_bottleneck` keeps the partial-success signal, adds an explicit bonus
@@ -181,6 +184,22 @@ The first fixed-budget single-seed pilot uses `n=20` and one H100 20 GB MIG:
 ```bash
 bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_umtp_joint_bottleneck_pilot.sh
 ```
+
+The follow-up de novo pilot replaces the sparse bottleneck signal with a
+smooth per-property satisfaction score plus a temperature-controlled soft
+minimum over normalized property margins. It oversamples 5p-7p training rows,
+uses lightweight SMILES syntax masking during rollouts and evaluation, and
+keeps the paper budget at `n=20`:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_umtp_dense_softmin_pilot.sh
+```
+
+This pilot trains on de novo rows only. Its direct-decoder Table1 evaluation is
+a retention diagnostic, not the paper-facing edit method. The formal Table1
+row remains the source-conditioned GraphEditDSL action policy evaluated from
+the same immutable candidate pool at `n=20`; this separation follows the
+observed candidate-space bottleneck rather than hiding it with a larger budget.
 
 ## Protected GraphEditDSL paper-budget reconciliation
 

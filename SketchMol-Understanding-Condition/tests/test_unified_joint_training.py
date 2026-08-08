@@ -143,6 +143,133 @@ def test_joint_bottleneck_counts_missing_property_as_failure(monkeypatch) -> Non
     assert components.worst_violation == 1.0
 
 
+def test_dense_softmin_reward_prefers_smaller_worst_violation(monkeypatch) -> None:
+    row = {
+        "condition_properties": "MW,LogP,QED",
+        "MW_active": "True",
+        "LogP_active": "True",
+        "QED_active": "True",
+        "target_MW": "100",
+        "target_LogP": "2.0",
+        "target_QED": "0.7",
+    }
+    values = {
+        ("near", "MW"): 100.0,
+        ("near", "LogP"): 2.0,
+        ("near", "QED"): 0.58,
+        ("far", "MW"): 100.0,
+        ("far", "LogP"): 2.0,
+        ("far", "QED"): 0.1,
+    }
+    monkeypatch.setattr(unified, "safe_canonical_smiles", lambda value: str(value or ""))
+    monkeypatch.setattr(unified, "score_property", lambda smiles, prop: values.get((smiles, prop)))
+    kwargs = {
+        "reward_mode": "property_strict",
+        "reward_valid_weight": 0.0,
+        "reward_strict_weight": 1.0,
+        "reward_distance_weight": 0.05,
+        "reward_distance_clip": 10.0,
+        "reward_source_similarity_weight": 0.0,
+        "reward_source_similarity_threshold": 0.4,
+        "reward_source_copy_penalty": 0.0,
+        "reward_aggregation": "dense_softmin",
+        "reward_joint_bonus_weight": 0.5,
+        "reward_bottleneck_weight": 0.0,
+        "reward_softmin_weight": 1.0,
+        "reward_softmin_temperature": 0.25,
+    }
+
+    near = unified.reward_for_smiles(row, "near", **kwargs)
+    far = unified.reward_for_smiles(row, "far", **kwargs)
+    near_components = unified.property_reward_components(row, "near", mode=unified.DE_NOVO_MODE)
+
+    assert near_components.all_success is False
+    assert near_components.softmin_margin(0.25) < 0.0
+    assert near > far
+
+
+def test_smiles_grammar_masks_unbalanced_transitions() -> None:
+    vocab = unified.SmilesVocabulary()
+    for token in ("C", "(", ")", "=", "1", "."):
+        vocab.add(token)
+    tokens = vocab.id_to_token
+
+    start = unified.smiles_grammar_allowed_ids([vocab.bos_id], token_text=tokens, eos_id=vocab.eos_id)
+    assert vocab.token_to_id["C"] in start
+    assert vocab.token_to_id[")"] not in start
+    assert vocab.token_to_id["="] not in start
+    assert vocab.eos_id not in start
+
+    branch = unified.smiles_grammar_allowed_ids(
+        [vocab.bos_id, vocab.token_to_id["C"], vocab.token_to_id["("]],
+        token_text=tokens,
+        eos_id=vocab.eos_id,
+    )
+    assert vocab.token_to_id["C"] in branch
+    assert vocab.token_to_id[")"] not in branch
+
+    balanced = unified.smiles_grammar_allowed_ids(
+        [
+            vocab.bos_id,
+            vocab.token_to_id["C"],
+            vocab.token_to_id["("],
+            vocab.token_to_id["C"],
+            vocab.token_to_id[")"],
+        ],
+        token_text=tokens,
+        eos_id=vocab.eos_id,
+    )
+    assert vocab.eos_id in balanced
+
+    open_ring = unified.smiles_grammar_allowed_ids(
+        [vocab.bos_id, vocab.token_to_id["C"], vocab.token_to_id["1"]],
+        token_text=tokens,
+        eos_id=vocab.eos_id,
+    )
+    assert vocab.eos_id not in open_ring
+
+
+def test_prepare_pool_oversamples_high_property_counts(tmp_path: Path) -> None:
+    input_csv = tmp_path / "rows.csv"
+    output_csv = tmp_path / "pool.csv"
+    manifest = tmp_path / "pool.json"
+    rows = []
+    for count in (2, 5):
+        for index in range(10):
+            rows.append(
+                {
+                    "condition_id": f"{count}p-{index}",
+                    "task_mode": "de_novo",
+                    "property_count": str(count),
+                    "condition_properties": "MW,LogP",
+                    "target_smiles": "CCO",
+                }
+            )
+    write_csv(input_csv, rows)
+
+    prepare.main(
+        [
+            "--input-csv",
+            str(input_csv),
+            "--output-csv",
+            str(output_csv),
+            "--manifest-json",
+            str(manifest),
+            "--rows-per-group",
+            "2",
+            "--denovo-high-count-min",
+            "5",
+            "--denovo-high-count-multiplier",
+            "3",
+            "--task-mode",
+            "de_novo",
+        ]
+    )
+    payload = __import__("json").loads(manifest.read_text())
+
+    assert payload["group_counts"] == {"de_novo:2p": 2, "de_novo:5p": 6}
+
+
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fields = list(dict.fromkeys(key for row in rows for key in row))

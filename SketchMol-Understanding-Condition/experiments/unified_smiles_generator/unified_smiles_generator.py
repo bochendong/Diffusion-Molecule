@@ -304,6 +304,11 @@ def add_sampling_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--repetition-penalty", type=float, default=1.15)
     parser.add_argument("--no-repeat-ngram-size", type=int, default=6)
     parser.add_argument("--min-new-tokens", type=int, default=6)
+    parser.add_argument(
+        "--smiles-grammar-constraint",
+        action="store_true",
+        help="Mask tokens that would create unbalanced branches/rings or impossible SMILES token transitions.",
+    )
     parser.add_argument("--top-k-candidates", type=int, default=40)
     parser.add_argument(
         "--max-candidates",
@@ -342,15 +347,17 @@ def add_group_rl_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--reward-distance-clip", type=float, default=10.0)
     parser.add_argument(
         "--reward-aggregation",
-        choices=("mean", "joint_bottleneck"),
+        choices=("mean", "joint_bottleneck", "dense_softmin"),
         default="mean",
         help=(
-            "mean preserves the legacy average-property reward; joint_bottleneck additionally "
-            "rewards all-property success and penalizes the worst unsatisfied property."
+            "mean preserves the legacy average-property reward; joint_bottleneck uses a sparse "
+            "all-success bonus; dense_softmin supplies a smooth satisfaction score and soft worst-margin signal."
         ),
     )
     parser.add_argument("--reward-joint-bonus-weight", type=float, default=2.0)
     parser.add_argument("--reward-bottleneck-weight", type=float, default=0.5)
+    parser.add_argument("--reward-softmin-weight", type=float, default=1.0)
+    parser.add_argument("--reward-softmin-temperature", type=float, default=0.25)
     parser.add_argument("--reward-source-similarity-weight", type=float, default=0.5)
     parser.add_argument("--reward-source-similarity-threshold", type=float, default=None)
     parser.add_argument("--reward-source-copy-penalty", type=float, default=0.5)
@@ -646,6 +653,7 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
             repetition_penalty=float(args.repetition_penalty),
             no_repeat_ngram_size=int(args.no_repeat_ngram_size),
             min_new_tokens=int(args.min_new_tokens),
+            smiles_grammar_constraint=bool(args.smiles_grammar_constraint),
             sft_weight=float(args.sft_weight),
             rl_objective=str(args.rl_objective),
             grpo_clip_eps=float(args.grpo_clip_eps),
@@ -662,6 +670,8 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
             reward_aggregation=str(args.reward_aggregation),
             reward_joint_bonus_weight=float(args.reward_joint_bonus_weight),
             reward_bottleneck_weight=float(args.reward_bottleneck_weight),
+            reward_softmin_weight=float(args.reward_softmin_weight),
+            reward_softmin_temperature=float(args.reward_softmin_temperature),
             reward_source_similarity_weight=float(args.reward_source_similarity_weight),
             reward_source_similarity_threshold=effective_reward_source_similarity_threshold(args),
             reward_source_copy_penalty=float(args.reward_source_copy_penalty),
@@ -686,6 +696,7 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
                 repetition_penalty=float(args.repetition_penalty),
                 no_repeat_ngram_size=int(args.no_repeat_ngram_size),
                 min_new_tokens=int(args.min_new_tokens),
+                smiles_grammar_constraint=bool(args.smiles_grammar_constraint),
                 reward_mode=str(args.reward_mode),
                 reward_valid_weight=float(args.reward_valid_weight),
                 reward_strict_weight=float(args.reward_strict_weight),
@@ -694,6 +705,8 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
                 reward_aggregation=str(args.reward_aggregation),
                 reward_joint_bonus_weight=float(args.reward_joint_bonus_weight),
                 reward_bottleneck_weight=float(args.reward_bottleneck_weight),
+                reward_softmin_weight=float(args.reward_softmin_weight),
+                reward_softmin_temperature=float(args.reward_softmin_temperature),
                 reward_source_similarity_weight=float(args.reward_source_similarity_weight),
                 reward_source_similarity_threshold=effective_reward_source_similarity_threshold(args),
                 reward_source_copy_penalty=float(args.reward_source_copy_penalty),
@@ -738,6 +751,9 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
         "reward_aggregation": str(args.reward_aggregation),
         "reward_joint_bonus_weight": float(args.reward_joint_bonus_weight),
         "reward_bottleneck_weight": float(args.reward_bottleneck_weight),
+        "reward_softmin_weight": float(args.reward_softmin_weight),
+        "reward_softmin_temperature": float(args.reward_softmin_temperature),
+        "smiles_grammar_constraint": bool(args.smiles_grammar_constraint),
         "reward_source_similarity_threshold": effective_reward_source_similarity_threshold(args),
         "history": history,
         "prediction_summary": prediction_summary,
@@ -1162,6 +1178,7 @@ class ConditionedSmilesDecoder(nn.Module):
         no_repeat_ngram_size: int = 0,
         min_new_tokens: int = 0,
         blocked_token_ids: Sequence[int] | None = None,
+        smiles_token_text: Sequence[str] | None = None,
     ) -> torch.Tensor:
         batch = condition_tokens.shape[0]
         device = condition_tokens.device
@@ -1172,6 +1189,13 @@ class ConditionedSmilesDecoder(nn.Module):
         for step in range(max(1, int(max_new_tokens))):
             logits = self(condition_tokens, generated, condition_mask=condition_mask)[:, -1, :]
             logits[:, list(blocked_ids)] = -torch.inf
+            if smiles_token_text is not None:
+                apply_smiles_grammar_mask_(
+                    logits,
+                    generated,
+                    token_text=smiles_token_text,
+                    eos_id=int(eos_id),
+                )
             if step < max(0, int(min_new_tokens)):
                 logits[:, int(eos_id)] = -torch.inf
             if repetition_penalty and repetition_penalty > 1.0:
@@ -1217,6 +1241,7 @@ class ConditionedSmilesDecoder(nn.Module):
         no_repeat_ngram_size: int = 0,
         min_new_tokens: int = 0,
         blocked_token_ids: Sequence[int] | None = None,
+        smiles_token_text: Sequence[str] | None = None,
     ) -> torch.Tensor:
         if condition_tokens.shape[0] != 1:
             raise ValueError("beam_search expects one condition row at a time")
@@ -1236,6 +1261,13 @@ class ConditionedSmilesDecoder(nn.Module):
                 seq_tensor = torch.tensor([sequence], dtype=torch.long, device=device)
                 logits = self(condition_tokens, seq_tensor, condition_mask=condition_mask)[:, -1, :]
                 logits[:, list(blocked_ids)] = -torch.inf
+                if smiles_token_text is not None:
+                    apply_smiles_grammar_mask_(
+                        logits,
+                        seq_tensor,
+                        token_text=smiles_token_text,
+                        eos_id=int(eos_id),
+                    )
                 if step < max(0, int(min_new_tokens)):
                     logits[:, int(eos_id)] = -torch.inf
                 if repetition_penalty and repetition_penalty > 1.0:
@@ -1268,6 +1300,92 @@ class ConditionedSmilesDecoder(nn.Module):
         for idx, (sequence, _, _) in enumerate(beams):
             output[idx, : len(sequence)] = torch.tensor(sequence, dtype=torch.long, device=device)
         return output
+
+
+SMILES_BOND_TOKENS = frozenset({"-", "=", "#", "/", "\\", ":", "~"})
+
+
+def smiles_token_kind(token: str) -> str:
+    if token.startswith("[") and token.endswith("]"):
+        return "atom"
+    if re.fullmatch(r"(?:[A-Z][a-z]?|[bcnops]|\*)", token):
+        return "atom"
+    if token in SMILES_BOND_TOKENS:
+        return "bond"
+    if token == "(":
+        return "branch_open"
+    if token == ")":
+        return "branch_close"
+    if re.fullmatch(r"(?:\d|%\d{2})", token):
+        return "ring"
+    if token == ".":
+        return "dot"
+    return "other"
+
+
+def smiles_grammar_allowed_ids(
+    sequence: Sequence[int],
+    *,
+    token_text: Sequence[str],
+    eos_id: int,
+) -> set[int]:
+    depth = 0
+    open_rings: set[str] = set()
+    previous = "start"
+    has_atom = False
+    for token_id in sequence:
+        index = int(token_id)
+        if not 0 <= index < len(token_text):
+            continue
+        token = token_text[index]
+        if token in SPECIAL_TOKENS:
+            continue
+        kind = smiles_token_kind(token)
+        if kind == "atom":
+            has_atom = True
+        elif kind == "branch_open":
+            depth += 1
+        elif kind == "branch_close":
+            depth = max(0, depth - 1)
+        elif kind == "ring":
+            if token in open_rings:
+                open_rings.remove(token)
+            else:
+                open_rings.add(token)
+        previous = kind
+
+    expecting_atom = previous in {"start", "bond", "branch_open", "dot", "other"}
+    allowed: set[int] = set()
+    for token_id, token in enumerate(token_text):
+        kind = smiles_token_kind(token)
+        if kind == "atom":
+            allowed.add(token_id)
+        elif not expecting_atom and kind in {"bond", "branch_open", "ring", "dot"}:
+            allowed.add(token_id)
+        elif not expecting_atom and kind == "branch_close" and depth > 0:
+            allowed.add(token_id)
+    if has_atom and not expecting_atom and depth == 0 and not open_rings:
+        allowed.add(int(eos_id))
+    return allowed
+
+
+def apply_smiles_grammar_mask_(
+    logits: torch.Tensor,
+    generated: torch.Tensor,
+    *,
+    token_text: Sequence[str],
+    eos_id: int,
+) -> None:
+    for row_index in range(generated.shape[0]):
+        allowed = smiles_grammar_allowed_ids(
+            generated[row_index].tolist(),
+            token_text=token_text,
+            eos_id=eos_id,
+        )
+        if not allowed:
+            continue
+        blocked = [token_id for token_id in range(logits.shape[-1]) if token_id not in allowed]
+        logits[row_index, blocked] = -torch.inf
 
 
 def apply_repetition_penalty_(logits: torch.Tensor, generated: torch.Tensor, penalty: float) -> None:
@@ -1982,6 +2100,7 @@ def train_epoch_group_rl(
     repetition_penalty: float,
     no_repeat_ngram_size: int,
     min_new_tokens: int,
+    smiles_grammar_constraint: bool,
     sft_weight: float,
     rl_objective: str,
     grpo_clip_eps: float,
@@ -1998,6 +2117,8 @@ def train_epoch_group_rl(
     reward_aggregation: str,
     reward_joint_bonus_weight: float,
     reward_bottleneck_weight: float,
+    reward_softmin_weight: float,
+    reward_softmin_temperature: float,
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
     reward_source_copy_penalty: float,
@@ -2040,6 +2161,7 @@ def train_epoch_group_rl(
             repetition_penalty=repetition_penalty,
             no_repeat_ngram_size=no_repeat_ngram_size,
             min_new_tokens=min_new_tokens,
+            smiles_token_text=vocab.id_to_token if smiles_grammar_constraint else None,
         )
         expanded = repeat_generation_batch(batch, repeats=rollouts_per_prompt)
         old_seq_logprob = None
@@ -2065,6 +2187,8 @@ def train_epoch_group_rl(
             reward_aggregation=reward_aggregation,
             reward_joint_bonus_weight=reward_joint_bonus_weight,
             reward_bottleneck_weight=reward_bottleneck_weight,
+            reward_softmin_weight=reward_softmin_weight,
+            reward_softmin_temperature=reward_softmin_temperature,
             reward_source_similarity_weight=reward_source_similarity_weight,
             reward_source_similarity_threshold=reward_source_similarity_threshold,
             reward_source_copy_penalty=reward_source_copy_penalty,
@@ -2167,6 +2291,7 @@ def evaluate_group_rl(
     repetition_penalty: float,
     no_repeat_ngram_size: int,
     min_new_tokens: int,
+    smiles_grammar_constraint: bool,
     reward_mode: str,
     reward_valid_weight: float,
     reward_strict_weight: float,
@@ -2175,6 +2300,8 @@ def evaluate_group_rl(
     reward_aggregation: str,
     reward_joint_bonus_weight: float,
     reward_bottleneck_weight: float,
+    reward_softmin_weight: float,
+    reward_softmin_temperature: float,
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
     reward_source_copy_penalty: float,
@@ -2201,6 +2328,7 @@ def evaluate_group_rl(
             repetition_penalty=repetition_penalty,
             no_repeat_ngram_size=no_repeat_ngram_size,
             min_new_tokens=min_new_tokens,
+            smiles_token_text=vocab.id_to_token if smiles_grammar_constraint else None,
         )
         rewards = compute_group_rl_rewards(
             metadata_rows,
@@ -2214,6 +2342,8 @@ def evaluate_group_rl(
             reward_aggregation=reward_aggregation,
             reward_joint_bonus_weight=reward_joint_bonus_weight,
             reward_bottleneck_weight=reward_bottleneck_weight,
+            reward_softmin_weight=reward_softmin_weight,
+            reward_softmin_temperature=reward_softmin_temperature,
             reward_source_similarity_weight=reward_source_similarity_weight,
             reward_source_similarity_threshold=reward_source_similarity_threshold,
             reward_source_copy_penalty=reward_source_copy_penalty,
@@ -2246,6 +2376,7 @@ def sample_group_rollouts(
     repetition_penalty: float,
     no_repeat_ngram_size: int,
     min_new_tokens: int,
+    smiles_token_text: Sequence[str] | None = None,
 ) -> torch.Tensor:
     prompt_count = int(batch["condition"].shape[0])
     remaining = max(1, int(rollouts_per_prompt))
@@ -2268,6 +2399,7 @@ def sample_group_rollouts(
             repetition_penalty=repetition_penalty,
             no_repeat_ngram_size=no_repeat_ngram_size,
             min_new_tokens=min_new_tokens,
+            smiles_token_text=smiles_token_text,
         ).detach().cpu()
         chunks.append(generated.view(prompt_count, chunk, generated.shape[1]))
         remaining -= chunk
@@ -2369,6 +2501,8 @@ def compute_group_rl_rewards(
     reward_aggregation: str,
     reward_joint_bonus_weight: float,
     reward_bottleneck_weight: float,
+    reward_softmin_weight: float,
+    reward_softmin_temperature: float,
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
     reward_source_copy_penalty: float,
@@ -2392,6 +2526,8 @@ def compute_group_rl_rewards(
                     reward_aggregation=reward_aggregation,
                     reward_joint_bonus_weight=reward_joint_bonus_weight,
                     reward_bottleneck_weight=reward_bottleneck_weight,
+                    reward_softmin_weight=reward_softmin_weight,
+                    reward_softmin_temperature=reward_softmin_temperature,
                     reward_source_similarity_weight=reward_source_similarity_weight,
                     reward_source_similarity_threshold=reward_source_similarity_threshold,
                     reward_source_copy_penalty=reward_source_copy_penalty,
@@ -2415,6 +2551,8 @@ def reward_for_smiles(
     reward_aggregation: str = "mean",
     reward_joint_bonus_weight: float = 2.0,
     reward_bottleneck_weight: float = 0.5,
+    reward_softmin_weight: float = 1.0,
+    reward_softmin_temperature: float = 0.25,
 ) -> float:
     canonical = safe_canonical_smiles(smiles)
     if not canonical:
@@ -2426,6 +2564,9 @@ def reward_for_smiles(
     if reward_aggregation == "joint_bottleneck":
         strict_fraction = components.success_fraction
         distance = components.mean_distance
+    elif reward_aggregation == "dense_softmin":
+        strict_fraction = components.mean_satisfaction(float(reward_softmin_temperature))
+        distance = components.mean_violation
     else:
         strict_fraction = components.legacy_success_fraction
         distance = components.mean_distance
@@ -2439,6 +2580,12 @@ def reward_for_smiles(
             float(components.worst_violation),
             float(reward_distance_clip),
         )
+    elif reward_aggregation == "dense_softmin":
+        reward += float(reward_softmin_weight) * max(
+            -float(reward_distance_clip),
+            min(1.0, components.softmin_margin(float(reward_softmin_temperature))),
+        )
+        reward += float(reward_joint_bonus_weight) * float(components.all_success)
     if mode == EDIT_MODE:
         reward += float(reward_source_similarity_weight) * source_similarity_component(
             row,
@@ -2717,6 +2864,7 @@ def sample_candidates_for_row(
                 no_repeat_ngram_size=int(args.no_repeat_ngram_size),
                 min_new_tokens=int(args.min_new_tokens),
                 blocked_token_ids=action_token_ids,
+                smiles_token_text=vocab.id_to_token if bool(args.smiles_grammar_constraint) else None,
             )
             add_generated_sequences(
                 seen,
@@ -2742,6 +2890,7 @@ def sample_candidates_for_row(
             no_repeat_ngram_size=int(args.no_repeat_ngram_size),
             min_new_tokens=int(args.min_new_tokens),
             blocked_token_ids=action_token_ids,
+            smiles_token_text=vocab.id_to_token if bool(args.smiles_grammar_constraint) else None,
         )
         add_generated_sequences(
             seen,
@@ -2925,9 +3074,27 @@ class PropertyRewardComponents:
     success_fraction: float
     mean_distance: float
     worst_violation: float
+    mean_violation: float
+    margins: tuple[float, ...]
     evaluated_count: int
     property_count: int
     all_success: bool
+
+    def mean_satisfaction(self, temperature: float) -> float:
+        if not self.margins:
+            return 0.0
+        temp = max(float(temperature), 1e-6)
+        return sum(0.5 * (math.tanh(float(margin) / temp) + 1.0) for margin in self.margins) / len(self.margins)
+
+    def softmin_margin(self, temperature: float) -> float:
+        if not self.margins:
+            return 0.0
+        temp = max(float(temperature), 1e-6)
+        minimum = min(self.margins)
+        mean_exp = sum(math.exp(-(float(value) - minimum) / temp) for value in self.margins) / len(
+            self.margins
+        )
+        return float(minimum) - temp * math.log(max(mean_exp, 1e-12))
 
 
 def property_success_and_distance(row: Mapping[str, str], smiles: str, *, mode: str) -> tuple[float, float]:
@@ -2942,19 +3109,21 @@ def property_reward_components(
     mode: str,
 ) -> PropertyRewardComponents:
     if not safe_canonical_smiles(smiles):
-        return PropertyRewardComponents(0.0, 0.0, 1e6, 1e6, 0, 0, False)
+        return PropertyRewardComponents(0.0, 0.0, 1e6, 1e6, 1e6, (-1e6,), 0, 0, False)
     selected = selected_properties(row)
     if not selected:
-        return PropertyRewardComponents(0.0, 0.0, 0.0, 0.0, 0, 0, False)
+        return PropertyRewardComponents(0.0, 0.0, 0.0, 0.0, 0.0, (), 0, 0, False)
     source = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
     successes = 0
     distances: list[float] = []
     violations: list[float] = []
+    margins: list[float] = []
     evaluated = 0
     for prop in selected:
         value = score_property(smiles, prop)
         if value is None or math.isnan(float(value)):
             violations.append(1.0)
+            margins.append(-1.0)
             continue
         target = parse_float(first_present(row, [f"target_{prop}", f"target_{prop.lower()}"]))
         direction = property_direction(row, prop)
@@ -2962,23 +3131,28 @@ def property_reward_components(
             tolerance = STRICT_TOLERANCE.get(prop, PROPERTY_NORMALIZERS.get(prop, 1.0))
             distance = abs(float(value) - float(target)) / max(tolerance, 1e-8)
             success = distance <= 1.0
-            violation = max(0.0, float(distance) - 1.0)
+            margin = 1.0 - float(distance)
+            violation = max(0.0, -margin)
         elif mode == EDIT_MODE and direction and source:
             source_value = score_property(source, prop)
             if source_value is None or math.isnan(float(source_value)):
                 violations.append(1.0)
+                margins.append(-1.0)
                 continue
             delta = float(value) - float(source_value)
             distance = max(0.0, -float(direction) * delta)
             success = (delta * float(direction)) > 0.0
             normalizer = max(float(PROPERTY_NORMALIZERS.get(prop, 1.0)), 1e-8)
-            violation = float(distance) / normalizer
+            margin = float(direction) * delta / normalizer
+            violation = max(0.0, -margin)
         else:
             violations.append(1.0)
+            margins.append(-1.0)
             continue
         evaluated += 1
         distances.append(float(distance))
         violations.append(float(violation))
+        margins.append(float(margin))
         successes += 1 if success else 0
     property_count = len(selected)
     legacy_fraction = successes / evaluated if evaluated else 0.0
@@ -2990,6 +3164,8 @@ def property_reward_components(
         success_fraction=success_fraction,
         mean_distance=mean_distance,
         worst_violation=max(violations, default=0.0),
+        mean_violation=sum(violations) / max(len(violations), 1),
+        margins=tuple(margins),
         evaluated_count=evaluated,
         property_count=property_count,
         all_success=all_success,

@@ -45,6 +45,8 @@ REWARD_DISTANCE_CLIP="${SUCC_UNIFIED_RL_REWARD_DISTANCE_CLIP:-10.0}"
 REWARD_AGGREGATION="${SUCC_UNIFIED_RL_REWARD_AGGREGATION:-mean}"
 REWARD_JOINT_BONUS_WEIGHT="${SUCC_UNIFIED_RL_REWARD_JOINT_BONUS_WEIGHT:-2.0}"
 REWARD_BOTTLENECK_WEIGHT="${SUCC_UNIFIED_RL_REWARD_BOTTLENECK_WEIGHT:-0.5}"
+REWARD_SOFTMIN_WEIGHT="${SUCC_UNIFIED_RL_REWARD_SOFTMIN_WEIGHT:-1.0}"
+REWARD_SOFTMIN_TEMPERATURE="${SUCC_UNIFIED_RL_REWARD_SOFTMIN_TEMPERATURE:-0.25}"
 REWARD_SOURCE_SIMILARITY_WEIGHT="${SUCC_UNIFIED_RL_REWARD_SOURCE_SIMILARITY_WEIGHT:-0.5}"
 REWARD_SOURCE_SIMILARITY_THRESHOLD="${SUCC_UNIFIED_RL_REWARD_SOURCE_SIMILARITY_THRESHOLD:-0.4}"
 REWARD_SOURCE_COPY_PENALTY="${SUCC_UNIFIED_RL_REWARD_SOURCE_COPY_PENALTY:-0.5}"
@@ -107,6 +109,8 @@ args=(
   --reward-aggregation "$REWARD_AGGREGATION"
   --reward-joint-bonus-weight "$REWARD_JOINT_BONUS_WEIGHT"
   --reward-bottleneck-weight "$REWARD_BOTTLENECK_WEIGHT"
+  --reward-softmin-weight "$REWARD_SOFTMIN_WEIGHT"
+  --reward-softmin-temperature "$REWARD_SOFTMIN_TEMPERATURE"
   --reward-source-similarity-weight "$REWARD_SOURCE_SIMILARITY_WEIGHT"
   --reward-source-similarity-threshold "$REWARD_SOURCE_SIMILARITY_THRESHOLD"
   --reward-source-copy-penalty "$REWARD_SOURCE_COPY_PENALTY"
@@ -147,6 +151,9 @@ fi
 if [[ -n "${SUCC_UNIFIED_RL_EVAL_LIMIT:-}" ]]; then
   args+=(--eval-limit "$SUCC_UNIFIED_RL_EVAL_LIMIT")
 fi
+if [[ "${SUCC_UNIFIED_SMILES_GRAMMAR_CONSTRAINT:-0}" == "1" ]]; then
+  args+=(--smiles-grammar-constraint)
+fi
 
 echo "Unified SMILES generator group RL"
 echo "  train_csv=$TRAIN_CSV"
@@ -158,6 +165,7 @@ echo "  condition_layout=$CONDITION_LAYOUT"
 echo "  input_modality=${INPUT_MODALITY:-auto}"
 echo "  reward_mode=$REWARD_MODE"
 echo "  reward_aggregation=$REWARD_AGGREGATION"
+echo "  smiles_grammar_constraint=${SUCC_UNIFIED_SMILES_GRAMMAR_CONSTRAINT:-0}"
 echo "  rl_objective=$RL_OBJECTIVE"
 echo "  grpo_clip_eps=$GRPO_CLIP_EPS"
 echo "  grpo_update_epochs=$GRPO_UPDATE_EPOCHS"
