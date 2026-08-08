@@ -18,6 +18,8 @@ SUITE_ROOT="${UMTP_SOURCE_SUITE_ROOT:-$SHARED_PROJECT_DIR/outputs/unified_smiles
 POLICY_ROOT="${UMTP_OUTPUT_ROOT:-$SHARED_PROJECT_DIR/outputs/unified_molecular_transformation_policy_v1}"
 V1_ROOT="${UMTP_GRAPH_ACTION_V1_ROOT:-$SHARED_PROJECT_DIR/outputs/umtp_graph_action_protected_pilot_v1/seed_${SEED}}"
 PILOT_ROOT="${UMTP_GRAPH_ACTION_V2_ROOT:-$SHARED_PROJECT_DIR/outputs/umtp_graph_action_instruction_v2/seed_${SEED}}"
+GSK3B_ORACLE="${SUCC_GSK3B_ORACLE_PATH:-$SHARED_PROJECT_DIR/inputs/tdc_oracles/gsk3b_legacy_sklearn_compatible.pkl}"
+export SUCC_GSK3B_ORACLE_PATH="$GSK3B_ORACLE"
 
 BASE_CHECKPOINT="${UMTP_GRAPH_ACTION_V2_BASE_CHECKPOINT:-$POLICY_ROOT/seed_${SEED}/policy/unified_smiles_generator.pt}"
 V1_CHECKPOINT="${UMTP_GRAPH_ACTION_V1_CHECKPOINT:-$V1_ROOT/action_policy/umtp_graph_action_policy.pt}"
@@ -31,6 +33,8 @@ done
 for path in "$TRAIN_FEATURES" "$VALIDATION_FEATURES" "$SOURCE_DATA_ROOT"; do
   [[ -d "$path" ]] || { echo "ERROR: missing directory: $path" >&2; exit 2; }
 done
+[[ -f "$GSK3B_ORACLE" ]] || { echo "ERROR: missing pinned legacy GSK3B oracle: $GSK3B_ORACLE" >&2; exit 2; }
+"$PYTHON_BIN" "$SCRIPT_DIR/legacy_gsk3b_oracle.py" verify --model "$GSK3B_ORACLE"
 if [[ -f "$PILOT_ROOT/umtp_graph_action_instruction_v2_summary.json" && "${UMTP_GRAPH_ACTION_V2_FORCE:-0}" != "1" ]]; then
   echo "ERROR: completed v2 pilot exists: $PILOT_ROOT/umtp_graph_action_instruction_v2_summary.json" >&2
   exit 2

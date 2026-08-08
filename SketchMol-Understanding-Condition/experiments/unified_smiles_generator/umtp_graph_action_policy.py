@@ -614,6 +614,7 @@ def prepare_action_rows(
         ),
         "source_similarity_threshold": float(source_similarity_threshold),
         "instruction_oracle_by_task": per_task_oracle,
+        "property_oracle_provenance": unified.configured_oracle_provenance(),
         "selected_action_ops": dict(sorted(op_counts.items())),
         "skipped": dict(sorted(skipped.items())),
         "site_limit": int(site_limit),

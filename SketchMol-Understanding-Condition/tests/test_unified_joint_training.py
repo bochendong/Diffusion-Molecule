@@ -26,6 +26,7 @@ DISTILL_PATH = UNIFIED_PATH.with_name("build_transformation_search_distillation_
 SEARCH_POOL_PATH = UNIFIED_PATH.with_name("prepare_transformation_search_pool.py")
 RL_PILOT_COLLECT_PATH = UNIFIED_PATH.with_name("collect_umtp_v1_rl_pilot.py")
 GRAPH_ACTION_PATH = UNIFIED_PATH.with_name("umtp_graph_action_policy.py")
+LEGACY_GSK3B_PATH = UNIFIED_PATH.with_name("legacy_gsk3b_oracle.py")
 
 
 def load_module(path: Path, name: str):
@@ -37,6 +38,7 @@ def load_module(path: Path, name: str):
     return module
 
 
+legacy_gsk3b = load_module(LEGACY_GSK3B_PATH, "legacy_gsk3b_oracle")
 unified = load_module(UNIFIED_PATH, "unified_joint_training_module")
 prepare = load_module(PREPARE_PATH, "prepare_unified_joint_rows_module")
 collect = load_module(COLLECT_PATH, "collect_unified_joint_v2_results_module")
@@ -46,6 +48,29 @@ distill = load_module(DISTILL_PATH, "build_transformation_search_distillation_ro
 search_pool = load_module(SEARCH_POOL_PATH, "prepare_transformation_search_pool_module")
 rl_pilot_collect = load_module(RL_PILOT_COLLECT_PATH, "collect_umtp_v1_rl_pilot_module")
 graph_action = load_module(GRAPH_ACTION_PATH, "umtp_graph_action_policy_module")
+
+
+def test_unified_uses_explicit_pinned_gsk3b_oracle(monkeypatch) -> None:
+    sentinel = lambda _smiles: 0.99
+    monkeypatch.setenv(legacy_gsk3b.ORACLE_ENV, "/tmp/pinned-gsk3b.pkl")
+    monkeypatch.setattr(legacy_gsk3b, "configured_oracle", lambda: sentinel)
+    unified._TDC_ORACLE_CACHE.clear()
+    unified._PROPERTY_VALUE_CACHE.clear()
+
+    assert unified.tdc_oracle("GSK3B") is sentinel
+    assert unified.score_property("CCO", "GSK3B") == 0.99
+
+
+def test_gsk3b_provenance_records_model_hash(monkeypatch, tmp_path: Path) -> None:
+    model = tmp_path / "gsk3b.pkl"
+    model.write_bytes(b"pinned benchmark model")
+    monkeypatch.setenv(legacy_gsk3b.ORACLE_ENV, str(model))
+
+    provenance = legacy_gsk3b.configured_provenance()
+
+    assert provenance["implementation"] == "tdc_legacy_sklearn_0.21.3_converted"
+    assert provenance["path"] == str(model.resolve())
+    assert provenance["sha256"] == legacy_gsk3b.sha256_file(model)
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:

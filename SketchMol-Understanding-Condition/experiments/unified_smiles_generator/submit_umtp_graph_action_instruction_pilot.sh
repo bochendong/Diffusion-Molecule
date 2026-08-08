@@ -21,8 +21,19 @@ PARTITION="${UMTP_GRAPH_ACTION_V2_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
 MAIL_USER="${UMTP_GRAPH_ACTION_V2_SLURM_MAIL_USER:-dongbochen1218@gmail.com}"
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs/umtp_graph_action_instruction_v2}"
 SEED="${UMTP_GRAPH_ACTION_V2_SEED:-7}"
+SHARED_REPO_DIR="${UMTP_SHARED_REPO_DIR:-$REPO_DIR}"
+ORACLE_DIR="$SHARED_REPO_DIR/SketchMol-Understanding-Condition/inputs/tdc_oracles"
+ORACLE_SOURCE="${UMTP_GSK3B_LEGACY_SOURCE:-$ORACLE_DIR/gsk3b_legacy.pkl}"
+export SUCC_GSK3B_ORACLE_PATH="${SUCC_GSK3B_ORACLE_PATH:-$ORACLE_DIR/gsk3b_legacy_sklearn_compatible.pkl}"
 
 mkdir -p "$LOG_DIR"
+if [[ ! -f "$SUCC_GSK3B_ORACLE_PATH" ]]; then
+  "$SUCC_PYTHON_BIN" "$SCRIPT_DIR/legacy_gsk3b_oracle.py" prepare \
+    --source-pickle "$ORACLE_SOURCE" \
+    --output-pickle "$SUCC_GSK3B_ORACLE_PATH" \
+    --download
+fi
+"$SUCC_PYTHON_BIN" "$SCRIPT_DIR/legacy_gsk3b_oracle.py" verify --model "$SUCC_GSK3B_ORACLE_PATH"
 
 oracle_args=(
   --parsable
@@ -75,6 +86,7 @@ echo "  training_job_id=$job_id (afterok:$oracle_job_id)"
 echo "  gpu=$GPU"
 echo "  time=$TIME"
 echo "  oracle_gate=GSK3B fully-evaluable>=95%, strict-reachability>=5%"
+echo "  gsk3b_oracle=$SUCC_GSK3B_ORACLE_PATH"
 echo "  mail=$MAIL_USER"
 echo "  oracle_log=$LOG_DIR/umtp-action-v2-oracle-s${SEED}-${oracle_job_id}.log"
 echo "  log=$LOG_DIR/umtp-action-v2-s${SEED}-${job_id}.log"

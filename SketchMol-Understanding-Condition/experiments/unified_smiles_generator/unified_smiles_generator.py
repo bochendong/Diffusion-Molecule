@@ -14,6 +14,7 @@ import csv
 import hashlib
 import json
 import math
+import os
 import random
 import re
 import sys
@@ -2956,6 +2957,14 @@ def tdc_oracle(prop: str):
         except Exception:
             _TDC_ORACLE_CACHE[canonical_prop_name] = None
         return _TDC_ORACLE_CACHE[canonical_prop_name]
+    if canonical_prop_name == "GSK3B" and str(os.environ.get("SUCC_GSK3B_ORACLE_PATH", "")).strip():
+        try:
+            import legacy_gsk3b_oracle
+
+            _TDC_ORACLE_CACHE[canonical_prop_name] = legacy_gsk3b_oracle.configured_oracle()
+        except Exception:
+            _TDC_ORACLE_CACHE[canonical_prop_name] = None
+        return _TDC_ORACLE_CACHE[canonical_prop_name]
     try:
         ensure_rdkit_six_compat()
         from tdc import Oracle
@@ -2964,6 +2973,15 @@ def tdc_oracle(prop: str):
     except Exception:
         _TDC_ORACLE_CACHE[canonical_prop_name] = None
     return _TDC_ORACLE_CACHE[canonical_prop_name]
+
+
+def configured_oracle_provenance() -> dict[str, object]:
+    """Return explicit benchmark-oracle provenance for experiment manifests."""
+    if not str(os.environ.get("SUCC_GSK3B_ORACLE_PATH", "")).strip():
+        return {}
+    import legacy_gsk3b_oracle
+
+    return {"GSK3B": legacy_gsk3b_oracle.configured_provenance()}
 
 
 def ensure_rdkit_six_compat() -> None:
