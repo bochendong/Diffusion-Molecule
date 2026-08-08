@@ -215,9 +215,9 @@ def test_de_novo_distillation_supports_appended_action_vocabulary() -> None:
 
 def test_graph_action_program_round_trip_and_oracle_projection() -> None:
     row = {
-        "condition_id": "edit-cc-ccc",
-        "source_smiles": "CC",
-        "target_smiles": "CCC",
+        "condition_id": "edit-octane-nonane",
+        "source_smiles": "CCCCCCCC",
+        "target_smiles": "CCCCCCCCC",
         "instruction_tasks": '[{"property":"MW","direction":"increase"}]',
     }
     action = graph_action.graph.GraphEditAction("add_fragment", site=0, fragment="C")
@@ -227,7 +227,7 @@ def test_graph_action_program_round_trip_and_oracle_projection() -> None:
         "<SITE_000>",
         "<FRAG_METHYL>",
     ]
-    assert graph_action.graph.execute_graph_edit_action("CC", action) == "CCC"
+    assert graph_action.graph.execute_graph_edit_action("CCCCCCCC", action) == "CCCCCCCCC"
 
     rows, manifest = graph_action.prepare_action_rows([row], site_limit=8, max_actions_per_row=128)
     assert len(rows) == 1
