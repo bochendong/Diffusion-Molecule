@@ -3091,10 +3091,8 @@ class PropertyRewardComponents:
             return 0.0
         temp = max(float(temperature), 1e-6)
         minimum = min(self.margins)
-        mean_exp = sum(math.exp(-(float(value) - minimum) / temp) for value in self.margins) / len(
-            self.margins
-        )
-        return float(minimum) - temp * math.log(max(mean_exp, 1e-12))
+        exp_sum = sum(math.exp(-(float(value) - minimum) / temp) for value in self.margins)
+        return float(minimum) - temp * math.log(max(exp_sum, 1e-12))
 
 
 def property_success_and_distance(row: Mapping[str, str], smiles: str, *, mode: str) -> tuple[float, float]:

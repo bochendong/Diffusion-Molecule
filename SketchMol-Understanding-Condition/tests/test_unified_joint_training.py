@@ -247,7 +247,7 @@ def test_prepare_pool_oversamples_high_property_counts(tmp_path: Path) -> None:
             )
     write_csv(input_csv, rows)
 
-    prepare.main(
+    search_pool.main(
         [
             "--input-csv",
             str(input_csv),
