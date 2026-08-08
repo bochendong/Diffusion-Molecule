@@ -670,3 +670,18 @@ def test_preflight_rejects_low_source_tanimoto_and_eval_oracle_failures(tmp_path
         assert "source-neighbor floor" in str(exc)
     else:
         raise AssertionError("Expected low-source-tanimoto manifest to fail preflight")
+
+
+def test_moledit_evaluator_prefers_pinned_assay_oracle(monkeypatch):
+    script_path = Path(__file__).resolve().parents[1] / "scripts" / "evaluate_moledit_table_metrics.py"
+    spec = importlib.util.spec_from_file_location("evaluate_moledit_table_metrics", script_path)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    sentinel = lambda _smiles: 0.91
+    monkeypatch.setattr(module, "configured_pinned_oracle", lambda prop: sentinel if prop == "GSK3B" else None)
+    chemistry = module.Chemistry()
+
+    assert chemistry.oracle("GSK3B") is sentinel
+    assert chemistry.score("CCO", "GSK3B") == 0.91

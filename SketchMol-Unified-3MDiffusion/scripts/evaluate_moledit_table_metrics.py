@@ -5,8 +5,11 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
+import os
+import pickle
 import sys
 import types
 from collections import defaultdict
@@ -99,6 +102,69 @@ PREDICTION_SMILES_COLUMNS = (
 )
 
 ID_COLUMNS = ("example_id", "condition_id", "sample_id", "pair_hash")
+PINNED_ORACLE_ENVS = {
+    "GSK3B": "SUCC_GSK3B_ORACLE_PATH",
+    "DRD2": "SUCC_DRD2_ORACLE_PATH",
+}
+
+
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+class PinnedMorganClassifierOracle:
+    """Run a provenance-pinned sklearn assay model on TDC ECFP4 features."""
+
+    def __init__(self, model_path: Path):
+        self.model_path = model_path.resolve()
+        with self.model_path.open("rb") as handle:
+            self.model = pickle.load(handle)
+
+    def __call__(self, smiles: str) -> float:
+        from rdkit import Chem, DataStructs
+        from rdkit.Chem import AllChem
+
+        molecule = Chem.MolFromSmiles(str(smiles or ""))
+        if molecule is None:
+            raise ValueError("invalid SMILES")
+        fingerprint = AllChem.GetMorganFingerprintAsBitVect(molecule, 2, nBits=2048)
+        features = np.zeros(2048, dtype=np.float32)
+        DataStructs.ConvertToNumpyArray(fingerprint, features)
+        probability = self.model.predict_proba(features.reshape(1, -1))
+        return float(probability[0, 1])
+
+
+def configured_pinned_oracle(prop: str) -> PinnedMorganClassifierOracle | None:
+    env_name = PINNED_ORACLE_ENVS.get(canonical_property(prop))
+    configured = str(os.environ.get(env_name, "") or "").strip() if env_name else ""
+    if not configured:
+        return None
+    path = Path(configured).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"{env_name} does not exist: {path}")
+    return PinnedMorganClassifierOracle(path)
+
+
+def configured_oracle_provenance() -> dict[str, dict[str, str]]:
+    provenance: dict[str, dict[str, str]] = {}
+    for prop, env_name in PINNED_ORACLE_ENVS.items():
+        configured = str(os.environ.get(env_name, "") or "").strip()
+        if not configured:
+            continue
+        path = Path(configured).expanduser().resolve()
+        if not path.is_file():
+            raise FileNotFoundError(f"{env_name} does not exist: {path}")
+        provenance[prop] = {
+            "implementation": "pinned_ecfp4_2048_sklearn_classifier",
+            "env": env_name,
+            "path": str(path),
+            "sha256": sha256_file(path),
+        }
+    return provenance
 
 
 def parse_args() -> argparse.Namespace:
@@ -261,6 +327,10 @@ def main() -> None:
         + "\n",
         encoding="utf-8",
     )
+    (args.output_dir / "oracle_provenance.json").write_text(
+        json.dumps(configured_oracle_provenance(), indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
     if coverage_failures:
         message = "Table1 coverage check failed: " + ", ".join(coverage_failures)
         if args.require_table1_coverage:
@@ -340,6 +410,10 @@ class Chemistry:
             sa_oracle = self._rdkit_sa_oracle()
             self._oracles[prop] = sa_oracle
             return sa_oracle
+        pinned = configured_pinned_oracle(prop)
+        if pinned is not None:
+            self._oracles[prop] = pinned
+            return pinned
         try:
             from tdc import Oracle
 

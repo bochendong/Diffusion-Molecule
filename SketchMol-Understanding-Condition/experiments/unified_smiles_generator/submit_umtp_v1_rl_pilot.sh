@@ -22,6 +22,7 @@ LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs/umtp_rl_pilot_v1}"
 SEED="${UMTP_RL_PILOT_SEED:-7}"
 POLICY_ROOT="${UMTP_OUTPUT_ROOT:-SketchMol-Understanding-Condition/outputs/unified_molecular_transformation_policy_v1}"
 BASE_CHECKPOINT="${UMTP_RL_PILOT_BASE_CHECKPOINT:-$POLICY_ROOT/seed_${SEED}/policy/unified_smiles_generator.pt}"
+JOB_NAME="${UMTP_RL_PILOT_SLURM_JOB_NAME:-umtp-rl-pilot-s${SEED}}"
 
 [[ -f "$BASE_CHECKPOINT" ]] || { echo "ERROR: missing UMTP checkpoint: $BASE_CHECKPOINT" >&2; exit 2; }
 mkdir -p "$LOG_DIR"
@@ -29,12 +30,12 @@ mkdir -p "$LOG_DIR"
 args=(
   --parsable
   --account="$ACCOUNT"
-  --job-name="umtp-rl-pilot-s${SEED}"
+  --job-name="$JOB_NAME"
   --time="$TIME"
   --mem="$MEM"
   --cpus-per-task="$CPUS"
   --gpus="$GPU"
-  --output="$LOG_DIR/umtp-rl-pilot-s${SEED}-%j.log"
+  --output="$LOG_DIR/${JOB_NAME}-%j.log"
   --export=ALL
 )
 [[ -n "$PARTITION" ]] && args+=(--partition="$PARTITION")
@@ -50,4 +51,4 @@ echo "  job_id=$job_id"
 echo "  gpu=$GPU"
 echo "  time=$TIME"
 echo "  checkpoint=$BASE_CHECKPOINT"
-echo "  log=$LOG_DIR/umtp-rl-pilot-s${SEED}-${job_id}.log"
+echo "  log=$LOG_DIR/${JOB_NAME}-${job_id}.log"

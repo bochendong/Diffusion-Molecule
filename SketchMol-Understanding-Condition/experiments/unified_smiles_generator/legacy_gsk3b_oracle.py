@@ -32,6 +32,8 @@ import numpy as np
 
 
 ORACLE_ENV = "SUCC_GSK3B_ORACLE_PATH"
+DRD2_ORACLE_ENV = "SUCC_DRD2_ORACLE_PATH"
+PINNED_ORACLE_ENVS = {"GSK3B": ORACLE_ENV, "DRD2": DRD2_ORACLE_ENV}
 LEGACY_URL = "https://dataverse.harvard.edu/api/access/datafile/4170295"
 LEGACY_SHA256 = "18d1cc9bb9498e4bae0755842080558cb2d0444ecb51beffa0ef58a6d760b74b"
 KNOWN_ACTIVE = "Nc1nonc1-c1nc2cc(O)ccc2n1C1CCC1"
@@ -72,12 +74,18 @@ def load_oracle(path: Path) -> MorganClassifierOracle:
 
 
 def configured_oracle() -> MorganClassifierOracle | None:
-    configured = str(os.environ.get(ORACLE_ENV, "") or "").strip()
+    return configured_oracle_for("GSK3B")
+
+
+def configured_oracle_for(prop: str) -> MorganClassifierOracle | None:
+    canonical = str(prop or "").strip().upper()
+    env_name = PINNED_ORACLE_ENVS.get(canonical)
+    configured = str(os.environ.get(env_name, "") or "").strip() if env_name else ""
     if not configured:
         return None
     path = Path(configured).expanduser().resolve()
     if not path.is_file():
-        raise FileNotFoundError(f"{ORACLE_ENV} does not exist: {path}")
+        raise FileNotFoundError(f"{env_name} does not exist: {path}")
     return load_oracle(path)
 
 
@@ -98,6 +106,25 @@ def configured_provenance() -> dict[str, object]:
     if manifest_path.is_file():
         result["conversion_manifest"] = json.loads(manifest_path.read_text(encoding="utf-8"))
     return result
+
+
+def configured_provenance_for(prop: str) -> dict[str, object]:
+    canonical = str(prop or "").strip().upper()
+    if canonical == "GSK3B":
+        return configured_provenance()
+    env_name = PINNED_ORACLE_ENVS.get(canonical)
+    configured = str(os.environ.get(env_name, "") or "").strip() if env_name else ""
+    if not configured:
+        return {}
+    path = Path(configured).expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"{env_name} does not exist: {path}")
+    return {
+        "property": canonical,
+        "implementation": "pinned_ecfp4_2048_sklearn_classifier",
+        "path": str(path),
+        "sha256": sha256_file(path),
+    }
 
 
 class _LegacyTree:

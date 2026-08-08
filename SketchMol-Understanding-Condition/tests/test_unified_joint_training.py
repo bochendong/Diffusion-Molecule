@@ -61,6 +61,17 @@ def test_unified_uses_explicit_pinned_gsk3b_oracle(monkeypatch) -> None:
     assert unified.score_property("CCO", "GSK3B") == 0.99
 
 
+def test_unified_uses_explicit_pinned_drd2_oracle(monkeypatch) -> None:
+    sentinel = lambda _smiles: 0.73
+    monkeypatch.setenv(legacy_gsk3b.DRD2_ORACLE_ENV, "/tmp/pinned-drd2.pkl")
+    monkeypatch.setattr(legacy_gsk3b, "configured_oracle_for", lambda prop: sentinel if prop == "DRD2" else None)
+    unified._TDC_ORACLE_CACHE.clear()
+    unified._PROPERTY_VALUE_CACHE.clear()
+
+    assert unified.tdc_oracle("DRD2") is sentinel
+    assert unified.score_property("CCO", "DRD2") == 0.73
+
+
 def test_gsk3b_provenance_records_model_hash(monkeypatch, tmp_path: Path) -> None:
     model = tmp_path / "gsk3b.pkl"
     model.write_bytes(b"pinned benchmark model")
@@ -71,6 +82,65 @@ def test_gsk3b_provenance_records_model_hash(monkeypatch, tmp_path: Path) -> Non
     assert provenance["implementation"] == "tdc_legacy_sklearn_0.21.3_converted"
     assert provenance["path"] == str(model.resolve())
     assert provenance["sha256"] == legacy_gsk3b.sha256_file(model)
+
+
+def test_joint_bottleneck_reward_prefers_all_property_success(monkeypatch) -> None:
+    row = {
+        "condition_properties": "MW,LogP",
+        "MW_active": "True",
+        "LogP_active": "True",
+        "target_MW": "100",
+        "target_LogP": "2.0",
+    }
+    values = {
+        ("all", "MW"): 100.0,
+        ("all", "LogP"): 2.0,
+        ("partial", "MW"): 100.0,
+        ("partial", "LogP"): 8.0,
+    }
+    monkeypatch.setattr(unified, "safe_canonical_smiles", lambda value: str(value or ""))
+    monkeypatch.setattr(unified, "score_property", lambda smiles, prop: values.get((smiles, prop)))
+
+    kwargs = {
+        "reward_mode": "property_strict",
+        "reward_valid_weight": 0.0,
+        "reward_strict_weight": 1.0,
+        "reward_distance_weight": 0.0,
+        "reward_distance_clip": 10.0,
+        "reward_source_similarity_weight": 0.0,
+        "reward_source_similarity_threshold": 0.4,
+        "reward_source_copy_penalty": 0.0,
+        "reward_aggregation": "joint_bottleneck",
+        "reward_joint_bonus_weight": 2.0,
+        "reward_bottleneck_weight": 0.5,
+    }
+    all_success = unified.reward_for_smiles(row, "all", **kwargs)
+    partial = unified.reward_for_smiles(row, "partial", **kwargs)
+    components = unified.property_reward_components(row, "partial", mode=unified.DE_NOVO_MODE)
+
+    assert components.success_fraction == 0.5
+    assert components.all_success is False
+    assert components.worst_violation > 0.0
+    assert all_success > partial + 2.0
+
+
+def test_joint_bottleneck_counts_missing_property_as_failure(monkeypatch) -> None:
+    row = {
+        "condition_properties": "MW,DRD2",
+        "MW_active": "True",
+        "DRD2_active": "True",
+        "target_MW": "100",
+        "target_DRD2": "0.5",
+    }
+    monkeypatch.setattr(unified, "safe_canonical_smiles", lambda value: str(value or ""))
+    monkeypatch.setattr(unified, "score_property", lambda _smiles, prop: 100.0 if prop == "MW" else None)
+
+    components = unified.property_reward_components(row, "candidate", mode=unified.DE_NOVO_MODE)
+
+    assert components.legacy_success_fraction == 1.0
+    assert components.success_fraction == 0.5
+    assert components.all_success is False
+    assert components.worst_violation == 1.0
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:

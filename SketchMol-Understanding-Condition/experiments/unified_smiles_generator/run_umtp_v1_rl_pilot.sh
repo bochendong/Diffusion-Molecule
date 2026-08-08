@@ -16,6 +16,7 @@ SUITE_ROOT="${UMTP_SOURCE_SUITE_ROOT:-SketchMol-Understanding-Condition/outputs/
 POLICY_ROOT="${UMTP_OUTPUT_ROOT:-SketchMol-Understanding-Condition/outputs/unified_molecular_transformation_policy_v1}"
 PILOT_ROOT="${UMTP_RL_PILOT_OUTPUT_ROOT:-SketchMol-Understanding-Condition/outputs/unified_molecular_transformation_policy_rl_pilot_v1/seed_${SEED}}"
 BASE_CHECKPOINT="${UMTP_RL_PILOT_BASE_CHECKPOINT:-$POLICY_ROOT/seed_${SEED}/policy/unified_smiles_generator.pt}"
+export SUCC_GSK3B_ORACLE_PATH="${SUCC_GSK3B_ORACLE_PATH:-SketchMol-Understanding-Condition/inputs/tdc_oracles/gsk3b_legacy_sklearn_compatible.pkl}"
 RL_DIR="$PILOT_ROOT/rl"
 RL_CHECKPOINT="$RL_DIR/unified_smiles_generator_group_rl.pt"
 
@@ -27,6 +28,8 @@ VALIDATION_FEATURES="$JOINT_ROOT/feature_variants/validation_condition_features_
 for path in "$BASE_CHECKPOINT" "$JOINT_TRAIN" "$JOINT_VALIDATION"; do
   [[ -f "$path" ]] || { echo "ERROR: missing required file: $path" >&2; exit 2; }
 done
+[[ -f "$SUCC_GSK3B_ORACLE_PATH" ]] || { echo "ERROR: missing pinned GSK3B oracle: $SUCC_GSK3B_ORACLE_PATH" >&2; exit 2; }
+"$PYTHON_BIN" "$SCRIPT_DIR/legacy_gsk3b_oracle.py" verify --model "$SUCC_GSK3B_ORACLE_PATH"
 for path in "$TRAIN_FEATURES" "$VALIDATION_FEATURES"; do
   [[ -d "$path" ]] || { echo "ERROR: missing required feature directory: $path" >&2; exit 2; }
 done
@@ -135,6 +138,9 @@ SUCC_UNIFIED_RL_REFERENCE_KL_WEIGHT="${UMTP_RL_PILOT_REFERENCE_KL_WEIGHT:-0.1}" 
 SUCC_UNIFIED_RL_REWARD_MODE=auto \
 SUCC_UNIFIED_RL_REWARD_STRICT_WEIGHT=2.0 \
 SUCC_UNIFIED_RL_REWARD_DISTANCE_WEIGHT=0.05 \
+SUCC_UNIFIED_RL_REWARD_AGGREGATION="${UMTP_RL_PILOT_REWARD_AGGREGATION:-mean}" \
+SUCC_UNIFIED_RL_REWARD_JOINT_BONUS_WEIGHT="${UMTP_RL_PILOT_REWARD_JOINT_BONUS_WEIGHT:-2.0}" \
+SUCC_UNIFIED_RL_REWARD_BOTTLENECK_WEIGHT="${UMTP_RL_PILOT_REWARD_BOTTLENECK_WEIGHT:-0.5}" \
 SUCC_UNIFIED_RL_REWARD_SOURCE_SIMILARITY_WEIGHT="${UMTP_RL_PILOT_SIMILARITY_WEIGHT:-2.0}" \
 SUCC_UNIFIED_RL_REWARD_SOURCE_SIMILARITY_THRESHOLD="${UMTP_RL_PILOT_SIMILARITY_THRESHOLD:-0.65}" \
 SUCC_UNIFIED_RL_REWARD_SOURCE_COPY_PENALTY="${UMTP_RL_PILOT_SOURCE_COPY_PENALTY:-0.5}" \

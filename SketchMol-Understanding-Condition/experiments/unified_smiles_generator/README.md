@@ -162,10 +162,24 @@ SUCC_UNIFIED_RL_GRPO_UPDATE_EPOCHS  # reuse each rollout group for clipped GRPO 
 SUCC_UNIFIED_CONDITION_FEATURE_VARIANT
 SUCC_UNIFIED_INPUT_MODALITY
 SUCC_UNIFIED_RL_REWARD_MODE        # auto | property_strict | table1_edit
+SUCC_UNIFIED_RL_REWARD_AGGREGATION # mean | joint_bottleneck
+SUCC_UNIFIED_RL_REWARD_JOINT_BONUS_WEIGHT
+SUCC_UNIFIED_RL_REWARD_BOTTLENECK_WEIGHT
 SUCC_UNIFIED_RL_SFT_WEIGHT
 SUCC_UNIFIED_RL_REFERENCE_KL_WEIGHT
 SUCC_UNIFIED_RL_REWARD_SOURCE_SIMILARITY_WEIGHT
 SUCC_UNIFIED_RL_REWARD_SOURCE_COPY_PENALTY
+```
+
+`joint_bottleneck` keeps the partial-success signal, adds an explicit bonus
+only when every requested property succeeds, and subtracts the largest
+normalized property violation. Missing oracle values count as failed
+constraints. The legacy `mean` behavior remains the default for old runs.
+
+The first fixed-budget single-seed pilot uses `n=20` and one H100 20 GB MIG:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_umtp_joint_bottleneck_pilot.sh
 ```
 
 ## Protected GraphEditDSL paper-budget reconciliation

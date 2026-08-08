@@ -340,6 +340,17 @@ def add_group_rl_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--reward-strict-weight", type=float, default=2.0)
     parser.add_argument("--reward-distance-weight", type=float, default=0.05)
     parser.add_argument("--reward-distance-clip", type=float, default=10.0)
+    parser.add_argument(
+        "--reward-aggregation",
+        choices=("mean", "joint_bottleneck"),
+        default="mean",
+        help=(
+            "mean preserves the legacy average-property reward; joint_bottleneck additionally "
+            "rewards all-property success and penalizes the worst unsatisfied property."
+        ),
+    )
+    parser.add_argument("--reward-joint-bonus-weight", type=float, default=2.0)
+    parser.add_argument("--reward-bottleneck-weight", type=float, default=0.5)
     parser.add_argument("--reward-source-similarity-weight", type=float, default=0.5)
     parser.add_argument("--reward-source-similarity-threshold", type=float, default=None)
     parser.add_argument("--reward-source-copy-penalty", type=float, default=0.5)
@@ -648,6 +659,9 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
             reward_strict_weight=float(args.reward_strict_weight),
             reward_distance_weight=float(args.reward_distance_weight),
             reward_distance_clip=float(args.reward_distance_clip),
+            reward_aggregation=str(args.reward_aggregation),
+            reward_joint_bonus_weight=float(args.reward_joint_bonus_weight),
+            reward_bottleneck_weight=float(args.reward_bottleneck_weight),
             reward_source_similarity_weight=float(args.reward_source_similarity_weight),
             reward_source_similarity_threshold=effective_reward_source_similarity_threshold(args),
             reward_source_copy_penalty=float(args.reward_source_copy_penalty),
@@ -677,6 +691,9 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
                 reward_strict_weight=float(args.reward_strict_weight),
                 reward_distance_weight=float(args.reward_distance_weight),
                 reward_distance_clip=float(args.reward_distance_clip),
+                reward_aggregation=str(args.reward_aggregation),
+                reward_joint_bonus_weight=float(args.reward_joint_bonus_weight),
+                reward_bottleneck_weight=float(args.reward_bottleneck_weight),
                 reward_source_similarity_weight=float(args.reward_source_similarity_weight),
                 reward_source_similarity_threshold=effective_reward_source_similarity_threshold(args),
                 reward_source_copy_penalty=float(args.reward_source_copy_penalty),
@@ -718,6 +735,9 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
         "grpo_clip_eps": float(args.grpo_clip_eps),
         "grpo_update_epochs": int(args.grpo_update_epochs),
         "reward_mode": str(args.reward_mode),
+        "reward_aggregation": str(args.reward_aggregation),
+        "reward_joint_bonus_weight": float(args.reward_joint_bonus_weight),
+        "reward_bottleneck_weight": float(args.reward_bottleneck_weight),
         "reward_source_similarity_threshold": effective_reward_source_similarity_threshold(args),
         "history": history,
         "prediction_summary": prediction_summary,
@@ -1975,6 +1995,9 @@ def train_epoch_group_rl(
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
+    reward_aggregation: str,
+    reward_joint_bonus_weight: float,
+    reward_bottleneck_weight: float,
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
     reward_source_copy_penalty: float,
@@ -2039,6 +2062,9 @@ def train_epoch_group_rl(
             reward_strict_weight=reward_strict_weight,
             reward_distance_weight=reward_distance_weight,
             reward_distance_clip=reward_distance_clip,
+            reward_aggregation=reward_aggregation,
+            reward_joint_bonus_weight=reward_joint_bonus_weight,
+            reward_bottleneck_weight=reward_bottleneck_weight,
             reward_source_similarity_weight=reward_source_similarity_weight,
             reward_source_similarity_threshold=reward_source_similarity_threshold,
             reward_source_copy_penalty=reward_source_copy_penalty,
@@ -2146,6 +2172,9 @@ def evaluate_group_rl(
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
+    reward_aggregation: str,
+    reward_joint_bonus_weight: float,
+    reward_bottleneck_weight: float,
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
     reward_source_copy_penalty: float,
@@ -2182,6 +2211,9 @@ def evaluate_group_rl(
             reward_strict_weight=reward_strict_weight,
             reward_distance_weight=reward_distance_weight,
             reward_distance_clip=reward_distance_clip,
+            reward_aggregation=reward_aggregation,
+            reward_joint_bonus_weight=reward_joint_bonus_weight,
+            reward_bottleneck_weight=reward_bottleneck_weight,
             reward_source_similarity_weight=reward_source_similarity_weight,
             reward_source_similarity_threshold=reward_source_similarity_threshold,
             reward_source_copy_penalty=reward_source_copy_penalty,
@@ -2334,6 +2366,9 @@ def compute_group_rl_rewards(
     reward_strict_weight: float,
     reward_distance_weight: float,
     reward_distance_clip: float,
+    reward_aggregation: str,
+    reward_joint_bonus_weight: float,
+    reward_bottleneck_weight: float,
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
     reward_source_copy_penalty: float,
@@ -2354,6 +2389,9 @@ def compute_group_rl_rewards(
                     reward_strict_weight=reward_strict_weight,
                     reward_distance_weight=reward_distance_weight,
                     reward_distance_clip=reward_distance_clip,
+                    reward_aggregation=reward_aggregation,
+                    reward_joint_bonus_weight=reward_joint_bonus_weight,
+                    reward_bottleneck_weight=reward_bottleneck_weight,
                     reward_source_similarity_weight=reward_source_similarity_weight,
                     reward_source_similarity_threshold=reward_source_similarity_threshold,
                     reward_source_copy_penalty=reward_source_copy_penalty,
@@ -2374,6 +2412,9 @@ def reward_for_smiles(
     reward_source_similarity_weight: float,
     reward_source_similarity_threshold: float,
     reward_source_copy_penalty: float,
+    reward_aggregation: str = "mean",
+    reward_joint_bonus_weight: float = 2.0,
+    reward_bottleneck_weight: float = 0.5,
 ) -> float:
     canonical = safe_canonical_smiles(smiles)
     if not canonical:
@@ -2381,11 +2422,23 @@ def reward_for_smiles(
     mode = task_mode_for_row(row)
     routed_reward = reward_mode_for_row(row, reward_mode)
     scoring_mode = EDIT_MODE if routed_reward == "table1_edit" else DE_NOVO_MODE
-    strict_fraction, distance = property_success_and_distance(row, canonical, mode=scoring_mode)
+    components = property_reward_components(row, canonical, mode=scoring_mode)
+    if reward_aggregation == "joint_bottleneck":
+        strict_fraction = components.success_fraction
+        distance = components.mean_distance
+    else:
+        strict_fraction = components.legacy_success_fraction
+        distance = components.mean_distance
     distance = min(float(distance), float(reward_distance_clip))
     reward = float(reward_valid_weight)
     reward += float(reward_strict_weight) * float(strict_fraction)
     reward -= float(reward_distance_weight) * float(distance)
+    if reward_aggregation == "joint_bottleneck":
+        reward += float(reward_joint_bonus_weight) * float(components.all_success)
+        reward -= float(reward_bottleneck_weight) * min(
+            float(components.worst_violation),
+            float(reward_distance_clip),
+        )
     if mode == EDIT_MODE:
         reward += float(reward_source_similarity_weight) * source_similarity_component(
             row,
@@ -2866,19 +2919,42 @@ def instruction_success_and_distance(
     return fraction, sum(distances) / max(property_count, 1), evaluated, all_success
 
 
+@dataclass(frozen=True)
+class PropertyRewardComponents:
+    legacy_success_fraction: float
+    success_fraction: float
+    mean_distance: float
+    worst_violation: float
+    evaluated_count: int
+    property_count: int
+    all_success: bool
+
+
 def property_success_and_distance(row: Mapping[str, str], smiles: str, *, mode: str) -> tuple[float, float]:
+    components = property_reward_components(row, smiles, mode=mode)
+    return components.legacy_success_fraction, components.mean_distance
+
+
+def property_reward_components(
+    row: Mapping[str, str],
+    smiles: str,
+    *,
+    mode: str,
+) -> PropertyRewardComponents:
     if not safe_canonical_smiles(smiles):
-        return 0.0, 1e6
+        return PropertyRewardComponents(0.0, 0.0, 1e6, 1e6, 0, 0, False)
     selected = selected_properties(row)
     if not selected:
-        return 0.0, 0.0
+        return PropertyRewardComponents(0.0, 0.0, 0.0, 0.0, 0, 0, False)
     source = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
     successes = 0
-    distances = []
+    distances: list[float] = []
+    violations: list[float] = []
     evaluated = 0
     for prop in selected:
         value = score_property(smiles, prop)
         if value is None or math.isnan(float(value)):
+            violations.append(1.0)
             continue
         target = parse_float(first_present(row, [f"target_{prop}", f"target_{prop.lower()}"]))
         direction = property_direction(row, prop)
@@ -2886,21 +2962,38 @@ def property_success_and_distance(row: Mapping[str, str], smiles: str, *, mode: 
             tolerance = STRICT_TOLERANCE.get(prop, PROPERTY_NORMALIZERS.get(prop, 1.0))
             distance = abs(float(value) - float(target)) / max(tolerance, 1e-8)
             success = distance <= 1.0
+            violation = max(0.0, float(distance) - 1.0)
         elif mode == EDIT_MODE and direction and source:
             source_value = score_property(source, prop)
             if source_value is None or math.isnan(float(source_value)):
+                violations.append(1.0)
                 continue
             delta = float(value) - float(source_value)
             distance = max(0.0, -float(direction) * delta)
             success = (delta * float(direction)) > 0.0
+            normalizer = max(float(PROPERTY_NORMALIZERS.get(prop, 1.0)), 1e-8)
+            violation = float(distance) / normalizer
         else:
+            violations.append(1.0)
             continue
         evaluated += 1
         distances.append(float(distance))
+        violations.append(float(violation))
         successes += 1 if success else 0
-    if evaluated == 0:
-        return 0.0, 0.0
-    return successes / evaluated, sum(distances) / max(len(distances), 1)
+    property_count = len(selected)
+    legacy_fraction = successes / evaluated if evaluated else 0.0
+    success_fraction = successes / max(property_count, 1)
+    mean_distance = sum(distances) / max(len(distances), 1) if evaluated else 0.0
+    all_success = evaluated == property_count and successes == property_count
+    return PropertyRewardComponents(
+        legacy_success_fraction=legacy_fraction,
+        success_fraction=success_fraction,
+        mean_distance=mean_distance,
+        worst_violation=max(violations, default=0.0),
+        evaluated_count=evaluated,
+        property_count=property_count,
+        all_success=all_success,
+    )
 
 
 def score_property(smiles: str, prop: str) -> float | None:
@@ -2957,11 +3050,20 @@ def tdc_oracle(prop: str):
         except Exception:
             _TDC_ORACLE_CACHE[canonical_prop_name] = None
         return _TDC_ORACLE_CACHE[canonical_prop_name]
-    if canonical_prop_name == "GSK3B" and str(os.environ.get("SUCC_GSK3B_ORACLE_PATH", "")).strip():
+    pinned_env = {
+        "GSK3B": "SUCC_GSK3B_ORACLE_PATH",
+        "DRD2": "SUCC_DRD2_ORACLE_PATH",
+    }.get(canonical_prop_name)
+    if pinned_env and str(os.environ.get(pinned_env, "")).strip():
         try:
             import legacy_gsk3b_oracle
 
-            _TDC_ORACLE_CACHE[canonical_prop_name] = legacy_gsk3b_oracle.configured_oracle()
+            if canonical_prop_name == "GSK3B":
+                _TDC_ORACLE_CACHE[canonical_prop_name] = legacy_gsk3b_oracle.configured_oracle()
+            else:
+                _TDC_ORACLE_CACHE[canonical_prop_name] = legacy_gsk3b_oracle.configured_oracle_for(
+                    canonical_prop_name
+                )
         except Exception:
             _TDC_ORACLE_CACHE[canonical_prop_name] = None
         return _TDC_ORACLE_CACHE[canonical_prop_name]
@@ -2977,11 +3079,13 @@ def tdc_oracle(prop: str):
 
 def configured_oracle_provenance() -> dict[str, object]:
     """Return explicit benchmark-oracle provenance for experiment manifests."""
-    if not str(os.environ.get("SUCC_GSK3B_ORACLE_PATH", "")).strip():
-        return {}
     import legacy_gsk3b_oracle
 
-    return {"GSK3B": legacy_gsk3b_oracle.configured_provenance()}
+    provenance = {}
+    for prop, env_name in legacy_gsk3b_oracle.PINNED_ORACLE_ENVS.items():
+        if str(os.environ.get(env_name, "")).strip():
+            provenance[prop] = legacy_gsk3b_oracle.configured_provenance_for(prop)
+    return provenance
 
 
 def ensure_rdkit_six_compat() -> None:
