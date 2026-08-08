@@ -231,8 +231,8 @@ def test_graph_action_program_round_trip_and_oracle_projection() -> None:
 
     rows, manifest = graph_action.prepare_action_rows([row], site_limit=8, max_actions_per_row=128)
     assert len(rows) == 1
-    assert rows[0]["policy_target_exact"] == "True"
-    assert manifest["exact_reconstruction_rate"] == 1.0
+    assert rows[0]["policy_target_strict_success"] == "True"
+    assert manifest["selected_strict_instruction_rate"] == 1.0
 
 
 def test_graph_action_oracle_uses_assay_instruction_before_target_similarity(monkeypatch) -> None:
@@ -252,9 +252,9 @@ def test_graph_action_oracle_uses_assay_instruction_before_target_similarity(mon
         ("paired-target", "gsk-improved"): 0.30,
         ("paired-target", "target-like-failure"): 0.99,
     }
-    monkeypatch.setattr(unified, "safe_canonical_smiles", lambda value: str(value))
-    monkeypatch.setattr(unified, "score_property", lambda smiles, prop: scores.get((smiles, prop)))
-    monkeypatch.setattr(unified, "morgan_tanimoto", lambda left, right: similarities[(left, right)])
+    monkeypatch.setattr(graph_action.unified, "safe_canonical_smiles", lambda value: str(value))
+    monkeypatch.setattr(graph_action.unified, "score_property", lambda smiles, prop: scores.get((smiles, prop)))
+    monkeypatch.setattr(graph_action.unified, "morgan_tanimoto", lambda left, right: similarities[(left, right)])
 
     action = graph_action.graph.GraphEditAction("replace_atom", site=0, atom="N")
     improved = graph_action.action_oracle_record(row, (action, "gsk-improved", ["<EDIT>"]))
