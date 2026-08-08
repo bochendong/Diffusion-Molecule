@@ -235,6 +235,22 @@ def test_graph_action_program_round_trip_and_oracle_projection() -> None:
     assert manifest["selected_strict_instruction_rate"] == 1.0
 
 
+def test_graph_action_substitutes_terminal_atom_with_medicinal_fragment() -> None:
+    action = graph_action.graph.GraphEditAction(
+        "substitute_terminal",
+        site=1,
+        fragment="C(=N)N",
+    )
+    assert graph_action.action_program_tokens(action) == [
+        "<EDIT>",
+        "<SUBSTITUTE_TERMINAL>",
+        "<SITE_001>",
+        "<FRAG_GUANIDINO>",
+    ]
+    generated = graph_action.graph.execute_graph_edit_action("CCl", action)
+    assert generated == graph_action.unified.safe_canonical_smiles("CC(=N)N")
+
+
 def test_graph_action_oracle_uses_assay_instruction_before_target_similarity(monkeypatch) -> None:
     row = {
         "source_smiles": "source",

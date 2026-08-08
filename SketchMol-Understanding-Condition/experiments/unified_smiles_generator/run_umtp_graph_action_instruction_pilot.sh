@@ -10,6 +10,7 @@ cd "$REPO_DIR"
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 SEED="${UMTP_GRAPH_ACTION_V2_SEED:-7}"
 BUDGETS="${UMTP_GRAPH_ACTION_V2_BUDGETS:-1,8,20}"
+STAGE="${UMTP_GRAPH_ACTION_V2_STAGE:-all}"
 SHARED_REPO_DIR="${UMTP_SHARED_REPO_DIR:-$REPO_DIR}"
 SHARED_PROJECT_DIR="$SHARED_REPO_DIR/SketchMol-Understanding-Condition"
 JOINT_ROOT="${UMTP_JOINT_ROOT:-$SHARED_PROJECT_DIR/outputs/unified_smiles_generator_joint_v2}"
@@ -52,31 +53,48 @@ ORACLE_GATE="$PILOT_ROOT/data/action_oracle_gate.json"
 V2_DIR="$PILOT_ROOT/action_policy"
 V2_CHECKPOINT="$V2_DIR/umtp_graph_action_policy.pt"
 
-echo "=== Build official-instruction action labels (all RDKit/TDC/SA properties) ==="
-"$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" prepare \
-  --input-csv "$TRAIN_POOL" \
-  --output-csv "$ACTION_TRAIN" \
-  --manifest-json "$ACTION_ORACLE" \
-  --site-limit "${UMTP_GRAPH_ACTION_V2_SITE_LIMIT:-32}" \
-  --max-actions-per-row "${UMTP_GRAPH_ACTION_V2_MAX_ACTIONS:-512}" \
-  --source-similarity-threshold 0.65 \
-  --seed "$SEED"
+if [[ "$STAGE" == "oracle" || "$STAGE" == "all" ]]; then
+  echo "=== Build official-instruction action labels (all RDKit/TDC/SA properties) ==="
+  "$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" prepare \
+    --input-csv "$TRAIN_POOL" \
+    --output-csv "$ACTION_TRAIN" \
+    --manifest-json "$ACTION_ORACLE" \
+    --site-limit "${UMTP_GRAPH_ACTION_V2_SITE_LIMIT:-32}" \
+    --max-actions-per-row "${UMTP_GRAPH_ACTION_V2_MAX_ACTIONS:-512}" \
+    --source-similarity-threshold 0.65 \
+    --seed "$SEED"
 
+  "$PYTHON_BIN" "$SCRIPT_DIR/check_umtp_graph_action_oracle_gate.py" \
+    --manifest "$ACTION_ORACLE" \
+    --output-json "$ORACLE_GATE" \
+    --required-task GSK3B:increase \
+    --min-fully-evaluable-rate "${UMTP_GRAPH_ACTION_V2_MIN_GSK_EVALUABLE:-0.95}" \
+    --min-strict-reachability "${UMTP_GRAPH_ACTION_V2_MIN_GSK_REACHABILITY:-0.05}"
+
+  "$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" prepare \
+    --input-csv "$VALIDATION_POOL" \
+    --output-csv "$ACTION_VALIDATION" \
+    --manifest-json "$PILOT_ROOT/data/action_validation_instruction_v2.manifest.json" \
+    --site-limit "${UMTP_GRAPH_ACTION_V2_SITE_LIMIT:-32}" \
+    --max-actions-per-row "${UMTP_GRAPH_ACTION_V2_MAX_ACTIONS:-512}" \
+    --source-similarity-threshold 0.65 \
+    --seed "$((SEED + 1))"
+fi
+
+if [[ "$STAGE" == "oracle" ]]; then
+  echo "Instruction-aligned oracle preflight passed: $ORACLE_GATE"
+  exit 0
+fi
+
+for path in "$ACTION_TRAIN" "$ACTION_VALIDATION" "$ACTION_ORACLE" "$ORACLE_GATE"; do
+  [[ -f "$path" ]] || { echo "ERROR: missing oracle-stage artifact: $path" >&2; exit 2; }
+done
 "$PYTHON_BIN" "$SCRIPT_DIR/check_umtp_graph_action_oracle_gate.py" \
   --manifest "$ACTION_ORACLE" \
   --output-json "$ORACLE_GATE" \
   --required-task GSK3B:increase \
   --min-fully-evaluable-rate "${UMTP_GRAPH_ACTION_V2_MIN_GSK_EVALUABLE:-0.95}" \
   --min-strict-reachability "${UMTP_GRAPH_ACTION_V2_MIN_GSK_REACHABILITY:-0.05}"
-
-"$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" prepare \
-  --input-csv "$VALIDATION_POOL" \
-  --output-csv "$ACTION_VALIDATION" \
-  --manifest-json "$PILOT_ROOT/data/action_validation_instruction_v2.manifest.json" \
-  --site-limit "${UMTP_GRAPH_ACTION_V2_SITE_LIMIT:-32}" \
-  --max-actions-per-row "${UMTP_GRAPH_ACTION_V2_MAX_ACTIONS:-512}" \
-  --source-similarity-threshold 0.65 \
-  --seed "$((SEED + 1))"
 
 echo "=== Train protected common decoder on instruction-aligned actions ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/umtp_graph_action_policy.py" train \

@@ -53,6 +53,7 @@ EDIT_TOKEN = "<EDIT>"
 OP_TOKENS = {
     "add_atom": "<ADD_ATOM>",
     "add_fragment": "<ADD_FRAGMENT>",
+    "substitute_terminal": "<SUBSTITUTE_TERMINAL>",
     "replace_atom": "<REPLACE_ATOM>",
     "delete_terminal_atom": "<DELETE_TERMINAL_ATOM>",
     "change_bond_order": "<CHANGE_BOND_ORDER>",
@@ -70,6 +71,13 @@ FRAGMENT_TOKENS = {
     "CN(C)C": "<FRAG_DIMETHYLAMINO>",
     "C(F)(F)F": "<FRAG_TRIFLUOROMETHYL>",
     "c1ccccc1": "<FRAG_PHENYL>",
+    "C(=N)N": "<FRAG_GUANIDINO>",
+    "C(=NN)NN": "<FRAG_AMINOGUANIDINO>",
+    "C(=O)NN": "<FRAG_HYDRAZIDE>",
+    "NC(=O)C(=O)NN": "<FRAG_OXALYL_HYDRAZIDE>",
+    "S(=O)(=O)N": "<FRAG_SULFONAMIDE>",
+    "c1ncc[nH]1": "<FRAG_IMIDAZOLE>",
+    "C1CC1": "<FRAG_CYCLOPROPYL>",
 }
 BOND_ORDERS = ("single", "double", "triple")
 DEFAULT_SOURCE_SIMILARITY_THRESHOLD = 0.65
@@ -201,13 +209,19 @@ def action_program_tokens(action: graph.GraphEditAction) -> list[str]:
     if action.op not in OP_TOKENS:
         raise ValueError(f"Unsupported graph action: {action.op}")
     tokens = [EDIT_TOKEN, OP_TOKENS[action.op]]
-    if action.op in {"add_atom", "add_fragment", "replace_atom", "delete_terminal_atom"}:
+    if action.op in {
+        "add_atom",
+        "add_fragment",
+        "substitute_terminal",
+        "replace_atom",
+        "delete_terminal_atom",
+    }:
         if action.site is None:
             raise ValueError(f"Action {action.op} is missing site")
         tokens.append(site_token(action.site))
     if action.op in {"add_atom", "replace_atom"}:
         tokens.append(atom_token(action.atom))
-    elif action.op == "add_fragment":
+    elif action.op in {"add_fragment", "substitute_terminal"}:
         if action.fragment not in FRAGMENT_TOKENS:
             raise ValueError(f"Unsupported fragment: {action.fragment}")
         tokens.append(FRAGMENT_TOKENS[action.fragment])
@@ -257,6 +271,7 @@ def normalized_planner_row(row: Mapping[str, str]) -> dict[str, str]:
 
 def universal_actions(source_smiles: str, *, site_limit: int) -> list[graph.GraphEditAction]:
     sites = graph.editable_atom_sites(source_smiles, site_limit=site_limit)
+    terminal_sites = editable_terminal_sites(source_smiles, site_limit=site_limit)
     bonds = graph.editable_bond_sites(source_smiles, site_limit=site_limit)
     actions: list[graph.GraphEditAction] = []
     for site in sites:
@@ -267,12 +282,31 @@ def universal_actions(source_smiles: str, *, site_limit: int) -> list[graph.Grap
         )
         actions.extend(graph.GraphEditAction("replace_atom", site=site, atom=atom) for atom in ("C", "N", "O", "S"))
         actions.append(graph.GraphEditAction("delete_terminal_atom", site=site))
+    for site in terminal_sites:
+        actions.extend(
+            graph.GraphEditAction("substitute_terminal", site=site, fragment=fragment)
+            for fragment in FRAGMENT_TOKENS
+        )
     for bond in bonds:
         actions.extend(
             graph.GraphEditAction("change_bond_order", bond=bond, bond_order=order)
             for order in BOND_ORDERS
         )
     return actions
+
+
+def editable_terminal_sites(source_smiles: str, *, site_limit: int) -> list[int]:
+    """Return heavy-atom leaves that can be replaced by a medicinal fragment."""
+    try:
+        from rdkit import Chem
+    except ImportError:
+        return []
+    mol = Chem.MolFromSmiles(str(source_smiles or ""))
+    if mol is None:
+        return []
+    return [atom.GetIdx() for atom in mol.GetAtoms() if atom.GetDegree() == 1][
+        : max(1, int(site_limit))
+    ]
 
 
 def balanced_action_cap(actions: Sequence[graph.GraphEditAction], limit: int) -> list[graph.GraphEditAction]:
@@ -328,7 +362,8 @@ def enumerate_action_candidates(
         int(max_actions_per_row),
     )
     out: list[tuple[graph.GraphEditAction, str, list[str]]] = []
-    seen_smiles = set()
+    canonical_source = unified.safe_canonical_smiles(source)
+    seen_smiles = {canonical_source} if canonical_source else set()
     for action in actions:
         try:
             program = action_program_tokens(action)

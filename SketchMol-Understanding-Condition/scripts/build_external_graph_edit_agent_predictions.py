@@ -1033,6 +1033,25 @@ def execute_graph_edit_action(source_smiles: str, action: GraphEditAction) -> st
             rw = Chem.RWMol(combo)
             rw.AddBond(int(action.site), mol.GetNumAtoms(), Chem.BondType.SINGLE)
             return sanitize_to_smiles(rw.GetMol())
+        if action.op == "substitute_terminal":
+            if action.site is None or action.site >= mol.GetNumAtoms() or mol.GetNumAtoms() <= 1:
+                return ""
+            terminal = mol.GetAtomWithIdx(int(action.site))
+            if terminal.GetDegree() != 1:
+                return ""
+            neighbor_index = terminal.GetNeighbors()[0].GetIdx()
+            fragment = Chem.MolFromSmiles(action.fragment or "C")
+            if fragment is None or fragment.GetNumAtoms() == 0:
+                return ""
+            rw = Chem.RWMol(mol)
+            rw.RemoveAtom(int(action.site))
+            if neighbor_index > int(action.site):
+                neighbor_index -= 1
+            retained = rw.GetMol()
+            combo = Chem.CombineMols(retained, fragment)
+            combined = Chem.RWMol(combo)
+            combined.AddBond(int(neighbor_index), retained.GetNumAtoms(), Chem.BondType.SINGLE)
+            return sanitize_to_smiles(combined.GetMol())
         if action.op == "replace_atom":
             rw = Chem.RWMol(mol)
             if action.site is None or action.site >= mol.GetNumAtoms():
