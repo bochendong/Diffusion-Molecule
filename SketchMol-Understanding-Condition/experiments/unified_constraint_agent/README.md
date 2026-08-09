@@ -94,3 +94,11 @@ bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/subm
 Its evaluation scores no more than 20 valid output actions per condition. A
 larger internal attempt budget is used only for typed-grammar/RDKit validation
 and is recorded separately in every manifest.
+
+Teacher-action identity is not a reliable proxy for strict molecular success.
+The verifier-aligned v2 pilot rebuilds preferences from train-only property and
+source-similarity outcomes:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_verifier_preference_pilot.sh
+```

@@ -34,6 +34,7 @@ common_lora = load_module("train_common_llm_lora")
 common_eval = load_module("evaluate_common_llm_pilot")
 constrained_eval = load_module("evaluate_common_llm_constrained_actions")
 preference_data = load_module("build_common_llm_action_preferences")
+verifier_preference_data = load_module("build_common_llm_verifier_preferences")
 preference_train = load_module("train_common_llm_preference")
 
 
@@ -419,3 +420,34 @@ def test_preference_training_defaults_to_one_small_stable_epoch() -> None:
     assert args.learning_rate == 2e-5
     assert args.batch_size == 1
     assert args.gradient_accumulation == 8
+
+
+def test_verifier_preference_uses_strict_positive_and_nearest_failure() -> None:
+    strict = {
+        "strict_success": True,
+        "instruction_success_fraction": 1.0,
+        "instruction_distance": 0.0,
+        "source_similarity": 0.8,
+    }
+    hard_negative = {
+        "strict_success": False,
+        "source_similarity_success": True,
+        "instruction_success_fraction": 0.5,
+        "instruction_distance": 0.1,
+        "source_similarity": 0.9,
+    }
+    easy_negative = {
+        "strict_success": False,
+        "source_similarity_success": False,
+        "instruction_success_fraction": 0.0,
+        "instruction_distance": 1.0,
+        "source_similarity": 0.2,
+    }
+
+    chosen, rejected = verifier_preference_data.select_verifier_preference(
+        [easy_negative, strict, hard_negative],
+        negative_count=2,
+    )
+
+    assert chosen is strict
+    assert rejected == [hard_negative, easy_negative]
