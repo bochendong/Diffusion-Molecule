@@ -78,3 +78,49 @@ unconstrained low-level molecular decoder for every task.
   parameter was non-finite. It must not be used.
 - Job `19372184` used the finite-value gate and failed at step 50 after BF16
   instability. It is audit evidence only.
+
+## Executable GraphEditDSL ranking diagnostic
+
+Date: 2026-08-09
+
+Job `19387681` completed in 2 minutes 38 seconds. This diagnostic replaced
+free-form edit generation with LLM likelihood ranking over at most 20
+RDKit-executable one-step actions. It used the same 49 train-only held-out edit
+rows as the format diagnostic: 23 Table1 and 26 MuMO.
+
+| Scope | Model | Strict selected@1 | Any strict@20 | Mean property success | Mean source similarity |
+|---|---:|---:|---:|---:|---:|
+| All | Base | 2.0% | 18.4% | 20.4% | 0.793 |
+| All | LoRA | **4.1%** | 18.4% | **28.0%** | 0.795 |
+| Table1 | Base | 4.3% | 26.1% | 27.8% | 0.775 |
+| Table1 | LoRA | 4.3% | 26.1% | **38.6%** | **0.810** |
+| MuMO | Base | 0.0% | 11.5% | 13.8% | **0.810** |
+| MuMO | LoRA | **3.8%** | 11.5% | **18.6%** | 0.782 |
+
+All rows had at least one executable action, but post-filter pools averaged
+only 11.6 unique molecules. Only 9/49 rows contained any strict-success action,
+and the target teacher action appeared in the pool for 8/49 rows.
+
+The LoRA signal is clearer below top-1. Among the nine reachable strict cases,
+the best strict action's median rank improved from 9 to 4. LoRA placed five
+strict actions in the global top-4 (10.2% of all rows), eight in top-7 (16.3%),
+and all nine in top-10 (18.4%). Base placed only one in top-7 (2.0%). Thus the
+common LLM learned useful action ordering, but the current exact-action SFT loss
+is not a strong enough ranking objective.
+
+### Decision after constrained ranking
+
+Do not launch the official benchmark with this checkpoint. The next pilot must
+address both independent limits:
+
+1. Candidate support: produce 20 actual valid, diverse actions and add compact
+   multi-step revisions so `any-hit@20` and teacher-action recall rise.
+2. Selection: train directly on train-only strict-positive versus hard-negative
+   action preferences, rather than relying on free-generation cross-entropy.
+3. Keep the paper contract fixed: Common LLM ranks typed actions, RDKit executes
+   them, and the vector verifier returns feedback for one bounded revision.
+
+The failed predecessor job `19377452` stopped safely because four prompts were
+longer than 512 tokens. Commit `de9e23b` raised the limit to 1024 and preserves
+the complete action target under truncation; it did not change the evaluation
+rows or candidate budget.
