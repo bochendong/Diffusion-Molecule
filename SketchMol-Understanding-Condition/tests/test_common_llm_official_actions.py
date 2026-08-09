@@ -24,6 +24,10 @@ def load_module(name: str, path: Path):
 
 official = load_module("evaluate_common_llm_official_actions", SCRIPT_DIR / "evaluate_common_llm_official_actions.py")
 external = load_module("select_external_verifier_prefix", SCRIPT_DIR / "select_external_verifier_prefix.py")
+existing = load_module(
+    "rerank_common_llm_existing_action_plans",
+    SCRIPT_DIR / "rerank_common_llm_existing_action_plans.py",
+)
 
 
 def test_prompt_uses_constraint_ir_without_target_smiles() -> None:
@@ -113,3 +117,57 @@ def test_candidate_pool_widens_only_until_full(monkeypatch) -> None:
     assert calls == [64, 128]
     assert used == 128
     assert len(pool) == 20
+
+
+def test_reconstructs_two_step_candidate_plan() -> None:
+    first = {
+        "step": 1,
+        "parent_smiles": "CC",
+        "generated_smiles": "CCO",
+        "action": {"op": "add_atom", "site": 1, "atom": "O", "prop": "qed"},
+    }
+    second = {
+        "step": 2,
+        "parent_smiles": "CCO",
+        "generated_smiles": "OCCF",
+        "action": {"op": "add_atom", "site": 2, "atom": "F", "prop": "bbbp"},
+    }
+    plans = existing.reconstruct_condition_plans(
+        ["CCO", "OCCF"],
+        {"CCO": first, "OCCF": second},
+    )
+    assert [action["atom"] for action in plans["CCO"]] == ["O"]
+    assert [action["atom"] for action in plans["OCCF"]] == ["O", "F"]
+
+
+def test_existing_pool_summary_separates_llm_and_verifier() -> None:
+    rows = []
+    for condition_id, split in (("a", "ind"), ("b", "ood")):
+        rows.extend(
+            [
+                {
+                    "condition_id": condition_id,
+                    "external_task_split": split,
+                    "candidate_rank": 1,
+                    "external_official_success": "False",
+                    "external_strict_success": "False",
+                    "external_source_similarity_success": "True",
+                    "external_property_success_json": '{"qed": false}',
+                },
+                {
+                    "condition_id": condition_id,
+                    "external_task_split": split,
+                    "candidate_rank": 2,
+                    "external_official_success": "True",
+                    "external_strict_success": "True",
+                    "external_source_similarity_success": "True",
+                    "external_property_success_json": '{"qed": true}',
+                    "external_source_tanimoto": 0.8,
+                },
+            ]
+        )
+    summary = existing.summarize(rows, rows, verifier_k=2, candidate_budget=2)
+    selections = summary["selections"]
+    assert selections["llm_at_1"]["all"]["success_rate"] == 0.0
+    assert selections["llm_verifier_at_2"]["all"]["success_rate"] == 1.0
+    assert summary["verifier_recovery_of_reachable"] == 1.0

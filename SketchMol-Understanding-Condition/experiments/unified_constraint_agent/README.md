@@ -117,3 +117,16 @@ target-free property/similarity verifier restricted to the first five
 the existing MolEdit evaluator. MuMO candidates are scored with the official
 ADMET-AI plus TDC property stack before bounded verifier selection. Progress is
 checkpointed after every input, so a pre-empted cluster job can resume safely.
+
+The official one-step MuMO pool is intentionally diagnostic. To isolate the
+common LLM ranker from candidate support, rerank the already evaluated,
+oracle-complete heuristic 2-step top-20 pool without regenerating molecules:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_existing_2step_rerank.sh
+```
+
+The runner streams the condition-grouped 2-step trace once, reconstructs each
+candidate's executable plan, and uses mean per-action LLM log probability. The
+official ADMET-AI/TDC outcomes are consulted only after LLM ordering for
+`verifier@5` and metric aggregation.
