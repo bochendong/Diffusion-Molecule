@@ -32,6 +32,7 @@ mkdir -p "$MODEL_DIR" "$HF_HOME"
   --batch-size "${SUCC_UCA_BATCH_SIZE:-2}" \
   --gradient-accumulation "${SUCC_UCA_GRADIENT_ACCUMULATION:-8}" \
   --learning-rate "${SUCC_UCA_LEARNING_RATE:-5e-5}" \
+  --compute-dtype "${SUCC_UCA_COMPUTE_DTYPE:-float32}" \
   --lora-r "${SUCC_UCA_LORA_R:-16}" \
   --lora-alpha "${SUCC_UCA_LORA_ALPHA:-32}" \
   --seed "${SUCC_UCA_SEED:-1701}"

@@ -24,6 +24,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
+    parser.add_argument("--compute-dtype", choices=("float32", "bfloat16"), default="float32")
     parser.add_argument("--logging-steps", type=int, default=10)
     parser.add_argument("--seed", type=int, default=1701)
     return parser.parse_args(argv)
@@ -128,7 +129,7 @@ class CompletionCollator:
         }
 
 
-def training_arguments(transformers: object, args: argparse.Namespace, *, bf16: bool):
+def training_arguments(transformers: object, args: argparse.Namespace, *, compute_dtype: str):
     values = {
         "output_dir": str(args.output_dir),
         "num_train_epochs": args.epochs,
@@ -141,8 +142,9 @@ def training_arguments(transformers: object, args: argparse.Namespace, *, bf16: 
         "logging_steps": args.logging_steps,
         "save_strategy": "epoch",
         "save_total_limit": 2,
-        "bf16": bf16,
-        "fp16": not bf16,
+        "bf16": compute_dtype == "bfloat16",
+        "fp16": False,
+        "tf32": compute_dtype == "float32",
         "gradient_checkpointing": True,
         "optim": "adamw_torch",
         "report_to": [],
@@ -176,6 +178,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise SystemExit(f"Missing common-LLM dependency: {exc}") from exc
     if not torch.cuda.is_available():
         raise SystemExit("Common-LLM LoRA training requires a CUDA GPU")
+    if args.compute_dtype == "bfloat16" and not torch.cuda.is_bf16_supported():
+        raise SystemExit("--compute-dtype bfloat16 requires GPU bfloat16 support")
+    model_dtype = torch.float32 if args.compute_dtype == "float32" else torch.bfloat16
+    if args.compute_dtype == "float32":
+        torch.backends.cuda.matmul.allow_tf32 = True
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.base_model, use_fast=True)
@@ -183,7 +190,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         tokenizer.pad_token = tokenizer.eos_token
     model = transformers.AutoModelForCausalLM.from_pretrained(
         args.base_model,
-        dtype=torch.bfloat16,
+        dtype=model_dtype,
         low_cpu_mem_usage=True,
     )
     model.config.use_cache = False
@@ -216,7 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     train_dataset = ChatDataset(train_rows, tokenizer, args.max_length)
     trainer = transformers.Trainer(
         model=model,
-        args=training_arguments(transformers, args, bf16=torch.cuda.is_bf16_supported()),
+        args=training_arguments(transformers, args, compute_dtype=args.compute_dtype),
         train_dataset=train_dataset,
         data_collator=CompletionCollator(tokenizer),
         callbacks=[FiniteAdapterCallback()],
@@ -238,6 +245,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "batch_size": args.batch_size,
         "gradient_accumulation": args.gradient_accumulation,
         "learning_rate": args.learning_rate,
+        "compute_dtype": args.compute_dtype,
         "lora_r": args.lora_r,
         "lora_alpha": args.lora_alpha,
         "train_metrics": dict(result.metrics),
