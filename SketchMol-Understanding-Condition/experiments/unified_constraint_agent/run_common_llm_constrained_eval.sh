@@ -30,7 +30,7 @@ common_args=(
   --candidate-budget 20
   --site-limit "${SUCC_UCA_SITE_LIMIT:-32}"
   --score-batch-size "${SUCC_UCA_SCORE_BATCH_SIZE:-4}"
-  --max-length "${SUCC_UCA_MAX_LENGTH:-512}"
+  --max-length "${SUCC_UCA_MAX_LENGTH:-1024}"
 )
 
 "$PYTHON_BIN" "$SCRIPT_DIR/evaluate_common_llm_constrained_actions.py" \

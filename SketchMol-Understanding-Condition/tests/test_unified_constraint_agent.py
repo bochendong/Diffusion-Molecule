@@ -350,3 +350,24 @@ def test_constrained_action_eval_normalizes_structural_bond_key() -> None:
     )
 
     assert left == right
+
+
+def test_constrained_action_eval_preserves_target_when_prompt_is_long() -> None:
+    class FakeTokenizer:
+        eos_token_id = 99
+
+        def apply_chat_template(self, messages, *, tokenize, add_generation_prompt):
+            assert tokenize
+            prompt = list(range(12))
+            return {"input_ids": [prompt if add_generation_prompt else prompt + [20, 21, 22, 23, 24]]}
+
+    encoded = constrained_eval.encoded_action(
+        FakeTokenizer(),
+        [{"role": "user", "content": "long prompt"}],
+        {"action_type": "graph_edit_dsl", "value": {"op": "add_atom"}},
+        max_length=10,
+    )
+
+    assert len(encoded["input_ids"]) == 10
+    assert encoded["input_ids"][-6:] == [20, 21, 22, 23, 24, 99]
+    assert encoded["labels"][-6:] == [20, 21, 22, 23, 24, 99]

@@ -44,7 +44,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-budget", type=int, default=20)
     parser.add_argument("--site-limit", type=int, default=32)
     parser.add_argument("--score-batch-size", type=int, default=4)
-    parser.add_argument("--max-length", type=int, default=512)
+    parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--table1-similarity-threshold", type=float, default=0.65)
     parser.add_argument("--mumo-similarity-threshold", type=float, default=0.40)
     parser.add_argument("--max-rows", type=int, default=0)
@@ -182,8 +182,18 @@ def encoded_action(
     eos_id = getattr(tokenizer, "eos_token_id", None)
     if eos_id is not None and (not full_ids or full_ids[-1] != int(eos_id)):
         full_ids.append(int(eos_id))
-    full_ids = full_ids[: int(max_length)]
     prompt_length = min(common_prefix_length(full_ids, prompt_ids), len(full_ids))
+    assistant_ids = full_ids[prompt_length:]
+    if len(assistant_ids) >= int(max_length):
+        raise ValueError("Action target alone exceeds the scoring sequence length")
+    if len(full_ids) > int(max_length):
+        prompt_budget = int(max_length) - len(assistant_ids)
+        head_budget = min(64, prompt_budget // 4)
+        tail_budget = prompt_budget - head_budget
+        prompt_prefix = full_ids[:prompt_length]
+        compact_prompt = prompt_prefix[:head_budget] + prompt_prefix[-tail_budget:]
+        full_ids = compact_prompt + assistant_ids
+        prompt_length = len(compact_prompt)
     labels = [-100] * prompt_length + full_ids[prompt_length:]
     if not any(value != -100 for value in labels):
         raise ValueError("Action target was truncated out of the scoring sequence")
