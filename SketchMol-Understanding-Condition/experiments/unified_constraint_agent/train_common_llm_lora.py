@@ -7,7 +7,7 @@ import argparse
 import inspect
 import json
 from pathlib import Path
-from typing import Sequence
+from typing import Mapping, Sequence
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -47,6 +47,18 @@ def common_prefix_length(left: Sequence[int], right: Sequence[int]) -> int:
     return count
 
 
+def input_id_list(value: object) -> list[int]:
+    if isinstance(value, Mapping):
+        value = value["input_ids"]
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, list) and value and isinstance(value[0], list):
+        value = value[0]
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        raise TypeError(f"Unsupported tokenizer output: {type(value).__name__}")
+    return [int(item) for item in value]
+
+
 class ChatDataset:
     def __init__(self, rows: Sequence[dict[str, object]], tokenizer: object, max_length: int):
         self.examples = []
@@ -54,14 +66,14 @@ class ChatDataset:
             messages = row.get("messages")
             if not isinstance(messages, list) or len(messages) < 2:
                 continue
-            full_ids = list(
+            full_ids = input_id_list(
                 tokenizer.apply_chat_template(
                     messages,
                     tokenize=True,
                     add_generation_prompt=False,
                 )
             )
-            prompt_ids = list(
+            prompt_ids = input_id_list(
                 tokenizer.apply_chat_template(
                     messages[:-1],
                     tokenize=True,
@@ -159,7 +171,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         tokenizer.pad_token = tokenizer.eos_token
     model = transformers.AutoModelForCausalLM.from_pretrained(
         args.base_model,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
     )
     model.config.use_cache = False

@@ -30,6 +30,7 @@ ir_module = load_module("molecular_constraint_ir")
 audit = load_module("audit_candidate_pools")
 trajectory = load_module("build_verifier_trajectories")
 common_sft = load_module("build_common_llm_sft_dataset")
+common_lora = load_module("train_common_llm_lora")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -291,3 +292,7 @@ def test_common_llm_dataset_uses_train_actions_and_separate_action_spaces(tmp_pa
     assert manifest["data_role"] == "train_only"
     assert manifest["unique_by_origin"] == {"denovo": 1, "mumo": 1, "table1": 1}
     assert actions == {"smiles", "graph_edit_dsl"}
+
+
+def test_common_llm_token_ids_accept_new_transformers_batch_encoding_shape() -> None:
+    assert common_lora.input_id_list({"input_ids": [[1, 2, 3]]}) == [1, 2, 3]
