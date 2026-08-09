@@ -167,3 +167,36 @@ reachable rows, strict top-1 recovery fell from 6 to 4.
   use valid non-strict candidates as hard negatives and keep property/similarity
   feedback in each record.
 - Do not treat projected teacher-action identity as a strict-success label.
+
+## Verifier-aligned preference v2
+
+Date: 2026-08-09
+
+Job `19390295` completed in 11 minutes 48 seconds. The data builder found 255
+strict-positive train-only conditions out of 920 unique edit conditions and
+created 510 strict-positive versus valid-hard-negative pairs. The conservative
+one-epoch update used learning rate `5e-6`, produced 84.1% training-pair ranking
+accuracy, and saved zero non-finite adapter parameters.
+
+| Scope | Model | Strict selected@1 | Any strict@20 | Mean property success | Mean source similarity |
+|---|---:|---:|---:|---:|---:|
+| All | SFT | 12.2% | 26.5% | 46.2% | 0.768 |
+| All | Verifier preference v2 | **14.3%** | 26.5% | **47.4%** | **0.775** |
+| Table1 | SFT | **17.4%** | 39.1% | 52.7% | **0.800** |
+| Table1 | Verifier preference v2 | **17.4%** | 39.1% | **55.0%** | 0.778 |
+| MuMO | SFT | 7.7% | 15.4% | 40.4% | 0.739 |
+| MuMO | Verifier preference v2 | **11.5%** | 15.4% | **40.7%** | **0.772** |
+
+Top-1 gains are small: v2 recovers 7/13 reachable strict rows versus 6/13 for
+SFT. The ranking distribution provides the stronger method signal. The median
+best-strict rank improves from 2 to 1; strict coverage within top-2 improves
+from 7/13 to 10/13, within top-5 from 8/13 to 12/13, and within top-10 from
+11/13 to 13/13. A bounded vector-verifier check of v2's top five would therefore
+recover 12/49 = 24.5% strict success, close to the pool ceiling of 13/49 =
+26.5%, while checking only one quarter of the output pool.
+
+Preference v2 passes the controller/ranker method-signal gate. It does not yet
+support a paper claim because the diagnostic contains only 49 train-only
+held-out edit rows. The next experiment should run the frozen `seed_1705`
+ranker on the official Table1 and MuMO splits and report LLM@1, LLM plus bounded
+verifier@5, and any-hit@20 separately.
