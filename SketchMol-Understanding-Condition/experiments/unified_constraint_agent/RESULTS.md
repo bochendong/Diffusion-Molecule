@@ -124,3 +124,46 @@ The failed predecessor job `19377452` stopped safely because four prompts were
 longer than 512 tokens. Commit `de9e23b` raised the limit to 1024 and preserves
 the complete action target under truncation; it did not change the evaluation
 rows or candidate budget.
+
+## Action preference pilot v1
+
+Date: 2026-08-09
+
+Job `19389677` completed in 20 minutes 54 seconds on one H100 20 GB MIG. It
+built 1,840 train-only preference pairs and performed one reference-free
+pairwise epoch from the stable `seed_1703` adapter. All adapter parameters were
+finite. Training-pair ranking accuracy reached 88.7%.
+
+The evaluation first expanded typed enumeration to 64 internal action attempts,
+then retained exactly 20 valid unique output candidates. This fixed the prior
+under-filled pool: mean candidate count rose from 11.6 to 20.0.
+
+| Scope | Model | Strict selected@1 | Any strict@20 | Mean property success | Mean source similarity |
+|---|---:|---:|---:|---:|---:|
+| All | SFT | **12.2%** | 26.5% | **46.2%** | 0.768 |
+| All | Preference v1 | 8.2% | 26.5% | 41.3% | **0.770** |
+| Table1 | SFT | **17.4%** | 39.1% | **52.7%** | **0.800** |
+| Table1 | Preference v1 | 13.0% | 39.1% | 47.4% | 0.797 |
+| MuMO | SFT | **7.7%** | 15.4% | **40.4%** | 0.739 |
+| MuMO | Preference v1 | 3.8% | 15.4% | 35.9% | **0.747** |
+
+The candidate-support change is useful: relative to the prior under-filled SFT
+diagnostic, `any-hit@20` increased from 18.4% to 26.5% and SFT selected@1 from
+4.1% to 12.2%. Preference v1 itself failed the method gate.
+
+The cause is label misalignment, not numerical instability. Only 3 of the 13
+reachable strict-success rows had a teacher action that was also strict. The
+pairwise objective successfully favored teacher actions, but teacher matching
+was the wrong proxy for molecular strict success. It also increased the
+top-ranked `delete_terminal_atom` bias from 32/49 to 37/49 rows. Among the 13
+reachable rows, strict top-1 recovery fell from 6 to 4.
+
+### Decision after preference v1
+
+- Keep the full 20-candidate typed pool and the original SFT adapter as the new
+  diagnostic baseline.
+- Reject preference-v1 checkpoint `seed_1704` for benchmark use.
+- Build preference positives directly from train-only verifier strict success;
+  use valid non-strict candidates as hard negatives and keep property/similarity
+  feedback in each record.
+- Do not treat projected teacher-action identity as a strict-success label.
