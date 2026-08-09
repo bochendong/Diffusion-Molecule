@@ -20,7 +20,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--epochs", type=float, default=1.0)
     parser.add_argument("--batch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation", type=int, default=8)
-    parser.add_argument("--learning-rate", type=float, default=2e-4)
+    parser.add_argument("--learning-rate", type=float, default=5e-5)
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
     parser.add_argument("--lora-dropout", type=float, default=0.05)
@@ -135,8 +135,9 @@ def training_arguments(transformers: object, args: argparse.Namespace, *, bf16: 
         "per_device_train_batch_size": args.batch_size,
         "gradient_accumulation_steps": args.gradient_accumulation,
         "learning_rate": args.learning_rate,
-        "warmup_ratio": 0.03,
+        "warmup_steps": 20,
         "weight_decay": 0.01,
+        "max_grad_norm": 1.0,
         "logging_steps": args.logging_steps,
         "save_strategy": "epoch",
         "save_total_limit": 2,
@@ -145,6 +146,7 @@ def training_arguments(transformers: object, args: argparse.Namespace, *, bf16: 
         "gradient_checkpointing": True,
         "optim": "adamw_torch",
         "report_to": [],
+        "logging_nan_inf_filter": False,
         "remove_unused_columns": False,
         "seed": args.seed,
         "data_seed": args.seed,
@@ -152,6 +154,16 @@ def training_arguments(transformers: object, args: argparse.Namespace, *, bf16: 
     signature = inspect.signature(transformers.TrainingArguments.__init__)
     filtered = {key: value for key, value in values.items() if key in signature.parameters}
     return transformers.TrainingArguments(**filtered)
+
+
+def adapter_nonfinite_count(model: object) -> int:
+    import torch
+
+    return sum(
+        int((~torch.isfinite(parameter.detach().float())).sum().item())
+        for parameter in model.parameters()
+        if parameter.requires_grad
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -185,7 +197,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
     )
     model = peft.get_peft_model(model, lora_config)
+    for parameter in model.parameters():
+        if parameter.requires_grad:
+            parameter.data = parameter.data.float()
     model.print_trainable_parameters()
+
+    class FiniteAdapterCallback(transformers.TrainerCallback):
+        def on_step_end(self, args, state, control, model=None, **kwargs):
+            if model is not None and (state.global_step <= 5 or state.global_step % 10 == 0):
+                nonfinite = adapter_nonfinite_count(model)
+                if nonfinite:
+                    raise FloatingPointError(
+                        f"Detected {nonfinite} non-finite trainable adapter parameters at step {state.global_step}"
+                    )
+            return control
 
     train_rows = read_jsonl(args.train_jsonl)
     train_dataset = ChatDataset(train_rows, tokenizer, args.max_length)
@@ -194,8 +219,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         args=training_arguments(transformers, args, bf16=torch.cuda.is_bf16_supported()),
         train_dataset=train_dataset,
         data_collator=CompletionCollator(tokenizer),
+        callbacks=[FiniteAdapterCallback()],
     )
     result = trainer.train()
+    nonfinite = adapter_nonfinite_count(model)
+    if nonfinite:
+        raise FloatingPointError(f"Refusing to save adapter with {nonfinite} non-finite parameters")
     adapter_dir = args.output_dir / "adapter"
     trainer.save_model(str(adapter_dir))
     tokenizer.save_pretrained(adapter_dir)
@@ -213,6 +242,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "lora_alpha": args.lora_alpha,
         "train_metrics": dict(result.metrics),
         "adapter_dir": str(adapter_dir),
+        "adapter_nonfinite_parameters": nonfinite,
     }
     (args.output_dir / "training_summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
