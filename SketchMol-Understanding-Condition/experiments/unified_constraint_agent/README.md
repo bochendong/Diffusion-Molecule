@@ -48,3 +48,28 @@ The config contains immutable evaluated candidate CSVs:
 
 Do not mix candidate budgets in one paper comparison. Generate one maximum
 pool and evaluate deterministic prefixes.
+
+## Common-LLM pilot
+
+Benchmark candidate pools are audit-only and must never be used for
+post-training. The first common-LLM pilot builds supervision exclusively from:
+
+- de novo training conditions and their target SMILES;
+- official-instruction-aligned Table1 training actions;
+- MuMO training source/target pairs projected into target-aligned GraphEditDSL.
+
+The pilot deliberately starts with a 1.5B instruction LLM plus LoRA. This is a
+method-signal gate that fits one H100 20 GB MIG; scale the same contract to 7B
+only after first-shot control improves.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_data_prep.sh
+
+# After the CPU data job succeeds:
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_pilot.sh
+```
+
+The LLM sees a canonical `MolecularConstraintIR` and returns exactly one JSON
+action. De novo rows use `{"action_type":"smiles",...}`; edit rows use
+`{"action_type":"graph_edit_dsl",...}`. Evaluation remains fixed at the
+paper-comparable candidate budget `n=20`.

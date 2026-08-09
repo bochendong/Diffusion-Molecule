@@ -29,6 +29,7 @@ def load_module(name: str):
 ir_module = load_module("molecular_constraint_ir")
 audit = load_module("audit_candidate_pools")
 trajectory = load_module("build_verifier_trajectories")
+common_sft = load_module("build_common_llm_sft_dataset")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -215,3 +216,78 @@ def test_trajectory_builder_requires_strict_positive_and_keeps_revision_case(tmp
     assert preference["rejected_smiles"] == "C"
     assert revision["chosen_smiles"] == ""
     assert revision["rejected_smiles"] == "CCC"
+
+
+def test_common_llm_dataset_uses_train_actions_and_separate_action_spaces(tmp_path: Path) -> None:
+    denovo_csv = tmp_path / "denovo.csv"
+    table1_csv = tmp_path / "table1.csv"
+    mumo_csv = tmp_path / "mumo.csv"
+    write_csv(
+        denovo_csv,
+        [
+            {
+                "condition_id": "design-1",
+                "split": "train",
+                "condition_properties": "MW,QED",
+                "target_MW": "300",
+                "target_QED": "0.7",
+                "target_smiles": "CCO",
+            }
+        ],
+    )
+    edit_base = {
+        "split": "train",
+        "source_smiles": "CCO",
+        "instruction_tasks": json.dumps([{"property": "QED", "direction": "increase"}]),
+        "policy_target_action_json": json.dumps({"op": "replace_atom", "site": 1, "value": "N"}),
+    }
+    write_csv(
+        table1_csv,
+        [{**edit_base, "condition_id": "edit-1", "policy_target_strict_success": "True"}],
+    )
+    write_csv(
+        mumo_csv,
+        [{**edit_base, "condition_id": "mumo-1", "policy_target_paired_teacher": "True"}],
+    )
+
+    output_dir = tmp_path / "sft"
+    assert (
+        common_sft.main(
+            [
+                "--denovo-train-csv",
+                str(denovo_csv),
+                "--table1-action-train-csv",
+                str(table1_csv),
+                "--mumo-action-train-csv",
+                str(mumo_csv),
+                "--output-dir",
+                str(output_dir),
+                "--max-denovo-rows",
+                "1",
+                "--table1-repeat",
+                "2",
+                "--mumo-repeat",
+                "2",
+                "--validation-fraction",
+                "0.01",
+                "--seed",
+                "7",
+            ]
+        )
+        == 0
+    )
+    manifest = json.loads((output_dir / "manifest.json").read_text())
+    all_rows = [
+        json.loads(line)
+        for filename in ("train.jsonl", "validation.jsonl")
+        for line in (output_dir / filename).read_text().splitlines()
+        if line.strip()
+    ]
+    actions = {
+        json.loads(row["messages"][-1]["content"])["action_type"]
+        for row in all_rows
+    }
+
+    assert manifest["data_role"] == "train_only"
+    assert manifest["unique_by_origin"] == {"denovo": 1, "mumo": 1, "table1": 1}
+    assert actions == {"smiles", "graph_edit_dsl"}
