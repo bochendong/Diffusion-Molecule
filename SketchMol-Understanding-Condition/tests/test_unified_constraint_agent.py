@@ -166,6 +166,7 @@ def test_table1_strict_success_requires_source_similarity() -> None:
     assert not audit.strict_success({**base, "source_similarity_success": "False"})
     assert audit.strict_success({**base, "source_similarity_success": "True"})
     assert audit.strict_success({**base, "external_official_success": "True"})
+    assert audit.strict_success({**base, "table1_strict_success": "True"})
 
 
 def test_direct_smiles_fields_preserve_raw_order_and_finalizer_score() -> None:

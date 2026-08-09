@@ -102,7 +102,12 @@ def property_fraction(row: Mapping[str, object]) -> float:
 
 
 def strict_success(row: Mapping[str, object]) -> bool:
-    for key in ("external_official_success", "strict_success", "success_strict"):
+    for key in (
+        "external_official_success",
+        "table1_strict_success",
+        "strict_success",
+        "success_strict",
+    ):
         if str(row.get(key, "") or "").strip():
             return truthy(row.get(key))
     property_success = valid_candidate(row) and property_fraction(row) >= 1.0 - 1e-9
