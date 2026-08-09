@@ -155,6 +155,19 @@ def test_candidate_audit_decomposes_support_and_selection(tmp_path: Path) -> Non
     assert overall["selection_miss"] == 0.0
 
 
+def test_table1_strict_success_requires_source_similarity() -> None:
+    base = {
+        "source_smiles": "CCO",
+        "generated_smiles": "CCN",
+        "valid_smiles": "True",
+        "unified_property_success_fraction": "1.0",
+    }
+
+    assert not audit.strict_success({**base, "source_similarity_success": "False"})
+    assert audit.strict_success({**base, "source_similarity_success": "True"})
+    assert audit.strict_success({**base, "external_official_success": "True"})
+
+
 def test_trajectory_builder_requires_strict_positive_and_keeps_revision_case(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     spec = audit.load_specs(config)[0]

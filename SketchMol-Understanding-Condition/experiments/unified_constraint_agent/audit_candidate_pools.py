@@ -100,7 +100,11 @@ def strict_success(row: Mapping[str, object]) -> bool:
     for key in ("external_official_success", "strict_success", "success_strict"):
         if str(row.get(key, "") or "").strip():
             return truthy(row.get(key))
-    return valid_candidate(row) and property_fraction(row) >= 1.0 - 1e-9
+    property_success = valid_candidate(row) and property_fraction(row) >= 1.0 - 1e-9
+    similarity_value = str(row.get("source_similarity_success", "") or "").strip()
+    if similarity_value:
+        return property_success and truthy(similarity_value)
+    return property_success
 
 
 def generation_rank(row: Mapping[str, object], index: int) -> tuple[float, int]:
