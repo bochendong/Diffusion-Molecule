@@ -200,3 +200,33 @@ support a paper claim because the diagnostic contains only 49 train-only
 held-out edit rows. The next experiment should run the frozen `seed_1705`
 ranker on the official Table1 and MuMO splits and report LLM@1, LLM plus bounded
 verifier@5, and any-hit@20 separately.
+
+## Existing MuMO two-step rerank
+
+Date: 2026-08-09
+
+Job `19400534` completed in 1 hour 53 minutes on one H100 20 GB MIG. It
+reconstructed all 39,840 candidates for 1,992 official MuMO conditions and
+ranked the immutable two-step top-20 pool without target-molecule access.
+
+| Selection | IND SR | OOD SR | Overall SR | Overall strict | Sim>=0.4 |
+|---|---:|---:|---:|---:|---:|
+| Original heuristic@1 | 18.2% | 47.5% | 32.8% | 5.87% | 45.63% |
+| Common LLM@1 | 18.6% | 49.5% | 34.0% | 4.17% | 38.25% |
+| Original heuristic + verifier@5 | 23.7% | 61.7% | 42.6% | 7.58% | 42.67% |
+| Common LLM + verifier@5 | 24.1% | 63.2% | 43.6% | 6.98% | 40.16% |
+| Any@20 | 28.1% | 68.8% | 48.3% | 8.38% | 40.41% |
+
+The common LLM recovered 90.1% of reachable property successes in its first
+five plans, versus 88.2% for the original heuristic prefix. The net property
+gain was small and not significant (`+1.21pp`, paired `p=0.104` at top-1;
+`+0.95pp`, `p=0.073` with verifier@5). More importantly, top-1 strict success
+dropped by 1.71 points and source-similarity success dropped by 7.38 points.
+
+This run rejects further inference-only tuning of `seed_1705`. The cause is a
+method mismatch: v2 learned single-action preferences and exposed heuristic
+`policy_score`, whereas 37,812/39,840 formal candidates contain two actions.
+The replacement v3 protocol trains complete plan payloads on a separately
+generated MuMO train-only pool, uses explicit property/similarity tradeoff hard
+negatives, hides planner scores, and applies balanced SFT replay before a
+held-out source-preservation gate.

@@ -7,6 +7,7 @@ import argparse
 import json
 import random
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -35,6 +36,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=1704)
     parser.add_argument("--logging-steps", type=int, default=20)
+    parser.add_argument("--replay-jsonl", type=Path, default=None)
+    parser.add_argument("--replay-sft-weight", type=float, default=0.0)
+    parser.add_argument("--replay-batch-size", type=int, default=1)
+    parser.add_argument("--replay-max-per-origin", type=int, default=256)
+    parser.add_argument("--replay-origins", default="denovo,table1,mumo")
     return parser.parse_args(argv)
 
 
@@ -95,6 +101,98 @@ class PairCollator:
         attention_mask = []
         labels = []
         for item in flattened:
+            padding = width - len(item["input_ids"])
+            input_ids.append(item["input_ids"] + [self.pad_token_id] * padding)
+            attention_mask.append(item["attention_mask"] + [0] * padding)
+            labels.append(item["labels"] + [-100] * padding)
+        return {
+            "input_ids": torch.tensor(input_ids, dtype=torch.long),
+            "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
+            "labels": torch.tensor(labels, dtype=torch.long),
+        }
+
+
+def task_balanced_replay_rows(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    origins: Sequence[str],
+    max_per_origin: int,
+    seed: int,
+) -> list[Mapping[str, object]]:
+    requested = {str(origin).strip() for origin in origins if str(origin).strip()}
+    grouped: dict[str, dict[str, Mapping[str, object]]] = defaultdict(dict)
+    for index, row in enumerate(rows):
+        origin = str(row.get("origin", "") or "").strip()
+        if requested and origin not in requested:
+            continue
+        identity = str(row.get("example_id", "") or f"{origin}:{index}")
+        grouped[origin].setdefault(identity, row)
+    missing = sorted(requested - set(grouped))
+    if missing:
+        raise ValueError(f"Anti-forgetting replay is missing requested origins: {missing}")
+    per_origin = min(
+        max(1, int(max_per_origin)),
+        min((len(items) for items in grouped.values()), default=0),
+    )
+    if per_origin <= 0:
+        raise ValueError("Anti-forgetting replay contains no eligible rows")
+    output: list[Mapping[str, object]] = []
+    for offset, origin in enumerate(sorted(grouped)):
+        items = list(grouped[origin].values())
+        random.Random(int(seed) + offset).shuffle(items)
+        output.extend(items[:per_origin])
+    random.Random(int(seed)).shuffle(output)
+    return output
+
+
+class ReplayDataset:
+    def __init__(self, rows: Sequence[Mapping[str, object]], tokenizer: object, max_length: int):
+        self.examples = []
+        self.origin_counts = Counter()
+        for row in rows:
+            messages = row.get("messages")
+            if not isinstance(messages, list) or len(messages) < 2:
+                continue
+            assistant = messages[-1]
+            if not isinstance(assistant, Mapping) or str(assistant.get("role", "")) != "assistant":
+                continue
+            try:
+                payload = json.loads(str(assistant.get("content", "") or ""))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(payload, Mapping):
+                continue
+            self.examples.append(
+                constrained.encoded_action(
+                    tokenizer,
+                    messages[:-1],
+                    payload,
+                    max_length=max_length,
+                )
+            )
+            self.origin_counts[str(row.get("origin", "") or "unknown")] += 1
+        if not self.examples:
+            raise ValueError("No tokenized anti-forgetting replay rows were produced")
+
+    def __len__(self) -> int:
+        return len(self.examples)
+
+    def __getitem__(self, index: int) -> Mapping[str, object]:
+        return self.examples[index]
+
+
+class ReplayCollator:
+    def __init__(self, tokenizer: object):
+        self.pad_token_id = int(tokenizer.pad_token_id)
+
+    def __call__(self, features: Sequence[Mapping[str, object]]) -> Mapping[str, object]:
+        import torch
+
+        width = max(len(item["input_ids"]) for item in features)
+        input_ids = []
+        attention_mask = []
+        labels = []
+        for item in features:
             padding = width - len(item["input_ids"])
             input_ids.append(item["input_ids"] + [self.pad_token_id] * padding)
             attention_mask.append(item["attention_mask"] + [0] * padding)
@@ -180,6 +278,26 @@ def main(argv: Sequence[str] | None = None) -> int:
         generator=generator,
         collate_fn=PairCollator(tokenizer),
     )
+    replay_dataset = None
+    replay_loader = None
+    replay_iterator = None
+    if args.replay_jsonl is not None and float(args.replay_sft_weight) > 0.0:
+        replay_origins = [item.strip() for item in str(args.replay_origins).split(",") if item.strip()]
+        replay_rows = task_balanced_replay_rows(
+            read_jsonl(args.replay_jsonl),
+            origins=replay_origins,
+            max_per_origin=int(args.replay_max_per_origin),
+            seed=int(args.seed),
+        )
+        replay_dataset = ReplayDataset(replay_rows, tokenizer, args.max_length)
+        replay_loader = torch.utils.data.DataLoader(
+            replay_dataset,
+            batch_size=int(args.replay_batch_size),
+            shuffle=True,
+            generator=torch.Generator().manual_seed(int(args.seed) + 1),
+            collate_fn=ReplayCollator(tokenizer),
+        )
+        replay_iterator = iter(replay_loader)
     parameters = [parameter for parameter in model.parameters() if parameter.requires_grad]
     optimizer = torch.optim.AdamW(parameters, lr=args.learning_rate, weight_decay=0.01)
     optimizer.zero_grad(set_to_none=True)
@@ -189,8 +307,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     for epoch in range(1, int(args.epochs) + 1):
         running_loss = 0.0
         running_pair = 0.0
+        running_replay = 0.0
         running_accuracy = 0.0
         seen = 0
+        replay_seen = 0
         for batch_index, batch in enumerate(loader, start=1):
             batch = {key: value.cuda() for key, value in batch.items()}
             scores = sequence_mean_log_probability(model, batch)
@@ -200,6 +320,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             pair_loss = functional.softplus(-float(args.beta) * margin).mean()
             sft_loss = -chosen.mean()
             loss = pair_loss + float(args.sft_weight) * sft_loss
+            replay_loss = None
+            if replay_loader is not None:
+                assert replay_iterator is not None
+                try:
+                    replay_batch = next(replay_iterator)
+                except StopIteration:
+                    replay_iterator = iter(replay_loader)
+                    replay_batch = next(replay_iterator)
+                replay_batch = {key: value.cuda() for key, value in replay_batch.items()}
+                replay_scores = sequence_mean_log_probability(model, replay_batch)
+                replay_loss = -replay_scores.mean()
+                loss = loss + float(args.replay_sft_weight) * replay_loss
+                replay_seen += int(replay_scores.numel())
             (loss / int(args.gradient_accumulation)).backward()
             global_step += 1
             do_update = batch_index % int(args.gradient_accumulation) == 0 or batch_index == len(loader)
@@ -218,6 +351,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             seen += batch_pairs
             running_loss += float(loss.detach()) * batch_pairs
             running_pair += float(pair_loss.detach()) * batch_pairs
+            if replay_loss is not None:
+                running_replay += float(replay_loss.detach()) * batch_pairs
             running_accuracy += float((margin.detach() > 0).float().sum())
             if global_step % int(args.logging_steps) == 0:
                 print(
@@ -227,7 +362,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                             "pairs": seen,
                             "loss": running_loss / max(seen, 1),
                             "pair_loss": running_pair / max(seen, 1),
+                            "replay_sft_loss": running_replay / max(seen, 1) if replay_loader else None,
                             "ranking_accuracy": running_accuracy / max(seen, 1),
+                            "replay_examples": replay_seen,
                             "updates": update_step,
                         },
                         sort_keys=True,
@@ -240,7 +377,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "pairs": seen,
                 "loss": running_loss / max(seen, 1),
                 "pair_loss": running_pair / max(seen, 1),
+                "replay_sft_loss": running_replay / max(seen, 1) if replay_loader else None,
                 "ranking_accuracy": running_accuracy / max(seen, 1),
+                "replay_examples": replay_seen,
                 "updates": update_step,
             }
         )
@@ -264,6 +403,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "beta": args.beta,
         "sft_weight": args.sft_weight,
         "gradient_accumulation": args.gradient_accumulation,
+        "replay_jsonl": str(args.replay_jsonl) if args.replay_jsonl else None,
+        "replay_sft_weight": args.replay_sft_weight,
+        "replay_rows": len(replay_dataset) if replay_dataset is not None else 0,
+        "replay_origin_counts": (
+            dict(sorted(replay_dataset.origin_counts.items())) if replay_dataset is not None else {}
+        ),
         "adapter_nonfinite_parameters": nonfinite,
         "history": history,
         "adapter_dir": str(adapter_dir),

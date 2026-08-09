@@ -14,6 +14,8 @@ MODULE_ROOT = (
     / "experiments"
     / "unified_constraint_agent"
 )
+if str(MODULE_ROOT) not in sys.path:
+    sys.path.insert(0, str(MODULE_ROOT))
 
 
 def load_module(name: str):
@@ -36,6 +38,9 @@ constrained_eval = load_module("evaluate_common_llm_constrained_actions")
 preference_data = load_module("build_common_llm_action_preferences")
 verifier_preference_data = load_module("build_common_llm_verifier_preferences")
 preference_train = load_module("train_common_llm_preference")
+plan_protocol = load_module("common_llm_plan_protocol")
+plan_preference_data = load_module("build_common_llm_plan_preferences")
+plan_gate = load_module("compare_common_llm_plan_rankers")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -451,3 +456,161 @@ def test_verifier_preference_uses_strict_positive_and_nearest_failure() -> None:
 
     assert chosen is strict
     assert rejected == [hard_negative, easy_negative]
+
+
+def test_plan_protocol_hides_policy_score_and_target_molecule() -> None:
+    row = {
+        "condition_id": "plan-1",
+        "benchmark_task": "external_multiproperty_mumo",
+        "source_smiles": "CCO",
+        "target_smiles": "SECRET_TARGET",
+        "external_task_properties": "bbbp,qed",
+        "external_property_directions_json": json.dumps({"bbbp": "increase", "qed": "increase"}),
+        "external_property_thresholds_json": json.dumps({"bbbp": 0.2, "qed": 0.1}),
+    }
+    messages = plan_protocol.plan_prompt_messages(row)
+    payload = plan_protocol.plan_payload(
+        [
+            {
+                "op": "add_atom",
+                "site": 1,
+                "atom": "N",
+                "prop": "bbbp",
+                "direction": "increase",
+                "policy_score": 999.0,
+            }
+        ]
+    )
+
+    assert "SECRET_TARGET" not in json.dumps(messages)
+    assert payload["action_type"] == "graph_edit_plan"
+    assert "policy_score" not in payload["value"]["steps"][0]
+
+
+def test_two_step_plan_preferences_cover_both_tradeoff_negatives() -> None:
+    base = {
+        "condition_id": "mumo-train-1",
+        "split": "train",
+        "benchmark_task": "external_multiproperty_mumo",
+        "source_smiles": "CCO",
+        "target_smiles": "SECRET_TARGET",
+        "external_task_id": "BDP",
+        "external_task_split": "ind",
+        "external_task_properties": "bbbp,drd2,plogp",
+        "external_property_directions_json": json.dumps(
+            {"bbbp": "increase", "drd2": "increase", "plogp": "increase"}
+        ),
+        "external_property_thresholds_json": json.dumps({"bbbp": 0.2, "drd2": 0.2, "plogp": 1.0}),
+    }
+    strict = {
+        **base,
+        "candidate_rank": "1",
+        "generated_smiles": "CCN",
+        "external_official_success": "True",
+        "external_strict_success": "True",
+        "external_source_similarity_success": "True",
+        "external_source_tanimoto": "0.7",
+        "external_property_success_json": json.dumps({"bbbp": True, "drd2": True, "plogp": True}),
+    }
+    similarity_trap = {
+        **base,
+        "candidate_rank": "2",
+        "generated_smiles": "CCCCN",
+        "external_official_success": "True",
+        "external_strict_success": "False",
+        "external_source_similarity_success": "False",
+        "external_source_tanimoto": "0.2",
+        "external_property_success_json": json.dumps({"bbbp": True, "drd2": True, "plogp": True}),
+    }
+    property_trap = {
+        **base,
+        "candidate_rank": "3",
+        "generated_smiles": "CCF",
+        "external_official_success": "False",
+        "external_strict_success": "False",
+        "external_source_similarity_success": "True",
+        "external_source_tanimoto": "0.8",
+        "external_property_success_json": json.dumps({"bbbp": True, "drd2": False, "plogp": True}),
+    }
+    plans = {
+        ("mumo-train-1", "CCN"): [
+            {"op": "replace_atom", "site": 1, "atom": "N", "policy_score": 9.0}
+        ],
+        ("mumo-train-1", "CCCCN"): [
+            {"op": "add_atom", "site": 1, "atom": "C"},
+            {"op": "add_atom", "site": 2, "atom": "N"},
+        ],
+        ("mumo-train-1", "CCF"): [
+            {"op": "replace_atom", "site": 1, "atom": "F"}
+        ],
+    }
+
+    pairs, outcomes = plan_preference_data.preference_pairs(
+        [strict, similarity_trap, property_trap],
+        plans,
+        max_negatives=3,
+    )
+
+    assert {row["hard_negative_category"] for row in pairs} == {
+        "property_success_similarity_failure",
+        "similarity_success_property_failure",
+    }
+    assert outcomes["strict_preference_condition"] == 1
+    assert all("SECRET_TARGET" not in json.dumps(row["prompt_messages"]) for row in pairs)
+    assert all("policy_score" not in json.dumps(row["chosen"]) for row in pairs)
+
+
+def test_preference_replay_is_deduplicated_and_task_balanced() -> None:
+    rows = [
+        {"example_id": "d1", "origin": "denovo"},
+        {"example_id": "d1", "origin": "denovo", "repeat_index": 1},
+        {"example_id": "d2", "origin": "denovo"},
+        {"example_id": "t1", "origin": "table1"},
+        {"example_id": "m1", "origin": "mumo"},
+    ]
+    selected = preference_train.task_balanced_replay_rows(
+        rows,
+        origins=("denovo", "table1", "mumo"),
+        max_per_origin=1,
+        seed=7,
+    )
+
+    assert len(selected) == 3
+    assert {row["origin"] for row in selected} == {"denovo", "table1", "mumo"}
+
+
+def test_plan_gate_rejects_property_gain_that_loses_source_similarity(tmp_path: Path) -> None:
+    def summary(sr: float, strict: float, similarity: float) -> dict[str, object]:
+        metrics = {
+            "all": {
+                "success_rate": sr,
+                "strict_success_rate": strict,
+                "source_similarity_success_rate": similarity,
+            }
+        }
+        return {"selections": {"llm_at_1": metrics, "llm_verifier_at_5": metrics}}
+
+    baseline = tmp_path / "baseline.json"
+    candidate = tmp_path / "candidate.json"
+    output = tmp_path / "gate.json"
+    report = tmp_path / "gate.md"
+    baseline.write_text(json.dumps(summary(0.30, 0.10, 0.50)), encoding="utf-8")
+    candidate.write_text(json.dumps(summary(0.35, 0.11, 0.40)), encoding="utf-8")
+
+    assert (
+        plan_gate.main(
+            [
+                "--baseline-summary",
+                str(baseline),
+                "--candidate-summary",
+                str(candidate),
+                "--output-json",
+                str(output),
+                "--output-report",
+                str(report),
+                "--fail-on-stop",
+            ]
+        )
+        == 3
+    )
+    assert json.loads(output.read_text())["decision"] == "stop"

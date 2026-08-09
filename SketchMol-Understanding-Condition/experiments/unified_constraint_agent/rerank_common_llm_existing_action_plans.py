@@ -33,6 +33,7 @@ if str(SCRIPT_DIR) not in sys.path:
 import evaluate_common_llm_constrained_actions as constrained  # noqa: E402
 import evaluate_common_llm_official_actions as official  # noqa: E402
 import select_external_verifier_prefix as external_select  # noqa: E402
+import common_llm_plan_protocol as plan_protocol  # noqa: E402
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -47,6 +48,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--score-batch-size", type=int, default=4)
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--max-rows", type=int, default=0)
+    parser.add_argument(
+        "--plan-score-mode",
+        choices=("mean_action_logprob", "joint_plan_logprob"),
+        default="mean_action_logprob",
+    )
+    parser.add_argument("--condition-ids-file", type=Path, default=None)
+    parser.add_argument("--reconstructed-plans-jsonl", type=Path, default=None)
+    parser.add_argument("--variant", default="common_llm_plan_rerank")
     return parser.parse_args(argv)
 
 
@@ -246,26 +255,44 @@ def score_condition(
     tokenizer: object,
     batch_size: int,
     max_length: int,
+    score_mode: str = "mean_action_logprob",
+    variant: str = "common_llm_plan_rerank",
 ) -> list[dict[str, object]]:
     if not rows:
         return []
-    messages = official.prompt_messages(rows[0])
+    if score_mode == "joint_plan_logprob":
+        messages = plan_protocol.plan_prompt_messages(rows[0])
+    else:
+        messages = official.prompt_messages(rows[0])
     encoded = []
     owners: list[int] = []
     action_counts = [0] * len(rows)
     for row_index, row in enumerate(rows):
         actions = list(plans.get(candidate_key(row), []))
         action_counts[row_index] = len(actions)
-        for action in actions:
+        if score_mode == "joint_plan_logprob" and actions:
             encoded.append(
                 constrained.encoded_action(
                     tokenizer,
                     messages,
-                    action_payload(action),
+                    plan_protocol.plan_payload(actions),
                     max_length=int(max_length),
                 )
             )
             owners.append(row_index)
+        elif score_mode == "mean_action_logprob":
+            for action in actions:
+                encoded.append(
+                    constrained.encoded_action(
+                        tokenizer,
+                        messages,
+                        action_payload(action),
+                        max_length=int(max_length),
+                    )
+                )
+                owners.append(row_index)
+        elif score_mode != "joint_plan_logprob":
+            raise ValueError(f"Unknown plan score mode: {score_mode}")
     scores = (
         constrained.score_encoded_actions(model, tokenizer, encoded, batch_size=int(batch_size))
         if encoded
@@ -283,6 +310,10 @@ def score_condition(
         out["llm_plan_reconstructed"] = "True" if action_counts[row_index] else "False"
         out["llm_plan_mean_log_probability"] = mean(values) if values else -math.inf
         out["llm_plan_min_log_probability"] = min(values) if values else -math.inf
+        out["llm_plan_score_mode"] = score_mode
+        out["llm_plan_joint_log_probability"] = (
+            values[0] if score_mode == "joint_plan_logprob" and values else ""
+        )
         scored.append(out)
     scored.sort(
         key=lambda row: (
@@ -295,7 +326,7 @@ def score_condition(
         row["candidate_rank"] = rank
         row["generation_rank"] = rank
         row["candidate_selected"] = "True" if rank == 1 else "False"
-        row["method"] = "common_llm_seed1705_rerank_existing_2step_top20"
+        row["method"] = str(variant)
     return scored
 
 
@@ -333,6 +364,47 @@ def select_candidate_rows(
     return output
 
 
+def exact_paired_sign_test(wins: int, losses: int) -> float:
+    discordant = int(wins) + int(losses)
+    if discordant <= 0:
+        return 1.0
+    tail = min(int(wins), int(losses))
+    probability = 2.0 * sum(math.comb(discordant, index) for index in range(tail + 1)) / (2**discordant)
+    return min(1.0, probability)
+
+
+def paired_selection_comparison(
+    baseline: Sequence[Mapping[str, object]],
+    candidate: Sequence[Mapping[str, object]],
+) -> dict[str, object]:
+    baseline_by_id = {str(row.get("condition_id", "") or ""): row for row in baseline}
+    candidate_by_id = {str(row.get("condition_id", "") or ""): row for row in candidate}
+    ids = sorted(set(baseline_by_id) & set(candidate_by_id))
+    result: dict[str, object] = {"paired_conditions": len(ids)}
+    for metric in (
+        "external_official_success",
+        "external_strict_success",
+        "external_source_similarity_success",
+    ):
+        wins = sum(
+            not external_select.truthy(baseline_by_id[key].get(metric))
+            and external_select.truthy(candidate_by_id[key].get(metric))
+            for key in ids
+        )
+        losses = sum(
+            external_select.truthy(baseline_by_id[key].get(metric))
+            and not external_select.truthy(candidate_by_id[key].get(metric))
+            for key in ids
+        )
+        result[metric] = {
+            "wins": wins,
+            "losses": losses,
+            "delta": (wins - losses) / max(len(ids), 1),
+            "exact_two_sided_p": exact_paired_sign_test(wins, losses),
+        }
+    return result
+
+
 def summarize(
     reranked: Sequence[Mapping[str, object]],
     original: Sequence[Mapping[str, object]],
@@ -342,6 +414,9 @@ def summarize(
 ) -> dict[str, object]:
     selections = {
         "original_heuristic_at_1": select_candidate_rows(original, budget=1, verifier=False),
+        f"original_heuristic_verifier_at_{verifier_k}": select_candidate_rows(
+            original, budget=verifier_k, verifier=True
+        ),
         "llm_at_1": select_candidate_rows(reranked, budget=1, verifier=False),
         f"llm_verifier_at_{verifier_k}": select_candidate_rows(
             reranked, budget=verifier_k, verifier=True
@@ -364,6 +439,10 @@ def summarize(
         external_select.truthy(row.get("external_official_success"))
         for row in selections[f"llm_verifier_at_{verifier_k}"]
     )
+    original_verifier_hits = sum(
+        external_select.truthy(row.get("external_official_success"))
+        for row in selections[f"original_heuristic_verifier_at_{verifier_k}"]
+    )
     return {
         "protocol": "common_llm_existing_2step_plan_rerank_v1",
         "candidate_budget": int(candidate_budget),
@@ -373,6 +452,16 @@ def summarize(
         "plan_score": "mean per-action assistant log probability",
         "selections": result,
         "verifier_recovery_of_reachable": verifier_hits / max(reachable, 1),
+        "original_verifier_recovery_of_reachable": original_verifier_hits / max(reachable, 1),
+        "paired_comparisons": {
+            "llm_at_1_vs_original_heuristic_at_1": paired_selection_comparison(
+                selections["original_heuristic_at_1"], selections["llm_at_1"]
+            ),
+            f"llm_verifier_at_{verifier_k}_vs_original_heuristic_verifier_at_{verifier_k}": paired_selection_comparison(
+                selections[f"original_heuristic_verifier_at_{verifier_k}"],
+                selections[f"llm_verifier_at_{verifier_k}"],
+            ),
+        },
     }
 
 
@@ -384,7 +473,7 @@ def render_report(summary: Mapping[str, object]) -> str:
         "",
         f"- candidate_budget: `{summary['candidate_budget']}`",
         f"- verifier_k: `{summary['verifier_k']}`",
-        "- LLM plan score: mean per-action assistant log probability",
+        f"- LLM plan score: `{summary['plan_score']}`",
         "- target information used for LLM ranking: `False`",
         "",
         "| Selection | Split | SR | Strict | Sim>=0.4 | Sim(success) |",
@@ -407,9 +496,36 @@ def render_report(summary: Mapping[str, object]) -> str:
             "",
             f"Verifier recovery of reachable top-20 successes: "
             f"`{float(summary['verifier_recovery_of_reachable']):.4f}`.",
+            f"Original heuristic verifier recovery: "
+            f"`{float(summary['original_verifier_recovery_of_reachable']):.4f}`.",
             "",
         ]
     )
+    comparisons = summary.get("paired_comparisons", {})
+    if isinstance(comparisons, Mapping) and comparisons:
+        lines.extend(
+            [
+                "| Paired comparison | Metric | Delta | Wins | Losses | Exact p |",
+                "| --- | --- | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for comparison_name, metrics in comparisons.items():
+            if not isinstance(metrics, Mapping):
+                continue
+            for metric in (
+                "external_official_success",
+                "external_strict_success",
+                "external_source_similarity_success",
+            ):
+                record = metrics.get(metric, {})
+                if not isinstance(record, Mapping):
+                    continue
+                lines.append(
+                    f"| {comparison_name} | {metric} | {float(record['delta']):.4f} | "
+                    f"{int(record['wins'])} | {int(record['losses'])} | "
+                    f"{float(record['exact_two_sided_p']):.4g} |"
+                )
+        lines.append("")
     return "\n".join(lines)
 
 
@@ -441,6 +557,19 @@ def main(argv: Sequence[str] | None = None) -> int:
     for rows in grouped_original.values():
         rows.sort(key=external_select.candidate_rank)
         del rows[int(args.candidate_budget) :]
+    if args.condition_ids_file is not None:
+        requested = {
+            line.strip()
+            for line in args.condition_ids_file.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        }
+        unknown = sorted(requested - set(grouped_original))
+        if unknown:
+            raise ValueError(f"Condition filter contains unknown ids: {unknown[:5]}")
+        condition_order = [key for key in condition_order if key in requested]
+        grouped_original = {key: grouped_original[key] for key in condition_order}
+        if not condition_order:
+            raise ValueError("Condition filter selected zero rows")
     if args.max_rows > 0:
         condition_order = condition_order[: int(args.max_rows)]
         grouped_original = {key: grouped_original[key] for key in condition_order}
@@ -449,7 +578,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("Existing pool is not a complete fixed n=20 candidate set")
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    plan_checkpoint = args.output_dir / "reconstructed_candidate_plans.jsonl"
+    plan_checkpoint = args.reconstructed_plans_jsonl or (
+        args.output_dir / "reconstructed_candidate_plans.jsonl"
+    )
     if plan_checkpoint.is_file():
         plans = read_plan_checkpoint(plan_checkpoint)
         if len(plans) >= int(0.95 * len(candidate_rows)):
@@ -490,6 +621,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             tokenizer=tokenizer,
             batch_size=int(args.score_batch_size),
             max_length=int(args.max_length),
+            score_mode=str(args.plan_score_mode),
+            variant=str(args.variant),
         )
         append_progress(progress_path, condition_id, rows)
         completed[condition_id] = rows
@@ -509,11 +642,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         verifier_k=int(args.verifier_k),
         candidate_budget=int(args.candidate_budget),
     )
+    summary["protocol"] = (
+        "common_llm_existing_2step_joint_plan_rerank_v3"
+        if args.plan_score_mode == "joint_plan_logprob"
+        else "common_llm_existing_2step_plan_rerank_v1"
+    )
+    summary["plan_score"] = str(args.plan_score_mode)
     summary.update(
         {
             "official_detail_csv": str(args.official_detail_csv),
             "plan_jsonl": str(args.plan_jsonl),
             "adapter_dir": str(args.adapter_dir),
+            "variant": str(args.variant),
+            "condition_ids_file": str(args.condition_ids_file) if args.condition_ids_file else None,
+            "reconstructed_plans_jsonl": str(plan_checkpoint),
             "conditions": len(condition_order),
             "candidate_rows": len(reranked),
             "reconstructed_candidate_rows": sum(

@@ -130,3 +130,30 @@ The runner streams the condition-grouped 2-step trace once, reconstructs each
 candidate's executable plan, and uses mean per-action LLM log probability. The
 official ADMET-AI/TDC outcomes are consulted only after LLM ordering for
 `verifier@5` and metric aggregation.
+
+## Two-step plan preference v3
+
+The official rerank exposed a training/inference mismatch: verifier preference
+v2 learned one action at a time, while the useful MuMO support consists almost
+entirely of two-action plans. V3 fixes the contract instead of tuning inference:
+
+1. build a fresh fixed `n=20` two-step pool from MuMO **train** rows only;
+2. score that pool with the same official property and source-similarity stack;
+3. train on complete one/two-action plan preferences, including separate hard
+   negatives for property success with similarity failure and the reverse;
+4. remove heuristic `policy_score` from every model-visible action;
+5. replay balanced de novo/Table1/MuMO SFT examples during preference tuning;
+6. gate on held-out train conditions before the formal test pool is opened.
+
+The stable 1.5B SFT adapter and the v3 adapter are both evaluated with joint
+plan likelihood on the same held-out prefixes. The gate requires a positive
+property/strict gain, no strict regression, and at most one point of source
+similarity loss. Only a `go` decision launches the immutable formal MuMO pool.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_two_step_plan_preference.sh
+```
+
+The Slurm entrypoint uses one H100 20 GB MIG, sends begin/end/fail mail to the
+configured address, checkpoints train-pool generation, and safely reuses all
+completed artifacts on resubmission.

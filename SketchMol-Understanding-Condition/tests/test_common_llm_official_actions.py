@@ -169,5 +169,54 @@ def test_existing_pool_summary_separates_llm_and_verifier() -> None:
     summary = existing.summarize(rows, rows, verifier_k=2, candidate_budget=2)
     selections = summary["selections"]
     assert selections["llm_at_1"]["all"]["success_rate"] == 0.0
+    assert selections["original_heuristic_verifier_at_2"]["all"]["success_rate"] == 1.0
     assert selections["llm_verifier_at_2"]["all"]["success_rate"] == 1.0
     assert summary["verifier_recovery_of_reachable"] == 1.0
+    assert summary["original_verifier_recovery_of_reachable"] == 1.0
+    paired = summary["paired_comparisons"]["llm_at_1_vs_original_heuristic_at_1"]
+    assert paired["external_official_success"]["delta"] == 0.0
+
+
+def test_joint_plan_scoring_uses_one_payload_per_candidate(monkeypatch) -> None:
+    encoded_payloads = []
+
+    monkeypatch.setattr(existing.plan_protocol, "plan_prompt_messages", lambda row: [{"role": "user", "content": "x"}])
+
+    def encoded_action(tokenizer, messages, payload, *, max_length):
+        encoded_payloads.append(payload)
+        return {"input_ids": [1], "attention_mask": [1], "labels": [1]}
+
+    monkeypatch.setattr(existing.constrained, "encoded_action", encoded_action)
+    monkeypatch.setattr(
+        existing.constrained,
+        "score_encoded_actions",
+        lambda model, tokenizer, encoded, *, batch_size: [0.1, 0.9],
+    )
+    rows = [
+        {"condition_id": "x", "generated_smiles": "CCN", "candidate_rank": "1"},
+        {"condition_id": "x", "generated_smiles": "CCF", "candidate_rank": "2"},
+    ]
+    plans = {
+        ("x", "CCN"): [
+            {"op": "add_atom", "site": 1, "atom": "C"},
+            {"op": "replace_atom", "site": 2, "atom": "N"},
+        ],
+        ("x", "CCF"): [{"op": "replace_atom", "site": 1, "atom": "F"}],
+    }
+
+    ranked = existing.score_condition(
+        rows,
+        plans,
+        model=object(),
+        tokenizer=object(),
+        batch_size=2,
+        max_length=128,
+        score_mode="joint_plan_logprob",
+        variant="test_joint_plan",
+    )
+
+    assert len(encoded_payloads) == 2
+    assert encoded_payloads[0]["action_type"] == "graph_edit_plan"
+    assert len(encoded_payloads[0]["value"]["steps"]) == 2
+    assert ranked[0]["generated_smiles"] == "CCF"
+    assert ranked[0]["method"] == "test_joint_plan"
