@@ -230,3 +230,14 @@ The replacement v3 protocol trains complete plan payloads on a separately
 generated MuMO train-only pool, uses explicit property/similarity tradeoff hard
 negatives, hides planner scores, and applies balanced SFT replay before a
 held-out source-preservation gate.
+
+## Two-step plan preference v3
+
+Date: 2026-08-09
+
+Job `19409321` was submitted on one H100 20 GB MIG with seed `1706`, four CPU
+cores, 96 GB host memory, and a 10-hour ceiling. It first generates and scores
+a fresh MuMO train-only top-20 two-step pool, trains joint plan preferences, and
+runs the frozen held-out gate. The immutable official test pool is opened only
+if the new controller improves property success without regressing strict
+success or source preservation beyond the declared tolerance.
