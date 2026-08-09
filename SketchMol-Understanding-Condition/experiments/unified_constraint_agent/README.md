@@ -82,3 +82,15 @@ The first 1.5B pilot outcome and its method decision are recorded in
 [`RESULTS.md`](RESULTS.md). The held-out action-control evaluation is a
 training-data diagnostic, not a replacement for fixed-`n=20` benchmark
 evaluation.
+
+After the stable SFT gate, the preference pilot keeps the same 1.5B adapter and
+trains directly on train-only teacher actions versus structurally hard,
+executable negatives:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_preference_pilot.sh
+```
+
+Its evaluation scores no more than 20 valid output actions per condition. A
+larger internal attempt budget is used only for typed-grammar/RDKit validation
+and is recorded separately in every manifest.

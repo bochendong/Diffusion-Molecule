@@ -42,6 +42,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--adapter-dir", type=Path, default=None)
     parser.add_argument("--variant", required=True)
     parser.add_argument("--candidate-budget", type=int, default=20)
+    parser.add_argument("--enumeration-attempt-budget", type=int, default=64)
     parser.add_argument("--site-limit", type=int, default=32)
     parser.add_argument("--score-batch-size", type=int, default=4)
     parser.add_argument("--max-length", type=int, default=1024)
@@ -263,8 +264,8 @@ def evaluate_record(
     candidates = policy.enumerate_action_candidates(
         row,
         site_limit=int(args.site_limit),
-        max_actions_per_row=int(args.candidate_budget),
-    )
+        max_actions_per_row=max(int(args.candidate_budget), int(args.enumeration_attempt_budget)),
+    )[: int(args.candidate_budget)]
     expected_key = structural_action_key(expected.get("value"))
     prompt_messages = record["messages"][:-1]
     encoded = [
@@ -420,6 +421,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     write_csv(args.output_dir / "details.csv", output_rows)
     write_csv(args.output_dir / "candidates.csv", candidate_rows)
     summary = summarize(output_rows, args.variant, args.candidate_budget)
+    summary["enumeration_attempt_budget"] = args.enumeration_attempt_budget
     (args.output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",

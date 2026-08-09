@@ -28,6 +28,7 @@ common_args=(
   --input-jsonl "$SFT_DIR/validation.jsonl"
   --base-model "$BASE_MODEL"
   --candidate-budget 20
+  --enumeration-attempt-budget "${SUCC_UCA_ENUMERATION_ATTEMPT_BUDGET:-64}"
   --site-limit "${SUCC_UCA_SITE_LIMIT:-32}"
   --score-batch-size "${SUCC_UCA_SCORE_BATCH_SIZE:-4}"
   --max-length "${SUCC_UCA_MAX_LENGTH:-1024}"

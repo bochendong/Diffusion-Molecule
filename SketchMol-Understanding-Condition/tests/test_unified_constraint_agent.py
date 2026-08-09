@@ -33,6 +33,8 @@ common_sft = load_module("build_common_llm_sft_dataset")
 common_lora = load_module("train_common_llm_lora")
 common_eval = load_module("evaluate_common_llm_pilot")
 constrained_eval = load_module("evaluate_common_llm_constrained_actions")
+preference_data = load_module("build_common_llm_action_preferences")
+preference_train = load_module("train_common_llm_preference")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -371,3 +373,49 @@ def test_constrained_action_eval_preserves_target_when_prompt_is_long() -> None:
     assert len(encoded["input_ids"]) == 10
     assert encoded["input_ids"][-6:] == [20, 21, 22, 23, 24, 99]
     assert encoded["labels"][-6:] == [20, 21, 22, 23, 24, 99]
+
+
+def test_preference_data_selects_structurally_hard_negative() -> None:
+    expected = {
+        "op": "replace_atom",
+        "site": 1,
+        "atom": "N",
+        "prop": "QED",
+        "direction": "increase",
+    }
+    hard = {
+        "op": "replace_atom",
+        "site": 2,
+        "atom": "N",
+        "prop": "QED",
+        "direction": "increase",
+    }
+    easy = {
+        "op": "add_fragment",
+        "site": 7,
+        "fragment": "C",
+        "prop": "MW",
+        "direction": "decrease",
+    }
+
+    selected = preference_data.select_hard_negatives(expected, [easy, expected, hard], count=2)
+
+    assert selected == [hard, easy]
+
+
+def test_preference_training_defaults_to_one_small_stable_epoch() -> None:
+    args = preference_train.parse_args(
+        [
+            "--train-jsonl",
+            "train.jsonl",
+            "--input-adapter-dir",
+            "adapter",
+            "--output-dir",
+            "output",
+        ]
+    )
+
+    assert args.epochs == 1
+    assert args.learning_rate == 2e-5
+    assert args.batch_size == 1
+    assert args.gradient_accumulation == 8
