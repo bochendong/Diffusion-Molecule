@@ -31,6 +31,7 @@ audit = load_module("audit_candidate_pools")
 trajectory = load_module("build_verifier_trajectories")
 common_sft = load_module("build_common_llm_sft_dataset")
 common_lora = load_module("train_common_llm_lora")
+common_eval = load_module("evaluate_common_llm_pilot")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -296,3 +297,11 @@ def test_common_llm_dataset_uses_train_actions_and_separate_action_spaces(tmp_pa
 
 def test_common_llm_token_ids_accept_new_transformers_batch_encoding_shape() -> None:
     assert common_lora.input_id_list({"input_ids": [[1, 2, 3]]}) == [1, 2, 3]
+
+
+def test_common_llm_eval_extracts_json_from_markdown_wrapper() -> None:
+    assert common_eval.parse_action_json('```json\n{"action_type":"smiles","value":"CCO"}\n```') == {
+        "action_type": "smiles",
+        "value": "CCO",
+    }
+    assert common_eval.parse_action_json("no action") is None
