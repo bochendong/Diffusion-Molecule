@@ -102,3 +102,18 @@ source-similarity outcomes:
 ```bash
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_verifier_preference_pilot.sh
 ```
+
+After the v2 method gate passes, freeze `seed_1705` and submit the two official
+edit suites in parallel:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_official_edit_eval.sh
+```
+
+Both suites rank exactly 20 executable, unique GraphEditDSL outputs per input.
+The paper-facing comparison separates the LLM's first choice (`LLM@1`), the
+target-free property/similarity verifier restricted to the first five
+(`verifier@5`), and oracle reachability over all 20 (`any-hit@20`). Table1 uses
+the existing MolEdit evaluator. MuMO candidates are scored with the official
+ADMET-AI plus TDC property stack before bounded verifier selection. Progress is
+checkpointed after every input, so a pre-empted cluster job can resume safely.
