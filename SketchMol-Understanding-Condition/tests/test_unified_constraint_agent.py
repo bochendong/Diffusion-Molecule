@@ -32,6 +32,7 @@ trajectory = load_module("build_verifier_trajectories")
 common_sft = load_module("build_common_llm_sft_dataset")
 common_lora = load_module("train_common_llm_lora")
 common_eval = load_module("evaluate_common_llm_pilot")
+constrained_eval = load_module("evaluate_common_llm_constrained_actions")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -305,3 +306,47 @@ def test_common_llm_eval_extracts_json_from_markdown_wrapper() -> None:
         "value": "CCO",
     }
     assert common_eval.parse_action_json("no action") is None
+
+
+def test_constrained_action_eval_reconstructs_planner_contract() -> None:
+    row = constrained_eval.planner_row_from_ir(
+        {
+            "condition_id": "edit-2",
+            "source_smiles": "CCO",
+            "constraints": [
+                {
+                    "property": "QED",
+                    "direction": 1,
+                    "threshold": 0.1,
+                    "source_value": 0.4,
+                    "target": None,
+                },
+                {
+                    "property": "SA",
+                    "direction": -1,
+                    "threshold": None,
+                    "source_value": 3.0,
+                    "target": None,
+                },
+            ],
+        }
+    )
+
+    assert row["source_smiles"] == "CCO"
+    assert row["external_task_properties"] == "QED,SA"
+    assert json.loads(row["external_property_directions_json"]) == {
+        "QED": "increase",
+        "SA": "decrease",
+    }
+    assert row["external_source_QED"] == "0.4"
+
+
+def test_constrained_action_eval_normalizes_structural_bond_key() -> None:
+    left = constrained_eval.structural_action_key(
+        {"op": "change_bond_order", "bond": [1, 2], "bond_order": "double"}
+    )
+    right = constrained_eval.structural_action_key(
+        {"op": "change_bond_order", "bond": (1, 2), "bond_order": "double"}
+    )
+
+    assert left == right
