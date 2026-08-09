@@ -168,6 +168,28 @@ def test_table1_strict_success_requires_source_similarity() -> None:
     assert audit.strict_success({**base, "external_official_success": "True"})
 
 
+def test_direct_smiles_fields_preserve_raw_order_and_finalizer_score() -> None:
+    first = {
+        "generated_smiles": "C",
+        "direct_candidate_index": "0",
+        "direct_candidate_score": "9.0",
+        "direct_candidate_strict_fraction": "0.5",
+        "direct_candidate_property_distance": "0.3",
+    }
+    second = {
+        "generated_smiles": "CC",
+        "direct_candidate_index": "1",
+        "direct_candidate_score": "110.0",
+        "direct_candidate_strict_fraction": "1.0",
+        "direct_candidate_property_distance": "0.0",
+    }
+
+    assert audit.generation_rank(first, 4) < audit.generation_rank(second, 3)
+    assert audit.selection_rank(second, 3) < audit.selection_rank(first, 4)
+    assert audit.strict_success(second)
+    assert audit.property_distance(first) == 0.3
+
+
 def test_trajectory_builder_requires_strict_positive_and_keeps_revision_case(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     spec = audit.load_specs(config)[0]

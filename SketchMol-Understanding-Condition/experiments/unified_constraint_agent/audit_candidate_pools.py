@@ -79,7 +79,12 @@ def valid_candidate(row: Mapping[str, object]) -> bool:
 
 
 def property_fraction(row: Mapping[str, object]) -> float:
-    for key in ("unified_property_success_fraction", "strict_fraction", "property_success_fraction"):
+    for key in (
+        "unified_property_success_fraction",
+        "direct_candidate_strict_fraction",
+        "strict_fraction",
+        "property_success_fraction",
+    ):
         value = number(row.get(key))
         if value is not None:
             return max(0.0, min(1.0, value))
@@ -108,7 +113,7 @@ def strict_success(row: Mapping[str, object]) -> bool:
 
 
 def generation_rank(row: Mapping[str, object], index: int) -> tuple[float, int]:
-    for key in ("generation_rank", "sample_rank", "raw_rank"):
+    for key in ("generation_rank", "direct_candidate_index", "sample_rank", "raw_rank"):
         value = number(row.get(key))
         if value is not None:
             return value, index
@@ -119,6 +124,9 @@ def generation_rank(row: Mapping[str, object], index: int) -> tuple[float, int]:
 def selection_rank(row: Mapping[str, object], index: int) -> tuple[float, int]:
     if truthy(row.get("candidate_selected")):
         return 0.0, index
+    direct_score = number(row.get("direct_candidate_score"))
+    if direct_score is not None:
+        return -direct_score, index
     for key in ("candidate_rank", "unified_selected_candidate_rank", "selection_rank"):
         value = number(row.get(key))
         if value is not None:
@@ -127,7 +135,12 @@ def selection_rank(row: Mapping[str, object], index: int) -> tuple[float, int]:
 
 
 def property_distance(row: Mapping[str, object]) -> float | None:
-    for key in ("unified_property_distance", "normalized_property_distance", "property_distance"):
+    for key in (
+        "unified_property_distance",
+        "direct_candidate_property_distance",
+        "normalized_property_distance",
+        "property_distance",
+    ):
         value = number(row.get(key))
         if value is not None:
             return value
