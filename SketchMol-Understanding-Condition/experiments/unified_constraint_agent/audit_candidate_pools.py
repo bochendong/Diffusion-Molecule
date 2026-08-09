@@ -132,6 +132,9 @@ def selection_rank(row: Mapping[str, object], index: int) -> tuple[float, int]:
     direct_score = number(row.get("direct_candidate_score"))
     if direct_score is not None:
         return -direct_score, index
+    finalizer_score = number(row.get("unified_finalizer_score"))
+    if finalizer_score is not None:
+        return -finalizer_score, index
     for key in ("candidate_rank", "unified_selected_candidate_rank", "selection_rank"):
         value = number(row.get(key))
         if value is not None:

@@ -191,6 +191,13 @@ def test_direct_smiles_fields_preserve_raw_order_and_finalizer_score() -> None:
     assert audit.property_distance(first) == 0.3
 
 
+def test_unified_finalizer_score_overrides_generation_rank() -> None:
+    first = {"generation_rank": "1", "candidate_rank": "1", "unified_finalizer_score": "0.2"}
+    second = {"generation_rank": "2", "candidate_rank": "2", "unified_finalizer_score": "0.9"}
+
+    assert audit.selection_rank(second, 1) < audit.selection_rank(first, 0)
+
+
 def test_trajectory_builder_requires_strict_positive_and_keeps_revision_case(tmp_path: Path) -> None:
     config = make_config(tmp_path)
     spec = audit.load_specs(config)[0]
