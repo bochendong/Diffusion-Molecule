@@ -67,9 +67,18 @@ bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/subm
 
 # After the CPU data job succeeds:
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_pilot.sh
+
+# After the adapter succeeds and passes its finite-weight gate:
+SUCC_UCA_SEED=1703 \
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_eval.sh
 ```
 
 The LLM sees a canonical `MolecularConstraintIR` and returns exactly one JSON
 action. De novo rows use `{"action_type":"smiles",...}`; edit rows use
 `{"action_type":"graph_edit_dsl",...}`. Evaluation remains fixed at the
 paper-comparable candidate budget `n=20`.
+
+The first 1.5B pilot outcome and its method decision are recorded in
+[`RESULTS.md`](RESULTS.md). The held-out action-control evaluation is a
+training-data diagnostic, not a replacement for fixed-`n=20` benchmark
+evaluation.
