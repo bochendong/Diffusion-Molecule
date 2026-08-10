@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import json
 import math
+import os
 import sys
 from typing import Mapping
 
@@ -38,43 +39,46 @@ def finite_float(value: object) -> float | None:
 
 
 def main() -> int:
-    with contextlib.redirect_stdout(sys.stderr):
-        from admet_ai import ADMETModel
+    # ADMET-AI and Lightning print progress for every prediction. Keep the
+    # bridge quiet; structured failures still return through the JSON channel.
+    with open(os.devnull, "w", encoding="utf-8") as quiet:
+        with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
+            from admet_ai import ADMETModel
 
-        model = ADMETModel()
-    for line in sys.stdin:
-        if not line.strip():
-            continue
-        request_id = None
-        try:
-            request = json.loads(line)
-            request_id = request.get("request_id")
-            smiles = [str(item) for item in request.get("smiles", []) if str(item).strip()]
-            if not smiles:
-                raise ValueError("request has no SMILES")
-            with contextlib.redirect_stdout(sys.stderr):
-                predictions = model.predict(smiles=smiles)
-            values = []
-            for index, smiles_value in enumerate(smiles):
-                if hasattr(predictions, "iloc"):
-                    source = row_mapping(predictions.iloc[index])
-                else:
-                    source = row_mapping(predictions)
-                record: dict[str, object] = {"smiles": smiles_value}
-                for prop, candidates in COLUMNS.items():
-                    for column in candidates:
-                        value = finite_float(source.get(column))
-                        if value is not None:
-                            record[prop] = value
-                            break
-                values.append(record)
-            response = {"request_id": request_id, "predictions": values}
-        except Exception as exc:  # keep the parent error actionable
-            response = {
-                "request_id": request_id,
-                "error": f"{type(exc).__name__}: {exc}",
-            }
-        print(json.dumps(response, sort_keys=True), flush=True)
+            model = ADMETModel()
+        for line in sys.stdin:
+            if not line.strip():
+                continue
+            request_id = None
+            try:
+                request = json.loads(line)
+                request_id = request.get("request_id")
+                smiles = [str(item) for item in request.get("smiles", []) if str(item).strip()]
+                if not smiles:
+                    raise ValueError("request has no SMILES")
+                with contextlib.redirect_stdout(quiet), contextlib.redirect_stderr(quiet):
+                    predictions = model.predict(smiles=smiles)
+                values = []
+                for index, smiles_value in enumerate(smiles):
+                    if hasattr(predictions, "iloc"):
+                        source = row_mapping(predictions.iloc[index])
+                    else:
+                        source = row_mapping(predictions)
+                    record: dict[str, object] = {"smiles": smiles_value}
+                    for prop, candidates in COLUMNS.items():
+                        for column in candidates:
+                            value = finite_float(source.get(column))
+                            if value is not None:
+                                record[prop] = value
+                                break
+                    values.append(record)
+                response = {"request_id": request_id, "predictions": values}
+            except Exception as exc:  # keep the parent error actionable
+                response = {
+                    "request_id": request_id,
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            print(json.dumps(response, sort_keys=True), flush=True)
     return 0
 
 

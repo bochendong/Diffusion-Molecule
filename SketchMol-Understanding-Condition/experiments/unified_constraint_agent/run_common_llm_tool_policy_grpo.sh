@@ -26,6 +26,7 @@ export HF_HOME="${HF_HOME:-/scratch/bdong/hf_cache/uca_common_llm}"
 export TOKENIZERS_PARALLELISM=false
 export SUCC_GSK3B_ORACLE_PATH="$GSK3B_ORACLE"
 export SUCC_ADMET_PYTHON_BIN="$ADMET_PYTHON_BIN"
+export SUCC_ADMET_PYTHONPATH="${SUCC_ADMET_PYTHONPATH:-/cvmfs/soft.computecanada.ca/easybuild/python/site-packages:/cvmfs/soft.computecanada.ca/custom/python/site-packages}"
 
 if command -v module >/dev/null 2>&1; then
   module load StdEnv/2023 python/3.11 rdkit/2025.09.4

@@ -103,8 +103,21 @@ class AdmetAIOracleClient:
     def __init__(self, python_bin: str):
         environment = dict(os.environ)
         # The common-LLM overlay contains a different torch stack.  The ADMET
-        # venv gets its dependencies from the loaded cluster modules instead.
-        environment.pop("PYTHONPATH", None)
+        # venv gets numpy/RDKit through the loaded cluster module bootstrap.
+        # Keep that bootstrap path while excluding only the common-LLM overlay.
+        explicit_path = str(environment.get("SUCC_ADMET_PYTHONPATH", "") or "").strip()
+        if explicit_path:
+            environment["PYTHONPATH"] = explicit_path
+        else:
+            entries = [
+                item
+                for item in str(environment.get("PYTHONPATH", "") or "").split(os.pathsep)
+                if item and "uca_common_llm_overlay" not in item
+            ]
+            if entries:
+                environment["PYTHONPATH"] = os.pathsep.join(entries)
+            else:
+                environment.pop("PYTHONPATH", None)
         environment["CUDA_VISIBLE_DEVICES"] = ""
         server = SCRIPT_DIR / "admet_ai_jsonl_server.py"
         self.process = subprocess.Popen(
