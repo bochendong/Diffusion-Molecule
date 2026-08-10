@@ -151,9 +151,12 @@ property/strict gain, no strict regression, and at most one point of source
 similarity loss. Only a `go` decision launches the immutable formal MuMO pool.
 
 ```bash
-bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_two_step_plan_preference.sh
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_two_step_plan_preference_split.sh
 ```
 
-The Slurm entrypoint uses one H100 20 GB MIG, sends begin/end/fail mail to the
-configured address, checkpoints train-pool generation, and safely reuses all
-completed artifacts on resubmission.
+The preferred Slurm entrypoint builds the train-only pool in a CPU job, then
+launches the 20 GB H100 MIG training/evaluation job through an `afterok`
+dependency. It sends begin/end/fail mail to the configured address,
+checkpoints train-pool generation, and safely reuses completed artifacts on
+resubmission. The monolithic submit script remains available for clusters where
+separate CPU/GPU queues provide no scheduling advantage.

@@ -29,23 +29,35 @@ FORMAL_DETAIL="${SUCC_UCA_FORMAL_DETAIL:-$FORMAL_SOURCE_ROOT/benchmark_with_orac
 FORMAL_PLANS="${SUCC_UCA_FORMAL_PLANS:-$FORMAL_SOURCE_ROOT/graph_edit_plans.jsonl}"
 FORMAL_RECONSTRUCTED="${SUCC_UCA_FORMAL_RECONSTRUCTED_PLANS:-$PROJECT_DIR/outputs/unified_constraint_agent_existing_2step_rerank_v1/reconstructed_candidate_plans.jsonl}"
 SEED="${SUCC_UCA_SEED:-1706}"
+STAGE="${SUCC_UCA_STAGE:-all}"
+
+case "$STAGE" in
+  all|prepare|train_eval) ;;
+  *)
+    echo "ERROR: SUCC_UCA_STAGE must be one of: all, prepare, train_eval" >&2
+    exit 2
+    ;;
+esac
 
 export PYTHONPATH="$DEP_OVERLAY${PYTHONPATH:+:$PYTHONPATH}"
 export HF_HOME="${HF_HOME:-/scratch/bdong/hf_cache/uca_common_llm}"
 export TOKENIZERS_PARALLELISM=false
 
-for path in \
-  "$PYTHON_BIN" \
-  "$MUMO_TRAIN_JSON" \
-  "$SFT_DATA/train.jsonl" \
-  "$INPUT_ADAPTER/adapter_model.safetensors" \
-  "$FORMAL_DETAIL" \
-  "$FORMAL_PLANS"; do
+for path in "$PYTHON_BIN" "$MUMO_TRAIN_JSON"; do
   [[ -e "$path" ]] || { echo "ERROR: missing two-step plan preference input: $path" >&2; exit 2; }
 done
+if [[ "$STAGE" != "prepare" ]]; then
+  for path in \
+    "$SFT_DATA/train.jsonl" \
+    "$INPUT_ADAPTER/adapter_model.safetensors" \
+    "$FORMAL_DETAIL" \
+    "$FORMAL_PLANS"; do
+    [[ -e "$path" ]] || { echo "ERROR: missing two-step plan preference input: $path" >&2; exit 2; }
+  done
+fi
 mkdir -p "$RUN_ROOT" "$PREF_DATA" "$MODEL_DIR" "$VALIDATION_ROOT" "$FORMAL_ROOT"
 
-if [[ ! -f "$TRAIN_DETAIL" || ! -f "$TRAIN_PLANS" ]]; then
+if [[ "$STAGE" != "train_eval" && ( ! -f "$TRAIN_DETAIL" || ! -f "$TRAIN_PLANS" ) ]]; then
   echo "=== Build and officially score train-only MuMO 2-step n=20 pool ==="
   export SUCC_PYTHON_BIN="$PYTHON_BIN"
   export SUCC_EXTERNAL_GRAPH_EDIT_SOURCE_FILE="$MUMO_TRAIN_JSON"
@@ -80,6 +92,11 @@ fi
 for path in "$TRAIN_DETAIL" "$TRAIN_PLANS"; do
   [[ -f "$path" ]] || { echo "ERROR: train-only two-step pool did not produce $path" >&2; exit 2; }
 done
+
+if [[ "$STAGE" == "prepare" ]]; then
+  echo "Common-LLM two-step train pool ready: $TRAIN_POOL"
+  exit 0
+fi
 
 echo "=== Build strict-positive two-step plan preferences with similarity hard negatives ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/build_common_llm_plan_preferences.py" \

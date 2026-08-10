@@ -241,3 +241,9 @@ a fresh MuMO train-only top-20 two-step pool, trains joint plan preferences, and
 runs the frozen held-out gate. The immutable official test pool is opened only
 if the new controller improves property success without regressing strict
 success or source preservation beyond the declared tolerance.
+
+The monolithic job remained pending without consuming compute time. The
+pipeline was therefore split into a CPU-only train-pool preparation job and a
+dependent GPU training/evaluation job. This preserves the exact experiment
+contract while avoiding an H100 reservation during graph enumeration and
+allowing the shorter GPU stage to use backfill more readily.
