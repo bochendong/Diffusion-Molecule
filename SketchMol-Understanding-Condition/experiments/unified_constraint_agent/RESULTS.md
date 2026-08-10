@@ -250,3 +250,12 @@ priority and was cancelled without consuming compute. Job `19450295` reuses
 the completed pool and requests one 40 GB H100 MIG for the six-hour GPU-only
 stage. This preserves the exact experiment contract while avoiding an H100
 reservation during graph enumeration and providing more eligible MIG slots.
+
+Job `19450295` started on the 40 GB MIG but failed after 22 seconds because the
+train-pool detail CSV contained only local oracle properties. All 10,000
+candidates were valid and 9,597 passed the source-similarity threshold, but
+missing ADMET-AI values for BBBP, HIA, and mutagenicity forced full property
+coverage, official success, and strict success to zero. The repaired prepare
+stage now runs the complete ADMET-AI + TDC oracle, produces a separately named
+`benchmark_with_oracle_v1`, and materializes non-empty preference data before
+the dependent GPU job becomes eligible.

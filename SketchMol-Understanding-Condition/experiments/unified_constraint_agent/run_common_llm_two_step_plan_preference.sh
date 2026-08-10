@@ -8,9 +8,11 @@ REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$REPO_DIR"
 
 PYTHON_BIN="${SUCC_UCA_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
+ADMET_PYTHON_BIN="${SUCC_ADMET_PYTHON_BIN:-/home/bdong/.venvs/admet_ai/bin/python}"
 DEP_OVERLAY="${SUCC_UCA_DEP_OVERLAY:-/scratch/bdong/venvs/uca_common_llm_overlay}"
 SHARED_REPO_DIR="${SUCC_UCA_SHARED_REPO_DIR:-/scratch/bdong/projects/Diffusion-Molecule}"
 PROJECT_DIR="$SHARED_REPO_DIR/SketchMol-Understanding-Condition"
+CODE_PROJECT_DIR="$REPO_DIR/SketchMol-Understanding-Condition"
 SFT_ROOT="${SUCC_UCA_COMMON_LLM_ROOT:-$PROJECT_DIR/outputs/unified_constraint_agent_common_llm_pilot_v1}"
 RUN_ROOT="${SUCC_UCA_PLAN_PREFERENCE_ROOT:-$PROJECT_DIR/outputs/unified_constraint_agent_two_step_plan_preference_v3}"
 TRAIN_POOL="$RUN_ROOT/train_pool"
@@ -22,7 +24,13 @@ SFT_DATA="$SFT_ROOT/data/common_llm_sft"
 INPUT_ADAPTER="${SUCC_UCA_INPUT_ADAPTER:-$SFT_ROOT/model/seed_1703/adapter}"
 BASE_MODEL="${SUCC_UCA_BASE_MODEL:-Qwen/Qwen2.5-1.5B-Instruct}"
 MUMO_TRAIN_JSON="${SUCC_UCA_MUMO_TRAIN_JSON:-/scratch/bdong/datasets/Diffusion-Molecule/external/mumo/train.json}"
-TRAIN_DETAIL="$TRAIN_POOL/benchmark_graph_edit_agent/external_multiproperty_detail.csv"
+TRAIN_GRAPH_DIR="$TRAIN_POOL/benchmark_graph_edit_agent"
+TRAIN_CANDIDATES="$TRAIN_GRAPH_DIR/graph_edit_agent_candidate_predictions.csv"
+TRAIN_ORACLE_DIR="$TRAIN_POOL/oracle"
+TRAIN_ORACLE_CSV="$TRAIN_ORACLE_DIR/generated_properties.csv"
+TRAIN_ORACLE_MERGE_CSV="${SUCC_UCA_TRAIN_ORACLE_MERGE_CSV:-$PROJECT_DIR/outputs/external_oracle_build_v1/generated_properties.csv}"
+TRAIN_OFFICIAL_DIR="$TRAIN_POOL/benchmark_with_oracle_v1"
+TRAIN_DETAIL="$TRAIN_OFFICIAL_DIR/external_multiproperty_detail.csv"
 TRAIN_PLANS="$TRAIN_POOL/graph_edit_plans.jsonl"
 FORMAL_SOURCE_ROOT="${SUCC_UCA_FORMAL_SOURCE_ROOT:-$PROJECT_DIR/outputs/external_mumo_official_graph_edit_heuristic_2step_v1}"
 FORMAL_DETAIL="${SUCC_UCA_FORMAL_DETAIL:-$FORMAL_SOURCE_ROOT/benchmark_with_oracle_v1/external_multiproperty_detail.csv}"
@@ -57,7 +65,7 @@ if [[ "$STAGE" != "prepare" ]]; then
 fi
 mkdir -p "$RUN_ROOT" "$PREF_DATA" "$MODEL_DIR" "$VALIDATION_ROOT" "$FORMAL_ROOT"
 
-if [[ "$STAGE" != "train_eval" && ( ! -f "$TRAIN_DETAIL" || ! -f "$TRAIN_PLANS" ) ]]; then
+if [[ "$STAGE" != "train_eval" && ( ! -f "$TRAIN_CANDIDATES" || ! -f "$TRAIN_PLANS" ) ]]; then
   echo "=== Build and officially score train-only MuMO 2-step n=20 pool ==="
   export SUCC_PYTHON_BIN="$PYTHON_BIN"
   export SUCC_EXTERNAL_GRAPH_EDIT_SOURCE_FILE="$MUMO_TRAIN_JSON"
@@ -89,25 +97,63 @@ if [[ "$STAGE" != "train_eval" && ( ! -f "$TRAIN_DETAIL" || ! -f "$TRAIN_PLANS" 
   bash SketchMol-Understanding-Condition/scripts/run_direct_smiles_external_mumo_graph_edit_agent.sh
 fi
 
-for path in "$TRAIN_DETAIL" "$TRAIN_PLANS"; do
+for path in "$TRAIN_CANDIDATES" "$TRAIN_PLANS"; do
   [[ -f "$path" ]] || { echo "ERROR: train-only two-step pool did not produce $path" >&2; exit 2; }
 done
 
-if [[ "$STAGE" == "prepare" ]]; then
-  echo "Common-LLM two-step train pool ready: $TRAIN_POOL"
-  exit 0
+if [[ "$STAGE" != "train_eval" && ! -f "$TRAIN_ORACLE_CSV" ]]; then
+  for path in "$ADMET_PYTHON_BIN" "$TRAIN_ORACLE_MERGE_CSV"; do
+    [[ -e "$path" ]] || { echo "ERROR: missing train-oracle input: $path" >&2; exit 2; }
+  done
+  echo "=== Build official ADMET-AI + TDC oracle for train-only candidates ==="
+  SUCC_PYTHON_BIN="$PYTHON_BIN" \
+  SUCC_ADMET_PYTHON_BIN="$ADMET_PYTHON_BIN" \
+  SUCC_ORACLE_INPUT_CSV="$TRAIN_CANDIDATES" \
+  SUCC_ORACLE_OUTPUT_CSV="$TRAIN_ORACLE_CSV" \
+  SUCC_ORACLE_WORK_DIR="$TRAIN_ORACLE_DIR/work" \
+  SUCC_ORACLE_MERGE_PROPERTIES_CSV="$TRAIN_ORACLE_MERGE_CSV" \
+  SUCC_ORACLE_ADMET_REQUIRED_PROPERTIES="bbbp,hia,mutagenicity" \
+  bash "$CODE_PROJECT_DIR/scripts/run_external_multiproperty_generated_oracle_pipeline.sh"
 fi
 
-echo "=== Build strict-positive two-step plan preferences with similarity hard negatives ==="
-"$PYTHON_BIN" "$SCRIPT_DIR/build_common_llm_plan_preferences.py" \
-  --official-detail-csv "$TRAIN_DETAIL" \
-  --plan-jsonl "$TRAIN_PLANS" \
-  --output-dir "$PREF_DATA" \
-  --candidate-budget 20 \
-  --max-negatives-per-condition "${SUCC_UCA_MAX_PLAN_NEGATIVES:-3}" \
-  --validation-fraction "${SUCC_UCA_PLAN_VALIDATION_FRACTION:-0.10}" \
-  --seed "$SEED" \
-  --require-input-split train
+if [[ "$STAGE" != "train_eval" && ! -f "$TRAIN_DETAIL" ]]; then
+  [[ -f "$TRAIN_ORACLE_CSV" ]] || { echo "ERROR: missing train oracle: $TRAIN_ORACLE_CSV" >&2; exit 2; }
+  echo "=== Score train-only n=20 pool with complete official oracle ==="
+  "$PYTHON_BIN" "$CODE_PROJECT_DIR/scripts/evaluate_external_multiproperty_predictions.py" \
+    --prediction-csv "$TRAIN_CANDIDATES" \
+    --output-dir "$TRAIN_OFFICIAL_DIR" \
+    --generated-properties-csv "$TRAIN_ORACLE_CSV" \
+    --source-properties-csv "$TRAIN_ORACLE_CSV" \
+    --group-column condition_id \
+    --min-source-tanimoto 0.4 \
+    --report-title "Common LLM two-step preference MuMO train-only n=20"
+fi
+
+for path in "$TRAIN_DETAIL" "$TRAIN_PLANS"; do
+  [[ -f "$path" ]] || { echo "ERROR: incomplete officially scored train pool: $path" >&2; exit 2; }
+done
+
+if [[ "$STAGE" != "train_eval" ]]; then
+  echo "=== Build strict-positive two-step plan preferences with similarity hard negatives ==="
+  "$PYTHON_BIN" "$SCRIPT_DIR/build_common_llm_plan_preferences.py" \
+    --official-detail-csv "$TRAIN_DETAIL" \
+    --plan-jsonl "$TRAIN_PLANS" \
+    --output-dir "$PREF_DATA" \
+    --candidate-budget 20 \
+    --max-negatives-per-condition "${SUCC_UCA_MAX_PLAN_NEGATIVES:-3}" \
+    --validation-fraction "${SUCC_UCA_PLAN_VALIDATION_FRACTION:-0.10}" \
+    --seed "$SEED" \
+    --require-input-split train
+fi
+
+for path in "$PREF_DATA/train.jsonl" "$PREF_DATA/validation.jsonl" "$PREF_DATA/validation_condition_ids.txt"; do
+  [[ -s "$path" ]] || { echo "ERROR: missing non-empty plan preference artifact: $path" >&2; exit 2; }
+done
+
+if [[ "$STAGE" == "prepare" ]]; then
+  echo "Common-LLM officially scored two-step preference data ready: $PREF_DATA"
+  exit 0
+fi
 
 echo "=== Train joint-plan preference adapter with task-balanced SFT replay ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/train_common_llm_preference.py" \

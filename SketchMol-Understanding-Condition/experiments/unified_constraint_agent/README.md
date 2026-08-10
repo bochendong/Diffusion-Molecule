@@ -138,7 +138,8 @@ v2 learned one action at a time, while the useful MuMO support consists almost
 entirely of two-action plans. V3 fixes the contract instead of tuning inference:
 
 1. build a fresh fixed `n=20` two-step pool from MuMO **train** rows only;
-2. score that pool with the same official property and source-similarity stack;
+2. run the complete ADMET-AI + TDC oracle and score that pool with the same
+   official property and source-similarity stack;
 3. train on complete one/two-action plan preferences, including separate hard
    negatives for property success with similarity failure and the reverse;
 4. remove heuristic `policy_score` from every model-visible action;
@@ -154,9 +155,10 @@ similarity loss. Only a `go` decision launches the immutable formal MuMO pool.
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_two_step_plan_preference_split.sh
 ```
 
-The preferred Slurm entrypoint builds the train-only pool in a CPU job, then
-launches the 20 GB H100 MIG training/evaluation job through an `afterok`
-dependency. It sends begin/end/fail mail to the configured address,
-checkpoints train-pool generation, and safely reuses completed artifacts on
-resubmission. The monolithic submit script remains available for clusters where
-separate CPU/GPU queues provide no scheduling advantage.
+The preferred Slurm entrypoint builds and officially scores the train-only pool
+and materializes non-empty preference data in a CPU job. Only then does it
+launch the H100 MIG training/evaluation job through an `afterok` dependency.
+It sends begin/end/fail mail to the configured address, checkpoints train-pool
+generation, and safely reuses completed artifacts on resubmission. The
+monolithic submit script remains available for clusters where separate CPU/GPU
+queues provide no scheduling advantage.
