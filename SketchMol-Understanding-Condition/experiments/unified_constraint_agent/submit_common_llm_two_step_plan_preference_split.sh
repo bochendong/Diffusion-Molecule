@@ -20,9 +20,9 @@ prepare_submission="$(sbatch \
   --parsable \
   --account="$CPU_ACCOUNT" \
   --job-name="uca-plan-v3-prep-s${SEED}" \
-  --time="${SUCC_UCA_PREP_TIME:-06:00:00}" \
+  --time="${SUCC_UCA_PREP_TIME:-02:00:00}" \
   --cpus-per-task="${SUCC_UCA_PREP_CPUS:-4}" \
-  --mem="${SUCC_UCA_PREP_MEM:-64G}" \
+  --mem="${SUCC_UCA_PREP_MEM:-32G}" \
   --mail-user="$MAIL_USER" \
   --mail-type=BEGIN,END,FAIL \
   --output="$LOG_DIR/%x-%j.log" \

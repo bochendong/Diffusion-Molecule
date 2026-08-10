@@ -259,3 +259,9 @@ coverage, official success, and strict success to zero. The repaired prepare
 stage now runs the complete ADMET-AI + TDC oracle, produces a separately named
 `benchmark_with_oracle_v1`, and materializes non-empty preference data before
 the dependent GPU job becomes eligible.
+
+The repaired retry uses CPU prepare job `19456333` with a two-hour limit and 32
+GB RAM, followed by 40 GB H100 MIG job `19456334`. Historical runs of the same
+oracle stack took at most 44 minutes 39 seconds and about 1.6 GB peak RAM, so
+the tighter request improves backfill eligibility without reducing the actual
+oracle or evaluation workload.
