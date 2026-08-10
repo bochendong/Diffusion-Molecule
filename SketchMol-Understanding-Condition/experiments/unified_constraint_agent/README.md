@@ -181,9 +181,12 @@ ConstraintIR + current molecule + prior feedback
 The action support is generated only by the universal GraphEditDSL grammar and
 RDKit validity. It does not use a target molecule, property heuristic, oracle
 ranking, or an existing top-20 pool. Properties are evaluated only after an
-action executes. Group-relative policy gradients optimize complete sampled
-trajectories, while a balanced de novo/Table1/MuMO SFT term keeps the shared
-constraint language and both action schemas anchored.
+action executes. A persistent sidecar serves the official ADMET-AI predictors
+from their isolated cluster environment, while RDKit and pinned TDC predictors
+remain in the policy process; incomplete property feedback aborts the run.
+Group-relative policy gradients optimize complete sampled trajectories, while
+a balanced de novo/Table1/MuMO SFT term keeps the shared constraint language
+and both action schemas anchored.
 
 The first single-seed pilot uses eight train conditions per edit suite, four
 rollouts per condition, at most two edits, and a 16-action grammar slice. A

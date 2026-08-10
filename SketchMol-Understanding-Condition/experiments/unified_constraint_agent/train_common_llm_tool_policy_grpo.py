@@ -232,6 +232,15 @@ def rollout_group(
                 source_similarity_threshold=similarity_threshold(origin, args),
                 step_count=step_index + int(not selected.terminal),
             )
+            missing_feedback = [
+                item.property
+                for item in final_feedback.outcomes
+                if item.source_value is None or item.candidate_value is None
+            ]
+            if missing_feedback:
+                raise RuntimeError(
+                    f"Incomplete official feedback for {example_id}: {sorted(set(missing_feedback))}"
+                )
             decisions.append(PolicyDecision(messages, payloads, selected_index))
             history.append(
                 {
@@ -665,6 +674,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "protocol": policy.POLICY_PROTOCOL,
         "method": "on_policy_typed_tool_grpo",
         "action_support": "property_agnostic_universal_graph_edit_dsl_plus_rdkit",
+        "property_evaluator": "rdkit_plus_pinned_tdc_plus_persistent_official_admet_ai",
+        "complete_feedback_required": True,
         "target_or_candidate_pool_used_for_rollout": False,
         "base_model": args.base_model,
         "input_adapter_dir": str(args.input_adapter_dir),

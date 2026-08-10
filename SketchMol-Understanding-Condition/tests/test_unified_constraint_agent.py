@@ -43,6 +43,7 @@ plan_preference_data = load_module("build_common_llm_plan_preferences")
 plan_gate = load_module("compare_common_llm_plan_rankers")
 tool_policy = load_module("common_llm_tool_policy")
 tool_policy_train = load_module("train_common_llm_tool_policy_grpo")
+admet_server = load_module("admet_ai_jsonl_server")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -673,3 +674,29 @@ def test_tool_policy_group_advantages_and_gate_require_real_signal() -> None:
 
     assert advance["decision"] == "advance"
     assert unsafe["decision"] == "stop"
+
+
+def test_tool_policy_routes_official_admet_properties_to_sidecar(monkeypatch) -> None:
+    class FakeUnified:
+        @staticmethod
+        def canonical_prop(prop: str) -> str:
+            return prop
+
+        @staticmethod
+        def score_property(smiles: str, prop: str) -> float:
+            assert prop == "QED"
+            return 0.7
+
+    class FakeClient:
+        @staticmethod
+        def predict(smiles: str) -> dict[str, float]:
+            assert smiles == "CCO"
+            return {"bbbp": 0.8, "mutagenicity": 0.2}
+
+    monkeypatch.setattr(tool_policy, "graph_policy_module", lambda: type("P", (), {"unified": FakeUnified})())
+    monkeypatch.setattr(tool_policy, "admet_client", lambda: FakeClient())
+
+    assert tool_policy.score_property_value("CCO", "BBBP") == 0.8
+    assert tool_policy.score_property_value("CCO", "Mutagenicity") == 0.2
+    assert tool_policy.score_property_value("CCO", "QED") == 0.7
+    assert admet_server.finite_float(float("nan")) is None

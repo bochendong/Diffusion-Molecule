@@ -8,9 +8,11 @@ REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 cd "$REPO_DIR"
 
 PYTHON_BIN="${SUCC_UCA_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
+ADMET_PYTHON_BIN="${SUCC_ADMET_PYTHON_BIN:-/home/bdong/.venvs/admet_ai/bin/python}"
 DEP_OVERLAY="${SUCC_UCA_DEP_OVERLAY:-/scratch/bdong/venvs/uca_common_llm_overlay}"
 SHARED_REPO_DIR="${SUCC_UCA_SHARED_REPO_DIR:-/scratch/bdong/projects/Diffusion-Molecule}"
 PROJECT_DIR="$SHARED_REPO_DIR/SketchMol-Understanding-Condition"
+CODE_PROJECT_DIR="$REPO_DIR/SketchMol-Understanding-Condition"
 SFT_ROOT="${SUCC_UCA_COMMON_LLM_ROOT:-$PROJECT_DIR/outputs/unified_constraint_agent_common_llm_pilot_v1}"
 SFT_DATA="${SUCC_UCA_SFT_DATA:-$SFT_ROOT/data/common_llm_sft}"
 INPUT_ADAPTER="${SUCC_UCA_INPUT_ADAPTER:-$SFT_ROOT/model/seed_1703/adapter}"
@@ -23,9 +25,15 @@ export PYTHONPATH="$DEP_OVERLAY${PYTHONPATH:+:$PYTHONPATH}"
 export HF_HOME="${HF_HOME:-/scratch/bdong/hf_cache/uca_common_llm}"
 export TOKENIZERS_PARALLELISM=false
 export SUCC_GSK3B_ORACLE_PATH="$GSK3B_ORACLE"
+export SUCC_ADMET_PYTHON_BIN="$ADMET_PYTHON_BIN"
+
+if command -v module >/dev/null 2>&1; then
+  module load StdEnv/2023 python/3.11 rdkit/2025.09.4
+fi
 
 for path in \
   "$PYTHON_BIN" \
+  "$ADMET_PYTHON_BIN" \
   "$SFT_DATA/train.jsonl" \
   "$SFT_DATA/validation.jsonl" \
   "$INPUT_ADAPTER/adapter_model.safetensors" \
@@ -36,8 +44,9 @@ done
 mkdir -p "$RUN_ROOT"
 
 echo "=== Verify typed executor and pinned benchmark oracle ==="
-"$PYTHON_BIN" "$PROJECT_DIR/experiments/unified_smiles_generator/legacy_gsk3b_oracle.py" \
+"$PYTHON_BIN" "$CODE_PROJECT_DIR/experiments/unified_smiles_generator/legacy_gsk3b_oracle.py" \
   verify --model "$GSK3B_ORACLE"
+"$ADMET_PYTHON_BIN" -c "import numpy; from admet_ai import ADMETModel; print('ADMET-AI bridge dependencies verified')"
 
 echo "=== Train closed-loop common-LLM tool policy on train conditions ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/train_common_llm_tool_policy_grpo.py" \

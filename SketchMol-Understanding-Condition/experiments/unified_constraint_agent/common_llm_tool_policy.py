@@ -10,8 +10,11 @@ the action set.
 
 from __future__ import annotations
 
+import atexit
 import json
 import math
+import os
+import subprocess
 import sys
 from dataclasses import asdict, dataclass
 from functools import lru_cache
@@ -36,6 +39,11 @@ def graph_policy_module():
     return umtp_graph_action_policy
 
 POLICY_PROTOCOL = "unified_constraint_common_llm_tool_policy_v1"
+ADMET_PROPERTY_KEYS = {
+    "bbbp": "bbbp",
+    "hia": "hia",
+    "mutagenicity": "mutagenicity",
+}
 SYSTEM_PROMPT = (
     "You are one unified molecular design policy. Read the constraint IR and the current environment "
     "observation, then return exactly one JSON tool call. For edit tasks call graph_edit_dsl with one "
@@ -87,6 +95,86 @@ class PolicyFeedback:
             "reward": self.reward,
             "constraints": [asdict(item) for item in self.outcomes],
         }
+
+
+class AdmetAIOracleClient:
+    """One persistent official ADMET-AI process with a molecule cache."""
+
+    def __init__(self, python_bin: str):
+        environment = dict(os.environ)
+        # The common-LLM overlay contains a different torch stack.  The ADMET
+        # venv gets its dependencies from the loaded cluster modules instead.
+        environment.pop("PYTHONPATH", None)
+        environment["CUDA_VISIBLE_DEVICES"] = ""
+        server = SCRIPT_DIR / "admet_ai_jsonl_server.py"
+        self.process = subprocess.Popen(
+            [str(python_bin), "-u", str(server)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=environment,
+        )
+        self.cache: dict[str, dict[str, float]] = {}
+        self.request_count = 0
+        atexit.register(self.close)
+
+    def predict(self, smiles: str) -> dict[str, float]:
+        unified = graph_policy_module().unified
+        canonical = unified.safe_canonical_smiles(smiles)
+        if not canonical:
+            return {}
+        if canonical in self.cache:
+            return self.cache[canonical]
+        if self.process.poll() is not None or self.process.stdin is None or self.process.stdout is None:
+            raise RuntimeError("ADMET-AI oracle bridge exited before prediction")
+        self.request_count += 1
+        request = {"request_id": self.request_count, "smiles": [canonical]}
+        self.process.stdin.write(json.dumps(request, sort_keys=True) + "\n")
+        self.process.stdin.flush()
+        line = self.process.stdout.readline()
+        if not line:
+            raise RuntimeError("ADMET-AI oracle bridge returned no response")
+        response = json.loads(line)
+        if response.get("error"):
+            raise RuntimeError(f"ADMET-AI oracle bridge failed: {response['error']}")
+        predictions = response.get("predictions", [])
+        if not isinstance(predictions, list) or not predictions:
+            raise RuntimeError("ADMET-AI oracle bridge returned no predictions")
+        row = predictions[0]
+        if not isinstance(row, Mapping):
+            raise RuntimeError("ADMET-AI oracle bridge returned a malformed prediction")
+        values = {
+            str(key): float(value)
+            for key, value in row.items()
+            if key != "smiles" and value is not None
+        }
+        self.cache[canonical] = values
+        return values
+
+    def close(self) -> None:
+        if self.process.poll() is None:
+            if self.process.stdin is not None:
+                self.process.stdin.close()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.terminate()
+
+
+@lru_cache(maxsize=1)
+def admet_client() -> AdmetAIOracleClient | None:
+    python_bin = str(os.environ.get("SUCC_ADMET_PYTHON_BIN", "") or "").strip()
+    return AdmetAIOracleClient(python_bin) if python_bin else None
+
+
+def score_property_value(smiles: str, prop: str) -> float | None:
+    unified = graph_policy_module().unified
+    canonical_prop = str(unified.canonical_prop(prop) or prop).strip().lower()
+    client = admet_client()
+    if canonical_prop in ADMET_PROPERTY_KEYS and client is not None:
+        return client.predict(smiles).get(ADMET_PROPERTY_KEYS[canonical_prop])
+    return unified.score_property(smiles, prop)
 
 
 def finite_or_none(value: float) -> float | None:
@@ -227,8 +315,8 @@ def _property_outcome(
     source_value_raw = constraint.get("source_value")
     source_value = float(source_value_raw) if source_value_raw is not None else None
     if source_value is None and original_source_smiles:
-        source_value = unified.score_property(original_source_smiles, prop)
-    candidate_value = unified.score_property(candidate_smiles, prop)
+        source_value = score_property_value(original_source_smiles, prop)
+    candidate_value = score_property_value(candidate_smiles, prop)
     normalizer = max(float(unified.PROPERTY_NORMALIZERS.get(unified.canonical_prop(prop), 1.0)), 1e-8)
 
     required_change: float | None = None

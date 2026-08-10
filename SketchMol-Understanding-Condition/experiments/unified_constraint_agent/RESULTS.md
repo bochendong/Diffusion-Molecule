@@ -285,6 +285,9 @@ source-similarity observations after execution. Group-relative policy
 gradients optimize the trajectory reward, and balanced de novo/Table1/MuMO SFT
 anchors preserve the shared policy contract. No target molecule, heuristic
 property planner, ranked pool, or formal test row is used by the rollout loop.
+The official ADMET-AI predictors run as one persistent CPU sidecar so BBBP,
+HIA, and mutagenicity are present in every MuMO observation; the trainer aborts
+on any incomplete hard-constraint feedback.
 
 The first signal gate uses seed `1707`, eight train conditions per edit suite,
 four rollouts per condition, a two-edit ceiling, and 16 grammar actions per
