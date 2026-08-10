@@ -242,8 +242,9 @@ runs the frozen held-out gate. The immutable official test pool is opened only
 if the new controller improves property success without regressing strict
 success or source preservation beyond the declared tolerance.
 
-The monolithic job remained pending without consuming compute time. The
-pipeline was therefore split into a CPU-only train-pool preparation job and a
-dependent GPU training/evaluation job. This preserves the exact experiment
-contract while avoiding an H100 reservation during graph enumeration and
-allowing the shorter GPU stage to use backfill more readily.
+The monolithic job remained pending without consuming compute time and was
+cancelled. Replacement job `19426250` prepares the train-only pool on CPU;
+dependent job `19426251` performs GPU training, held-out gating, and the
+conditional formal evaluation. This preserves the exact experiment contract
+while avoiding an H100 reservation during graph enumeration and allowing the
+shorter GPU stage to use backfill more readily.
