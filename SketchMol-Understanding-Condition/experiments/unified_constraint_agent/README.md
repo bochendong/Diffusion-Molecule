@@ -162,3 +162,40 @@ It sends begin/end/fail mail to the configured address, checkpoints train-pool
 generation, and safely reuses completed artifacts on resubmission. The
 monolithic submit script remains available for clusters where separate CPU/GPU
 queues provide no scheduling advantage.
+
+## Closed-loop common-LLM tool policy
+
+V3 showed that static-pool preference tuning is support-limited: only 1.2% of
+the train conditions had a strict success in the property-agnostic pool, so a
+ranker cannot learn the missing molecular operation. The next method line no
+longer treats the LLM as a reranker:
+
+```text
+ConstraintIR + current molecule + prior feedback
+  -> common LLM tool policy
+  -> typed GraphEditDSL executor
+  -> per-constraint margins + source similarity
+  -> revise or STOP (maximum two edits)
+```
+
+The action support is generated only by the universal GraphEditDSL grammar and
+RDKit validity. It does not use a target molecule, property heuristic, oracle
+ranking, or an existing top-20 pool. Properties are evaluated only after an
+action executes. Group-relative policy gradients optimize complete sampled
+trajectories, while a balanced de novo/Table1/MuMO SFT term keeps the shared
+constraint language and both action schemas anchored.
+
+The first single-seed pilot uses eight train conditions per edit suite, four
+rollouts per condition, at most two edits, and a 16-action grammar slice. A
+fixed held-out train split is evaluated before and after the update with the
+same rollout seeds. The gate advances only on a real reward/strict/property
+signal and rejects more than two points of property or similarity regression.
+It does not open any formal benchmark test set.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_tool_policy_grpo.sh
+```
+
+The default Slurm request is one H100 20 GB MIG slice, four hours, with
+begin/end/fail email notifications. Scale the number of train conditions and
+the grammar support only after this closed-loop method gate advances.

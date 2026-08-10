@@ -265,3 +265,30 @@ GB RAM, followed by 40 GB H100 MIG job `19456334`. Historical runs of the same
 oracle stack took at most 44 minutes 39 seconds and about 1.6 GB peak RAM, so
 the tighter request improves backfill eligibility without reducing the actual
 oracle or evaluation workload.
+
+The completed repair established an oracle-complete train pool of 500
+conditions and 10,000 candidates. Property any-hit@20 was only 7/500 (1.4%)
+and strict any-hit@20 was 6/500 (1.2%), leaving 15 preference pairs and one
+held-out validation condition. Training-pair ranking accuracy was 53.3%, and
+the held-out primary gain was zero. The gate therefore stopped and the formal
+test remained untouched. This is a support failure, not evidence that another
+ranker loss or larger reranking budget is needed.
+
+## Closed-loop common-LLM tool policy v1
+
+Date: 2026-08-11
+
+The replacement method trains the common 1.5B LLM on its own executable
+one/two-step GraphEditDSL trajectories. Universal grammar plus RDKit defines
+the action support; constraint predictors return per-property margins and
+source-similarity observations after execution. Group-relative policy
+gradients optimize the trajectory reward, and balanced de novo/Table1/MuMO SFT
+anchors preserve the shared policy contract. No target molecule, heuristic
+property planner, ranked pool, or formal test row is used by the rollout loop.
+
+The first signal gate uses seed `1707`, eight train conditions per edit suite,
+four rollouts per condition, a two-edit ceiling, and 16 grammar actions per
+state. Held-out train conditions are sampled with identical seeds before and
+after the update. Only a positive reward/strict/property signal without more
+than two points of property or source-similarity regression advances this
+method to a larger pilot.

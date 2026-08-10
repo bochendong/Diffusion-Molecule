@@ -41,6 +41,8 @@ preference_train = load_module("train_common_llm_preference")
 plan_protocol = load_module("common_llm_plan_protocol")
 plan_preference_data = load_module("build_common_llm_plan_preferences")
 plan_gate = load_module("compare_common_llm_plan_rankers")
+tool_policy = load_module("common_llm_tool_policy")
+tool_policy_train = load_module("train_common_llm_tool_policy_grpo")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -614,3 +616,60 @@ def test_plan_gate_rejects_property_gain_that_loses_source_similarity(tmp_path: 
         == 3
     )
     assert json.loads(output.read_text())["decision"] == "stop"
+
+
+def test_tool_policy_prompt_is_target_free_and_stop_requires_feedback() -> None:
+    ir = {
+        "condition_id": "edit-policy-1",
+        "source_smiles": "CCO",
+        "constraints": [{"property": "QED", "direction": 1, "hard": True}],
+    }
+    first = tool_policy.policy_prompt_messages(
+        ir,
+        current_smiles="CCO",
+        original_source_smiles="CCO",
+        previous_steps=[],
+        step_index=0,
+        max_steps=2,
+    )
+    revised = tool_policy.policy_prompt_messages(
+        ir,
+        current_smiles="CCN",
+        original_source_smiles="CCO",
+        previous_steps=[{"observation": {"strict_success": False}}],
+        step_index=1,
+        max_steps=2,
+    )
+
+    assert "target_smiles" not in json.dumps(first)
+    assert '"action_type":"stop"' not in first[-1]["content"]
+    assert '"action_type":"stop"' in revised[-1]["content"]
+    assert "strict_success" in revised[-1]["content"]
+
+
+def test_tool_policy_group_advantages_and_gate_require_real_signal() -> None:
+    advantages = tool_policy.group_relative_advantages([1.0, 2.0, 3.0])
+    assert abs(sum(advantages)) < 1e-8
+    assert advantages[0] < 0 < advantages[-1]
+
+    def metrics(reward: float, strict: float, properties: float, similarity: float) -> dict[str, object]:
+        return {
+            "all": {
+                "mean_best_reward": reward,
+                "strict_any_rate": strict,
+                "property_all_any_rate": properties,
+                "source_similarity_any_rate": similarity,
+            }
+        }
+
+    advance = tool_policy_train.gate_metrics(
+        metrics(1.0, 0.1, 0.2, 0.8),
+        metrics(1.04, 0.1, 0.2, 0.8),
+    )
+    unsafe = tool_policy_train.gate_metrics(
+        metrics(1.0, 0.1, 0.2, 0.8),
+        metrics(1.2, 0.1, 0.1, 0.7),
+    )
+
+    assert advance["decision"] == "advance"
+    assert unsafe["decision"] == "stop"
