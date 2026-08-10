@@ -243,8 +243,10 @@ if the new controller improves property success without regressing strict
 success or source preservation beyond the declared tolerance.
 
 The monolithic job remained pending without consuming compute time and was
-cancelled. Replacement job `19426250` prepares the train-only pool on CPU;
-dependent job `19426251` performs GPU training, held-out gating, and the
-conditional formal evaluation. This preserves the exact experiment contract
-while avoiding an H100 reservation during graph enumeration and allowing the
-shorter GPU stage to use backfill more readily.
+cancelled. Replacement job `19426250` prepared the train-only pool on CPU in 3
+hours 36 minutes and exited successfully. Its dependent 20 GB MIG job
+`19426251` then remained pending for more than nine hours due solely to Slurm
+priority and was cancelled without consuming compute. Job `19450295` reuses
+the completed pool and requests one 40 GB H100 MIG for the six-hour GPU-only
+stage. This preserves the exact experiment contract while avoiding an H100
+reservation during graph enumeration and providing more eligible MIG slots.
