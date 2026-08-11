@@ -366,3 +366,33 @@ It reuses every existing model, dataset, and oracle artifact. The one-hour
 40 GB MIG submission is expected to take roughly 20--30 minutes and records
 per-update task-gradient cosine, projection decisions, and gradient norms. Seed
 `1708` is held fixed to preserve the v2 condition split and rollout randomness.
+
+Job `19544779` completed in 18 minutes 33 seconds. Seven of 16 paired updates
+had negative Table1/MuMO gradient cosine and were projected. The update changed
+47/128 held-out trajectories, with 23 reward improvements and 24 regressions.
+Strict any-hit stayed at 12.5%. Best-of-eight reward increased by `0.0406`, but
+mean rollout reward decreased by `0.0041`, deterministic expected reward by
+`0.00036`, top-1 reward fell by `0.1918`, and property-all probability fell
+from 1.63% to 0.64%. Relative to v2, neither task improved expected reward. The
+apparent legacy gate advance was therefore a best-of-k false positive; v3 is
+retained as evidence of cross-task gradient conflict, not as the next main-line
+checkpoint.
+
+## Hierarchical common-agent support gate v4
+
+Date: 2026-08-11
+
+The global method decision is to retain the common LLM as the shared
+ConstraintIR planner and revision controller, but stop treating flat token-level
+RL over 16 generic edits as the main molecular generator. Existing train-only
+source-copy pools reached only 1.2% strict any-hit@20, while the official
+source-conditioned proposal plus two-step GraphEditDSL pool reached 48.3%
+property any-hit@20. The missing variable is proposal/action support, not a
+larger policy-gradient budget.
+
+The v4 signal job uses 1,000 MuMO train-only proposer rows and 50 disjoint
+train-only audit conditions. It emits exactly one raw proposal, performs bounded
+two-step GraphEditDSL search, and sends exactly 20 final unique molecules per
+condition to the official ADMET-AI + TDC oracle. It requests one 20 GB H100 MIG
+for two hours; expected runtime is 45--70 minutes. Planner training is launched
+only if property any@20 is at least 20% and strict any@20 is at least 5%.

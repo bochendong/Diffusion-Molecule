@@ -253,3 +253,35 @@ records task-gradient cosine, projection frequency, and per-task gradient norm
 for every paired update in addition to the unchanged effect and retention gate.
 Seed `1708` is intentionally retained so the condition split and held-out
 rollout randomness match v2; the versioned output directory prevents overwrite.
+
+## Hierarchical common-agent support gate v4
+
+The exact policy runs establish that a flat 16-action GraphEditDSL policy has a
+real gradient signal, but cannot select a strict MuMO molecule that its support
+never produces. V4 changes the method boundary rather than adding another loss
+patch:
+
+```text
+ConstraintIR
+  -> common LLM planner/controller
+  -> raw-1 source-conditioned proposal tool
+  -> typed GraphEditDSL revisions
+  -> vector verifier feedback and bounded stop/replan
+```
+
+The first v4 job is deliberately a support gate, not planner training. It fits
+the proposal tool on MuMO train rows, checks that the 50 audit conditions use
+disjoint source/target pairs, emits one raw proposal per condition, performs
+two-step graph search, and evaluates exactly 20 final molecules with the full
+ADMET-AI + TDC oracle. Internal RDKit enumeration is reported as search
+compute; it is not represented as additional oracle candidates. The gate
+requires property any@20 of at least 20% and strict any@20 of at least 5%.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_agent_hierarchical_support_v4.sh
+```
+
+If support advances, the common LLM is trained on complete typed tool plans,
+including the proposal root and subsequent edit steps. If it stops, the next
+change belongs in the proposal/action tool; flat policy RL remains an ablation
+showing gradient conflict and support limitation.

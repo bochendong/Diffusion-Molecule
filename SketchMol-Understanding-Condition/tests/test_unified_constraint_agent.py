@@ -44,6 +44,7 @@ plan_gate = load_module("compare_common_llm_plan_rankers")
 tool_policy = load_module("common_llm_tool_policy")
 tool_policy_train = load_module("train_common_llm_tool_policy_grpo")
 admet_server = load_module("admet_ai_jsonl_server")
+hierarchical_support = load_module("audit_hierarchical_action_support")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -766,6 +767,39 @@ def test_tool_policy_exact_gate_rejects_cross_task_retention_regression() -> Non
     assert gate["decision"] == "stop"
 
 
+def test_tool_policy_exact_gate_rejects_lucky_best_of_k_with_top1_regression() -> None:
+    def rollout_metrics(reward: float) -> dict[str, object]:
+        return {
+            "all": {
+                "mean_best_reward": reward,
+                "strict_any_rate": 0.1,
+                "property_all_any_rate": 0.1,
+                "source_similarity_any_rate": 1.0,
+            }
+        }
+
+    def action_metrics(expected: float, top1: float) -> dict[str, object]:
+        return {
+            "all": {
+                "mean_expected_reward": expected,
+                "mean_top1_reward": top1,
+                "mean_property_all_probability": 0.1,
+                "mean_similarity_probability": 1.0,
+            }
+        }
+
+    gate = tool_policy_train.gate_metrics(
+        rollout_metrics(1.0),
+        rollout_metrics(1.05),
+        baseline_action_values=action_metrics(1.0, 1.0),
+        candidate_action_values=action_metrics(0.999, 0.8),
+    )
+
+    assert gate["mean_best_reward_gain"] > 0.03
+    assert gate["action_top1_reward_gain"] < -0.1
+    assert gate["decision"] == "stop"
+
+
 def test_tool_policy_routes_official_admet_properties_to_sidecar(monkeypatch) -> None:
     class FakeUnified:
         @staticmethod
@@ -802,3 +836,37 @@ def test_tool_policy_gradient_groups_only_the_executed_action() -> None:
     second = tool_policy_train.PolicyDecision(prompt, payloads, 1)
 
     assert tool_policy_train._decision_signature(first) != tool_policy_train._decision_signature(second)
+
+
+def test_hierarchical_support_gate_enforces_disjoint_sources_and_fixed_n20() -> None:
+    proposer_rows = [
+        {"external_task_id": "BDP", "external_source_row_index": "10"},
+        {"external_task_id": "BDQ", "external_source_row_index": "11"},
+    ]
+    audit_rows = [
+        {"external_task_id": "BDP", "external_source_row_index": "20"},
+        {"external_task_id": "BDQ", "external_source_row_index": "21"},
+    ]
+    split = hierarchical_support.validate_disjoint_rows(proposer_rows, audit_rows)
+    rows = []
+    for condition, success in (("ind-1", True), ("ood-1", False)):
+        for rank in range(20):
+            rows.append(
+                {
+                    "condition_id": condition,
+                    "external_task_split": "ind" if condition.startswith("ind") else "ood",
+                    "generated_smiles": "CCO",
+                    "external_valid": "True",
+                    "external_official_success": str(success and rank == 3),
+                    "external_strict_success": str(success and rank == 3),
+                    "graph_edit_candidate_source": "direct_model" if rank == 0 else "graph_edit_dsl",
+                }
+            )
+
+    support = hierarchical_support.summarize_official_rows(rows, candidate_budget=20)
+
+    assert split["source_overlap"] == 0
+    assert support["candidate_rows"] == 40
+    assert support["all"]["property_any_rate"] == 0.5
+    assert support["all"]["strict_any_rate"] == 0.5
+    assert support["all"]["direct_root_in_prefix_rate"] == 1.0

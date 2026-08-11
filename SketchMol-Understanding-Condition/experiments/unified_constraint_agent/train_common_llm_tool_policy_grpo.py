@@ -1100,16 +1100,25 @@ def gate_metrics(
                 if before_value is not None and after_value is not None:
                     retention_gains[origin] = float(after_value) - float(before_value)
 
-    primary_signal = (
-        reward_gain >= 0.03
-        or strict_gain > 0.0
-        or property_gain > 0.0
-        or action_expected_reward_gain >= 0.01
-        or action_top1_reward_gain > 0.0
-    )
+    has_exact_action_gate = baseline_action_values is not None and candidate_action_values is not None
+    if has_exact_action_gate:
+        # A sampled best-of-k improvement is not an independent signal once the
+        # complete action distribution has been evaluated. Requiring a
+        # deterministic effect prevents lucky rollout maxima from advancing a
+        # policy whose expected or top-1 behavior regresses.
+        primary_signal = (
+            strict_gain > 0.0
+            or property_gain > 0.0
+            or action_expected_reward_gain >= 0.01
+            or (action_top1_reward_gain > 0.0 and action_expected_reward_gain >= 0.0)
+        )
+    else:
+        primary_signal = reward_gain >= 0.03 or strict_gain > 0.0 or property_gain > 0.0
     safe = (
         property_gain >= -0.02
         and similarity_gain >= -0.02
+        and (not has_exact_action_gate or action_expected_reward_gain >= -0.005)
+        and (not has_exact_action_gate or action_top1_reward_gain >= -0.02)
         and action_property_probability_gain >= -0.02
         and action_similarity_probability_gain >= -0.02
         and all(
@@ -1129,9 +1138,12 @@ def gate_metrics(
         "canonical_action_retention_gain_by_origin": retention_gains,
         "requirements": {
             "primary_signal": (
-                "rollout reward +0.03, positive strict/property gain, exact expected reward +0.01, "
-                "or positive exact top-1 reward gain"
+                "without exact values: rollout reward +0.03 or positive strict/property gain; "
+                "with exact values: positive strict/property gain, exact expected reward +0.01, "
+                "or positive exact top-1 reward with nonnegative expected reward"
             ),
+            "max_exact_expected_reward_regression": 0.005,
+            "max_exact_top1_reward_regression": 0.02,
             "max_property_regression": 0.02,
             "max_similarity_regression": 0.02,
             "max_canonical_action_log_probability_regression": float(retention_max_regression),
