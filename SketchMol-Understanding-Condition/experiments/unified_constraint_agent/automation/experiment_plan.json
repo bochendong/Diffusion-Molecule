@@ -8,11 +8,11 @@
     "env": "SUCC_UCA_SHARED_REPO_DIR",
     "default": "/scratch/bdong/projects/Diffusion-Molecule"
   },
-  "state_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_automation/state_v5_oracle_repair.json",
+  "state_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_automation/state_v6_retrieved_delta_planner.json",
   "limits": {
-    "max_scientific_rounds": 3,
-    "max_submissions": 4,
-    "max_accelerator_hours": 3.0,
+    "max_scientific_rounds": 1,
+    "max_submissions": 2,
+    "max_accelerator_hours": 4.0,
     "fixed_candidate_budget": 20,
     "infra_retry_states": [
       "BOOT_FAIL",
@@ -33,30 +33,50 @@
   },
   "rounds": [
     {
-      "id": "retrieved_delta_oracle_repair_v5",
-      "description": "CPU-only DRD2 completion for the unchanged leakage-safe v5 fixed-n pool.",
+      "id": "retrieved_delta_planner_v6",
+      "description": "One-seed common-LLM selection over train-only RetrievedDeltaEdit actions at fixed final n=20.",
       "submit_argv": [
         "bash",
-        "SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_retrieved_delta_oracle_repair_v5.sh"
+        "SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_retrieved_delta_planner_v6.sh"
       ],
-      "job_id_regex": "retrieved_delta_oracle_repair_job=(\\d+)",
-      "summary_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_retrieved_delta_support_v5/support_gate_complete_v2/summary.json",
-      "requested_accelerator_hours": 0.0,
+      "job_id_regex": "retrieved_delta_planner_job=(\\d+)",
+      "summary_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_retrieved_delta_planner_v6/gate/seed_1709/summary.json",
+      "requested_accelerator_hours": 2.0,
       "max_attempts": 2,
       "gate": {
         "decision_path": "decision",
         "required_equal": {
-          "protocol": "hierarchical_common_agent_retrieved_delta_support_v5",
+          "protocol": "hierarchical_common_agent_retrieved_delta_planner_v6",
           "data_role": "train_only_heldout",
           "proposal_budget": 0,
           "final_oracle_candidate_budget": 20,
           "split_audit.source_overlap": 0,
-          "candidate_builder.protocol": "retrieved_delta_edit_candidate_builder_v1",
+          "candidate_builder.protocol": "common_llm_retrieved_delta_planner_v1",
           "candidate_builder.evaluation_target_access": false,
           "candidate_builder.candidate_budget": 20,
+          "candidate_builder.planner_candidate_limit": 96,
+          "candidate_builder.evaluation_conditions": 50,
+          "candidate_builder.output_rows": 1000,
+          "candidate_builder.preference_prompt_target_access": false,
+          "candidate_builder.preference_source_group_overlap": 0,
           "support.candidate_budget": 20,
+          "support.candidate_rows": 1000,
+          "support.complete_conditions": 50,
           "support.all.valid_any_rate": 1.0,
-          "support.all.full_oracle_condition_rate": 1.0
+          "support.all.mean_valid_candidates": 20.0,
+          "support.all.full_oracle_candidate_rate": 1.0,
+          "support.all.full_oracle_condition_rate": 1.0,
+          "anti_forgetting.passed": true,
+          "training.prompt_target_access": false,
+          "training.source_group_overlap": 0,
+          "training.adapter_nonfinite_parameters": 0
+        },
+        "required_at_least": {
+          "support.all.property_any_rate": 0.46,
+          "support.all.strict_any_rate": 0.46,
+          "planner_comparison.all.property_gain": 0.06,
+          "planner_comparison.all.strict_gain": 0.06,
+          "training.preference_train_pairs": 300
         },
         "transitions": {
           "advance": null,

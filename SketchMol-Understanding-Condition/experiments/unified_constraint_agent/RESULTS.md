@@ -459,3 +459,30 @@ points on property any@20 (10% to 40%) and 40 points on strict any@20 (0% to
 frozen v4 GraphEditDSL fallback. This is a train-only support-gate result, not a
 formal MuMO test-set number; it justifies training the common LLM
 planner/controller over the new tool plans next.
+
+## Common-LLM RetrievedDelta planner v6
+
+Date: 2026-08-11
+
+V6 is the first planner-training round after the v5 support advance. It keeps
+the stable `Qwen/Qwen2.5-1.5B-Instruct` common adapter and preference-tunes it
+on typed `RetrievedDeltaEdit` actions. A paired training target is used only to
+identify the positive train-side delta; neither target SMILES nor official
+oracle values enter the prompt. Balanced De novo, Table1, and MuMO SFT replay
+is retained, and the frozen unified validation is rerun to gate forgetting. To
+minimize time-to-signal, the single-seed run samples at most 50 paired
+conditions per MuMO task and uses one hardest executable negative per positive.
+
+At audit inference, v6 scores at most 96 actions from the same train-derived
+delta space already enumerated by v5 and emits exactly 20 molecules for the
+official oracle. This is necessary for a meaningful planner test: reranking
+only v5's already-final 20 could change top-1 but could never improve
+any@20. The held-out target remains unread, the 50-condition zero-overlap split
+is unchanged, and the complete ADMET-AI + TDC oracle remains mandatory.
+
+The one-seed signal advances only if property any@20 and strict any@20 both
+reach at least 46% (at least six percentage points above v5's 40%), neither IND
+nor OOD strict support decreases, validity and oracle coverage remain 100%, and
+unified action-format performance stays within the declared anti-forgetting
+tolerance. It requests one H100 20 GB MIG for at most two hours; expected useful
+runtime is 30--60 minutes.

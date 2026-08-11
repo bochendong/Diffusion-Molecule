@@ -47,6 +47,10 @@ admet_server = load_module("admet_ai_jsonl_server")
 hierarchical_support = load_module("audit_hierarchical_action_support")
 support_split = load_module("select_disjoint_support_rows")
 retrieved_delta = load_module("build_retrieved_delta_edit_candidates")
+delta_plan_protocol = load_module("retrieved_delta_plan_protocol")
+delta_preference = load_module("build_retrieved_delta_plan_preferences")
+delta_ranker = load_module("rank_retrieved_delta_candidates")
+delta_gate = load_module("finalize_retrieved_delta_planner_gate")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -1004,3 +1008,177 @@ def test_retrieved_delta_selection_preserves_fixed_n20_and_similarity_gate() -> 
 
     assert len(selected) == 20
     assert selected[0].smiles == "delta"
+
+
+def test_retrieved_delta_plan_prompt_and_action_hide_evaluation_target() -> None:
+    class EvalRow(dict):
+        def get(self, key, default=None):
+            if key == "target_smiles":
+                raise AssertionError("Planner must not read the evaluation target")
+            return super().get(key, default)
+
+    row = EvalRow(
+        condition_id="eval-plan-1",
+        source_smiles="CCO",
+        external_task_properties="QED,BBBP",
+        external_property_directions_json=json.dumps({"QED": 1, "BBBP": 1}),
+        delta_query_variable="[*:1]C",
+        delta_source_variable="[*:1]C",
+        delta_target_variable="[*:1]N",
+    )
+
+    messages = delta_plan_protocol.prompt_messages(row)
+    action = delta_plan_protocol.action_payload(row)
+
+    assert "target_smiles" not in json.dumps(messages)
+    assert action == {
+        "action_type": "retrieved_delta_edit",
+        "value": {
+            "op": "replace_side_chain",
+            "query_variable": "[*:1]C",
+            "retrieved_source_variable": "[*:1]C",
+            "target_variable": "[*:1]N",
+        },
+    }
+
+
+def test_delta_preference_metadata_does_not_serialize_training_target() -> None:
+    candidate = retrieved_delta.Candidate(
+        smiles="TRAINING-TARGET",
+        source="retrieved_delta_edit",
+        source_tanimoto=0.7,
+        admet_prior_score=0.3,
+        retrieval_similarity=1.0,
+        transform_frequency=2,
+        exact_variable_match=True,
+        train_condition_id="private-row",
+    )
+
+    metadata = delta_preference.safe_metadata(candidate)
+
+    assert "TRAINING-TARGET" not in json.dumps(metadata)
+    assert "private-row" not in json.dumps(metadata)
+
+
+def test_delta_planner_ranks_internal_pool_but_emits_exactly_n20(monkeypatch) -> None:
+    class EvalRow(dict):
+        def get(self, key, default=None):
+            if key == "target_smiles":
+                raise AssertionError("Planner must not read the evaluation target")
+            return super().get(key, default)
+
+    rows = [
+        EvalRow(
+            condition_id="audit-1",
+            source_smiles="CCO",
+            external_task_properties="QED",
+            external_property_directions_json=json.dumps({"QED": 1}),
+            generated_smiles=f"candidate-{index}",
+            graph_edit_candidate_source="retrieved_delta_edit",
+            candidate_rank=str(index + 1),
+            delta_query_variable=f"[*:1]C{index}",
+            delta_source_variable=f"[*:1]C{index}",
+            delta_target_variable=f"[*:1]N{index}",
+            delta_source_tanimoto="0.6",
+            delta_retrieval_similarity="0.8",
+            delta_selection_score=str(index / 100.0),
+        )
+        for index in range(25)
+    ]
+    monkeypatch.setattr(delta_ranker.constrained, "encoded_action", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(
+        delta_ranker.constrained,
+        "score_encoded_actions",
+        lambda _model, _tokenizer, encoded, *, batch_size: list(range(len(encoded))),
+    )
+
+    selected = delta_ranker.rank_condition(
+        rows,
+        model=object(),
+        tokenizer=object(),
+        candidate_budget=20,
+        planner_candidate_limit=25,
+        min_source_tanimoto=0.4,
+        score_batch_size=8,
+        max_length=512,
+    )
+
+    assert len(selected) == 20
+    assert selected[0]["generated_smiles"] == "candidate-24"
+    assert [row["candidate_rank"] for row in selected] == list(range(1, 21))
+
+
+def test_delta_planner_gate_requires_gain_and_preserves_unified_format(tmp_path: Path) -> None:
+    def support_summary(property_rate: float, strict_rate: float, *, builder: bool) -> dict[str, object]:
+        scope = {
+            "conditions": 50,
+            "property_any_rate": property_rate,
+            "strict_any_rate": strict_rate,
+            "valid_any_rate": 1.0,
+            "full_oracle_condition_rate": 1.0,
+        }
+        summary: dict[str, object] = {
+            "support": {
+                "all": scope,
+                "by_split": {
+                    "ind": {**scope, "conditions": 25},
+                    "ood": {**scope, "conditions": 25},
+                },
+            },
+            "split_audit": {"source_overlap": 0},
+            "final_oracle_candidate_budget": 20,
+        }
+        if builder:
+            summary["candidate_builder"] = {
+                "protocol": "common_llm_retrieved_delta_planner_v1",
+                "evaluation_target_access": False,
+                "candidate_budget": 20,
+            }
+        return summary
+
+    candidate_path = tmp_path / "candidate.json"
+    baseline_path = tmp_path / "baseline.json"
+    candidate_path.write_text(json.dumps(support_summary(0.46, 0.46, builder=True)))
+    baseline_path.write_text(json.dumps(support_summary(0.40, 0.40, builder=False)))
+    groups = {
+        name: {"rows": rows, "json_parse_rate": rate, "action_type_rate": rate}
+        for name, rows, rate in (
+            ("all", 100, 0.98),
+            ("denovo", 50, 1.0),
+            ("table1", 25, 0.92),
+            ("mumo", 25, 1.0),
+        )
+    }
+    baseline_format = tmp_path / "baseline-format.json"
+    candidate_format = tmp_path / "candidate-format.json"
+    baseline_format.write_text(json.dumps({"groups": groups}))
+    candidate_format.write_text(json.dumps({"groups": groups}))
+    preference = tmp_path / "preference.json"
+    preference.write_text(
+        json.dumps(
+            {
+                "protocol": "common_llm_retrieved_delta_preference_v1",
+                "prompt_target_access": False,
+                "training_target_role": "positive_label_only",
+                "source_group_overlap": 0,
+            }
+        )
+    )
+    training = tmp_path / "training.json"
+    training.write_text(json.dumps({"adapter_nonfinite_parameters": 0}))
+    output = tmp_path / "gate"
+
+    assert delta_gate.main(
+        [
+            "--support-summary", str(candidate_path),
+            "--baseline-support-summary", str(baseline_path),
+            "--baseline-format-summary", str(baseline_format),
+            "--candidate-format-summary", str(candidate_format),
+            "--preference-manifest", str(preference),
+            "--training-summary", str(training),
+            "--output-dir", str(output),
+        ]
+    ) == 0
+    summary = json.loads((output / "summary.json").read_text())
+    assert summary["decision"] == "advance"
+    assert summary["anti_forgetting"]["passed"] is True

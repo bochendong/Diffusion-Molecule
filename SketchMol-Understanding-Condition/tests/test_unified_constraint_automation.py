@@ -354,14 +354,19 @@ def test_attach_controller_recovers_running_unwatched_state(tmp_path: Path) -> N
     assert recovered["history"][-1]["event"] == "controller_attached"
 
 
-def test_checked_in_plan_declares_only_leakage_safe_v5() -> None:
+def test_checked_in_plan_declares_only_leakage_safe_v6() -> None:
     plan_path = MODULE_PATH.parent / "experiment_plan.json"
     plan = automation.load_plan(plan_path)
 
     assert plan["limits"]["fixed_candidate_budget"] == 20
-    assert plan["state_path"].endswith("state_v5_oracle_repair.json")
-    assert [round_["id"] for round_ in plan["rounds"]] == ["retrieved_delta_oracle_repair_v5"]
+    assert plan["state_path"].endswith("state_v6_retrieved_delta_planner.json")
+    assert [round_["id"] for round_ in plan["rounds"]] == ["retrieved_delta_planner_v6"]
+    assert plan["rounds"][0]["requested_accelerator_hours"] == 2.0
     required = plan["rounds"][0]["gate"]["required_equal"]
     assert required["candidate_builder.evaluation_target_access"] is False
     assert required["final_oracle_candidate_budget"] == 20
     assert required["support.all.full_oracle_condition_rate"] == 1.0
+    assert required["support.all.mean_valid_candidates"] == 20.0
+    assert required["anti_forgetting.passed"] is True
+    at_least = plan["rounds"][0]["gate"]["required_at_least"]
+    assert at_least["support.all.strict_any_rate"] == 0.46

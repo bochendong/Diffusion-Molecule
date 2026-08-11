@@ -81,6 +81,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--eval-csv", required=True, type=Path)
     parser.add_argument("--fallback-candidates-csv", required=True, type=Path)
     parser.add_argument("--output-csv", required=True, type=Path)
+    parser.add_argument("--enumerated-output-csv", type=Path, default=None)
     parser.add_argument("--manifest-json", required=True, type=Path)
     parser.add_argument("--candidate-budget", type=int, default=20)
     parser.add_argument("--min-retrieval-similarity", type=float, default=0.15)
@@ -412,10 +413,9 @@ def fallback_candidates(
     return output
 
 
-def select_candidates(
+def rank_candidates(
     candidates: Sequence[Candidate],
     *,
-    candidate_budget: int,
     min_source_tanimoto: float,
 ) -> list[Candidate]:
     best_by_smiles: dict[str, Candidate] = {}
@@ -437,7 +437,19 @@ def select_candidates(
         ),
         reverse=True,
     )
-    selected = ranked[: max(1, int(candidate_budget))]
+    return ranked
+
+
+def select_candidates(
+    candidates: Sequence[Candidate],
+    *,
+    candidate_budget: int,
+    min_source_tanimoto: float,
+) -> list[Candidate]:
+    selected = rank_candidates(
+        candidates,
+        min_source_tanimoto=float(min_source_tanimoto),
+    )[: max(1, int(candidate_budget))]
     if len(selected) != int(candidate_budget):
         raise ValueError(
             f"Condition has only {len(selected)} unique candidates; fixed n={candidate_budget} is required"
@@ -491,6 +503,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_variable_heavy_atoms=int(args.max_variable_heavy_atoms),
     )
     output: list[dict[str, object]] = []
+    enumerated_output: list[dict[str, object]] = []
     source_counts: Counter[str] = Counter()
     conditions_with_retrieved = 0
     conditions_with_exact = 0
@@ -507,12 +520,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             max_variable_heavy_atoms=int(args.max_variable_heavy_atoms),
         )
         fallback = fallback_candidates(row, fallback_by_condition.get(key, []))
-        selected = select_candidates(
+        ranked = rank_candidates(
             [*retrieved, *fallback],
+            min_source_tanimoto=float(args.min_source_tanimoto),
+        )
+        selected = select_candidates(
+            ranked,
             candidate_budget=int(args.candidate_budget),
             min_source_tanimoto=float(args.min_source_tanimoto),
         )
         output.extend(output_row(row, candidate, rank=rank) for rank, candidate in enumerate(selected, start=1))
+        if args.enumerated_output_csv is not None:
+            enumerated_output.extend(
+                output_row(row, candidate, rank=rank)
+                for rank, candidate in enumerate(ranked, start=1)
+            )
         source_counts.update(candidate.source for candidate in selected)
         retrieved_candidate_counts.append(len(retrieved))
         conditions_with_retrieved += int(bool(retrieved))
@@ -521,12 +543,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         if index % 10 == 0 or index == len(eval_rows):
             print(f"[retrieved-delta] {index}/{len(eval_rows)} conditions", flush=True)
     write_rows(args.output_csv, output)
+    if args.enumerated_output_csv is not None:
+        write_rows(args.enumerated_output_csv, enumerated_output)
     manifest = {
         "protocol": "retrieved_delta_edit_candidate_builder_v1",
         "data_role": "train_only_to_disjoint_train_audit",
         "evaluation_target_access": False,
         "candidate_budget": int(args.candidate_budget),
         "output_rows": len(output),
+        "enumerated_output_rows": len(enumerated_output) if args.enumerated_output_csv is not None else None,
+        "enumerated_output_csv": str(args.enumerated_output_csv) if args.enumerated_output_csv else None,
         "evaluation_conditions": len(eval_rows),
         "conditions_with_retrieved_candidate": conditions_with_retrieved,
         "conditions_with_exact_source_variable_match": conditions_with_exact,

@@ -27,8 +27,8 @@ allowlist.
   advancing the same round.
 - A plan digest prevents an edited manifest from silently changing an active
   loop. Start a new state file after reviewing a changed plan.
-- The default plan permits at most three scientific rounds, four submissions,
-  and six reserved accelerator-hours.
+- The default v6 plan permits one scientific round, at most two submissions
+  including one eligible infrastructure retry, and four reserved accelerator-hours.
 - A gate can transition to another round only when that exact round and submit
   entrypoint already exist in the manifest. Transition graphs must be acyclic.
 
@@ -37,7 +37,7 @@ allowlist.
 Run the initial submission once from a login node:
 
 ```bash
-bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh retrieved_delta_oracle_repair_v5
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh retrieved_delta_planner_v6
 ```
 
 The command submits the experiment and a small CPU controller job with
@@ -70,7 +70,7 @@ An already-running job can be adopted once:
 
 ```bash
 python3 SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/experiment_loop.py \
-  adopt --round retrieved_delta_oracle_repair_v5 --job-id JOB_ID
+  adopt --round retrieved_delta_planner_v6 --job-id JOB_ID
 ```
 
 If Slurm submitted a controller but a warning preceded its parsable job id,
@@ -87,9 +87,9 @@ submits a duplicate experiment.
 
 ## Extending the ladder
 
-The checked-in plan currently contains the CPU-only DRD2 completion for the
-unchanged v5 candidate pool and writes `state_v5_oracle_repair.json`; completed
-v4 and first-pass v5 states remain untouched. Both decisions are terminal
-because planner training must not begin until the complete-oracle support
-artifact has been reviewed. Add a later round and transition only after its
-standalone entrypoint and gate schema pass.
+The checked-in plan contains only the one-seed common-LLM RetrievedDelta planner
+signal and writes `state_v6_retrieved_delta_planner.json`; completed v4 and v5
+states remain untouched. It fixes final oracle `n=20`, hides evaluation targets,
+requires complete oracle coverage, and gates both support gain and unified
+action-format retention. The decision is terminal. Add a formal benchmark round
+only after reviewing the standalone v6 artifact and gate.

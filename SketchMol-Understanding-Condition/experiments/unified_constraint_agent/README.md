@@ -326,6 +326,25 @@ in 54 seconds; controller `19558278` reconciled the complete result. The earlier
 18% figure is retained only as an incomplete-oracle lower bound and must not be
 used as the v5 result. See `RESULTS.md` for lineage and task-level details.
 
+## Common-LLM RetrievedDelta planner v6
+
+V6 keeps `RetrievedDeltaEdit` as the executable source-preserving tool and
+trains the shared 1.5B common LLM to select its typed side-chain substitution.
+The training target identifies a positive delta only on paired train rows; it
+is absent from prompts. Balanced De novo/Table1/MuMO SFT replay and a frozen
+format/action validation provide the explicit anti-forgetting gate.
+
+For the 50-condition zero-overlap audit, the LLM may score at most 96 actions
+from v5's existing internal retrieval space, then emits exactly 20 candidates
+for the complete oracle. The comparison is paired against v5's 40% strict
+any@20 result. Advance requires at least 46% property and strict any@20, no IND
+or OOD strict regression, 100% validity/oracle coverage, and a passing unified
+format-retention check.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh retrieved_delta_planner_v6
+```
+
 ## Bounded Slurm experiment automation
 
 The experiment ladder now has a deterministic controller under
@@ -340,9 +359,8 @@ next allowlisted entrypoint.
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh
 ```
 
-The checked-in plan now records the terminal CPU oracle-repair round and its
-versioned state, while the v4 and incomplete-v5 records remain immutable. The
-complete v5 gate advanced, but the manifest intentionally contains no
-undeclared planner-training job: the next training configuration must be added
-and reviewed explicitly before the controller can submit it. See
-`automation/README.md` for the state, retry, budget, and recovery contracts.
+The checked-in plan now declares only the one-seed v6 planner signal and writes
+a new versioned state; completed v4/v5 states remain immutable. V6 is terminal
+after its support and anti-forgetting gate, so formal benchmark expansion still
+requires an explicit reviewed manifest change. See `automation/README.md` for
+the state, retry, budget, and recovery contracts.
