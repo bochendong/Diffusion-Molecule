@@ -39,9 +39,10 @@ loads the exact JSON gate, enforces the protocol invariants, and either stops or
 submits the declared next round plus its next controller job. No later SSH or
 Duo interaction is required for declared transitions.
 
-The default controller account is `def-hup-ab`. If Nibi exposes a different
-CPU allocation name, set `SUCC_UCA_CONTROLLER_ACCOUNT` for the initial command;
-the value is inherited by the dependent controller jobs.
+The default controller account is `def-hup-ab_cpu`, verified against the Nibi
+association list. If the allocation changes, set `SUCC_UCA_CONTROLLER_ACCOUNT`
+for the initial command; the value is inherited by the dependent controller
+jobs.
 
 Inspect the durable state without changing it:
 

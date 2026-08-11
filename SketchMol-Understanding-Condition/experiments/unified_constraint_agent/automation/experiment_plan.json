@@ -18,7 +18,7 @@
     ]
   },
   "controller": {
-    "account": "def-hup-ab",
+    "account": "def-hup-ab_cpu",
     "account_env": "SUCC_UCA_CONTROLLER_ACCOUNT",
     "job_name": "uca-auto-controller",
     "time": "00:05:00",
