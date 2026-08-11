@@ -345,6 +345,30 @@ format-retention check.
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh retrieved_delta_planner_v6
 ```
 
+V6 completed but stopped its scientific gate: property and strict any@20 fell
+from 40% to 22%, with OOD falling to 8%. The anti-forgetting check passed, and
+the v5 heuristic prefix was byte-identical when reconstructed inside v6. The
+failure therefore belongs to LLM-only molecular selection, not unified action
+control or candidate-space drift.
+
+## V7 support-ceiling decision audit
+
+Before training another planner, the CPU-only v7 decision audit freezes the
+pre-oracle heuristic prefix of the exact v6 enumerated pool and evaluates at
+most 96 candidates per held-out condition. This is an explicitly diagnostic
+support ceiling: it never changes the paper-facing n=20 contract and cannot be
+reported as an n=96 method result. Oracle values are computed only after the
+prefix has been materialized and are never used for selection.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_retrieved_delta_support_ceiling_v7.sh
+```
+
+If both IND and OOD strict support reach 70%, v7 may train a verifier-observed
+n=20 residual planner over this support. Otherwise the next method change must
+expand the source-preserving generator, using the common LLM as a typed
+GraphEditDSL controller rather than launching another ranker on the same pool.
+
 ## Bounded Slurm experiment automation
 
 The experiment ladder now has a deterministic controller under

@@ -51,6 +51,8 @@ delta_plan_protocol = load_module("retrieved_delta_plan_protocol")
 delta_preference = load_module("build_retrieved_delta_plan_preferences")
 delta_ranker = load_module("rank_retrieved_delta_candidates")
 delta_gate = load_module("finalize_retrieved_delta_planner_gate")
+delta_ceiling_pool = load_module("materialize_retrieved_delta_ceiling_pool")
+delta_ceiling_audit = load_module("audit_retrieved_delta_ceiling")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -1182,3 +1184,119 @@ def test_delta_planner_gate_requires_gain_and_preserves_unified_format(tmp_path:
     summary = json.loads((output / "summary.json").read_text())
     assert summary["decision"] == "advance"
     assert summary["anti_forgetting"]["passed"] is True
+
+
+def test_retrieved_delta_ceiling_pool_is_oracle_blind_and_variable_k(tmp_path: Path) -> None:
+    candidates = tmp_path / "enumerated.csv"
+    write_csv(
+        candidates,
+        [
+            {
+                "condition_id": condition,
+                "candidate_rank": rank,
+                "generated_smiles": f"{condition}-{rank}",
+                "target_smiles": "must-not-drive-selection",
+            }
+            for condition, ranks in (("b", (3, 1, 2)), ("a", (2, 1)))
+            for rank in ranks
+        ],
+    )
+    source_manifest = tmp_path / "source-manifest.json"
+    source_manifest.write_text(
+        json.dumps({"evaluation_target_access": False, "evaluation_conditions": 2})
+    )
+    output = tmp_path / "prefix.csv"
+    manifest = tmp_path / "manifest.json"
+
+    assert delta_ceiling_pool.main(
+        [
+            "--enumerated-candidates-csv", str(candidates),
+            "--source-manifest-json", str(source_manifest),
+            "--output-csv", str(output),
+            "--manifest-json", str(manifest),
+            "--candidate-limit", "20",
+            "--paper-candidate-budget", "20",
+            "--expected-conditions", "2",
+        ]
+    ) == 0
+    rows = delta_ceiling_pool.read_rows(output)
+    payload = json.loads(manifest.read_text())
+
+    assert [(row["condition_id"], row["candidate_rank"]) for row in rows] == [
+        ("a", "1"), ("a", "2"), ("b", "1"), ("b", "2"), ("b", "3")
+    ]
+    assert all(row["candidate_selected"] == "False" for row in rows)
+    assert payload["evaluation_target_access"] is False
+    assert payload["oracle_used_for_selection"] is False
+    assert payload["paper_facing_candidate_budget"] == 20
+    assert payload["short_condition_count"] == 2
+
+
+def test_retrieved_delta_ceiling_audit_separates_property_and_strict_support(tmp_path: Path) -> None:
+    detail = tmp_path / "detail.csv"
+    write_csv(
+        detail,
+        [
+            {
+                "condition_id": "ind-1",
+                "external_task_split": "ind",
+                "external_task_key": "BDP",
+                "external_valid": "True",
+                "external_full_property_coverage": "True",
+                "external_official_success": "True",
+                "external_strict_success": "True",
+            },
+            {
+                "condition_id": "ind-1",
+                "external_task_split": "ind",
+                "external_task_key": "BDP",
+                "external_valid": "True",
+                "external_full_property_coverage": "True",
+                "external_official_success": "False",
+                "external_strict_success": "False",
+            },
+            {
+                "condition_id": "ood-1",
+                "external_task_split": "ood",
+                "external_task_key": "BDMQ",
+                "external_valid": "True",
+                "external_full_property_coverage": "True",
+                "external_official_success": "True",
+                "external_strict_success": "False",
+            },
+        ],
+    )
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "evaluation_target_access": False,
+                "diagnostic_only": True,
+                "paper_facing_candidate_budget": 20,
+                "diagnostic_candidate_limit": 96,
+            }
+        )
+    )
+    baseline = tmp_path / "baseline.json"
+    baseline.write_text(
+        json.dumps({"support": {"all": {"property_any_rate": 0.4, "strict_any_rate": 0.4}}})
+    )
+    output = tmp_path / "audit"
+
+    assert delta_ceiling_audit.main(
+        [
+            "--official-detail-csv", str(detail),
+            "--candidate-manifest-json", str(manifest),
+            "--baseline-support-summary", str(baseline),
+            "--output-dir", str(output),
+            "--target-strict-ceiling", "0.5",
+            "--expected-conditions", "2",
+        ]
+    ) == 0
+    summary = json.loads((output / "summary.json").read_text())
+
+    assert summary["support_ceiling"]["all"]["property_any_rate"] == 1.0
+    assert summary["support_ceiling"]["all"]["strict_any_rate"] == 0.5
+    assert summary["support_ceiling"]["all"]["mean_candidates"] == 1.5
+    assert summary["decision"] == "generator_expansion_required"
+    assert abs(summary["comparison_to_v5"]["strict_ceiling_gain"] - 0.1) < 1e-12
