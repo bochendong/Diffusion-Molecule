@@ -342,7 +342,8 @@ def controller_submit_argv(
     log_dir = resolve_artifact_path(plan, str(controller["log_dir"]))
     log_dir.mkdir(parents=True, exist_ok=True)
     wrapped = " ".join(
-        shlex.quote(str(value)) for value in (script, plan_path.resolve(), state_path.resolve())
+        shlex.quote(str(value))
+        for value in ("bash", script, plan_path.resolve(), state_path.resolve())
     )
     argv = [
         "sbatch",

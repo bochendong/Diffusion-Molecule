@@ -305,6 +305,28 @@ def test_job_id_parser_accepts_nibi_warning_before_parsable_id() -> None:
     assert automation.parse_job_id(output) == "19556546"
 
 
+def test_controller_wrap_invokes_non_executable_script_through_bash(tmp_path: Path) -> None:
+    plan = make_plan(tmp_path)
+    automation_script = (
+        tmp_path
+        / "SketchMol-Understanding-Condition"
+        / "experiments"
+        / "unified_constraint_agent"
+        / "automation"
+        / "run_experiment_controller.sh"
+    )
+    automation_script.parent.mkdir(parents=True)
+    automation_script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    argv = automation.controller_submit_argv(
+        plan,
+        experiment_job_id="111",
+        plan_path=tmp_path / "plan.json",
+        state_path=tmp_path / "state.json",
+    )
+    wrapped = next(value for value in argv if value.startswith("--wrap="))
+    assert wrapped.startswith("--wrap=bash ")
+
+
 def test_attach_controller_recovers_running_unwatched_state(tmp_path: Path) -> None:
     plan = make_plan(tmp_path)
     plan_path = write_plan(tmp_path, plan)
