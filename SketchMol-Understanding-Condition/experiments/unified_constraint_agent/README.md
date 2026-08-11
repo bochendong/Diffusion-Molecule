@@ -286,3 +286,23 @@ If support advances, the common LLM is trained on complete typed tool plans,
 including the proposal root and subsequent edit steps. If it stops, the next
 change belongs in the proposal/action tool; flat policy RL remains an ablation
 showing gradient conflict and support limitation.
+
+## Bounded Slurm experiment automation
+
+The experiment ladder now has a deterministic controller under
+`automation/`. It treats Slurm and versioned JSON gates as the control plane;
+email is notification only. Each runnable round, transition, protocol check,
+retry, and accelerator-hour reservation is declared in
+`automation/experiment_plan.json`. The controller uses an `afterany`
+dependency job to reconcile the completed experiment and can submit only the
+next allowlisted entrypoint.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh
+```
+
+The checked-in plan intentionally ends after v4 because v4 stopped and the v5
+source-preserving delta proposal does not yet have a reviewed standalone
+entrypoint. Add v5 to the manifest only after that script and its JSON gate are
+validated. See `automation/README.md` for the state, retry, budget, and recovery
+contracts.

@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "project_dir": {
+    "env": "SUCC_UCA_SHARED_REPO_DIR",
+    "default": "/scratch/bdong/projects/Diffusion-Molecule"
+  },
+  "state_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_automation/state.json",
+  "limits": {
+    "max_scientific_rounds": 3,
+    "max_submissions": 4,
+    "max_accelerator_hours": 6.0,
+    "fixed_candidate_budget": 20,
+    "infra_retry_states": [
+      "BOOT_FAIL",
+      "NODE_FAIL",
+      "PREEMPTED",
+      "REQUEUE_HOLD"
+    ]
+  },
+  "controller": {
+    "account": "def-hup-ab",
+    "account_env": "SUCC_UCA_CONTROLLER_ACCOUNT",
+    "job_name": "uca-auto-controller",
+    "time": "00:05:00",
+    "cpus": 1,
+    "memory": "1G",
+    "mail_user": "dongbochen1218@gmail.com",
+    "log_dir": "SketchMol-Understanding-Condition/logs/unified_constraint_agent_automation"
+  },
+  "rounds": [
+    {
+      "id": "hierarchical_support_v4",
+      "description": "Leakage-safe raw-1 proposal plus GraphEditDSL support gate at final oracle n=20.",
+      "submit_argv": [
+        "bash",
+        "SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_agent_hierarchical_support_v4.sh"
+      ],
+      "job_id_regex": "hierarchical_common_agent_support_job=(\\d+)",
+      "summary_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_hierarchical_support_v4/support_gate/summary.json",
+      "requested_accelerator_hours": 2.0,
+      "max_attempts": 2,
+      "gate": {
+        "decision_path": "decision",
+        "required_equal": {
+          "protocol": "hierarchical_common_agent_action_support_v4",
+          "data_role": "train_only_heldout",
+          "proposal_budget": 1,
+          "final_oracle_candidate_budget": 20,
+          "split_audit.source_overlap": 0,
+          "support.candidate_budget": 20,
+          "support.all.valid_any_rate": 1.0
+        },
+        "transitions": {
+          "advance": null,
+          "stop": null
+        }
+      }
+    }
+  ]
+}

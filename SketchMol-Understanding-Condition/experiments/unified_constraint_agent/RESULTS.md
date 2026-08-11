@@ -403,3 +403,22 @@ new contamination guard rejected the split. The retry no longer relies on seed
 luck: it exports a larger audit candidate set, excludes every proposer-train
 source, and then deterministically backfills exactly five rows for each of the
 10 MuMO tasks. The failed job consumed no useful training or oracle budget.
+
+Retry job `19549488` completed on one H100 20 GB MIG in 13 minutes 32 seconds.
+The audited split contained 1,000 proposer-training rows and 50 evaluation
+conditions with zero source overlap. Every condition had all 20 oracle-scored
+candidates and at least one valid molecule. Property any-hit@20 was 10.0%
+overall, 4.0% on IND, and 16.0% on OOD; strict any-hit@20 was 0.0% on every
+split, so the gate stopped below its 20% property and 5% strict thresholds.
+The raw-1 proposal model itself produced a valid molecule for only 44% of
+conditions.
+
+A lineage audit explains why more ranking or policy optimization cannot repair
+this pool. All 36 property-success candidate rows descended from the direct
+proposal branch, but their source similarities ranged only from 0.135 to 0.233.
+All 549 source-similarity-success rows descended from the source-root branch,
+and none satisfied all requested properties. The strict-support intersection
+was therefore empty before final selection. V4 is retained as a clean support
+failure: the next method change must teach a source-preserving delta proposal
+or scaffold-constrained edit representation, not enlarge `n`, deepen the
+finalizer, or train another planner on the same pool.
