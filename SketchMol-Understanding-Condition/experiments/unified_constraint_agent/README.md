@@ -270,10 +270,11 @@ ConstraintIR
 ```
 
 The first v4 job is deliberately a support gate, not planner training. It fits
-the proposal tool on MuMO train rows, checks that the 50 audit conditions use
-disjoint source/target pairs, emits one raw proposal per condition, performs
-two-step graph search, and evaluates exactly 20 final molecules with the full
-ADMET-AI + TDC oracle. Internal RDKit enumeration is reported as search
+the proposal tool on MuMO train rows, selects five audit rows per task only
+after excluding every proposer-train source/target pair, emits one raw proposal
+per condition, performs two-step graph search, and evaluates exactly 20 final
+molecules with the full ADMET-AI + TDC oracle. Internal RDKit enumeration is
+reported as search
 compute; it is not represented as additional oracle candidates. The gate
 requires property any@20 of at least 20% and strict any@20 of at least 5%.
 

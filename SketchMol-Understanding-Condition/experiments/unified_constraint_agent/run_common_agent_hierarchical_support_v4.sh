@@ -33,7 +33,8 @@ PROPOSER_BASE_CHECKPOINT="${SUCC_UCA_PROPOSER_BASE_CHECKPOINT:-$PROJECT_DIR/outp
 ORACLE_MERGE_CSV="${SUCC_UCA_ORACLE_MERGE_CSV:-$PROJECT_DIR/outputs/external_oracle_build_v1/generated_properties.csv}"
 
 PROPOSER_TRAIN_ROWS="$DATA_DIR/proposer_train_rows.csv"
-AUDIT_ROWS="$DATA_DIR/support_audit_rows.csv"
+AUDIT_CANDIDATE_ROWS="$DATA_DIR/support_audit_candidate_rows.csv"
+AUDIT_ROWS="$DATA_DIR/support_audit_disjoint_rows.csv"
 DIRECT_PROPOSALS="$PROPOSER_DIR/raw1_proposals.csv"
 PROPOSER_CHECKPOINT="$PROPOSER_DIR/direct_smiles_generator.pt"
 GRAPH_CANDIDATES="$GRAPH_BENCHMARK_DIR/graph_edit_agent_candidate_predictions.csv"
@@ -44,6 +45,7 @@ OFFICIAL_DETAIL="$OFFICIAL_DIR/external_multiproperty_detail.csv"
 
 PROPOSER_ROWS_PER_TASK="${SUCC_UCA_PROPOSER_ROWS_PER_TASK:-100}"
 AUDIT_ROWS_PER_TASK="${SUCC_UCA_SUPPORT_ROWS_PER_TASK:-5}"
+AUDIT_CANDIDATE_ROWS_PER_TASK="${SUCC_UCA_SUPPORT_CANDIDATE_ROWS_PER_TASK:-100}"
 PROPOSER_SEED="${SUCC_UCA_PROPOSER_SEED:-1711}"
 AUDIT_SEED="${SUCC_UCA_SUPPORT_SEED:-1712}"
 CANDIDATE_BUDGET="${SUCC_UCA_CANDIDATE_BUDGET:-20}"
@@ -87,11 +89,19 @@ export_rows \
   "$PROPOSER_ROWS_PER_TASK" \
   "$PROPOSER_SEED"
 export_rows \
-  "$AUDIT_ROWS" \
-  "$DATA_DIR/support_audit_rows.summary.json" \
-  "$DATA_DIR/support_audit_rows.task_specs.json" \
-  "$AUDIT_ROWS_PER_TASK" \
+  "$AUDIT_CANDIDATE_ROWS" \
+  "$DATA_DIR/support_audit_candidate_rows.summary.json" \
+  "$DATA_DIR/support_audit_candidate_rows.task_specs.json" \
+  "$AUDIT_CANDIDATE_ROWS_PER_TASK" \
   "$AUDIT_SEED"
+if [[ ! -f "$AUDIT_ROWS" ]]; then
+  "$PYTHON_BIN" "$SCRIPT_DIR/select_disjoint_support_rows.py" \
+    --proposer-train-csv "$PROPOSER_TRAIN_ROWS" \
+    --audit-candidate-csv "$AUDIT_CANDIDATE_ROWS" \
+    --output-csv "$AUDIT_ROWS" \
+    --manifest-json "$DATA_DIR/support_audit_disjoint_rows.manifest.json" \
+    --rows-per-task "$AUDIT_ROWS_PER_TASK"
+fi
 "$PYTHON_BIN" "$SCRIPT_DIR/audit_hierarchical_action_support.py" \
   --proposer-train-csv "$PROPOSER_TRAIN_ROWS" \
   --audit-rows-csv "$AUDIT_ROWS" \

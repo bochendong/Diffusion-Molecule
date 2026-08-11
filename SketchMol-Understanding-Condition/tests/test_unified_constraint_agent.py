@@ -45,6 +45,7 @@ tool_policy = load_module("common_llm_tool_policy")
 tool_policy_train = load_module("train_common_llm_tool_policy_grpo")
 admet_server = load_module("admet_ai_jsonl_server")
 hierarchical_support = load_module("audit_hierarchical_action_support")
+support_split = load_module("select_disjoint_support_rows")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -870,3 +871,28 @@ def test_hierarchical_support_gate_enforces_disjoint_sources_and_fixed_n20() -> 
     assert support["all"]["property_any_rate"] == 0.5
     assert support["all"]["strict_any_rate"] == 0.5
     assert support["all"]["direct_root_in_prefix_rate"] == 1.0
+
+
+def test_hierarchical_support_split_backfills_each_task_after_overlap() -> None:
+    proposer_rows = [
+        {"external_task_id": "A", "external_source_row_index": "1"},
+        {"external_task_id": "B", "external_source_row_index": "4"},
+    ]
+    candidates = [
+        {"external_task_id": "A", "external_source_row_index": "1"},
+        {"external_task_id": "A", "external_source_row_index": "2"},
+        {"external_task_id": "A", "external_source_row_index": "3"},
+        {"external_task_id": "B", "external_source_row_index": "4"},
+        {"external_task_id": "B", "external_source_row_index": "5"},
+        {"external_task_id": "B", "external_source_row_index": "6"},
+    ]
+
+    selected, manifest = support_split.select_disjoint_rows(
+        proposer_rows,
+        candidates,
+        rows_per_task=2,
+    )
+
+    assert [row["external_source_row_index"] for row in selected] == ["2", "3", "5", "6"]
+    assert manifest["selected_counts_by_task"] == {"A": 2, "B": 2}
+    assert manifest["excluded_overlap_counts_by_task"] == {"A": 1, "B": 1}

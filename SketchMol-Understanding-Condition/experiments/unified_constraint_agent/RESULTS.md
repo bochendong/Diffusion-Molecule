@@ -396,3 +396,10 @@ two-step GraphEditDSL search, and sends exactly 20 final unique molecules per
 condition to the official ADMET-AI + TDC oracle. It requests one 20 GB H100 MIG
 for two hours; expected runtime is 45--70 minutes. Planner training is launched
 only if property any@20 is at least 20% and strict any@20 is at least 5%.
+
+Initial job `19547513` failed safely after 50 seconds, before model training.
+Two independently seeded exports still shared 10 source/target pairs, and the
+new contamination guard rejected the split. The retry no longer relies on seed
+luck: it exports a larger audit candidate set, excludes every proposer-train
+source, and then deterministically backfills exactly five rows for each of the
+10 MuMO tasks. The failed job consumed no useful training or oracle budget.
