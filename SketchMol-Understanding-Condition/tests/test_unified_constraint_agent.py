@@ -676,6 +676,64 @@ def test_tool_policy_group_advantages_and_gate_require_real_signal() -> None:
     assert unsafe["decision"] == "stop"
 
 
+def test_tool_policy_exact_action_distribution_is_zero_sum_and_reward_ordered() -> None:
+    probabilities, advantages, weights = tool_policy_train.exact_action_distribution(
+        [0.0, 0.0, 0.0],
+        [1.0, 2.0, 3.0],
+        temperature=1.0,
+    )
+
+    assert all(abs(item - 1.0 / 3.0) < 1e-12 for item in probabilities)
+    assert advantages[0] < advantages[1] < advantages[2]
+    assert weights[0] < 0 < weights[2]
+    assert abs(sum(weights)) < 1e-10
+
+
+def test_tool_policy_exact_gate_rejects_cross_task_retention_regression() -> None:
+    def rollout_metrics() -> dict[str, object]:
+        return {
+            "all": {
+                "mean_best_reward": 1.0,
+                "strict_any_rate": 0.0,
+                "property_all_any_rate": 0.0,
+                "source_similarity_any_rate": 1.0,
+            }
+        }
+
+    def action_metrics(expected_reward: float) -> dict[str, object]:
+        return {
+            "all": {
+                "mean_expected_reward": expected_reward,
+                "mean_top1_reward": 1.0,
+                "mean_property_all_probability": 0.1,
+                "mean_similarity_probability": 1.0,
+            }
+        }
+
+    def retention(denovo: float) -> dict[str, object]:
+        return {
+            "by_origin": {
+                "denovo": {"mean_canonical_action_log_probability": denovo},
+                "table1": {"mean_canonical_action_log_probability": -0.2},
+                "mumo": {"mean_canonical_action_log_probability": -0.2},
+            }
+        }
+
+    gate = tool_policy_train.gate_metrics(
+        rollout_metrics(),
+        rollout_metrics(),
+        baseline_action_values=action_metrics(1.0),
+        candidate_action_values=action_metrics(1.02),
+        baseline_retention=retention(-0.2),
+        candidate_retention=retention(-0.27),
+        retention_max_regression=0.05,
+    )
+
+    assert gate["action_expected_reward_gain"] > 0.01
+    assert gate["canonical_action_retention_gain_by_origin"]["denovo"] < -0.05
+    assert gate["decision"] == "stop"
+
+
 def test_tool_policy_routes_official_admet_properties_to_sidecar(monkeypatch) -> None:
     class FakeUnified:
         @staticmethod

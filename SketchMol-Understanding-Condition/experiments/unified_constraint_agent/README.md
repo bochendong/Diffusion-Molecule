@@ -205,3 +205,29 @@ bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/subm
 The default Slurm request is one H100 20 GB MIG slice, four hours, with
 begin/end/fail email notifications. Scale the number of train conditions and
 the grammar support only after this closed-loop method gate advances.
+
+### Exact-action-value policy iteration v2
+
+The sampled v1 gate changed the adapter but reproduced all 48 held-out
+trajectories exactly. V2 keeps the same target-free typed executor and official
+feedback contract, but evaluates every executable action at each visited state.
+It applies the exact categorical score-function update with serial backward
+passes, so the complete 16-edit-action support supplies learning signal without
+retaining every action graph in GPU memory.
+
+The deterministic held-out gate now measures expected reward, top-1 reward,
+strict/property/similarity probability mass, and the probability assigned to
+the oracle-best action. A separate canonical-action likelihood check covers
+held-out de novo, Table1, and MuMO rows before and after training; an edit gain
+cannot advance if the shared policy regresses beyond the declared retention
+tolerance.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_tool_policy_exact_v2.sh
+```
+
+The default signal run uses 16 train and eight validation conditions per edit
+suite, one two-step path per condition, one epoch, up to 16 edit action values
+plus STOP per state, and balanced three-task SFT anchoring. It requests one
+H100 40 GB MIG for at most two hours and does not open a formal benchmark test
+split.

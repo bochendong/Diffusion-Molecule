@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Train the common LLM as a closed-loop typed molecular tool policy.
 
-Unlike the earlier preference experiments, this pilot does not consume a
-ranked molecular candidate pool or mine strict-positive pairs.  It samples
-executable GraphEditDSL calls from the current policy, executes them, returns
-constraint feedback, and applies a group-relative policy-gradient update to
-the complete one/two-step trajectory.
+Unlike the earlier preference experiments, this trainer does not consume a
+ranked molecular candidate pool or mine strict-positive pairs. It executes
+GraphEditDSL calls from the current policy, returns constraint feedback, and
+supports either sampled trajectory GRPO or exact action-value policy updates
+over the complete typed support.
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import random
 import sys
 from collections import Counter, defaultdict
@@ -47,6 +48,17 @@ class PolicyTrajectory:
     feedback: policy.PolicyFeedback
 
 
+@dataclass
+class PolicyStateSupport:
+    origin: str
+    example_id: str
+    prompt_messages: list[dict[str, str]]
+    candidate_payloads: list[dict[str, object]]
+    candidate_smiles: list[str]
+    action_scores: list[float]
+    feedback: list[policy.PolicyFeedback]
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--train-jsonl", required=True, type=Path)
@@ -58,6 +70,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-train-per-origin", type=int, default=16)
     parser.add_argument("--max-validation-per-origin", type=int, default=8)
     parser.add_argument("--rollouts-per-condition", type=int, default=4)
+    parser.add_argument(
+        "--policy-update",
+        choices=("sampled_trajectory", "exact_action_value"),
+        default="sampled_trajectory",
+    )
+    parser.add_argument("--paths-per-condition", type=int, default=1)
     parser.add_argument("--validation-rollouts", type=int, default=8)
     parser.add_argument("--max-steps", type=int, default=2)
     parser.add_argument("--site-limit", type=int, default=24)
@@ -72,6 +90,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=3e-6)
     parser.add_argument("--anchor-sft-weight", type=float, default=0.10)
     parser.add_argument("--anchor-max-per-origin", type=int, default=64)
+    parser.add_argument("--retention-max-per-origin", type=int, default=32)
+    parser.add_argument("--retention-max-regression", type=float, default=0.05)
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--seed", type=int, default=1707)
     parser.add_argument("--logging-steps", type=int, default=2)
@@ -257,6 +277,217 @@ def rollout_group(
     return trajectories
 
 
+def exact_action_distribution(
+    scores: Sequence[float],
+    rewards: Sequence[float],
+    *,
+    temperature: float,
+    clip: float = 3.0,
+) -> tuple[list[float], list[float], list[float]]:
+    """Return categorical probabilities, centered advantages, and policy weights.
+
+    The executable tool support is small and discrete, so v2 can replace a
+    Monte-Carlo group estimate with the exact expectation over every action.
+    Centering under the policy distribution keeps the resulting score-function
+    weights zero-sum even when advantages are clipped.
+    """
+    if len(scores) != len(rewards):
+        raise ValueError("Action scores and rewards must have the same length")
+    if not scores:
+        return [], [], []
+    inverse_temperature = 1.0 / max(float(temperature), 1e-6)
+    logits = [float(item) * inverse_temperature for item in scores]
+    maximum = max(logits)
+    unnormalized = [math.exp(item - maximum) for item in logits]
+    denominator = sum(unnormalized)
+    probabilities = [item / denominator for item in unnormalized]
+    expected_reward = sum(
+        probability * float(reward) for probability, reward in zip(probabilities, rewards)
+    )
+    variance = sum(
+        probability * (float(reward) - expected_reward) ** 2
+        for probability, reward in zip(probabilities, rewards)
+    )
+    scale = max(variance**0.5, 1e-6)
+    advantages = [
+        max(-float(clip), min(float(clip), (float(reward) - expected_reward) / scale))
+        for reward in rewards
+    ]
+    clipped_center = sum(
+        probability * advantage for probability, advantage in zip(probabilities, advantages)
+    )
+    advantages = [advantage - clipped_center for advantage in advantages]
+    weights = [
+        probability * advantage for probability, advantage in zip(probabilities, advantages)
+    ]
+    return probabilities, advantages, weights
+
+
+def evaluate_action_support(
+    model: object,
+    tokenizer: object,
+    record: Mapping[str, object],
+    *,
+    current_smiles: str,
+    original_source_smiles: str,
+    history: Sequence[Mapping[str, object]],
+    step_index: int,
+    args: argparse.Namespace,
+) -> PolicyStateSupport | None:
+    ir = policy.constraint_ir(record)
+    origin = str(record.get("origin", "") or "unknown")
+    example_id = str(record.get("example_id", "") or "")
+    actions = policy.executable_grammar_actions(
+        current_smiles,
+        site_limit=int(args.site_limit),
+        max_actions=int(args.max_actions),
+        include_stop=int(step_index) > 0,
+    )
+    if not actions:
+        return None
+    messages = policy.policy_prompt_messages(
+        ir,
+        current_smiles=current_smiles,
+        original_source_smiles=original_source_smiles,
+        previous_steps=history,
+        step_index=int(step_index),
+        max_steps=int(args.max_steps),
+    )
+    payloads = [action.payload for action in actions]
+    action_scores = inference_action_scores(
+        model,
+        tokenizer,
+        messages,
+        payloads,
+        max_length=int(args.max_length),
+        batch_size=int(args.score_batch_size),
+    )
+    feedback = [
+        policy.score_policy_state(
+            ir,
+            original_source_smiles=original_source_smiles,
+            candidate_smiles=action.next_smiles,
+            source_similarity_threshold=similarity_threshold(origin, args),
+            step_count=int(step_index) + int(not action.terminal),
+        )
+        for action in actions
+    ]
+    missing_feedback = sorted(
+        {
+            outcome.property
+            for item in feedback
+            for outcome in item.outcomes
+            if outcome.source_value is None or outcome.candidate_value is None
+        }
+    )
+    if missing_feedback:
+        raise RuntimeError(
+            f"Incomplete official action-value feedback for {example_id}: {missing_feedback}"
+        )
+    return PolicyStateSupport(
+        origin=origin,
+        example_id=example_id,
+        prompt_messages=messages,
+        candidate_payloads=payloads,
+        candidate_smiles=[action.next_smiles for action in actions],
+        action_scores=action_scores,
+        feedback=feedback,
+    )
+
+
+def rollout_exact_action_supports(
+    model: object,
+    tokenizer: object,
+    record: Mapping[str, object],
+    *,
+    args: argparse.Namespace,
+    path_count: int,
+    seed: int,
+) -> tuple[list[PolicyStateSupport], list[PolicyTrajectory]]:
+    """Visit policy states while evaluating every executable action exactly."""
+    import torch
+
+    ir = policy.constraint_ir(record)
+    origin = str(record.get("origin", "") or "unknown")
+    example_id = str(record.get("example_id", "") or "")
+    source = str(ir.get("source_smiles", "") or "").strip()
+    if not source:
+        raise ValueError(f"Edit policy row has no source SMILES: {example_id}")
+    support_cache: dict[str, PolicyStateSupport] = {}
+    trajectories: list[PolicyTrajectory] = []
+    model.eval()
+    for path_index in range(max(1, int(path_count))):
+        current = source
+        history: list[dict[str, object]] = []
+        decisions: list[PolicyDecision] = []
+        final_feedback = policy.score_policy_state(
+            ir,
+            original_source_smiles=source,
+            candidate_smiles=current,
+            source_similarity_threshold=similarity_threshold(origin, args),
+            step_count=0,
+        )
+        generator = torch.Generator().manual_seed(int(seed) + path_index)
+        for step_index in range(int(args.max_steps)):
+            actions = policy.executable_grammar_actions(
+                current,
+                site_limit=int(args.site_limit),
+                max_actions=int(args.max_actions),
+                include_stop=step_index > 0,
+            )
+            if not actions:
+                break
+            messages = policy.policy_prompt_messages(
+                ir,
+                current_smiles=current,
+                original_source_smiles=source,
+                previous_steps=history,
+                step_index=step_index,
+                max_steps=int(args.max_steps),
+            )
+            payloads = [action.payload for action in actions]
+            signature = hashlib.sha256(
+                json.dumps([messages, payloads], sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+            support = support_cache.get(signature)
+            if support is None:
+                support = evaluate_action_support(
+                    model,
+                    tokenizer,
+                    record,
+                    current_smiles=current,
+                    original_source_smiles=source,
+                    history=history,
+                    step_index=step_index,
+                    args=args,
+                )
+                if support is None:
+                    break
+                support_cache[signature] = support
+            selected_index = sample_index(
+                support.action_scores,
+                temperature=float(args.temperature),
+                generator=generator,
+            )
+            selected = actions[selected_index]
+            current = selected.next_smiles
+            final_feedback = support.feedback[selected_index]
+            decisions.append(PolicyDecision(messages, payloads, selected_index))
+            history.append(
+                {
+                    "tool_call": selected.payload,
+                    "result_smiles": current,
+                    "observation": final_feedback.observation(),
+                }
+            )
+            if selected.terminal:
+                break
+        trajectories.append(
+            PolicyTrajectory(origin, example_id, current, decisions, final_feedback)
+        )
+    return list(support_cache.values()), trajectories
+
+
 def differentiable_selected_action_score(
     model: object,
     tokenizer: object,
@@ -330,6 +561,77 @@ def policy_gradient_backward(
         detached_loss += float(loss.detach())
         (loss / normalizer).backward()
     return detached_loss / max(total_decisions, 1), total_decisions
+
+
+def exact_action_value_backward(
+    model: object,
+    tokenizer: object,
+    supports: Sequence[PolicyStateSupport],
+    *,
+    args: argparse.Namespace,
+) -> tuple[float, int, dict[str, float]]:
+    """Apply an exact score-function update over each typed action support.
+
+    Candidate scores and official rewards are detached. Each action sequence is
+    then recomputed separately, keeping peak memory bounded while retaining the
+    exact categorical policy-gradient expectation over the complete support.
+    """
+    if not supports:
+        return 0.0, 0, {
+            "mean_support_size": 0.0,
+            "mean_expected_reward": 0.0,
+            "mean_oracle_reward": 0.0,
+            "mean_oracle_probability": 0.0,
+        }
+    detached_loss = 0.0
+    action_count = 0
+    expected_rewards = []
+    oracle_rewards = []
+    oracle_probabilities = []
+    normalizer = max(len(supports), 1) * max(int(args.gradient_accumulation), 1)
+    for support in supports:
+        rewards = [item.reward for item in support.feedback]
+        probabilities, _advantages, weights = exact_action_distribution(
+            support.action_scores,
+            rewards,
+            temperature=float(args.temperature),
+        )
+        expected_rewards.append(
+            sum(probability * reward for probability, reward in zip(probabilities, rewards))
+        )
+        oracle_reward = max(rewards)
+        oracle_rewards.append(oracle_reward)
+        oracle_probabilities.append(
+            sum(
+                probability
+                for probability, reward in zip(probabilities, rewards)
+                if abs(float(reward) - float(oracle_reward)) < 1e-9
+            )
+        )
+        for payload, weight in zip(support.candidate_payloads, weights):
+            action_count += 1
+            if abs(float(weight)) < 1e-12:
+                continue
+            action_log_probability = differentiable_selected_action_score(
+                model,
+                tokenizer,
+                support.prompt_messages,
+                payload,
+                max_length=int(args.max_length),
+            )
+            loss = -float(weight) * action_log_probability / max(float(args.temperature), 1e-6)
+            detached_loss += float(loss.detach())
+            (loss / normalizer).backward()
+    return (
+        detached_loss / max(len(supports), 1),
+        action_count,
+        {
+            "mean_support_size": mean(len(item.candidate_payloads) for item in supports),
+            "mean_expected_reward": mean(expected_rewards),
+            "mean_oracle_reward": mean(oracle_rewards),
+            "mean_oracle_probability": mean(oracle_probabilities),
+        },
+    )
 
 
 def anchor_examples(
@@ -446,6 +748,184 @@ def aggregate_metrics(trajectories: Sequence[PolicyTrajectory]) -> dict[str, obj
     }
 
 
+def action_value_record(support: PolicyStateSupport, *, temperature: float) -> dict[str, object]:
+    rewards = [item.reward for item in support.feedback]
+    probabilities, _advantages, _weights = exact_action_distribution(
+        support.action_scores,
+        rewards,
+        temperature=float(temperature),
+    )
+    top_index = max(range(len(support.action_scores)), key=support.action_scores.__getitem__)
+    oracle_reward = max(rewards)
+    return {
+        "origin": support.origin,
+        "example_id": support.example_id,
+        "support_size": len(support.candidate_payloads),
+        "expected_reward": sum(
+            probability * reward for probability, reward in zip(probabilities, rewards)
+        ),
+        "top1_reward": rewards[top_index],
+        "oracle_reward": oracle_reward,
+        "oracle_probability": sum(
+            probability
+            for probability, reward in zip(probabilities, rewards)
+            if abs(float(reward) - float(oracle_reward)) < 1e-9
+        ),
+        "strict_probability": sum(
+            probability
+            for probability, item in zip(probabilities, support.feedback)
+            if item.strict_success
+        ),
+        "property_all_probability": sum(
+            probability
+            for probability, item in zip(probabilities, support.feedback)
+            if item.property_all_success
+        ),
+        "similarity_probability": sum(
+            probability
+            for probability, item in zip(probabilities, support.feedback)
+            if item.source_similarity_success
+        ),
+        "top1_strict": support.feedback[top_index].strict_success,
+        "top1_property_all": support.feedback[top_index].property_all_success,
+        "top1_similarity": support.feedback[top_index].source_similarity_success,
+        "support_strict_any": any(item.strict_success for item in support.feedback),
+        "support_property_all_any": any(item.property_all_success for item in support.feedback),
+        "support_similarity_any": any(item.source_similarity_success for item in support.feedback),
+    }
+
+
+def aggregate_action_value_rows(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
+    if not rows:
+        return {"conditions": 0}
+
+    def average(key: str) -> float:
+        return mean(float(item[key]) for item in rows)
+
+    return {
+        "conditions": len(rows),
+        "mean_support_size": average("support_size"),
+        "mean_expected_reward": average("expected_reward"),
+        "mean_top1_reward": average("top1_reward"),
+        "mean_oracle_reward": average("oracle_reward"),
+        "mean_oracle_probability": average("oracle_probability"),
+        "mean_strict_probability": average("strict_probability"),
+        "mean_property_all_probability": average("property_all_probability"),
+        "mean_similarity_probability": average("similarity_probability"),
+        "top1_strict_rate": average("top1_strict"),
+        "top1_property_all_rate": average("top1_property_all"),
+        "top1_similarity_rate": average("top1_similarity"),
+        "support_strict_any_rate": average("support_strict_any"),
+        "support_property_all_any_rate": average("support_property_all_any"),
+        "support_similarity_any_rate": average("support_similarity_any"),
+    }
+
+
+def evaluate_action_values(
+    model: object,
+    tokenizer: object,
+    records: Sequence[Mapping[str, object]],
+    *,
+    args: argparse.Namespace,
+) -> tuple[dict[str, object], list[dict[str, object]]]:
+    rows = []
+    for record in records:
+        ir = policy.constraint_ir(record)
+        source = str(ir.get("source_smiles", "") or "").strip()
+        support = evaluate_action_support(
+            model,
+            tokenizer,
+            record,
+            current_smiles=source,
+            original_source_smiles=source,
+            history=[],
+            step_index=0,
+            args=args,
+        )
+        if support is not None:
+            rows.append(action_value_record(support, temperature=float(args.temperature)))
+    by_origin = {
+        origin: aggregate_action_value_rows(
+            [item for item in rows if str(item.get("origin", "")) == origin]
+        )
+        for origin in requested_origins(args.rollout_origins)
+    }
+    return {"all": aggregate_action_value_rows(rows), "by_origin": by_origin}, rows
+
+
+def select_retention_records(
+    rows: Sequence[Mapping[str, object]],
+    *,
+    max_per_origin: int,
+    seed: int,
+) -> list[Mapping[str, object]]:
+    grouped: dict[str, dict[str, Mapping[str, object]]] = defaultdict(dict)
+    for index, row in enumerate(rows):
+        origin = str(row.get("origin", "") or "").strip()
+        if origin not in {"denovo", "table1", "mumo"}:
+            continue
+        identity = str(row.get("example_id", "") or f"{origin}:{index}")
+        grouped[origin].setdefault(identity, row)
+    missing = sorted({"denovo", "table1", "mumo"} - set(grouped))
+    if missing:
+        raise ValueError(f"Retention split is missing origins: {missing}")
+    selected = []
+    for offset, origin in enumerate(("denovo", "table1", "mumo")):
+        candidates = list(grouped[origin].values())
+        random.Random(int(seed) + offset).shuffle(candidates)
+        selected.extend(candidates[: max(1, int(max_per_origin))])
+    return selected
+
+
+def evaluate_canonical_action_retention(
+    model: object,
+    tokenizer: object,
+    records: Sequence[Mapping[str, object]],
+    *,
+    max_length: int,
+) -> dict[str, object]:
+    rows = []
+    model.eval()
+    for record in records:
+        messages = record.get("messages")
+        if not isinstance(messages, list) or len(messages) < 2:
+            continue
+        assistant = messages[-1]
+        if not isinstance(assistant, Mapping):
+            continue
+        try:
+            payload = json.loads(str(assistant.get("content", "") or ""))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, Mapping):
+            continue
+        score = inference_action_scores(
+            model,
+            tokenizer,
+            messages[:-1],
+            [payload],
+            max_length=int(max_length),
+            batch_size=1,
+        )[0]
+        rows.append({"origin": str(record.get("origin", "") or "unknown"), "score": score})
+
+    def summarize(items: Sequence[Mapping[str, object]]) -> dict[str, object]:
+        return {
+            "rows": len(items),
+            "mean_canonical_action_log_probability": (
+                mean(float(item["score"]) for item in items) if items else None
+            ),
+        }
+
+    return {
+        "all": summarize(rows),
+        "by_origin": {
+            origin: summarize([item for item in rows if item["origin"] == origin])
+            for origin in ("denovo", "table1", "mumo")
+        },
+    }
+
+
 def evaluate_records(
     model: object,
     tokenizer: object,
@@ -472,7 +952,16 @@ def evaluate_records(
     return {"all": aggregate_metrics(trajectories), "by_origin": by_origin}, trajectories
 
 
-def gate_metrics(baseline: Mapping[str, object], candidate: Mapping[str, object]) -> dict[str, object]:
+def gate_metrics(
+    baseline: Mapping[str, object],
+    candidate: Mapping[str, object],
+    *,
+    baseline_action_values: Mapping[str, object] | None = None,
+    candidate_action_values: Mapping[str, object] | None = None,
+    baseline_retention: Mapping[str, object] | None = None,
+    candidate_retention: Mapping[str, object] | None = None,
+    retention_max_regression: float = 0.05,
+) -> dict[str, object]:
     before = baseline["all"]
     after = candidate["all"]
     assert isinstance(before, Mapping) and isinstance(after, Mapping)
@@ -480,18 +969,77 @@ def gate_metrics(baseline: Mapping[str, object], candidate: Mapping[str, object]
     strict_gain = float(after["strict_any_rate"]) - float(before["strict_any_rate"])
     property_gain = float(after["property_all_any_rate"]) - float(before["property_all_any_rate"])
     similarity_gain = float(after["source_similarity_any_rate"]) - float(before["source_similarity_any_rate"])
-    primary_signal = reward_gain >= 0.03 or strict_gain > 0.0 or property_gain > 0.0
-    safe = property_gain >= -0.02 and similarity_gain >= -0.02
+    action_expected_reward_gain = 0.0
+    action_top1_reward_gain = 0.0
+    action_property_probability_gain = 0.0
+    action_similarity_probability_gain = 0.0
+    if baseline_action_values is not None and candidate_action_values is not None:
+        baseline_action_all = baseline_action_values["all"]
+        candidate_action_all = candidate_action_values["all"]
+        assert isinstance(baseline_action_all, Mapping) and isinstance(candidate_action_all, Mapping)
+        action_expected_reward_gain = float(candidate_action_all["mean_expected_reward"]) - float(
+            baseline_action_all["mean_expected_reward"]
+        )
+        action_top1_reward_gain = float(candidate_action_all["mean_top1_reward"]) - float(
+            baseline_action_all["mean_top1_reward"]
+        )
+        action_property_probability_gain = float(
+            candidate_action_all["mean_property_all_probability"]
+        ) - float(baseline_action_all["mean_property_all_probability"])
+        action_similarity_probability_gain = float(
+            candidate_action_all["mean_similarity_probability"]
+        ) - float(baseline_action_all["mean_similarity_probability"])
+
+    retention_gains: dict[str, float] = {}
+    if baseline_retention is not None and candidate_retention is not None:
+        baseline_by_origin = baseline_retention.get("by_origin", {})
+        candidate_by_origin = candidate_retention.get("by_origin", {})
+        if isinstance(baseline_by_origin, Mapping) and isinstance(candidate_by_origin, Mapping):
+            for origin in ("denovo", "table1", "mumo"):
+                before = baseline_by_origin.get(origin, {})
+                after_origin = candidate_by_origin.get(origin, {})
+                if not isinstance(before, Mapping) or not isinstance(after_origin, Mapping):
+                    continue
+                before_value = before.get("mean_canonical_action_log_probability")
+                after_value = after_origin.get("mean_canonical_action_log_probability")
+                if before_value is not None and after_value is not None:
+                    retention_gains[origin] = float(after_value) - float(before_value)
+
+    primary_signal = (
+        reward_gain >= 0.03
+        or strict_gain > 0.0
+        or property_gain > 0.0
+        or action_expected_reward_gain >= 0.01
+        or action_top1_reward_gain > 0.0
+    )
+    safe = (
+        property_gain >= -0.02
+        and similarity_gain >= -0.02
+        and action_property_probability_gain >= -0.02
+        and action_similarity_probability_gain >= -0.02
+        and all(
+            gain >= -float(retention_max_regression) for gain in retention_gains.values()
+        )
+    )
     return {
         "decision": "advance" if primary_signal and safe else "stop",
         "mean_best_reward_gain": reward_gain,
         "strict_any_rate_gain": strict_gain,
         "property_all_any_rate_gain": property_gain,
         "source_similarity_any_rate_gain": similarity_gain,
+        "action_expected_reward_gain": action_expected_reward_gain,
+        "action_top1_reward_gain": action_top1_reward_gain,
+        "action_property_all_probability_gain": action_property_probability_gain,
+        "action_similarity_probability_gain": action_similarity_probability_gain,
+        "canonical_action_retention_gain_by_origin": retention_gains,
         "requirements": {
-            "primary_signal": "reward +0.03 or positive strict/property gain",
+            "primary_signal": (
+                "rollout reward +0.03, positive strict/property gain, exact expected reward +0.01, "
+                "or positive exact top-1 reward gain"
+            ),
             "max_property_regression": 0.02,
             "max_similarity_regression": 0.02,
+            "max_canonical_action_log_probability_regression": float(retention_max_regression),
         },
     }
 
@@ -500,6 +1048,12 @@ def write_trajectories(path: Path, trajectories: Sequence[PolicyTrajectory]) -> 
     with path.open("w", encoding="utf-8") as handle:
         for trajectory in trajectories:
             handle.write(json.dumps(trajectory_record(trajectory), sort_keys=True) + "\n")
+
+
+def write_jsonl(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
+    with path.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(dict(row), sort_keys=True) + "\n")
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -532,6 +1086,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_per_origin=int(args.max_validation_per_origin),
         seed=int(args.seed) + 1,
     )
+    retention_rows = select_retention_records(
+        validation_rows_all,
+        max_per_origin=int(args.retention_max_per_origin),
+        seed=int(args.seed) + 2,
+    )
 
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.base_model, use_fast=True)
     if tokenizer.pad_token_id is None:
@@ -560,6 +1119,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     anchor_cursors = {origin: 0 for origin in anchors}
 
+    baseline_action_values, baseline_action_value_rows = evaluate_action_values(
+        model,
+        tokenizer,
+        validation_rows,
+        args=args,
+    )
+    write_jsonl(
+        args.output_dir / "baseline_action_values.jsonl",
+        baseline_action_value_rows,
+    )
+    baseline_retention = evaluate_canonical_action_retention(
+        model,
+        tokenizer,
+        retention_rows,
+        max_length=int(args.max_length),
+    )
     baseline_metrics, baseline_trajectories = evaluate_records(
         model,
         tokenizer,
@@ -581,25 +1156,46 @@ def main(argv: Sequence[str] | None = None) -> int:
         random.Random(int(args.seed) + epoch).shuffle(shuffled)
         for record_index, record in enumerate(shuffled):
             model.eval()
-            trajectories = rollout_group(
-                model,
-                tokenizer,
-                record,
-                args=args,
-                rollout_count=int(args.rollouts_per_condition),
-                seed=int(args.seed) + epoch * 100_000 + record_index * 1009,
-            )
+            seed = int(args.seed) + epoch * 100_000 + record_index * 1009
+            supports: list[PolicyStateSupport] = []
+            if args.policy_update == "exact_action_value":
+                supports, trajectories = rollout_exact_action_supports(
+                    model,
+                    tokenizer,
+                    record,
+                    args=args,
+                    path_count=int(args.paths_per_condition),
+                    seed=seed,
+                )
+            else:
+                trajectories = rollout_group(
+                    model,
+                    tokenizer,
+                    record,
+                    args=args,
+                    rollout_count=int(args.rollouts_per_condition),
+                    seed=seed,
+                )
             all_train_trajectories.extend(trajectories)
             rewards = [item.feedback.reward for item in trajectories]
-            advantages = policy.group_relative_advantages(rewards)
             model.train()
-            policy_loss, decision_count = policy_gradient_backward(
-                model,
-                tokenizer,
-                trajectories,
-                advantages,
-                args=args,
-            )
+            exact_diagnostics: dict[str, float] = {}
+            if args.policy_update == "exact_action_value":
+                policy_loss, decision_count, exact_diagnostics = exact_action_value_backward(
+                    model,
+                    tokenizer,
+                    supports,
+                    args=args,
+                )
+            else:
+                advantages = policy.group_relative_advantages(rewards)
+                policy_loss, decision_count = policy_gradient_backward(
+                    model,
+                    tokenizer,
+                    trajectories,
+                    advantages,
+                    args=args,
+                )
             anchor_loss = anchor_sft_backward(
                 model,
                 anchors,
@@ -639,6 +1235,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "anchor_sft_loss": anchor_loss,
                 "decisions": decision_count,
                 "updates": update_step,
+                **exact_diagnostics,
             }
             history.append(row)
             if condition_step <= 2 or condition_step % int(args.logging_steps) == 0:
@@ -652,6 +1249,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     model.save_pretrained(adapter_dir)
     tokenizer.save_pretrained(adapter_dir)
 
+    candidate_action_values, candidate_action_value_rows = evaluate_action_values(
+        model,
+        tokenizer,
+        validation_rows,
+        args=args,
+    )
+    write_jsonl(
+        args.output_dir / "candidate_action_values.jsonl",
+        candidate_action_value_rows,
+    )
+    candidate_retention = evaluate_canonical_action_retention(
+        model,
+        tokenizer,
+        retention_rows,
+        max_length=int(args.max_length),
+    )
     candidate_metrics, candidate_trajectories = evaluate_records(
         model,
         tokenizer,
@@ -660,11 +1273,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed=int(args.seed) + 100_000,
     )
     write_trajectories(args.output_dir / "candidate_validation_trajectories.jsonl", candidate_trajectories)
-    gate = gate_metrics(baseline_metrics, candidate_metrics)
+    gate = gate_metrics(
+        baseline_metrics,
+        candidate_metrics,
+        baseline_action_values=baseline_action_values,
+        candidate_action_values=candidate_action_values,
+        baseline_retention=baseline_retention,
+        candidate_retention=candidate_retention,
+        retention_max_regression=float(args.retention_max_regression),
+    )
     summary = {
         "protocol": policy.POLICY_PROTOCOL,
-        "method": "on_policy_typed_tool_grpo",
-        "gradient_estimator": "two_pass_executed_action_autoregressive_logprob",
+        "method": (
+            "typed_tool_exact_action_value_policy_iteration"
+            if args.policy_update == "exact_action_value"
+            else "on_policy_typed_tool_grpo"
+        ),
+        "gradient_estimator": (
+            "exact_categorical_action_value_with_serial_autoregressive_backward"
+            if args.policy_update == "exact_action_value"
+            else "two_pass_executed_action_autoregressive_logprob"
+        ),
         "action_support": "property_agnostic_universal_graph_edit_dsl_plus_rdkit",
         "property_evaluator": "rdkit_plus_pinned_tdc_plus_persistent_official_admet_ai",
         "complete_feedback_required": True,
@@ -681,6 +1310,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             sorted(Counter(str(row.get("origin")) for row in validation_rows).items())
         ),
         "rollouts_per_condition": int(args.rollouts_per_condition),
+        "paths_per_condition": int(args.paths_per_condition),
         "validation_rollouts": int(args.validation_rollouts),
         "max_steps": int(args.max_steps),
         "max_actions": int(args.max_actions),
@@ -693,6 +1323,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "adapter_nonfinite_parameters": nonfinite,
         "baseline_validation": baseline_metrics,
         "candidate_validation": candidate_metrics,
+        "baseline_action_values": baseline_action_values,
+        "candidate_action_values": candidate_action_values,
+        "baseline_canonical_action_retention": baseline_retention,
+        "candidate_canonical_action_retention": candidate_retention,
+        "retention_max_per_origin": int(args.retention_max_per_origin),
         "gate": gate,
         "history": history,
     }

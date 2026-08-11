@@ -305,3 +305,35 @@ two-pass estimator still samples from all executable actions, then recomputes
 gradients only for actions actually executed in the trajectory. This preserves
 the grammar support and group-relative signal while bounding the update graph
 to one action sequence at a time.
+
+Job `19540548` completed successfully on one H100 40 GB MIG in 6 minutes 36
+seconds, but the method gate stopped. Sixteen train conditions produced only
+four optimizer updates. Held-out strict any-hit and property-all any-hit were
+zero both before and after training; mean best reward remained `1.4623`, and
+all 48 candidate trajectories were byte-identical to baseline. The saved
+adapter differs from the input and contains no non-finite parameters, so this
+was an underpowered sampled-policy update rather than a failed training run.
+The MuMO train rollouts contained no property-all or strict success, while
+Table1 found strict trajectories for two of eight train conditions.
+
+## Exact-action-value common-LLM tool policy v2
+
+Date: 2026-08-11
+
+V2 replaces the four-rollout Monte-Carlo advantage with the exact expectation
+over the complete executable GraphEditDSL support at every visited state. Each
+action is executed and scored by the same official property and source
+similarity environment; policy probabilities and normalized advantages are
+computed over the full support, then action log probabilities are recomputed
+serially for a bounded-memory exact categorical update. The transition remains
+on-policy and target-free.
+
+The new held-out gate supplements fixed-seed two-step rollouts with a
+deterministic action-distribution comparison. It reports expected/top-1/oracle
+reward, strict/property/similarity probability mass, and oracle-best action
+probability. Held-out canonical action likelihood is measured independently on
+de novo, Table1, and MuMO rows; regression beyond `0.05` mean token log
+probability stops the run even when edit reward improves. The first v2 signal
+run uses seed `1708`, 16 train and eight validation conditions per edit suite,
+one epoch, up to 16 edit actions plus STOP per state, and 16 optimizer updates
+expected from two-condition gradient accumulation.
