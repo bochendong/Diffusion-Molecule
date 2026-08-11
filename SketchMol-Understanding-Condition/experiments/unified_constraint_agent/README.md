@@ -408,3 +408,33 @@ a new versioned state; completed v4/v5 states remain immutable. V6 is terminal
 after its support and anti-forgetting gate, so formal benchmark expansion still
 requires an explicit reviewed manifest change. See `automation/README.md` for
 the state, retry, budget, and recovery contracts.
+
+## Parallel MuMO train-evidence pipeline v8
+
+V8 scales the clean method branch rather than adding edit-depth patches. It
+reads the 828k-row MuMO training JSON once, freezes a balanced sample of 5,500
+rows per task, removes canonical-source overlap with the 50-condition audit,
+and splits fit/dev by canonical source group. The official test file is hashed
+for provenance but its JSON content is never parsed. The paper-facing protocol
+remains fixed at any@20; neither evaluation targets nor the official oracle are
+available to these jobs.
+
+After the single streaming preparation job, two 32-way CPU arrays run on
+independent Nibi nodes: one extracts mergeable MMPA delta statistics and the
+other materializes ECFP4/descriptor label caches. Five independent CPU jobs
+then train BBBP, DRD2, HIA, mutagenicity, and penalized-logP ExtraTrees
+verifiers. QED remains an exact RDKit observation. The fan-in gate requires at
+least 95% stored training-label coverage, at least 85% pairwise threshold recall
+per learned property, at least 100 dev pairs per property, and at least 10,000
+unique source-preserving transforms. A failed scientific gate records `STOP`
+without opening a GPU or the formal 1,992-condition test.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_mumo_parallel_evidence_v8.sh
+```
+
+The downstream transition, if this evidence gate passes, is a separate frozen
+dev closed loop that emits exactly 20 candidates per input. Only after that
+fixed-n gate reaches the reviewed signal threshold may a 20 GB MIG train the
+common-LLM residual planner; the 7B planner and official test remain later
+gated transitions.

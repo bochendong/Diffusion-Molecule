@@ -54,6 +54,7 @@ delta_gate = load_module("finalize_retrieved_delta_planner_gate")
 delta_ceiling_pool = load_module("materialize_retrieved_delta_ceiling_pool")
 delta_ceiling_audit = load_module("audit_retrieved_delta_ceiling")
 composed_delta = load_module("build_composed_retrieved_delta_candidates")
+mumo_parallel = load_module("mumo_parallel_protocol")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -63,6 +64,29 @@ def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def test_mumo_parallel_json_array_streaming_crosses_small_chunks(tmp_path: Path) -> None:
+    source = tmp_path / "rows.json"
+    expected = [
+        {"task": "BDP", "source_smiles": "CCO", "note": "x" * 31},
+        {"task": "HMPQ", "source_smiles": "CCN", "nested": {"value": 0.4}},
+    ]
+    source.write_text(json.dumps(expected, indent=2) + "\n", encoding="utf-8")
+
+    assert list(mumo_parallel.iter_json_array(source, chunk_size=7)) == expected
+
+
+def test_mumo_parallel_partition_and_shard_are_deterministic() -> None:
+    group = "BDP:CCO"
+
+    assert mumo_parallel.stable_fraction(group, seed=1711) == mumo_parallel.stable_fraction(group, seed=1711)
+    assert mumo_parallel.stable_shard(group, seed=1711, shard_count=32) == mumo_parallel.stable_shard(
+        group,
+        seed=1711,
+        shard_count=32,
+    )
+    assert 0 <= mumo_parallel.stable_shard(group, seed=1711, shard_count=32) < 32
 
 
 def test_constraint_ir_separates_design_and_edit_actions() -> None:
