@@ -73,6 +73,14 @@ python3 SketchMol-Understanding-Condition/experiments/unified_constraint_agent/a
   adopt --round retrieved_delta_support_v5 --job-id JOB_ID
 ```
 
+If Slurm submitted a controller but a warning preceded its parsable job id,
+recover the existing controller without submitting a duplicate:
+
+```bash
+python3 SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/experiment_loop.py \
+  attach-controller --job-id CONTROLLER_JOB_ID
+```
+
 Use `--without-controller` only for a manual reconciliation. A controller
 submission failure leaves the experiment in `running_unwatched`; it never
 submits a duplicate experiment.

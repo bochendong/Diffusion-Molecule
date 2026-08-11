@@ -299,6 +299,9 @@ def parse_job_id(output: str, pattern: str | None = None) -> str:
     match = re.fullmatch(r"(\d+)(?:;[^\s]+)?", stripped)
     if match:
         return match.group(1)
+    standalone = re.findall(r"(?m)^\s*(\d+)(?:;[^\s]+)?\s*$", output)
+    if standalone:
+        return standalone[-1]
     raise AutomationError(f"Could not parse a Slurm job id from output: {output[-500:]}")
 
 
@@ -613,6 +616,8 @@ def cli_parser() -> argparse.ArgumentParser:
     adopt.add_argument("--round", required=True)
     adopt.add_argument("--job-id", required=True)
     adopt.add_argument("--without-controller", action="store_true")
+    attach_controller = subparsers.add_parser("attach-controller")
+    attach_controller.add_argument("--job-id", required=True)
     reconcile = subparsers.add_parser("reconcile")
     reconcile.add_argument("--slurm-state", default=None)
     reconcile.add_argument("--exit-code", type=int, default=None)
@@ -680,6 +685,25 @@ def main(argv: Sequence[str] | None = None) -> int:
                     env=os.environ,
                 )
                 state["active_job"]["controller_job_id"] = parse_job_id(output)
+        elif args.command == "attach-controller":
+            active = state.get("active_job")
+            if not isinstance(active, MutableMapping):
+                raise AutomationError("No active experiment is registered")
+            existing = str(active.get("controller_job_id", "") or "").strip()
+            if existing and existing != str(args.job_id):
+                raise AutomationError(
+                    f"Active experiment already has controller_job_id={existing}"
+                )
+            active["controller_job_id"] = str(args.job_id)
+            if state.get("status") == "running_unwatched":
+                state["status"] = "running"
+            append_event(
+                state,
+                "controller_attached",
+                round_id=str(active.get("round_id", "")),
+                job_id=str(active.get("job_id", "")),
+                controller_job_id=str(args.job_id),
+            )
         elif args.command == "reconcile":
             active = state.get("active_job")
             if not isinstance(active, Mapping):

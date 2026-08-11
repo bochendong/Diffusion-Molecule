@@ -297,6 +297,41 @@ def test_sacct_parser_ignores_step_rows() -> None:
     }
 
 
+def test_job_id_parser_accepts_nibi_warning_before_parsable_id() -> None:
+    output = (
+        "sbatch: NOTE: Your memory request of 1024.0M was likely submitted as 1.0G.\n"
+        "19556546\n"
+    )
+    assert automation.parse_job_id(output) == "19556546"
+
+
+def test_attach_controller_recovers_running_unwatched_state(tmp_path: Path) -> None:
+    plan = make_plan(tmp_path)
+    plan_path = write_plan(tmp_path, plan)
+    state_path = tmp_path / "state.json"
+    state = active_state(plan)
+    state["status"] = "running_unwatched"
+    state["active_job"]["controller_job_id"] = None
+    state_path.write_text(json.dumps(state), encoding="utf-8")
+
+    assert automation.main(
+        [
+            "--plan",
+            str(plan_path),
+            "--state",
+            str(state_path),
+            "attach-controller",
+            "--job-id",
+            "333",
+        ]
+    ) == 0
+
+    recovered = json.loads(state_path.read_text(encoding="utf-8"))
+    assert recovered["status"] == "running"
+    assert recovered["active_job"]["controller_job_id"] == "333"
+    assert recovered["history"][-1]["event"] == "controller_attached"
+
+
 def test_checked_in_plan_declares_only_leakage_safe_v5() -> None:
     plan_path = MODULE_PATH.parent / "experiment_plan.json"
     plan = automation.load_plan(plan_path)
