@@ -17,7 +17,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-manifest-json", required=True, type=Path)
     parser.add_argument("--baseline-support-summary", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--target-property-ceiling", type=float, default=0.70)
+    parser.add_argument("--target-split-property-ceiling", type=float, default=0.70)
     parser.add_argument("--target-strict-ceiling", type=float, default=0.70)
+    parser.add_argument("--target-split-strict-ceiling", type=float, default=None)
     parser.add_argument("--expected-conditions", type=int, default=50)
     return parser.parse_args(argv)
 
@@ -126,8 +129,8 @@ def render_report(summary: Mapping[str, object]) -> str:
             f"V5 strict any@20 was {comparison['baseline_strict_any_rate']:.1%}; the diagnostic ceiling gain is "
             f"{comparison['strict_ceiling_gain']:+.1%}.",
             "",
-            "A ceiling below 70% means a selector cannot reach the requested regime from this support alone. "
-            "A ceiling above 70% permits a verifier-observed n=20 planner, but does not itself count as the final result.",
+            "The declared all/split property and strict ceilings must all pass before a verifier-observed n=20 "
+            "planner is trained. This diagnostic does not itself count as the final result.",
             "",
         ]
     )
@@ -168,15 +171,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         (float(value["strict_any_rate"]) for value in support["by_split"].values()),
         default=0.0,
     )
+    min_split_property = min(
+        (float(value["property_any_rate"]) for value in support["by_split"].values()),
+        default=0.0,
+    )
     complete = (
         float(all_metrics["full_oracle_candidate_rate"]) == 1.0
         and float(all_metrics["full_oracle_condition_rate"]) == 1.0
     )
-    target = float(args.target_strict_ceiling)
+    property_target = float(args.target_property_ceiling)
+    split_property_target = float(args.target_split_property_ceiling)
+    strict_target = float(args.target_strict_ceiling)
+    split_strict_target = (
+        strict_target
+        if args.target_split_strict_ceiling is None
+        else float(args.target_split_strict_ceiling)
+    )
     if not complete:
         decision = "needs_attention"
-    elif float(all_metrics["strict_any_rate"]) >= target and min_split_strict >= target:
-        decision = "support_sufficient_for_70"
+    elif (
+        float(all_metrics["property_any_rate"]) >= property_target
+        and min_split_property >= split_property_target
+        and float(all_metrics["strict_any_rate"]) >= strict_target
+        and min_split_strict >= split_strict_target
+    ):
+        decision = "support_sufficient_for_n20_planner"
     else:
         decision = "generator_expansion_required"
 
@@ -190,7 +209,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "oracle_used_for_selection": False,
         "paper_facing_candidate_budget": 20,
         "diagnostic_candidate_limit": int(manifest["diagnostic_candidate_limit"]),
-        "target_strict_ceiling": target,
+        "targets": {
+            "property_ceiling": property_target,
+            "split_property_ceiling": split_property_target,
+            "strict_ceiling": strict_target,
+            "split_strict_ceiling": split_strict_target,
+        },
         "candidate_manifest": manifest,
         "support_ceiling": support,
         "comparison_to_v5": {

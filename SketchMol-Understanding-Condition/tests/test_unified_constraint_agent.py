@@ -53,6 +53,7 @@ delta_ranker = load_module("rank_retrieved_delta_candidates")
 delta_gate = load_module("finalize_retrieved_delta_planner_gate")
 delta_ceiling_pool = load_module("materialize_retrieved_delta_ceiling_pool")
 delta_ceiling_audit = load_module("audit_retrieved_delta_ceiling")
+composed_delta = load_module("build_composed_retrieved_delta_candidates")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -1300,3 +1301,64 @@ def test_retrieved_delta_ceiling_audit_separates_property_and_strict_support(tmp
     assert summary["support_ceiling"]["all"]["mean_candidates"] == 1.5
     assert summary["decision"] == "generator_expansion_required"
     assert abs(summary["comparison_to_v5"]["strict_ceiling_gain"] - 0.1) < 1e-12
+
+
+def test_composed_delta_normalizes_observed_train_property_effects() -> None:
+    effects = composed_delta.observed_property_effects(
+        {
+            "external_task_properties": "bbbp,mutagenicity",
+            "external_property_directions_json": json.dumps(
+                {"bbbp": "increase", "mutagenicity": "decrease"}
+            ),
+            "external_property_thresholds_json": json.dumps(
+                {"bbbp": 0.1, "mutagenicity": 0.1}
+            ),
+            "external_source_bbbp": "0.2",
+            "external_target_bbbp": "0.4",
+            "external_source_mutagenicity": "0.7",
+            "external_target_mutagenicity": "0.4",
+        }
+    )
+
+    assert abs(effects["bbbp"] - 2.0) < 1e-12
+    assert abs(effects["mutagenicity"] - 3.0) < 1e-12
+
+
+def test_composed_delta_cross_task_retrieval_requires_positive_query_effect() -> None:
+    transforms = [
+        composed_delta.EffectTransform("exact", "a", "b", 1, "x", (("qed", -1.0),)),
+        composed_delta.EffectTransform("other", "c", "d", 1, "y", (("qed", 2.0),)),
+        composed_delta.EffectTransform("irrelevant", "e", "f", 1, "z", (("hia", 2.0),)),
+    ]
+
+    compatible = composed_delta.compatible_transforms(
+        transforms,
+        query_task="exact",
+        query_properties=("qed",),
+    )
+
+    assert [item.task_key for item in compatible] == ["exact", "other"]
+
+
+def test_composed_delta_state_accumulates_anchor_and_revision_effects() -> None:
+    step = composed_delta.EffectTransform(
+        "task", "a", "b", 1, "train", (("qed", 1.2), ("plogp", 0.5))
+    )
+    state = composed_delta.CandidateState(
+        smiles="CC",
+        source="composed",
+        source_tanimoto=0.7,
+        admet_prior_score=0.8,
+        steps=(step,),
+        anchor_rank=3,
+        prior_effects=(("plogp", 0.7),),
+    )
+
+    assert state.actual_step_count == 2
+    assert state.predicted_effects == {"plogp": 1.2, "qed": 1.2}
+    key = composed_delta.state_rank_key(
+        state,
+        query_properties=("plogp", "qed"),
+        min_source_tanimoto=0.4,
+    )
+    assert key[1:3] == (2, 2)

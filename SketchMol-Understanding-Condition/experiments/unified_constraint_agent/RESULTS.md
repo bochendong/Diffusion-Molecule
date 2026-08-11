@@ -486,3 +486,36 @@ nor OOD strict support decreases, validity and oracle coverage remain 100%, and
 unified action-format performance stays within the declared anti-forgetting
 tolerance. It requests one H100 20 GB MIG for at most two hours; expected useful
 runtime is 30--60 minutes.
+
+Job `19562460` completed in 27 minutes 17 seconds and controller `19562461`
+completed normally. V6 stopped its scientific gate: overall property and
+strict any@20 were both 22%, IND was 36%, and OOD was 8%, versus 40% on every
+scope for v5. The anti-forgetting gate passed. A paired lineage audit found 11
+retained v5 successes, nine lost successes, and zero new successes. The v5
+candidate CSV and v6's reconstructed heuristic top-20 had identical SHA256,
+so this is an LLM-only selection failure rather than candidate-space drift.
+
+## Oracle-blind RetrievedDelta support ceiling
+
+Date: 2026-08-12
+
+CPU job `19565544` completed in 3 minutes 4 seconds with exit code zero and
+about 1.2 GB peak resident memory. It froze at most 96 candidates per condition
+from the exact pre-oracle v6 heuristic ordering, then evaluated the frozen
+prefix. This is a support diagnostic only; the paper-facing budget remains
+n=20 and oracle values were not used for selection.
+
+| Split | Conditions | Mean k | Property any@k | Strict any@k | Full oracle |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| IND | 25 | 93.64 | 68.0% | 60.0% | 100% |
+| OOD | 25 | 96.00 | 48.0% | 40.0% | 100% |
+| All | 50 | 94.82 | **58.0%** | **50.0%** | **100%** |
+
+The diagnostic ceiling is only +18 points in property support and +10 points
+in strict support over v5 n=20. It remains below 70% even with a perfect
+selector, and the OOD ceiling is lower than v5's final IND/OOD target. DPQ,
+BMPQ, and HMPQ strict support were each only 20%. The next method change must
+therefore expand generation. The bounded v7 support experiment keeps v5's 20
+candidates as immutable anchors and composes up to two source-preserving,
+train-observed side-chain deltas using normalized train-pair property effects.
+Planner training remains closed until this expanded support passes its gate.

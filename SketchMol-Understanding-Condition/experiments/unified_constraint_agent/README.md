@@ -369,6 +369,18 @@ n=20 residual planner over this support. Otherwise the next method change must
 expand the source-preserving generator, using the common LLM as a typed
 GraphEditDSL controller rather than launching another ranker on the same pool.
 
+CPU job `19565544` completed this audit in 3 minutes 4 seconds. The oracle-blind
+prefix averaged 94.82 candidates and reached only 58% property support and 50%
+strict support; OOD was 48% property and 40% strict. The existing one-step
+support therefore cannot reach the requested regime even with a perfect
+selector. The next support gate composes at most two train-observed deltas,
+keeps all v5 n=20 candidates as an immutable prefix, and uses normalized
+train-pair property effects only to expand the pre-oracle support:
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_composed_retrieved_delta_support_v7.sh
+```
+
 ## Bounded Slurm experiment automation
 
 The experiment ladder now has a deterministic controller under
