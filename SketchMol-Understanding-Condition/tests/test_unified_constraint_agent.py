@@ -46,6 +46,7 @@ tool_policy_train = load_module("train_common_llm_tool_policy_grpo")
 admet_server = load_module("admet_ai_jsonl_server")
 hierarchical_support = load_module("audit_hierarchical_action_support")
 support_split = load_module("select_disjoint_support_rows")
+retrieved_delta = load_module("build_retrieved_delta_edit_candidates")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -896,3 +897,87 @@ def test_hierarchical_support_split_backfills_each_task_after_overlap() -> None:
     assert [row["external_source_row_index"] for row in selected] == ["2", "3", "5", "6"]
     assert manifest["selected_counts_by_task"] == {"A": 2, "B": 2}
     assert manifest["excluded_overlap_counts_by_task"] == {"A": 1, "B": 1}
+
+
+def test_retrieved_delta_inference_does_not_read_evaluation_target(monkeypatch) -> None:
+    class EvalRow(dict):
+        def get(self, key, default=None):
+            if key == "target_smiles":
+                raise AssertionError("RetrievedDeltaEdit inference must not read the evaluation target")
+            return super().get(key, default)
+
+    row = EvalRow(
+        condition_id="eval-1",
+        external_task_key="QED+BBBP",
+        source_smiles="source",
+    )
+    transform = retrieved_delta.DeltaTransform(
+        task_key="QED+BBBP",
+        source_variable="source-var",
+        target_variable="target-var",
+        frequency=3,
+        train_condition_id="train-1",
+    )
+    monkeypatch.setattr(
+        retrieved_delta,
+        "fragment_splits",
+        lambda *_args: (retrieved_delta.FragmentSplit("core", "query-var", 8, 2),),
+    )
+    monkeypatch.setattr(retrieved_delta, "variable_similarity", lambda *_args: 0.8)
+    monkeypatch.setattr(retrieved_delta, "join_fragments", lambda *_args: "generated")
+    monkeypatch.setattr(
+        retrieved_delta,
+        "candidate_for_smiles",
+        lambda _row, _smiles, *, source, **kwargs: retrieved_delta.Candidate(
+            smiles="generated",
+            source=source,
+            source_tanimoto=0.6,
+            admet_prior_score=0.7,
+            **kwargs,
+        ),
+    )
+    monkeypatch.setattr(retrieved_delta, "canonical_smiles", lambda value: value)
+
+    candidates, summary = retrieved_delta.retrieved_candidates(
+        row,
+        [transform],
+        min_retrieval_similarity=0.15,
+        max_transforms_per_query=8,
+        min_core_heavy_atoms=5,
+        max_variable_heavy_atoms=30,
+    )
+
+    assert [candidate.smiles for candidate in candidates] == ["generated"]
+    assert summary["approximate_query_transform_matches"] == 1
+
+
+def test_retrieved_delta_selection_preserves_fixed_n20_and_similarity_gate() -> None:
+    candidates = [
+        retrieved_delta.Candidate(
+            smiles=f"fallback-{index}",
+            source="v4_graph_fallback",
+            source_tanimoto=0.5,
+            admet_prior_score=0.1 + index / 100.0,
+            fallback_rank=index + 1,
+        )
+        for index in range(20)
+    ]
+    candidates.append(
+        retrieved_delta.Candidate(
+            smiles="delta",
+            source="retrieved_delta_edit",
+            source_tanimoto=0.65,
+            admet_prior_score=0.8,
+            retrieval_similarity=0.9,
+            transform_frequency=4,
+        )
+    )
+
+    selected = retrieved_delta.select_candidates(
+        candidates,
+        candidate_budget=20,
+        min_source_tanimoto=0.4,
+    )
+
+    assert len(selected) == 20
+    assert selected[0].smiles == "delta"

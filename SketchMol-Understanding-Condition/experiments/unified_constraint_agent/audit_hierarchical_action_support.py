@@ -20,6 +20,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-budget", type=int, default=20)
     parser.add_argument("--min-property-any-rate", type=float, default=0.20)
     parser.add_argument("--min-strict-any-rate", type=float, default=0.05)
+    parser.add_argument("--protocol", default="hierarchical_common_agent_action_support_v4")
+    parser.add_argument("--proposal-budget", type=int, default=1)
+    parser.add_argument("--method-label", default="raw-1 proposal plus GraphEditDSL")
+    parser.add_argument("--candidate-manifest-json", type=Path, default=None)
     parser.add_argument("--validate-splits-only", action="store_true")
     return parser.parse_args(argv)
 
@@ -159,8 +163,9 @@ def render_report(summary: Mapping[str, object]) -> str:
         "",
         f"Decision: **{str(summary['decision']).upper()}**",
         "",
-        "This is a train-only support diagnostic, not a formal benchmark result. The proposal tool emits raw-1; "
-        "the official property stack evaluates exactly 20 final molecules per condition. RDKit graph enumeration "
+        "This is a train-only support diagnostic, not a formal benchmark result. "
+        f"The candidate tool is {summary['method_label']}; "
+        "the official property stack evaluates exactly 20 final molecules per condition. Internal enumeration "
         "is recorded as internal search compute and is not counted as additional oracle candidates.",
         "",
         "| Scope | Conditions | Property any@20 | Strict any@20 | Valid candidates | Direct root retained |",
@@ -213,10 +218,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         and float(all_metrics["strict_any_rate"]) >= float(args.min_strict_any_rate)
     )
     summary = {
-        "protocol": "hierarchical_common_agent_action_support_v4",
+        "protocol": str(args.protocol),
         "data_role": "train_only_heldout",
+        "method_label": str(args.method_label),
         "decision": "advance" if advance else "stop",
-        "proposal_budget": 1,
+        "proposal_budget": int(args.proposal_budget),
         "final_oracle_candidate_budget": int(args.candidate_budget),
         "split_audit": split_audit,
         "thresholds": {
@@ -225,6 +231,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         },
         "support": support,
     }
+    if args.candidate_manifest_json is not None:
+        candidate_manifest = json.loads(args.candidate_manifest_json.read_text(encoding="utf-8"))
+        if not isinstance(candidate_manifest, dict):
+            raise ValueError("Candidate manifest must contain one JSON object")
+        summary["candidate_builder"] = candidate_manifest
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n",

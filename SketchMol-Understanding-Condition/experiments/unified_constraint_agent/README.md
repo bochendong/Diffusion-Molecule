@@ -287,6 +287,36 @@ including the proposal root and subsequent edit steps. If it stops, the next
 change belongs in the proposal/action tool; flat policy RL remains an ablation
 showing gradient conflict and support limitation.
 
+## RetrievedDeltaEdit support gate v5
+
+V4 stopped because property-success descendants of the unconstrained proposal
+lost the source scaffold, while source-root GraphEditDSL descendants preserved
+similarity but never satisfied all properties. V5 changes the action
+representation instead of the loss or candidate budget. It extracts one-cut
+matched-pair side-chain substitutions from the 1,000 proposer-training pairs,
+retrieves same-task transformations from each held-out source fragment, and
+rejoins the retrieved target-side fragment to the untouched held-out core. The
+builder never reads a held-out target molecule.
+
+```text
+ConstraintIR
+  -> common LLM planner/controller
+  -> RetrievedDeltaEdit(source core, train-only matched-pair delta)
+  -> vector verifier feedback
+  -> bounded replan/stop
+```
+
+The signal run reuses the zero-overlap 50-condition v4 audit split and its
+oracle-blind GraphEditDSL pool only as a completeness fallback. Candidate
+selection uses source similarity, train-fragment retrieval similarity, and
+descriptor-only ADMET priors. The complete official ADMET-AI + TDC oracle sees
+exactly 20 final molecules per condition. Advance still requires property
+any@20 of at least 20% and strict any@20 of at least 5%.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_agent_retrieved_delta_support_v5.sh
+```
+
 ## Bounded Slurm experiment automation
 
 The experiment ladder now has a deterministic controller under
@@ -301,8 +331,8 @@ next allowlisted entrypoint.
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh
 ```
 
-The checked-in plan intentionally ends after v4 because v4 stopped and the v5
-source-preserving delta proposal does not yet have a reviewed standalone
-entrypoint. Add v5 to the manifest only after that script and its JSON gate are
-validated. See `automation/README.md` for the state, retry, budget, and recovery
-contracts.
+The checked-in plan contains only the standalone v5 support gate. It uses a new
+versioned state file so the terminal v4 record remains immutable. V5 is also
+terminal until its fixed-n support summary is reviewed; planner training is not
+silently submitted from an unvalidated method gate. See `automation/README.md`
+for the state, retry, budget, and recovery contracts.

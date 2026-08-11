@@ -422,3 +422,22 @@ was therefore empty before final selection. V4 is retained as a clean support
 failure: the next method change must teach a source-preserving delta proposal
 or scaffold-constrained edit representation, not enlarge `n`, deepen the
 finalizer, or train another planner on the same pool.
+
+## RetrievedDeltaEdit support gate v5
+
+Date: 2026-08-11
+
+V5 implements the method change implied by the v4 lineage audit. It learns a
+matched-pair delta vocabulary from the same 1,000 proposer-training rows and
+applies those train-only side-chain substitutions to the untouched molecular
+core of each zero-overlap audit source. The held-out target is not an inference
+input. A pre-submission coverage audit found extractable single-cut deltas in
+833/1,000 training pairs and exact source-variable matches for 41/50 audit
+conditions (82%).
+
+The signal run reuses the frozen v4 audit rows and oracle-blind fallback pool,
+then evaluates exactly 20 final candidates with the official ADMET-AI + TDC
+stack. It requests one H100 20 GB MIG for one hour and is expected to take
+10--25 minutes. The unchanged gate requires property any@20 at or above 20%
+and strict any@20 at or above 5% before planner training becomes scientifically
+justified.

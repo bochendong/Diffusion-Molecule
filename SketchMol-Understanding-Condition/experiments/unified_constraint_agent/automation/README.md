@@ -37,7 +37,7 @@ allowlist.
 Run the initial submission once from a login node:
 
 ```bash
-bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh retrieved_delta_support_v5
 ```
 
 The command submits the experiment and a small CPU controller job with
@@ -70,7 +70,7 @@ An already-running job can be adopted once:
 
 ```bash
 python3 SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/experiment_loop.py \
-  adopt --round hierarchical_support_v4 --job-id JOB_ID
+  adopt --round retrieved_delta_support_v5 --job-id JOB_ID
 ```
 
 Use `--without-controller` only for a manual reconciliation. A controller
@@ -79,9 +79,9 @@ submits a duplicate experiment.
 
 ## Extending the ladder
 
-The checked-in plan contains only the validated v4 support gate. Its
-`advance` and `stop` decisions are terminal because the source-preserving delta
-proposal experiment does not yet have a reviewed submit entrypoint. Add that
-round and then set the desired transition only after its standalone dry run and
-gate schema pass. This keeps the automation mechanism separate from scientific
-method design.
+The checked-in plan contains only the reviewed v5 RetrievedDeltaEdit support
+gate and writes `state_v5.json`; the completed v4 state remains untouched. Both
+v5 decisions are terminal because planner training must not begin until the new
+support artifact has been reviewed. Add a later round and transition only after
+its standalone entrypoint and gate schema pass. This keeps the automation
+mechanism separate from scientific method design.
