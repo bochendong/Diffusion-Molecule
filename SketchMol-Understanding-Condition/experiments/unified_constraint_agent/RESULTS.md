@@ -337,3 +337,32 @@ probability stops the run even when edit reward improves. The first v2 signal
 run uses seed `1708`, 16 train and eight validation conditions per edit suite,
 one epoch, up to 16 edit actions plus STOP per state, and 16 optimizer updates
 expected from two-condition gradient accumulation.
+
+Job `19543795` completed on one H100 40 GB MIG in 19 minutes 3 seconds. The
+adapter now changed the actual policy: 41/128 held-out trajectories changed,
+19 improved in reward, and 22 regressed. MuMO exact expected reward improved
+from `1.1004` to `1.1284`, but Table1 decreased from `1.4979` to `1.4727` and
+its top-1 reward dropped from `1.6082` to `1.2221`. Joint expected reward gained
+only `0.0014`, strict any-hit remained `12.5%`, and the gate stopped. Canonical
+action likelihood regressed by `0.0171` for de novo, `0.0110` for Table1, and
+`0.0112` for MuMO, all inside the `0.05` safety bound. This establishes a real
+but conflicting multi-task policy signal rather than another no-op update.
+
+## Paired-PCGrad common-LLM tool policy v3
+
+Date: 2026-08-11
+
+V3 preserves the common adapter and exact typed-action environment while
+changing only how the two edit-task gradients are combined. Each update pairs
+one Table1 and one MuMO train condition. Their exact action-value gradients are
+captured separately; when their dot product is negative, each is projected off
+the conflicting component of the other before the two are averaged. Balanced
+three-origin SFT anchoring is added after projection, so conflict handling does
+not remove the explicit de novo/Table1/MuMO retention constraint.
+
+The first signal run keeps the v2 budget fixed at 16 train and eight validation
+conditions per edit suite, one two-step path, one epoch, and 16 paired updates.
+It reuses every existing model, dataset, and oracle artifact. The one-hour
+40 GB MIG submission is expected to take roughly 20--30 minutes and records
+per-update task-gradient cosine, projection decisions, and gradient norms. Seed
+`1708` is held fixed to preserve the v2 condition split and rollout randomness.

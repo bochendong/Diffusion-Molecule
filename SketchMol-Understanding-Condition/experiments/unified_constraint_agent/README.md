@@ -231,3 +231,25 @@ suite, one two-step path per condition, one epoch, up to 16 edit action values
 plus STOP per state, and balanced three-task SFT anchoring. It requests one
 H100 40 GB MIG for at most two hours and does not open a formal benchmark test
 split.
+
+### Paired conflict-aware policy iteration v3
+
+The v2 exact-action update moved 41/128 held-out trajectories and raised MuMO
+expected reward, but Table1 top-1 reward regressed enough to cancel the joint
+gain. V3 treats this as shared-policy gradient interference rather than a need
+for more sampling. Every optimizer step pairs one Table1 condition with one
+MuMO condition, computes their exact action-value gradients independently,
+projects only negative gradient conflicts, averages the projected gradients,
+and then adds the balanced de novo/Table1/MuMO SFT anchor.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_llm_tool_policy_pcgrad_v3.sh
+```
+
+The signal run reuses the v2 data, evaluator, support size, train/validation
+counts, and one-epoch budget for a direct comparison. It requests one H100
+40 GB MIG, four CPUs, 32 GB host memory, and a one-hour ceiling. The output
+records task-gradient cosine, projection frequency, and per-task gradient norm
+for every paired update in addition to the unchanged effect and retention gate.
+Seed `1708` is intentionally retained so the condition split and held-out
+rollout randomness match v2; the versioned output directory prevents overwrite.

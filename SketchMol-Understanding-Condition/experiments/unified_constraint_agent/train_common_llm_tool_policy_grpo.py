@@ -72,7 +72,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--rollouts-per-condition", type=int, default=4)
     parser.add_argument(
         "--policy-update",
-        choices=("sampled_trajectory", "exact_action_value"),
+        choices=(
+            "sampled_trajectory",
+            "exact_action_value",
+            "paired_pcgrad_exact_action_value",
+        ),
         default="sampled_trajectory",
     )
     parser.add_argument("--paths-per-condition", type=int, default=1)
@@ -569,6 +573,7 @@ def exact_action_value_backward(
     supports: Sequence[PolicyStateSupport],
     *,
     args: argparse.Namespace,
+    gradient_divisor: int | None = None,
 ) -> tuple[float, int, dict[str, float]]:
     """Apply an exact score-function update over each typed action support.
 
@@ -588,7 +593,12 @@ def exact_action_value_backward(
     expected_rewards = []
     oracle_rewards = []
     oracle_probabilities = []
-    normalizer = max(len(supports), 1) * max(int(args.gradient_accumulation), 1)
+    divisor = (
+        int(args.gradient_accumulation)
+        if gradient_divisor is None
+        else int(gradient_divisor)
+    )
+    normalizer = max(len(supports), 1) * max(divisor, 1)
     for support in supports:
         rewards = [item.reward for item in support.feedback]
         probabilities, _advantages, weights = exact_action_distribution(
@@ -632,6 +642,91 @@ def exact_action_value_backward(
             "mean_oracle_probability": mean(oracle_probabilities),
         },
     )
+
+
+def pcgrad_projection_coefficients(
+    dot_product: float,
+    left_norm_squared: float,
+    right_norm_squared: float,
+) -> tuple[float, float]:
+    """Return symmetric PCGrad projection coefficients for two task gradients."""
+    if (
+        float(dot_product) >= 0.0
+        or float(left_norm_squared) <= 1e-20
+        or float(right_norm_squared) <= 1e-20
+    ):
+        return 0.0, 0.0
+    return (
+        float(dot_product) / float(right_norm_squared),
+        float(dot_product) / float(left_norm_squared),
+    )
+
+
+def snapshot_parameter_gradients(parameters: Sequence[object]) -> list[object | None]:
+    return [
+        None if parameter.grad is None else parameter.grad.detach().clone()
+        for parameter in parameters
+    ]
+
+
+def assign_paired_pcgrad(
+    parameters: Sequence[object],
+    left_gradients: Sequence[object | None],
+    right_gradients: Sequence[object | None],
+) -> dict[str, float | bool]:
+    """Project conflicting task gradients, average them, and assign ``.grad``."""
+    import torch
+
+    if len(parameters) != len(left_gradients) or len(parameters) != len(right_gradients):
+        raise ValueError("PCGrad parameter and gradient lists must align")
+    reference = next(
+        (
+            gradient
+            for gradients in (left_gradients, right_gradients)
+            for gradient in gradients
+            if gradient is not None
+        ),
+        None,
+    )
+    if reference is None:
+        raise ValueError("PCGrad received no task gradients")
+    dot_product = torch.zeros((), dtype=torch.float32, device=reference.device)
+    left_norm_squared = torch.zeros((), dtype=torch.float32, device=reference.device)
+    right_norm_squared = torch.zeros((), dtype=torch.float32, device=reference.device)
+    for left, right in zip(left_gradients, right_gradients):
+        if left is not None:
+            left_norm_squared += (left.float() * left.float()).sum()
+        if right is not None:
+            right_norm_squared += (right.float() * right.float()).sum()
+        if left is not None and right is not None:
+            dot_product += (left.float() * right.float()).sum()
+    dot_value = float(dot_product.item())
+    left_norm_value = float(left_norm_squared.item())
+    right_norm_value = float(right_norm_squared.item())
+    left_coefficient, right_coefficient = pcgrad_projection_coefficients(
+        dot_value,
+        left_norm_value,
+        right_norm_value,
+    )
+    for parameter, left, right in zip(parameters, left_gradients, right_gradients):
+        if left is None and right is None:
+            parameter.grad = None
+            continue
+        if left is None:
+            left = torch.zeros_like(right)
+        if right is None:
+            right = torch.zeros_like(left)
+        projected_left = left - float(left_coefficient) * right
+        projected_right = right - float(right_coefficient) * left
+        parameter.grad = 0.5 * (projected_left + projected_right)
+    denominator = max((left_norm_value * right_norm_value) ** 0.5, 1e-20)
+    return {
+        "pcgrad_dot_product": dot_value,
+        "pcgrad_cosine": dot_value / denominator,
+        "pcgrad_projected": dot_value < 0.0,
+        "pcgrad_left_norm": left_norm_value**0.5,
+        "pcgrad_right_norm": right_norm_value**0.5,
+    }
 
 
 def anchor_examples(
@@ -1151,95 +1246,205 @@ def main(argv: Sequence[str] | None = None) -> int:
     condition_step = 0
     update_step = 0
     all_train_trajectories: list[PolicyTrajectory] = []
-    for epoch in range(1, int(args.epochs) + 1):
-        shuffled = list(train_rows)
-        random.Random(int(args.seed) + epoch).shuffle(shuffled)
-        for record_index, record in enumerate(shuffled):
-            model.eval()
-            seed = int(args.seed) + epoch * 100_000 + record_index * 1009
-            supports: list[PolicyStateSupport] = []
-            if args.policy_update == "exact_action_value":
-                supports, trajectories = rollout_exact_action_supports(
-                    model,
-                    tokenizer,
-                    record,
-                    args=args,
-                    path_count=int(args.paths_per_condition),
-                    seed=seed,
+    if args.policy_update == "paired_pcgrad_exact_action_value":
+        if set(origins) != {"table1", "mumo"}:
+            raise ValueError("Paired PCGrad requires exactly the table1,mumo rollout origins")
+        grouped_train = {
+            origin: [row for row in train_rows if str(row.get("origin", "")) == origin]
+            for origin in ("table1", "mumo")
+        }
+        if len(grouped_train["table1"]) != len(grouped_train["mumo"]):
+            raise ValueError("Paired PCGrad requires equal Table1 and MuMO condition counts")
+        for epoch in range(1, int(args.epochs) + 1):
+            paired_rows = {}
+            for offset, origin in enumerate(("table1", "mumo")):
+                rows = list(grouped_train[origin])
+                random.Random(int(args.seed) + epoch * 101 + offset).shuffle(rows)
+                paired_rows[origin] = rows
+            for pair_index, pair in enumerate(
+                zip(paired_rows["table1"], paired_rows["mumo"]),
+                start=1,
+            ):
+                records = {"table1": pair[0], "mumo": pair[1]}
+                supports_by_origin: dict[str, list[PolicyStateSupport]] = {}
+                trajectories_by_origin: dict[str, list[PolicyTrajectory]] = {}
+                model.eval()
+                for offset, origin in enumerate(("table1", "mumo")):
+                    supports, trajectories = rollout_exact_action_supports(
+                        model,
+                        tokenizer,
+                        records[origin],
+                        args=args,
+                        path_count=int(args.paths_per_condition),
+                        seed=(
+                            int(args.seed)
+                            + epoch * 100_000
+                            + pair_index * 2018
+                            + offset * 1009
+                        ),
+                    )
+                    supports_by_origin[origin] = supports
+                    trajectories_by_origin[origin] = trajectories
+                    all_train_trajectories.extend(trajectories)
+
+                task_gradients: dict[str, list[object | None]] = {}
+                task_diagnostics: dict[str, dict[str, object]] = {}
+                for origin in ("table1", "mumo"):
+                    optimizer.zero_grad(set_to_none=True)
+                    model.train()
+                    policy_loss, decision_count, exact_diagnostics = exact_action_value_backward(
+                        model,
+                        tokenizer,
+                        supports_by_origin[origin],
+                        args=args,
+                        gradient_divisor=1,
+                    )
+                    task_gradients[origin] = snapshot_parameter_gradients(parameters)
+                    trajectories = trajectories_by_origin[origin]
+                    rewards = [item.feedback.reward for item in trajectories]
+                    task_diagnostics[origin] = {
+                        "example_id": str(records[origin].get("example_id", "") or ""),
+                        "mean_reward": mean(rewards),
+                        "best_reward": max(rewards),
+                        "strict_any": any(item.feedback.strict_success for item in trajectories),
+                        "property_all_any": any(
+                            item.feedback.property_all_success for item in trajectories
+                        ),
+                        "policy_loss": policy_loss,
+                        "decisions": decision_count,
+                        **exact_diagnostics,
+                    }
+
+                optimizer.zero_grad(set_to_none=True)
+                pcgrad_diagnostics = assign_paired_pcgrad(
+                    parameters,
+                    task_gradients["table1"],
+                    task_gradients["mumo"],
                 )
-            else:
-                trajectories = rollout_group(
+                del task_gradients
+                model.train()
+                anchor_loss = anchor_sft_backward(
                     model,
-                    tokenizer,
-                    record,
-                    args=args,
-                    rollout_count=int(args.rollouts_per_condition),
-                    seed=seed,
+                    anchors,
+                    anchor_cursors,
+                    tokenizer=tokenizer,
+                    weight=float(args.anchor_sft_weight),
+                    gradient_accumulation=1,
                 )
-            all_train_trajectories.extend(trajectories)
-            rewards = [item.feedback.reward for item in trajectories]
-            model.train()
-            exact_diagnostics: dict[str, float] = {}
-            if args.policy_update == "exact_action_value":
-                policy_loss, decision_count, exact_diagnostics = exact_action_value_backward(
-                    model,
-                    tokenizer,
-                    supports,
-                    args=args,
-                )
-            else:
-                advantages = policy.group_relative_advantages(rewards)
-                policy_loss, decision_count = policy_gradient_backward(
-                    model,
-                    tokenizer,
-                    trajectories,
-                    advantages,
-                    args=args,
-                )
-            anchor_loss = anchor_sft_backward(
-                model,
-                anchors,
-                anchor_cursors,
-                tokenizer=tokenizer,
-                weight=float(args.anchor_sft_weight),
-                gradient_accumulation=int(args.gradient_accumulation),
-            )
-            condition_step += 1
-            do_update = (
-                condition_step % int(args.gradient_accumulation) == 0
-                or record_index + 1 == len(shuffled)
-            )
-            if do_update:
                 torch.nn.utils.clip_grad_norm_(parameters, float(args.grad_clip))
                 optimizer.step()
                 optimizer.zero_grad(set_to_none=True)
                 update_step += 1
+                condition_step += 2
                 nonfinite = common_train.adapter_nonfinite_count(model)
                 if nonfinite:
                     raise FloatingPointError(
-                        f"Detected {nonfinite} non-finite tool-policy adapter parameters at update {update_step}"
+                        f"Detected {nonfinite} non-finite PCGrad adapter parameters at update {update_step}"
                     )
-            row = {
-                "epoch": epoch,
-                "condition_step": condition_step,
-                "origin": str(record.get("origin", "") or ""),
-                "example_id": str(record.get("example_id", "") or ""),
-                "mean_reward": mean(rewards),
-                "best_reward": max(rewards),
-                "reward_std": (
-                    sum((value - mean(rewards)) ** 2 for value in rewards) / len(rewards)
-                ) ** 0.5,
-                "strict_any": any(item.feedback.strict_success for item in trajectories),
-                "property_all_any": any(item.feedback.property_all_success for item in trajectories),
-                "policy_loss": policy_loss,
-                "anchor_sft_loss": anchor_loss,
-                "decisions": decision_count,
-                "updates": update_step,
-                **exact_diagnostics,
-            }
-            history.append(row)
-            if condition_step <= 2 or condition_step % int(args.logging_steps) == 0:
-                print(json.dumps(row, sort_keys=True), flush=True)
+                row = {
+                    "epoch": epoch,
+                    "condition_step": condition_step,
+                    "origin": "paired_table1_mumo",
+                    "by_origin": task_diagnostics,
+                    "anchor_sft_loss": anchor_loss,
+                    "updates": update_step,
+                    **pcgrad_diagnostics,
+                }
+                history.append(row)
+                if update_step <= 2 or update_step % int(args.logging_steps) == 0:
+                    print(json.dumps(row, sort_keys=True), flush=True)
+    else:
+        for epoch in range(1, int(args.epochs) + 1):
+            shuffled = list(train_rows)
+            random.Random(int(args.seed) + epoch).shuffle(shuffled)
+            for record_index, record in enumerate(shuffled):
+                model.eval()
+                seed = int(args.seed) + epoch * 100_000 + record_index * 1009
+                supports: list[PolicyStateSupport] = []
+                if args.policy_update == "exact_action_value":
+                    supports, trajectories = rollout_exact_action_supports(
+                        model,
+                        tokenizer,
+                        record,
+                        args=args,
+                        path_count=int(args.paths_per_condition),
+                        seed=seed,
+                    )
+                else:
+                    trajectories = rollout_group(
+                        model,
+                        tokenizer,
+                        record,
+                        args=args,
+                        rollout_count=int(args.rollouts_per_condition),
+                        seed=seed,
+                    )
+                all_train_trajectories.extend(trajectories)
+                rewards = [item.feedback.reward for item in trajectories]
+                model.train()
+                exact_diagnostics: dict[str, float] = {}
+                if args.policy_update == "exact_action_value":
+                    policy_loss, decision_count, exact_diagnostics = exact_action_value_backward(
+                        model,
+                        tokenizer,
+                        supports,
+                        args=args,
+                    )
+                else:
+                    advantages = policy.group_relative_advantages(rewards)
+                    policy_loss, decision_count = policy_gradient_backward(
+                        model,
+                        tokenizer,
+                        trajectories,
+                        advantages,
+                        args=args,
+                    )
+                anchor_loss = anchor_sft_backward(
+                    model,
+                    anchors,
+                    anchor_cursors,
+                    tokenizer=tokenizer,
+                    weight=float(args.anchor_sft_weight),
+                    gradient_accumulation=int(args.gradient_accumulation),
+                )
+                condition_step += 1
+                do_update = (
+                    condition_step % int(args.gradient_accumulation) == 0
+                    or record_index + 1 == len(shuffled)
+                )
+                if do_update:
+                    torch.nn.utils.clip_grad_norm_(parameters, float(args.grad_clip))
+                    optimizer.step()
+                    optimizer.zero_grad(set_to_none=True)
+                    update_step += 1
+                    nonfinite = common_train.adapter_nonfinite_count(model)
+                    if nonfinite:
+                        raise FloatingPointError(
+                            f"Detected {nonfinite} non-finite tool-policy adapter parameters at update {update_step}"
+                        )
+                row = {
+                    "epoch": epoch,
+                    "condition_step": condition_step,
+                    "origin": str(record.get("origin", "") or ""),
+                    "example_id": str(record.get("example_id", "") or ""),
+                    "mean_reward": mean(rewards),
+                    "best_reward": max(rewards),
+                    "reward_std": (
+                        sum((value - mean(rewards)) ** 2 for value in rewards) / len(rewards)
+                    ) ** 0.5,
+                    "strict_any": any(item.feedback.strict_success for item in trajectories),
+                    "property_all_any": any(
+                        item.feedback.property_all_success for item in trajectories
+                    ),
+                    "policy_loss": policy_loss,
+                    "anchor_sft_loss": anchor_loss,
+                    "decisions": decision_count,
+                    "updates": update_step,
+                    **exact_diagnostics,
+                }
+                history.append(row)
+                if condition_step <= 2 or condition_step % int(args.logging_steps) == 0:
+                    print(json.dumps(row, sort_keys=True), flush=True)
 
     write_trajectories(args.output_dir / "train_trajectories.jsonl", all_train_trajectories)
     nonfinite = common_train.adapter_nonfinite_count(model)
@@ -1285,15 +1490,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = {
         "protocol": policy.POLICY_PROTOCOL,
         "method": (
-            "typed_tool_exact_action_value_policy_iteration"
-            if args.policy_update == "exact_action_value"
-            else "on_policy_typed_tool_grpo"
+            "paired_pcgrad_typed_tool_exact_action_value_policy_iteration"
+            if args.policy_update == "paired_pcgrad_exact_action_value"
+            else (
+                "typed_tool_exact_action_value_policy_iteration"
+                if args.policy_update == "exact_action_value"
+                else "on_policy_typed_tool_grpo"
+            )
         ),
         "gradient_estimator": (
-            "exact_categorical_action_value_with_serial_autoregressive_backward"
-            if args.policy_update == "exact_action_value"
-            else "two_pass_executed_action_autoregressive_logprob"
+            "paired_pcgrad_exact_categorical_action_value_with_serial_backward"
+            if args.policy_update == "paired_pcgrad_exact_action_value"
+            else (
+                "exact_categorical_action_value_with_serial_autoregressive_backward"
+                if args.policy_update == "exact_action_value"
+                else "two_pass_executed_action_autoregressive_logprob"
+            )
         ),
+        "policy_update": args.policy_update,
         "action_support": "property_agnostic_universal_graph_edit_dsl_plus_rdkit",
         "property_evaluator": "rdkit_plus_pinned_tdc_plus_persistent_official_admet_ai",
         "complete_feedback_required": True,

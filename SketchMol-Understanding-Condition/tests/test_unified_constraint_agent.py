@@ -689,6 +689,38 @@ def test_tool_policy_exact_action_distribution_is_zero_sum_and_reward_ordered() 
     assert abs(sum(weights)) < 1e-10
 
 
+def test_tool_policy_pcgrad_projects_only_conflicting_task_gradients() -> None:
+    left_coefficient, right_coefficient = tool_policy_train.pcgrad_projection_coefficients(
+        -1.0,
+        1.0,
+        2.0,
+    )
+
+    assert left_coefficient == -0.5
+    assert right_coefficient == -1.0
+    assert tool_policy_train.pcgrad_projection_coefficients(0.5, 1.0, 2.0) == (0.0, 0.0)
+    assert tool_policy_train.pcgrad_projection_coefficients(-1.0, 0.0, 2.0) == (0.0, 0.0)
+
+
+def test_tool_policy_parser_accepts_paired_pcgrad_mode() -> None:
+    args = tool_policy_train.parse_args(
+        [
+            "--train-jsonl",
+            "train.jsonl",
+            "--validation-jsonl",
+            "validation.jsonl",
+            "--input-adapter-dir",
+            "adapter",
+            "--output-dir",
+            "output",
+            "--policy-update",
+            "paired_pcgrad_exact_action_value",
+        ]
+    )
+
+    assert args.policy_update == "paired_pcgrad_exact_action_value"
+
+
 def test_tool_policy_exact_gate_rejects_cross_task_retention_regression() -> None:
     def rollout_metrics() -> dict[str, object]:
         return {
