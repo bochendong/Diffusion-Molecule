@@ -861,6 +861,7 @@ def test_hierarchical_support_gate_enforces_disjoint_sources_and_fixed_n20() -> 
                     "external_valid": "True",
                     "external_official_success": str(success and rank == 3),
                     "external_strict_success": str(success and rank == 3),
+                    "external_full_property_coverage": "True",
                     "graph_edit_candidate_source": "direct_model" if rank == 0 else "graph_edit_dsl",
                 }
             )
@@ -871,7 +872,29 @@ def test_hierarchical_support_gate_enforces_disjoint_sources_and_fixed_n20() -> 
     assert support["candidate_rows"] == 40
     assert support["all"]["property_any_rate"] == 0.5
     assert support["all"]["strict_any_rate"] == 0.5
+    assert support["all"]["full_oracle_condition_rate"] == 1.0
     assert support["all"]["direct_root_in_prefix_rate"] == 1.0
+
+
+def test_hierarchical_support_marks_incomplete_oracle_groups() -> None:
+    rows = []
+    for rank in range(20):
+        rows.append(
+            {
+                "condition_id": "missing-drd2",
+                "external_task_split": "ind",
+                "generated_smiles": "CCO",
+                "external_valid": "True",
+                "external_official_success": "False",
+                "external_strict_success": "False",
+                "external_full_property_coverage": str(rank != 0),
+            }
+        )
+
+    support = hierarchical_support.summarize_official_rows(rows, candidate_budget=20)
+
+    assert support["all"]["full_oracle_candidate_rate"] == 0.95
+    assert support["all"]["full_oracle_condition_rate"] == 0.0
 
 
 def test_hierarchical_support_split_backfills_each_task_after_overlap() -> None:

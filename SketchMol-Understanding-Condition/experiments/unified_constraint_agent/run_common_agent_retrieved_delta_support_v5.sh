@@ -74,6 +74,7 @@ fi
 if [[ ! -f "$ORACLE_CSV" ]]; then
   echo "=== Score exactly 20 final candidates per condition with the official oracle ==="
   SUCC_ADMET_PYTHON_BIN="$ADMET_PYTHON_BIN" \
+  SUCC_PYTHON_BIN="$PYTHON_BIN" \
   SUCC_ORACLE_INPUT_CSV="$DELTA_CANDIDATES" \
   SUCC_ORACLE_OUTPUT_CSV="$ORACLE_CSV" \
   SUCC_ORACLE_WORK_DIR="$ORACLE_DIR/work" \

@@ -359,8 +359,9 @@ def test_checked_in_plan_declares_only_leakage_safe_v5() -> None:
     plan = automation.load_plan(plan_path)
 
     assert plan["limits"]["fixed_candidate_budget"] == 20
-    assert plan["state_path"].endswith("state_v5.json")
-    assert [round_["id"] for round_ in plan["rounds"]] == ["retrieved_delta_support_v5"]
+    assert plan["state_path"].endswith("state_v5_oracle_repair.json")
+    assert [round_["id"] for round_ in plan["rounds"]] == ["retrieved_delta_oracle_repair_v5"]
     required = plan["rounds"][0]["gate"]["required_equal"]
     assert required["candidate_builder.evaluation_target_access"] is False
     assert required["final_oracle_candidate_budget"] == 20
+    assert required["support.all.full_oracle_condition_rate"] == 1.0

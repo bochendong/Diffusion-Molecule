@@ -37,7 +37,7 @@ allowlist.
 Run the initial submission once from a login node:
 
 ```bash
-bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh retrieved_delta_support_v5
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh retrieved_delta_oracle_repair_v5
 ```
 
 The command submits the experiment and a small CPU controller job with
@@ -70,7 +70,7 @@ An already-running job can be adopted once:
 
 ```bash
 python3 SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/experiment_loop.py \
-  adopt --round retrieved_delta_support_v5 --job-id JOB_ID
+  adopt --round retrieved_delta_oracle_repair_v5 --job-id JOB_ID
 ```
 
 If Slurm submitted a controller but a warning preceded its parsable job id,
@@ -87,9 +87,9 @@ submits a duplicate experiment.
 
 ## Extending the ladder
 
-The checked-in plan contains only the reviewed v5 RetrievedDeltaEdit support
-gate and writes `state_v5.json`; the completed v4 state remains untouched. Both
-v5 decisions are terminal because planner training must not begin until the new
-support artifact has been reviewed. Add a later round and transition only after
-its standalone entrypoint and gate schema pass. This keeps the automation
-mechanism separate from scientific method design.
+The checked-in plan currently contains the CPU-only DRD2 completion for the
+unchanged v5 candidate pool and writes `state_v5_oracle_repair.json`; completed
+v4 and first-pass v5 states remain untouched. Both decisions are terminal
+because planner training must not begin until the complete-oracle support
+artifact has been reviewed. Add a later round and transition only after its
+standalone entrypoint and gate schema pass.

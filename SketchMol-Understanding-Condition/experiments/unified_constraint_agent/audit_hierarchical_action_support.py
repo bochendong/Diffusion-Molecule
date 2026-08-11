@@ -20,6 +20,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-budget", type=int, default=20)
     parser.add_argument("--min-property-any-rate", type=float, default=0.20)
     parser.add_argument("--min-strict-any-rate", type=float, default=0.05)
+    parser.add_argument("--min-full-oracle-condition-rate", type=float, default=1.0)
     parser.add_argument("--protocol", default="hierarchical_common_agent_action_support_v4")
     parser.add_argument("--proposal-budget", type=int, default=1)
     parser.add_argument("--method-label", default="raw-1 proposal plus GraphEditDSL")
@@ -109,12 +110,21 @@ def valid_candidate(row: Mapping[str, object]) -> bool:
 
 def summarize_groups(groups: Sequence[Sequence[Mapping[str, object]]]) -> dict[str, object]:
     denominator = max(len(groups), 1)
+    candidate_count = sum(len(group) for group in groups)
     return {
         "conditions": len(groups),
         "property_any_rate": sum(any(property_success(row) for row in group) for group in groups) / denominator,
         "strict_any_rate": sum(any(strict_success(row) for row in group) for group in groups) / denominator,
         "valid_any_rate": sum(any(valid_candidate(row) for row in group) for group in groups) / denominator,
         "mean_valid_candidates": sum(sum(valid_candidate(row) for row in group) for group in groups) / denominator,
+        "full_oracle_candidate_rate": (
+            sum(truthy(row.get("external_full_property_coverage")) for group in groups for row in group)
+            / max(candidate_count, 1)
+        ),
+        "full_oracle_condition_rate": (
+            sum(all(truthy(row.get("external_full_property_coverage")) for row in group) for group in groups)
+            / denominator
+        ),
         "direct_root_in_prefix_rate": sum(
             any(str(row.get("graph_edit_candidate_source", "") or "") == "direct_model" for row in group)
             for group in groups
@@ -168,18 +178,20 @@ def render_report(summary: Mapping[str, object]) -> str:
         "the official property stack evaluates exactly 20 final molecules per condition. Internal enumeration "
         "is recorded as internal search compute and is not counted as additional oracle candidates.",
         "",
-        "| Scope | Conditions | Property any@20 | Strict any@20 | Valid candidates | Direct root retained |",
-        "|---|---:|---:|---:|---:|---:|",
+        "| Scope | Conditions | Property any@20 | Strict any@20 | Full-oracle groups | Valid candidates | Direct root retained |",
+        "|---|---:|---:|---:|---:|---:|---:|",
         (
             f"| all | {all_metrics['conditions']} | {all_metrics['property_any_rate']:.1%} | "
-            f"{all_metrics['strict_any_rate']:.1%} | {all_metrics['mean_valid_candidates']:.1f} | "
+            f"{all_metrics['strict_any_rate']:.1%} | {all_metrics['full_oracle_condition_rate']:.1%} | "
+            f"{all_metrics['mean_valid_candidates']:.1f} | "
             f"{all_metrics['direct_root_in_prefix_rate']:.1%} |"
         ),
     ]
     for name, metrics in support["by_split"].items():
         lines.append(
             f"| {name} | {metrics['conditions']} | {metrics['property_any_rate']:.1%} | "
-            f"{metrics['strict_any_rate']:.1%} | {metrics['mean_valid_candidates']:.1f} | "
+            f"{metrics['strict_any_rate']:.1%} | {metrics['full_oracle_condition_rate']:.1%} | "
+            f"{metrics['mean_valid_candidates']:.1f} | "
             f"{metrics['direct_root_in_prefix_rate']:.1%} |"
         )
     lines.extend(
@@ -187,7 +199,8 @@ def render_report(summary: Mapping[str, object]) -> str:
             "",
             "Advance requires complete n=20 groups, property any@20 at or above "
             f"{summary['thresholds']['min_property_any_rate']:.1%}, and strict any@20 at or above "
-            f"{summary['thresholds']['min_strict_any_rate']:.1%}.",
+            f"{summary['thresholds']['min_strict_any_rate']:.1%}, with full-oracle groups at or above "
+            f"{summary['thresholds']['min_full_oracle_condition_rate']:.1%}.",
             "",
             "If the gate stops, the next change belongs in the proposal/action-support tool. If it advances, "
             "the next experiment trains the common LLM on complete proposal-plus-edit tool plans.",
@@ -216,6 +229,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     advance = (
         float(all_metrics["property_any_rate"]) >= float(args.min_property_any_rate)
         and float(all_metrics["strict_any_rate"]) >= float(args.min_strict_any_rate)
+        and float(all_metrics["full_oracle_condition_rate"])
+        >= float(args.min_full_oracle_condition_rate)
     )
     summary = {
         "protocol": str(args.protocol),
@@ -228,6 +243,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "thresholds": {
             "min_property_any_rate": float(args.min_property_any_rate),
             "min_strict_any_rate": float(args.min_strict_any_rate),
+            "min_full_oracle_condition_rate": float(args.min_full_oracle_condition_rate),
         },
         "support": support,
     }

@@ -8,7 +8,7 @@
     "env": "SUCC_UCA_SHARED_REPO_DIR",
     "default": "/scratch/bdong/projects/Diffusion-Molecule"
   },
-  "state_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_automation/state_v5.json",
+  "state_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_automation/state_v5_oracle_repair.json",
   "limits": {
     "max_scientific_rounds": 3,
     "max_submissions": 4,
@@ -33,15 +33,15 @@
   },
   "rounds": [
     {
-      "id": "retrieved_delta_support_v5",
-      "description": "Leakage-safe train-only matched-pair delta support gate at final oracle n=20.",
+      "id": "retrieved_delta_oracle_repair_v5",
+      "description": "CPU-only DRD2 completion for the unchanged leakage-safe v5 fixed-n pool.",
       "submit_argv": [
         "bash",
-        "SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_agent_retrieved_delta_support_v5.sh"
+        "SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_retrieved_delta_oracle_repair_v5.sh"
       ],
-      "job_id_regex": "retrieved_delta_support_job=(\\d+)",
-      "summary_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_retrieved_delta_support_v5/support_gate/summary.json",
-      "requested_accelerator_hours": 1.0,
+      "job_id_regex": "retrieved_delta_oracle_repair_job=(\\d+)",
+      "summary_path": "SketchMol-Understanding-Condition/outputs/unified_constraint_agent_retrieved_delta_support_v5/support_gate_complete_v2/summary.json",
+      "requested_accelerator_hours": 0.0,
       "max_attempts": 2,
       "gate": {
         "decision_path": "decision",
@@ -55,7 +55,8 @@
           "candidate_builder.evaluation_target_access": false,
           "candidate_builder.candidate_budget": 20,
           "support.candidate_budget": 20,
-          "support.all.valid_any_rate": 1.0
+          "support.all.valid_any_rate": 1.0,
+          "support.all.full_oracle_condition_rate": 1.0
         },
         "transitions": {
           "advance": null,
