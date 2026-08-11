@@ -381,6 +381,14 @@ train-pair property effects only to expand the pre-oracle support:
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_composed_retrieved_delta_support_v7.sh
 ```
 
+Job `19567054` completed in 12 minutes 6 seconds. The composed prefix retained
+all 25 strict-success conditions from the one-step diagnostic and added four
+OOD strict successes, raising overall strict support from 50% to 58% and OOD
+strict support from 40% to 56%. Property support stayed at 58%, below the gate,
+so another search-depth increase is not justified. The next reviewed method
+step is a train-only learned property verifier that supplies calibrated numeric
+margins to the common LLM; no formal test or GPU planner run has been opened.
+
 ## Bounded Slurm experiment automation
 
 The experiment ladder now has a deterministic controller under

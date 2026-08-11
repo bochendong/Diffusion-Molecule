@@ -519,3 +519,34 @@ therefore expand generation. The bounded v7 support experiment keeps v5's 20
 candidates as immutable anchors and composes up to two source-preserving,
 train-observed side-chain deltas using normalized train-pair property effects.
 Planner training remains closed until this expanded support passes its gate.
+
+## Property-observed composed RetrievedDelta support
+
+Date: 2026-08-12
+
+CPU job `19567054` completed in 12 minutes 6 seconds with exit code zero and
+about 1.3 GB peak resident memory. The builder learned normalized property
+effects for all 3,553 train-only transformations, generated a mean of 1,944.66
+unique candidates per condition, retained the frozen v5 n=20 pool as the first
+20 diagnostic candidates, and filled the remaining top-96 prefix with bounded
+one/two-step compositions. The complete oracle covered all 4,800 frozen rows.
+
+| Split | Conditions | Property any@96 | Strict any@96 | One-step strict any@96 |
+| --- | ---: | ---: | ---: | ---: |
+| IND | 25 | 60.0% | 60.0% | 60.0% |
+| OOD | 25 | 56.0% | **56.0%** | 40.0% |
+| All | 50 | 58.0% | **58.0%** | 50.0% |
+
+The paired lineage retained all 25 one-step strict-success conditions and added
+four new OOD strict successes: one BMPQ, two HMPQ, and one MPQ. Twenty strict
+conditions came from immutable v5 anchors and nine from actual two-step
+compositions. Property support exchanged two old non-strict successes (BDPQ
+and DPQ) for two OOD successes (BMPQ and MPQ), so its total remained 29/50.
+
+This is a real compositional-support signal but still fails the declared 80%
+property, 70% split-property, 60% strict, and 50% split-strict gate because the
+first two thresholds are unmet. Increasing edit depth or candidate enumeration
+again is not justified. The next method must learn a train-only molecular
+property verifier, validate it on disjoint source property labels, and expose
+calibrated constraint margins to the common LLM before another fixed-n planner
+experiment is permitted.
