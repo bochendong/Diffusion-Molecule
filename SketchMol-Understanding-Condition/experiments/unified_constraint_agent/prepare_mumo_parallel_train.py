@@ -34,6 +34,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--test-json-digest-only", type=Path, default=None)
     parser.add_argument("--rows-per-task", type=int, default=5500)
+    parser.add_argument("--min-rows-per-task", type=int, default=150)
     parser.add_argument("--dev-fraction", type=float, default=0.10)
     parser.add_argument("--shard-count", type=int, default=32)
     parser.add_argument("--seed", type=int, default=1711)
@@ -95,6 +96,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     if int(args.rows_per_task) < 100:
         raise ValueError("rows_per_task must be at least 100")
+    if not 1 <= int(args.min_rows_per_task) <= int(args.rows_per_task):
+        raise ValueError("min_rows_per_task must be positive and no larger than rows_per_task")
     if not 0.0 < float(args.dev_fraction) < 0.5:
         raise ValueError("dev_fraction must be between 0 and 0.5")
     if int(args.shard_count) < 1:
@@ -154,7 +157,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         if (raw_index + 1) % 100000 == 0:
             print(f"[mumo-prepare] scanned={raw_index + 1}", flush=True)
 
-    missing_tasks = [task for task in protocol.TASK_IDS if len(reservoirs.get(task, [])) < int(args.rows_per_task)]
+    missing_tasks = [
+        task
+        for task in protocol.TASK_IDS
+        if len(reservoirs.get(task, [])) < int(args.min_rows_per_task)
+    ]
     if missing_tasks:
         raise ValueError(
             "Insufficient balanced rows: "
@@ -209,8 +216,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                 label_coverage[prop] += int(export.read_property_value(row, prop, prefix="source") is not None)
                 label_coverage[prop] += int(export.read_property_value(row, prop, prefix="target") is not None)
 
-    minimum_selected = int(args.rows_per_task * 0.90)
-    underfilled = [task for task in protocol.TASK_IDS if selected_counts[task] < minimum_selected]
+    underfilled = [
+        task
+        for task in protocol.TASK_IDS
+        if selected_counts[task] < int(args.min_rows_per_task)
+    ]
     if underfilled:
         raise ValueError(
             "Canonical filtering underfilled tasks: "
@@ -248,6 +258,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "candidate_budget": 20,
         "seed": int(args.seed),
         "rows_per_task_requested": int(args.rows_per_task),
+        "rows_per_task_role": "unique_pair_cap_not_required_quota",
+        "min_rows_per_task": int(args.min_rows_per_task),
         "dev_fraction": float(args.dev_fraction),
         "shard_count": int(args.shard_count),
         "code_commit": git_commit(SCRIPT_DIR.parents[2]),

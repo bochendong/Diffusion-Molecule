@@ -412,9 +412,11 @@ the state, retry, budget, and recovery contracts.
 ## Parallel MuMO train-evidence pipeline v8
 
 V8 scales the clean method branch rather than adding edit-depth patches. It
-reads the 828k-row MuMO training JSON once, freezes a balanced sample of 5,500
-rows per task, removes canonical-source overlap with the 50-condition audit,
-and splits fit/dev by canonical source group. The official test file is hashed
+reads the 828k-row MuMO training JSON once, deduplicates its repeated
+instruction rows, and freezes up to 5,500 unique molecular pairs per task while
+retaining every pair for rare task combinations. It removes canonical-source
+overlap with the 50-condition audit and splits fit/dev by canonical source
+group. The official test file is hashed
 for provenance but its JSON content is never parsed. The paper-facing protocol
 remains fixed at any@20; neither evaluation targets nor the official oracle are
 available to these jobs.

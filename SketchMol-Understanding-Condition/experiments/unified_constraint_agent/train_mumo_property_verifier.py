@@ -140,15 +140,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # Pairwise threshold recall is the verifier metric that matters to the
     # planner: can it recognize a true requested improvement from source to
     # target using only predicted property values?
-    spec_by_id = {spec.task_id: spec for spec in export.TASK_SPECS if spec.suite == "mumo"}
     dev_pair_rows: dict[str, dict[str, int]] = defaultdict(dict)
-    for index, (pair_id, partition, role, task_id) in enumerate(
-        zip(data["pair_id"], data["partition"], data["role"], data["task_id"])
+    for index, (pair_id, partition, role) in enumerate(
+        zip(data["pair_id"], data["partition"], data["role"])
     ):
         if str(partition) != "dev" or not np.isfinite(labels[index]):
-            continue
-        spec = spec_by_id.get(str(task_id))
-        if spec is None or args.property not in spec.properties:
             continue
         dev_pair_rows[str(pair_id)][str(role)] = index
     pair_indices = [

@@ -33,7 +33,7 @@ parse_job_id() {
 
 echo "Submitting MuMO v8 parallel evidence DAG"
 echo "  data=MuMO train only"
-echo "  balanced_sample=5500/task (fit+dev)"
+echo "  balanced_sample=up to 5500 unique pairs/task (fit+dev; rare tasks keep all)"
 echo "  candidate_budget=20 (locked for downstream gate)"
 echo "  evaluation_target_access=false"
 echo "  official_test_content_access=false (digest only)"
@@ -46,7 +46,7 @@ prepare_out="$(sbatch \
   --job-name=uca-mumo-v8-prepare \
   --time="${SUCC_UCA_PREPARE_TIME:-00:45:00}" \
   --cpus-per-task=4 \
-  --mem=32G \
+  --mem=8G \
   --mail-user="$MAIL_USER" \
   --mail-type=BEGIN,END,FAIL \
   --output="$LOG_DIR/%x-%j.log" \
@@ -100,7 +100,7 @@ verifier_out="$(sbatch \
   --kill-on-invalid-dep=yes \
   --time="${SUCC_UCA_VERIFIER_TIME:-02:00:00}" \
   --cpus-per-task=8 \
-  --mem=48G \
+  --mem=24G \
   --mail-user="$MAIL_USER" \
   --mail-type=FAIL \
   --output="$LOG_DIR/%x-%A_%a.log" \
