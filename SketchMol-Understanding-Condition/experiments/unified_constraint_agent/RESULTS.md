@@ -295,3 +295,13 @@ state. Held-out train conditions are sampled with identical seeds before and
 after the update. Only a positive reward/strict/property signal without more
 than two points of property or source-similarity regression advances this
 method to a larger pilot.
+
+Initial job `19484190` failed after 3 minutes 1 second during the first policy
+gradient update. The rollout, model, pinned TDC oracle, and persistent ADMET-AI
+bridge all initialized successfully, but the differentiable 16-action
+normalizer retained every candidate sequence graph and exhausted the 20 GB MIG
+(18.02 GB already resident; the loss requested another 1.71 GB). The corrected
+two-pass estimator still samples from all executable actions, then recomputes
+gradients only for actions actually executed in the trajectory. This preserves
+the grammar support and group-relative signal while bounding the update graph
+to one action sequence at a time.

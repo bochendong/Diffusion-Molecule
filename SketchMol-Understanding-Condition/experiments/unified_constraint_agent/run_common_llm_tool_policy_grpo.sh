@@ -24,6 +24,7 @@ GSK3B_ORACLE="${SUCC_GSK3B_ORACLE_PATH:-$PROJECT_DIR/inputs/tdc_oracles/gsk3b_le
 export PYTHONPATH="$DEP_OVERLAY${PYTHONPATH:+:$PYTHONPATH}"
 export HF_HOME="${HF_HOME:-/scratch/bdong/hf_cache/uca_common_llm}"
 export TOKENIZERS_PARALLELISM=false
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 export SUCC_GSK3B_ORACLE_PATH="$GSK3B_ORACLE"
 export SUCC_ADMET_PYTHON_BIN="$ADMET_PYTHON_BIN"
 export SUCC_ADMET_PYTHONPATH="${SUCC_ADMET_PYTHONPATH:-/cvmfs/soft.computecanada.ca/easybuild/python/site-packages:/cvmfs/soft.computecanada.ca/custom/python/site-packages}"

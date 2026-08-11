@@ -186,7 +186,10 @@ from their isolated cluster environment, while RDKit and pinned TDC predictors
 remain in the policy process; incomplete property feedback aborts the run.
 Group-relative policy gradients optimize complete sampled trajectories, while
 a balanced de novo/Table1/MuMO SFT term keeps the shared constraint language
-and both action schemas anchored.
+and both action schemas anchored. Rollout selection scores the complete typed
+action support without gradients; the update pass recomputes only executed
+autoregressive action log probabilities, so the 16-action support does not
+require all candidate computation graphs to remain resident on a 20 GB MIG.
 
 The first single-seed pilot uses eight train conditions per edit suite, four
 rollouts per condition, at most two edits, and a 16-action grammar slice. A

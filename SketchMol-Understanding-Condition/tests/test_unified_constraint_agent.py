@@ -700,3 +700,15 @@ def test_tool_policy_routes_official_admet_properties_to_sidecar(monkeypatch) ->
     assert tool_policy.score_property_value("CCO", "Mutagenicity") == 0.2
     assert tool_policy.score_property_value("CCO", "QED") == 0.7
     assert admet_server.finite_float(float("nan")) is None
+
+
+def test_tool_policy_gradient_groups_only_the_executed_action() -> None:
+    prompt = [{"role": "user", "content": "state"}]
+    payloads = [
+        {"action_type": "graph_edit_dsl", "value": {"op": "add_atom", "site": 0, "atom": "N"}},
+        {"action_type": "stop", "value": {"reason": "done"}},
+    ]
+    first = tool_policy_train.PolicyDecision(prompt, payloads, 0)
+    second = tool_policy_train.PolicyDecision(prompt, payloads, 1)
+
+    assert tool_policy_train._decision_signature(first) != tool_policy_train._decision_signature(second)

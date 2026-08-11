@@ -120,7 +120,7 @@ def similarity_threshold(origin: str, args: argparse.Namespace) -> float:
 def _decision_signature(decision: PolicyDecision) -> str:
     return hashlib.sha256(
         json.dumps(
-            [decision.prompt_messages, decision.candidate_payloads],
+            [decision.prompt_messages, decision.candidate_payloads[decision.selected_index]],
             sort_keys=True,
             separators=(",", ":"),
         ).encode()
@@ -257,38 +257,27 @@ def rollout_group(
     return trajectories
 
 
-def differentiable_action_scores(
+def differentiable_selected_action_score(
     model: object,
     tokenizer: object,
     prompt_messages: Sequence[Mapping[str, object]],
-    payloads: Sequence[Mapping[str, object]],
+    payload: Mapping[str, object],
     *,
     max_length: int,
-    batch_size: int,
 ):
     import torch
 
-    encoded = [
-        constrained.encoded_action(tokenizer, prompt_messages, payload, max_length=int(max_length))
-        for payload in payloads
-    ]
-    pad_id = int(tokenizer.pad_token_id)
-    scores = []
-    for start in range(0, len(encoded), max(1, int(batch_size))):
-        items = encoded[start : start + max(1, int(batch_size))]
-        width = max(len(item["input_ids"]) for item in items)
-        batch = {"input_ids": [], "attention_mask": [], "labels": []}
-        for item in items:
-            padding = width - len(item["input_ids"])
-            batch["input_ids"].append([*item["input_ids"], *([pad_id] * padding)])
-            batch["attention_mask"].append([*item["attention_mask"], *([0] * padding)])
-            batch["labels"].append([*item["labels"], *([-100] * padding)])
-        tensors = {
-            key: torch.tensor(value, dtype=torch.long, device="cuda")
-            for key, value in batch.items()
-        }
-        scores.append(common_train.sequence_mean_log_probability(model, tensors))
-    return torch.cat(scores)
+    encoded = constrained.encoded_action(
+        tokenizer,
+        prompt_messages,
+        payload,
+        max_length=int(max_length),
+    )
+    tensors = {
+        key: torch.tensor([value], dtype=torch.long, device="cuda")
+        for key, value in encoded.items()
+    }
+    return common_train.sequence_mean_log_probability(model, tensors)[0]
 
 
 def policy_gradient_backward(
@@ -299,8 +288,6 @@ def policy_gradient_backward(
     *,
     args: argparse.Namespace,
 ) -> tuple[float, int]:
-    import torch
-
     grouped: dict[str, dict[str, object]] = {}
     total_decisions = 0
     for trajectory, advantage in zip(trajectories, advantages):
@@ -310,11 +297,11 @@ def policy_gradient_backward(
                 signature,
                 {
                     "decision": decision,
-                    "weights": defaultdict(float),
+                    "weight": 0.0,
                     "count": 0,
                 },
             )
-            group["weights"][int(decision.selected_index)] += float(advantage)  # type: ignore[index]
+            group["weight"] = float(group["weight"]) + float(advantage)
             group["count"] = int(group["count"]) + 1
             total_decisions += 1
     if not grouped:
@@ -324,18 +311,22 @@ def policy_gradient_backward(
     for group in grouped.values():
         decision = group["decision"]
         assert isinstance(decision, PolicyDecision)
-        scores = differentiable_action_scores(
+        weight = float(group["weight"])
+        if abs(weight) < 1e-12:
+            continue
+        selected_payload = decision.candidate_payloads[decision.selected_index]
+        selected_log_probability = differentiable_selected_action_score(
             model,
             tokenizer,
             decision.prompt_messages,
-            decision.candidate_payloads,
+            selected_payload,
             max_length=int(args.max_length),
-            batch_size=int(args.score_batch_size),
         )
-        log_probabilities = torch.log_softmax(scores / max(float(args.temperature), 1e-6), dim=0)
-        loss = torch.zeros((), dtype=log_probabilities.dtype, device=log_probabilities.device)
-        for index, weight in group["weights"].items():  # type: ignore[union-attr]
-            loss = loss - float(weight) * log_probabilities[int(index)]
+        # Rollout action support is a typed grammar projection. Recompute only
+        # the executed autoregressive action probability: token-level LM
+        # softmaxes retain the negative alternatives without keeping every
+        # candidate sequence graph resident on a 20 GB MIG.
+        loss = -weight * selected_log_probability / max(float(args.temperature), 1e-6)
         detached_loss += float(loss.detach())
         (loss / normalizer).backward()
     return detached_loss / max(total_decisions, 1), total_decisions
@@ -673,6 +664,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = {
         "protocol": policy.POLICY_PROTOCOL,
         "method": "on_policy_typed_tool_grpo",
+        "gradient_estimator": "two_pass_executed_action_autoregressive_logprob",
         "action_support": "property_agnostic_universal_graph_edit_dsl_plus_rdkit",
         "property_evaluator": "rdkit_plus_pinned_tdc_plus_persistent_official_admet_ai",
         "complete_feedback_required": True,
