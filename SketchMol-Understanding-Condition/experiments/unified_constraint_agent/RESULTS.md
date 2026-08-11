@@ -431,13 +431,31 @@ V5 implements the method change implied by the v4 lineage audit. It learns a
 matched-pair delta vocabulary from the same 1,000 proposer-training rows and
 applies those train-only side-chain substitutions to the untouched molecular
 core of each zero-overlap audit source. The held-out target is not an inference
-input. A pre-submission coverage audit found extractable single-cut deltas in
-833/1,000 training pairs and exact source-variable matches for 41/50 audit
-conditions (82%).
+input. The final oriented-fragment builder found extractable single-cut deltas
+in 938/1,000 training pairs, learned 3,553 unique transformations from 3,607
+observations, and found exact source-variable matches for 41/50 audit
+conditions. Every condition nevertheless had retrieved candidates, averaging
+384.18 before the fixed final selection.
 
-The signal run reuses the frozen v4 audit rows and oracle-blind fallback pool,
-then evaluates exactly 20 final candidates with the official ADMET-AI + TDC
-stack. It requests one H100 20 GB MIG for one hour and is expected to take
-10--25 minutes. The unchanged gate requires property any@20 at or above 20%
-and strict any@20 at or above 5% before planner training becomes scientifically
-justified.
+The main run was Slurm job `19556545` (2 minutes 4 seconds on one H100 20 GB
+MIG). Its first-pass 18% property/strict result is only an incomplete-oracle
+lower bound: the pipeline Python environment omitted TDC DRD2 for five task
+families, leaving only 50% of conditions fully evaluable. The versioned,
+CPU-only repair job `19558277` (54 seconds; controller `19558278`) reused the
+unchanged candidate pool and prior local/ADMET scores, added DRD2 with the
+correct TDC environment, and reached 100% coverage for all 11 oracle columns.
+
+| Split | Conditions | Property any@20 | Strict any@20 | Validity | Full oracle |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| IND | 25 | 40.0% | 40.0% | 100% | 100% |
+| OOD | 25 | 40.0% | 40.0% | 100% | 100% |
+| All | 50 | **40.0%** | **40.0%** | **100%** | **100%** |
+
+The complete gate therefore **advances** against the unchanged thresholds of
+20% property any@20 and 5% strict any@20. It improves over v4 by 30 percentage
+points on property any@20 (10% to 40%) and 40 points on strict any@20 (0% to
+40%) without target access, split overlap, or a larger candidate budget. Of the
+1,000 evaluated candidates, 985 came from `RetrievedDeltaEdit` and 15 from the
+frozen v4 GraphEditDSL fallback. This is a train-only support-gate result, not a
+formal MuMO test-set number; it justifies training the common LLM
+planner/controller over the new tool plans next.

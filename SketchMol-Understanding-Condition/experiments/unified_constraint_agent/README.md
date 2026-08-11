@@ -317,6 +317,15 @@ any@20 of at least 20% and strict any@20 of at least 5%.
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_common_agent_retrieved_delta_support_v5.sh
 ```
 
+The completed full-oracle gate advanced. On the fixed zero-overlap 50-condition
+audit with exactly 20 final candidates, property any@20 and strict any@20 were
+both 40.0% overall and separately 40.0% on IND and OOD; validity and full-oracle
+coverage were 100%. Main job `19556545` ran for 2 minutes 4 seconds. CPU repair
+job `19558277` reused the same candidates and completed missing TDC DRD2 scores
+in 54 seconds; controller `19558278` reconciled the complete result. The earlier
+18% figure is retained only as an incomplete-oracle lower bound and must not be
+used as the v5 result. See `RESULTS.md` for lineage and task-level details.
+
 ## Bounded Slurm experiment automation
 
 The experiment ladder now has a deterministic controller under
@@ -331,8 +340,9 @@ next allowlisted entrypoint.
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh
 ```
 
-The checked-in plan contains only the standalone v5 support gate. It uses a new
-versioned state file so the terminal v4 record remains immutable. V5 is also
-terminal until its fixed-n support summary is reviewed; planner training is not
-silently submitted from an unvalidated method gate. See `automation/README.md`
-for the state, retry, budget, and recovery contracts.
+The checked-in plan now records the terminal CPU oracle-repair round and its
+versioned state, while the v4 and incomplete-v5 records remain immutable. The
+complete v5 gate advanced, but the manifest intentionally contains no
+undeclared planner-training job: the next training configuration must be added
+and reviewed explicitly before the controller can submit it. See
+`automation/README.md` for the state, retry, budget, and recovery contracts.
