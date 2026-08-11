@@ -142,6 +142,21 @@ def test_plan_rejects_submit_paths_outside_the_project(tmp_path: Path) -> None:
         automation.validate_plan(plan)
 
 
+def test_code_and_artifact_roots_are_independently_contained(tmp_path: Path) -> None:
+    code_root = tmp_path / "code"
+    artifact_root = tmp_path / "artifacts"
+    code_root.mkdir()
+    artifact_root.mkdir()
+    plan = make_plan(code_root)
+    plan["artifact_dir"] = {
+        "env": "TEST_UCA_ARTIFACT_DIR",
+        "default": str(artifact_root),
+    }
+
+    assert automation.resolve_project_path(plan, "submit_a.sh") == code_root / "submit_a.sh"
+    assert automation.resolve_artifact_path(plan, "summary_a.json") == artifact_root / "summary_a.json"
+
+
 def test_gate_requires_protocol_completeness_before_transition(tmp_path: Path) -> None:
     plan = make_plan(tmp_path)
     round_a = plan["rounds"][0]

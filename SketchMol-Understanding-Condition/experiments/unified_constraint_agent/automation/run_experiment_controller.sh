@@ -11,6 +11,8 @@ fi
 PLAN_JSON="$1"
 STATE_JSON="$2"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+export SUCC_UCA_AUTOMATION_REPO_DIR="${SUCC_UCA_AUTOMATION_REPO_DIR:-$REPO_DIR}"
 
 if command -v module >/dev/null 2>&1; then
   module purge >/dev/null 2>&1 || true

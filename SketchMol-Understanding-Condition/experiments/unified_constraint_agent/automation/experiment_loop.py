@@ -175,11 +175,23 @@ def load_plan(path: Path) -> dict[str, Any]:
 
 def project_dir(plan: Mapping[str, Any]) -> Path:
     config = plan.get("project_dir", {})
-    env_name = str(config.get("env", "SUCC_UCA_SHARED_REPO_DIR"))
+    env_name = str(config.get("env", "SUCC_UCA_AUTOMATION_REPO_DIR"))
     default = str(config.get("default", ""))
     value = os.environ.get(env_name, default)
     if not value:
         raise AutomationError(f"Set {env_name} or project_dir.default")
+    return Path(value).expanduser().resolve()
+
+
+def artifact_dir(plan: Mapping[str, Any]) -> Path:
+    config = plan.get("artifact_dir")
+    if not isinstance(config, Mapping):
+        return project_dir(plan)
+    env_name = str(config.get("env", "SUCC_UCA_SHARED_REPO_DIR"))
+    default = str(config.get("default", ""))
+    value = os.environ.get(env_name, default)
+    if not value:
+        raise AutomationError(f"Set {env_name} or artifact_dir.default")
     return Path(value).expanduser().resolve()
 
 
@@ -193,8 +205,18 @@ def resolve_project_path(plan: Mapping[str, Any], relative: str) -> Path:
     return path
 
 
+def resolve_artifact_path(plan: Mapping[str, Any], relative: str) -> Path:
+    root = artifact_dir(plan)
+    path = (root / _safe_relative_path(relative, label="artifact path")).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise AutomationError(f"Resolved artifact path escapes the shared artifact root: {path}") from exc
+    return path
+
+
 def default_state_path(plan: Mapping[str, Any]) -> Path:
-    return resolve_project_path(plan, str(plan["state_path"]))
+    return resolve_artifact_path(plan, str(plan["state_path"]))
 
 
 def new_state(plan: Mapping[str, Any]) -> dict[str, Any]:
@@ -314,7 +336,7 @@ def controller_submit_argv(
         "SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/"
         "run_experiment_controller.sh",
     )
-    log_dir = resolve_project_path(plan, str(controller["log_dir"]))
+    log_dir = resolve_artifact_path(plan, str(controller["log_dir"]))
     log_dir.mkdir(parents=True, exist_ok=True)
     wrapped = " ".join(
         shlex.quote(str(value)) for value in (script, plan_path.resolve(), state_path.resolve())
@@ -535,7 +557,7 @@ def reconcile_terminal(
         state["status"] = "needs_attention"
         return
 
-    summary_path = resolve_project_path(plan, str(round_spec["summary_path"]))
+    summary_path = resolve_artifact_path(plan, str(round_spec["summary_path"]))
     try:
         summary = load_json(summary_path)
         decision, target = evaluate_gate(round_spec, summary)

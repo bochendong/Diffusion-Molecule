@@ -10,6 +10,13 @@ and accelerator-hour reservation must be declared in `experiment_plan.json`.
 Commands are executed without a shell and submit scripts must be relative,
 allowlisted Bash entrypoints inside the shared repository.
 
+Code and artifacts use separate roots. `SUCC_UCA_AUTOMATION_REPO_DIR` points
+to the clean checkout that supplies controller and experiment code, while
+`SUCC_UCA_SHARED_REPO_DIR` points to the persistent checkout or filesystem
+that owns checkpoints, outputs, state, and logs. Both roots enforce relative
+path containment independently; artifact symlinks cannot weaken the code-path
+allowlist.
+
 ## Safety contract
 
 - The paper-facing final candidate budget is fixed at `n=20`.
@@ -43,6 +50,15 @@ The default controller account is `def-hup-ab_cpu`, verified against the Nibi
 association list. If the allocation changes, set `SUCC_UCA_CONTROLLER_ACCOUNT`
 for the initial command; the value is inherited by the dependent controller
 jobs.
+
+On Nibi, a clean permanent worktree can therefore run against the existing
+shared artifacts without touching a dirty research checkout:
+
+```bash
+export SUCC_UCA_AUTOMATION_REPO_DIR=/scratch/bdong/projects/Diffusion-Molecule-automation
+export SUCC_UCA_SHARED_REPO_DIR=/scratch/bdong/projects/Diffusion-Molecule
+bash "$SUCC_UCA_AUTOMATION_REPO_DIR/SketchMol-Understanding-Condition/experiments/unified_constraint_agent/automation/submit_experiment_loop.sh"
+```
 
 Inspect the durable state without changing it:
 

@@ -4,8 +4,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 PLAN_JSON="${SUCC_UCA_AUTOMATION_PLAN:-$SCRIPT_DIR/experiment_plan.json}"
 ROUND_ID="${1:-hierarchical_support_v4}"
+export SUCC_UCA_AUTOMATION_REPO_DIR="${SUCC_UCA_AUTOMATION_REPO_DIR:-$REPO_DIR}"
 
 if ! command -v sbatch >/dev/null 2>&1; then
   echo "ERROR: sbatch not found. Run this on a Slurm login node." >&2
