@@ -41,7 +41,7 @@ case "$STAGE" in
       --audit-csv "$AUDIT_CSV" \
       --output-dir "$RUN_ROOT/data" \
       --rows-per-task "${SUCC_UCA_ROWS_PER_TASK:-5500}" \
-      --min-rows-per-task "${SUCC_UCA_MIN_ROWS_PER_TASK:-150}" \
+      --min-rows-per-task "${SUCC_UCA_MIN_ROWS_PER_TASK:-100}" \
       --dev-fraction "${SUCC_UCA_DEV_FRACTION:-0.10}" \
       --shard-count "$SHARD_COUNT" \
       --seed "$SEED"

@@ -34,7 +34,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--test-json-digest-only", type=Path, default=None)
     parser.add_argument("--rows-per-task", type=int, default=5500)
-    parser.add_argument("--min-rows-per-task", type=int, default=150)
+    parser.add_argument("--min-rows-per-task", type=int, default=100)
     parser.add_argument("--dev-fraction", type=float, default=0.10)
     parser.add_argument("--shard-count", type=int, default=32)
     parser.add_argument("--seed", type=int, default=1711)
