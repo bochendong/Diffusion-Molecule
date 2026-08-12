@@ -143,6 +143,36 @@ def pairwise_metrics(
     }
 
 
+def calibrated_decision_threshold(
+    actual: np.ndarray,
+    probability: np.ndarray,
+    *,
+    target_recall: float = 0.90,
+    min_precision: float = 0.80,
+) -> float:
+    """Choose the most conservative threshold meeting fit-only calibration gates."""
+
+    actual = np.asarray(actual, dtype=bool)
+    probability = np.asarray(probability, dtype=float)
+    candidates = sorted({0.0, 0.5, 1.0, *(float(value) for value in probability)})
+    eligible: list[float] = []
+    for threshold in candidates:
+        predicted = probability >= threshold
+        metrics = pairwise_metrics(
+            actual,
+            predicted,
+            direction_name="calibration",
+            threshold=threshold,
+            decision_source="fit_only_calibration",
+        )
+        if (
+            float(metrics["threshold_recall"]) >= float(target_recall)
+            and float(metrics["threshold_precision"]) >= float(min_precision)
+        ):
+            eligible.append(float(threshold))
+    return max(eligible) if eligible else 0.5
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     files = sorted(args.feature_dir.glob("features_*.npz"))
@@ -248,6 +278,34 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if len(np.unique(fit_pair_labels)) != 2:
         raise ValueError(f"{args.property} fit pair labels need both classes")
+    pair_features_fit = pair_feature_matrix(feature_matrix, fit_pairs)
+    calibration_mask = np.asarray(
+        [
+            stable_order(str(data["pair_id"][source]), int(args.seed) + 37)[0] < 51
+            for source, _target in fit_pairs
+        ],
+        dtype=bool,
+    )
+    if int(calibration_mask.sum()) < 100 or int((~calibration_mask).sum()) < 100:
+        raise ValueError(f"{args.property} fit-only calibration split is too small")
+    calibration_estimator = ExtraTreesClassifier(
+        n_estimators=int(args.estimators),
+        min_samples_leaf=int(args.min_samples_leaf),
+        max_features=0.5,
+        class_weight="balanced",
+        n_jobs=int(args.jobs),
+        random_state=int(args.seed),
+    )
+    calibration_estimator.fit(pair_features_fit[~calibration_mask], fit_pair_labels[~calibration_mask])
+    calibration_probabilities = calibration_estimator.predict_proba(pair_features_fit[calibration_mask])
+    calibration_positive_column = list(calibration_estimator.classes_).index(True)
+    decision_threshold = calibrated_decision_threshold(
+        fit_pair_labels[calibration_mask],
+        calibration_probabilities[:, calibration_positive_column],
+        target_recall=0.90,
+        min_precision=0.80,
+    )
+
     pair_classifier = ExtraTreesClassifier(
         n_estimators=int(args.estimators),
         min_samples_leaf=int(args.min_samples_leaf),
@@ -256,10 +314,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         n_jobs=int(args.jobs),
         random_state=int(args.seed),
     )
-    pair_classifier.fit(pair_feature_matrix(feature_matrix, fit_pairs), fit_pair_labels)
+    pair_classifier.fit(pair_features_fit, fit_pair_labels)
     pair_probability = pair_classifier.predict_proba(pair_feature_matrix(feature_matrix, dev_pairs))
     positive_column = list(pair_classifier.classes_).index(True)
-    direct_pair_prediction = np.asarray(pair_probability[:, positive_column] >= 0.5, dtype=bool)
+    direct_pair_prediction = np.asarray(
+        pair_probability[:, positive_column] >= decision_threshold,
+        dtype=bool,
+    )
 
     absolute_pair_prediction: list[bool] = []
     if dev_pairs:
@@ -286,6 +347,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "pair_feature_schema": "source,target,target_minus_source",
             "pair_threshold": threshold,
             "pair_direction": direction_name,
+            "pair_decision_threshold": decision_threshold,
         },
         args.output_model,
         compress=3,
@@ -327,6 +389,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             "max_features": 0.5,
             "pair_class_weight": "balanced",
             "fit_pairs": len(fit_pairs),
+            "fit_only_calibration_pairs": int(calibration_mask.sum()),
+            "pair_decision_threshold": decision_threshold,
+            "calibration_target_recall": 0.90,
+            "calibration_min_precision": 0.80,
             "seed": int(args.seed),
         },
     }

@@ -106,6 +106,17 @@ def test_mumo_pair_verifier_uses_source_target_and_delta_features() -> None:
     assert labels.tolist() == [True]
 
 
+def test_mumo_pair_threshold_calibration_is_fit_only_and_recall_constrained() -> None:
+    threshold = mumo_verifier.calibrated_decision_threshold(
+        np.asarray([True, True, True, False, False]),
+        np.asarray([0.9, 0.6, 0.4, 0.3, 0.1]),
+        target_recall=2 / 3,
+        min_precision=0.8,
+    )
+
+    assert threshold == 0.6
+
+
 def test_constraint_ir_separates_design_and_edit_actions() -> None:
     design = ir_module.build_constraint_ir(
         {
