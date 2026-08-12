@@ -114,7 +114,18 @@ def test_mumo_pair_threshold_calibration_is_fit_only_and_recall_constrained() ->
         min_precision=0.8,
     )
 
-    assert threshold == 0.6
+    assert threshold == 0.5
+
+
+def test_mumo_pair_threshold_calibration_never_raises_default_boundary() -> None:
+    threshold = mumo_verifier.calibrated_decision_threshold(
+        np.asarray([True, True, False, False]),
+        np.asarray([0.9, 0.8, 0.7, 0.1]),
+        target_recall=1.0,
+        min_precision=2 / 3,
+    )
+
+    assert threshold == 0.5
 
 
 def test_constraint_ir_separates_design_and_edit_actions() -> None:

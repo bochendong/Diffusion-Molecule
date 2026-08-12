@@ -170,7 +170,11 @@ def calibrated_decision_threshold(
             and float(metrics["threshold_precision"]) >= float(min_precision)
         ):
             eligible.append(float(threshold))
-    return max(eligible) if eligible else 0.5
+    # Calibration exists only to recover threshold-crossing recall.  Never
+    # make the classifier more conservative than its standard 0.5 decision;
+    # doing so can satisfy an idiosyncratic fit fold while harming disjoint
+    # molecules without serving the stated recall objective.
+    return min(0.5, max(eligible)) if eligible else 0.5
 
 
 def main(argv: Sequence[str] | None = None) -> int:
