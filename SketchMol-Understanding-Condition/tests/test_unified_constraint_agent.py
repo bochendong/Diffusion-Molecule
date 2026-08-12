@@ -58,6 +58,7 @@ delta_ceiling_audit = load_module("audit_retrieved_delta_ceiling")
 composed_delta = load_module("build_composed_retrieved_delta_candidates")
 mumo_parallel = load_module("mumo_parallel_protocol")
 mumo_verifier = load_module("train_mumo_property_verifier")
+mumo_closed_loop = load_module("build_mumo_closed_loop_dev")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -126,6 +127,51 @@ def test_mumo_pair_threshold_calibration_never_raises_default_boundary() -> None
     )
 
     assert threshold == 0.5
+
+
+def test_mumo_closed_loop_pair_score_rewards_all_constraints() -> None:
+    class FakeClassifier:
+        classes_ = np.asarray([False, True])
+
+        def predict_proba(self, values):
+            assert values.shape == (1, 6)
+            return np.asarray([[0.1, 0.9]])
+
+    models = {
+        "bbbp": {"pair_classifier": FakeClassifier(), "pair_decision_threshold": 0.5},
+        "drd2": {"pair_classifier": FakeClassifier(), "pair_decision_threshold": 0.5},
+    }
+    score, margins = mumo_closed_loop.score_candidate(
+        np.asarray([1.0, 0.0], dtype=np.float32),
+        np.asarray([0.0, 1.0], dtype=np.float32),
+        properties=("bbbp", "drd2"),
+        models=models,
+        source_tanimoto=0.7,
+        retrieval_similarity=0.8,
+        frequency=4,
+    )
+
+    assert margins == {"bbbp": 0.4, "drd2": 0.4}
+    assert score > 8.0
+
+
+def test_mumo_closed_loop_condition_id_does_not_depend_on_shard_local_index() -> None:
+    raw = {
+        "_uca_task_id": "BDP",
+        "_uca_source_group": "BDP:CCO",
+        "_uca_pair_digest": "0123456789abcdef",
+        "source_smiles": "CCO",
+        "external_source_bbbp": 0.3,
+        "external_source_drd2": 0.2,
+        "external_source_plogp": 1.0,
+    }
+
+    first = mumo_closed_loop.condition_row(raw, 0)
+    later = mumo_closed_loop.condition_row(raw, 71)
+
+    assert first["condition_id"] == "mumo_dev_bdp_0123456789abcdef"
+    assert first["condition_id"] == later["condition_id"]
+    assert all("target" not in key for key in first)
 
 
 def test_constraint_ir_separates_design_and_edit_actions() -> None:
