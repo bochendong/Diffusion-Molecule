@@ -17,6 +17,7 @@ MAIL_USER="${SUCC_UCA_MAIL_USER:-dongbochen1218@gmail.com}"
 CPU_ACCOUNT="${SUCC_UCA_CPU_ACCOUNT:-def-hup-ab_cpu}"
 GPU_ACCOUNT="${SUCC_UCA_GPU_ACCOUNT:-def-hup-ab_gpu}"
 GPU_REQUEST="${SUCC_UCA_GPU_REQUEST:-nvidia_h100_80gb_hbm3_2g.20gb:1}"
+REUSE_PREP="${SUCC_UCA_REUSE_PREP:-0}"
 mkdir -p "$LOG_DIR"
 
 export SUCC_UCA_SHARED_REPO_DIR="$SHARED_REPO_DIR"
@@ -28,18 +29,30 @@ submit() {
   printf '%s\n' "$output" | sed -n 's/^\([0-9][0-9]*\)\(;.*\)\?$/\1/p' | tail -1
 }
 
-prepare_job="$(submit \
-  --account="$CPU_ACCOUNT" \
-  --job-name=uca-replay-v10-prep \
-  --time=00:30:00 --cpus-per-task=4 --mem=16G \
-  --mail-user="$MAIL_USER" --mail-type=BEGIN,FAIL \
-  --output="$LOG_DIR/%x-%j.log" --export=ALL \
-  --wrap="bash '$SCRIPT_DIR/run_paper_replay_smoke_v10.sh' prepare")"
+prepare_job="reused"
+rank_dependency=()
+if [[ "$REUSE_PREP" == "1" ]]; then
+  for artifact in \
+    "$RUN_ROOT/smoke/manifest.json" \
+    "$RUN_ROOT/smoke/table1_rows.csv" \
+    "$RUN_ROOT/denovo_n20/budget_sweep_summary.csv"; do
+    [[ -s "$artifact" ]] || { echo "ERROR: cannot reuse missing prepare artifact: $artifact" >&2; exit 2; }
+  done
+else
+  prepare_job="$(submit \
+    --account="$CPU_ACCOUNT" \
+    --job-name=uca-replay-v10-prep \
+    --time=00:30:00 --cpus-per-task=4 --mem=16G \
+    --mail-user="$MAIL_USER" --mail-type=BEGIN,FAIL \
+    --output="$LOG_DIR/%x-%j.log" --export=ALL \
+    --wrap="bash '$SCRIPT_DIR/run_paper_replay_smoke_v10.sh' prepare")"
+  rank_dependency=(--dependency="afterok:$prepare_job" --kill-on-invalid-dep=yes)
+fi
 
 rank_job="$(submit \
   --account="$GPU_ACCOUNT" \
   --job-name=uca-replay-v10-rank \
-  --dependency="afterok:$prepare_job" --kill-on-invalid-dep=yes \
+  "${rank_dependency[@]}" \
   --time=01:00:00 --cpus-per-task=4 --mem=32G \
   --gpus="$GPU_REQUEST" \
   --mail-user="$MAIL_USER" --mail-type=FAIL \

@@ -76,7 +76,7 @@ rank_one() {
     --enumeration-attempt-budget 64 \
     --max-enumeration-attempt-budget 512 \
     --site-limit 32 \
-    --score-batch-size 16 \
+    --score-batch-size "${SUCC_UCA_SCORE_BATCH_SIZE:-4}" \
     --max-length 1024
 }
 
