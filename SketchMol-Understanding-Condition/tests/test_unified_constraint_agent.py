@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -172,6 +173,28 @@ def test_mumo_closed_loop_condition_id_does_not_depend_on_shard_local_index() ->
     assert first["condition_id"] == "mumo_dev_bdp_0123456789abcdef"
     assert first["condition_id"] == later["condition_id"]
     assert all("target" not in key for key in first)
+
+
+def test_mumo_closed_loop_uses_exact_qed_margin_without_a_learned_verifier() -> None:
+    descriptor_count = len(mumo_closed_loop.feature_builder.DESCRIPTOR_NAMES)
+    source = np.zeros(2048 + descriptor_count, dtype=np.float32)
+    candidate = np.zeros_like(source)
+    qed_index = 2048 + mumo_closed_loop.feature_builder.DESCRIPTOR_NAMES.index("QED")
+    source[qed_index] = 0.40
+    candidate[qed_index] = 0.65
+
+    score, margins = mumo_closed_loop.score_candidate(
+        source,
+        candidate,
+        properties=("qed",),
+        models={},
+        source_tanimoto=0.7,
+        retrieval_similarity=0.8,
+        frequency=4,
+    )
+
+    assert margins["qed"] == pytest.approx(0.15)
+    assert score > 4.0
 
 
 def test_constraint_ir_separates_design_and_edit_actions() -> None:

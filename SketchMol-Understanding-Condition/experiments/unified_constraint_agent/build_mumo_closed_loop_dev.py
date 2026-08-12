@@ -120,6 +120,19 @@ def candidate_feature(smiles: str) -> np.ndarray | None:
     return np.concatenate([value[0].astype(np.float32), value[1].astype(np.float32)])
 
 
+def exact_qed_margin(source_feature: np.ndarray, candidate_features: np.ndarray) -> np.ndarray:
+    """Return exact RDKit QED improvement beyond the official MuMO threshold."""
+
+    descriptor_start = int(source_feature.shape[0]) - len(feature_builder.DESCRIPTOR_NAMES)
+    qed_index = descriptor_start + feature_builder.DESCRIPTOR_NAMES.index("QED")
+    return np.asarray(
+        candidate_features[:, qed_index]
+        - float(source_feature[qed_index])
+        - float(export.MUMO_THRESHOLDS["qed"]),
+        dtype=np.float32,
+    )
+
+
 def score_candidate(
     source_feature: np.ndarray,
     candidate_feature_value: np.ndarray,
@@ -135,6 +148,11 @@ def score_candidate(
     ).reshape(1, -1)
     margins = {}
     for prop in properties:
+        if prop == "qed":
+            margins[prop] = float(
+                exact_qed_margin(source_feature, candidate_feature_value.reshape(1, -1))[0]
+            )
+            continue
         payload = models[prop]
         classifier = payload["pair_classifier"]
         positive_column = list(classifier.classes_).index(True)
@@ -170,6 +188,9 @@ def score_candidates_batch(
     pair_features = np.concatenate([sources, candidates, candidates - sources], axis=1)
     margin_columns: dict[str, np.ndarray] = {}
     for prop in properties:
+        if prop == "qed":
+            margin_columns[prop] = exact_qed_margin(source_feature, candidates)
+            continue
         payload = models[prop]
         classifier = payload["pair_classifier"]
         positive_column = list(classifier.classes_).index(True)
@@ -322,6 +343,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "max_internal_proposals_per_condition": max(proposal_counts, default=0),
         "max_transforms_per_fragment": int(args.max_transforms_per_fragment),
         "verifier_properties": list(protocol.PROPERTIES),
+        "exact_property_margins": ["qed"],
         "source_similarity_floor": float(args.min_source_tanimoto),
         "shard_index": int(args.shard_index),
         "shard_count": int(args.shard_count),
