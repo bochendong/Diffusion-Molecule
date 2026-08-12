@@ -197,6 +197,29 @@ def test_mumo_closed_loop_uses_exact_qed_margin_without_a_learned_verifier() -> 
     assert score > 4.0
 
 
+def test_mumo_closed_loop_retrieves_only_similar_fit_analogs() -> None:
+    descriptor_count = len(mumo_closed_loop.feature_builder.DESCRIPTOR_NAMES)
+    source = np.zeros(4 + descriptor_count, dtype=np.float32)
+    source[:4] = [1, 1, 0, 0]
+    library = (
+        ["near", "far", "same"],
+        np.asarray([[1, 0, 1, 0], [0, 0, 1, 1], [1, 1, 0, 0]], dtype=np.uint8),
+        np.zeros((3, descriptor_count), dtype=np.float32),
+    )
+
+    retrieved = mumo_closed_loop.retrieve_fit_analogs(
+        source,
+        library,
+        min_tanimoto=0.3,
+        limit=2,
+    )
+
+    assert [(smiles, similarity) for smiles, similarity, _features in retrieved] == [
+        ("same", 1.0),
+        ("near", pytest.approx(1 / 3)),
+    ]
+
+
 def test_constraint_ir_separates_design_and_edit_actions() -> None:
     design = ir_module.build_constraint_ir(
         {

@@ -83,6 +83,62 @@ def load_models(run_root: Path) -> dict[str, dict[str, object]]:
     return output
 
 
+def load_fit_analog_library(run_root: Path) -> dict[str, tuple[list[str], np.ndarray, np.ndarray]]:
+    """Load deduplicated fit-target fingerprints/descriptors, grouped by task."""
+
+    rows: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = defaultdict(dict)
+    for path in sorted((run_root / "features").glob("features_*.npz")):
+        with np.load(path, allow_pickle=False) as payload:
+            roles = np.asarray(payload["role"], dtype=str)
+            partitions = np.asarray(payload["partition"], dtype=str)
+            task_ids = np.asarray(payload["task_id"], dtype=str)
+            smiles = np.asarray(payload["smiles"], dtype=str)
+            fingerprints = np.asarray(payload["fingerprint"], dtype=np.uint8)
+            descriptors = np.asarray(payload["descriptors"], dtype=np.float32)
+            keep = np.flatnonzero((roles == "target") & (partitions == "fit"))
+            for index in keep:
+                task = str(task_ids[index])
+                canonical = str(smiles[index])
+                rows[task].setdefault(canonical, (fingerprints[index], descriptors[index]))
+    output = {}
+    for task, values in rows.items():
+        ordered = sorted(values.items())
+        output[task] = (
+            [smiles for smiles, _features in ordered],
+            np.stack([features[0] for _smiles, features in ordered]),
+            np.stack([features[1] for _smiles, features in ordered]),
+        )
+    return output
+
+
+def retrieve_fit_analogs(
+    source_feature: np.ndarray,
+    library: tuple[list[str], np.ndarray, np.ndarray] | None,
+    *,
+    min_tanimoto: float,
+    limit: int,
+) -> list[tuple[str, float, np.ndarray]]:
+    if library is None:
+        return []
+    smiles, fingerprints, descriptors = library
+    source_bits = np.asarray(source_feature[: fingerprints.shape[1]] > 0, dtype=np.uint8)
+    intersections = np.bitwise_and(fingerprints, source_bits).sum(axis=1, dtype=np.int32)
+    unions = np.bitwise_or(fingerprints, source_bits).sum(axis=1, dtype=np.int32)
+    similarities = intersections / np.maximum(unions, 1)
+    eligible = np.flatnonzero(similarities >= float(min_tanimoto))
+    ranked = eligible[np.argsort(-similarities[eligible], kind="stable")][: int(limit)]
+    return [
+        (
+            smiles[index],
+            float(similarities[index]),
+            np.concatenate(
+                [fingerprints[index].astype(np.float32), descriptors[index].astype(np.float32)]
+            ),
+        )
+        for index in ranked
+    ]
+
+
 def condition_row(raw: Mapping[str, object], _index: int) -> dict[str, object]:
     task_id = str(raw["_uca_task_id"])
     spec = next(spec for spec in export.TASK_SPECS if spec.suite == "mumo" and spec.task_id == task_id)
@@ -226,6 +282,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("Evidence gate did not authorize closed_loop_dev_n20")
     models = load_models(args.run_root)
     transforms = load_transforms(args.run_root / "merged" / "transforms.jsonl")
+    analog_library = load_fit_analog_library(args.run_root)
     if not 0 <= int(args.shard_index) < int(args.shard_count):
         raise ValueError("Invalid shard index/count")
     raw_rows = [
@@ -286,6 +343,26 @@ def main(argv: Sequence[str] | None = None) -> int:
                     float(previous[0]["retrieval_similarity"]), int(previous[0]["transform_frequency"])
                 ):
                     candidates[generated] = (record, generated_feature)
+        for generated, tanimoto, generated_feature in retrieve_fit_analogs(
+            source_feature,
+            analog_library.get(str(row["external_task_id"])),
+            min_tanimoto=float(args.min_source_tanimoto),
+            limit=int(args.max_transforms_per_fragment),
+        ):
+            if generated == source_canonical or generated in candidates:
+                continue
+            candidates[generated] = (
+                {
+                    "generated_smiles": generated,
+                    "method": "fit_only_target_analog_retrieval",
+                    "source_tanimoto": tanimoto,
+                    "retrieval_similarity": tanimoto,
+                    "transform_frequency": 1,
+                    "source_variable": "",
+                    "target_variable": "",
+                },
+                generated_feature,
+            )
         candidate_items = list(candidates.values())
         proposal_counts.append(len(candidate_items))
         if not candidate_items:
@@ -334,7 +411,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "candidate_rows": len(output),
         "task_conditions": dict(sorted(task_counts.items())),
         "candidate_sources": dict(sorted(candidate_sources.items())),
-        "selection": "direct_pair_classifier_margin_then_similarity_frequency",
+        "selection": "hybrid_fit_delta_analog_then_pair_margin_similarity_frequency",
         "fit_only_transform_count": sum(len(rows) for rows in transforms.values()),
         "internal_proposals_total": sum(proposal_counts),
         "mean_internal_proposals_per_condition": (
@@ -342,6 +419,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         "max_internal_proposals_per_condition": max(proposal_counts, default=0),
         "max_transforms_per_fragment": int(args.max_transforms_per_fragment),
+        "fit_only_analog_limit_per_condition": int(args.max_transforms_per_fragment),
         "verifier_properties": list(protocol.PROPERTIES),
         "exact_property_margins": ["qed"],
         "source_similarity_floor": float(args.min_source_tanimoto),
