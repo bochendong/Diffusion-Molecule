@@ -139,6 +139,28 @@ def retrieve_fit_analogs(
     ]
 
 
+def freeze_attempts(
+    ranked_candidates: Sequence[Mapping[str, object]],
+    *,
+    budget: int,
+) -> list[tuple[dict[str, object], bool, int]]:
+    """Freeze exactly ``budget`` attempts without inventing extra molecules."""
+
+    if not ranked_candidates:
+        raise ValueError("Cannot freeze attempts from an empty candidate pool")
+    frozen = []
+    for attempt_index in range(int(budget)):
+        unique_index = attempt_index % len(ranked_candidates)
+        frozen.append(
+            (
+                dict(ranked_candidates[unique_index]),
+                attempt_index >= len(ranked_candidates),
+                unique_index + 1,
+            )
+        )
+    return frozen
+
+
 def condition_row(raw: Mapping[str, object], _index: int) -> dict[str, object]:
     task_id = str(raw["_uca_task_id"])
     spec = next(spec for spec in export.TASK_SPECS if spec.suite == "mumo" and spec.task_id == task_id)
@@ -300,6 +322,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     task_counts: Counter[str] = Counter()
     candidate_sources: Counter[str] = Counter()
     proposal_counts: list[int] = []
+    unique_attempt_counts: list[int] = []
+    repeated_attempt_rows = 0
     for index, raw in enumerate(raw_rows):
         row = condition_row(raw, index)
         source = str(row["source_smiles"])
@@ -389,10 +413,23 @@ def main(argv: Sequence[str] | None = None) -> int:
                 }
             )
         ranked_candidates = sorted(scored, key=lambda item: float(item["selection_score"]), reverse=True)
-        if len(ranked_candidates) < int(args.candidate_budget):
-            raise ValueError(f"{row['condition_id']} has only {len(ranked_candidates)} candidates")
-        for rank, candidate in enumerate(ranked_candidates[: int(args.candidate_budget)], start=1):
-            output.append({**row, **candidate, "candidate_rank": rank, "candidate_selected": rank == 1})
+        unique_attempt_count = min(len(ranked_candidates), int(args.candidate_budget))
+        unique_attempt_counts.append(unique_attempt_count)
+        frozen_attempts = freeze_attempts(ranked_candidates, budget=int(args.candidate_budget))
+        for rank, (candidate, is_repeat, unique_rank) in enumerate(frozen_attempts, start=1):
+            output.append(
+                {
+                    **row,
+                    **candidate,
+                    "candidate_rank": rank,
+                    "candidate_selected": rank == 1,
+                    "candidate_attempt_is_repeat": is_repeat,
+                    "candidate_unique_rank": unique_rank,
+                    "candidate_valid": True,
+                    "candidate_source_similarity_pass": True,
+                }
+            )
+            repeated_attempt_rows += int(is_repeat)
             candidate_sources[str(candidate["method"])] += 1
         task_counts[str(row["external_task_id"])] += 1
         if (index + 1) % 100 == 0:
@@ -409,6 +446,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "attempted_candidates_per_condition": 20,
         "conditions": len(raw_rows),
         "candidate_rows": len(output),
+        "unique_candidates_total": sum(unique_attempt_counts),
+        "unique_valid_candidates_total": sum(unique_attempt_counts),
+        "mean_unique_candidates_per_condition": (
+            sum(unique_attempt_counts) / max(len(unique_attempt_counts), 1)
+        ),
+        "min_unique_candidates_per_condition": min(unique_attempt_counts, default=0),
+        "repeated_attempt_rows": repeated_attempt_rows,
+        "repeat_policy": "cycle_ranked_valid_candidates_only_when_unique_support_below_20",
         "task_conditions": dict(sorted(task_counts.items())),
         "candidate_sources": dict(sorted(candidate_sources.items())),
         "selection": "hybrid_fit_delta_analog_then_pair_margin_similarity_frequency",

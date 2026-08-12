@@ -25,7 +25,9 @@ else
   generate_dependency=(--dependency="afterok:$prepare_id" --kill-on-invalid-dep=yes)
 fi
 array_end="$((SHARD_COUNT - 1))"
-generate="$(sbatch --parsable --account="$ACCOUNT" --job-name=uca-mumo-dev-generate "${generate_dependency[@]}" --array="0-${array_end}%${SHARD_COUNT}" --time=02:00:00 --cpus-per-task=4 --mem=12G --mail-user="$MAIL_USER" --mail-type=FAIL --output="$LOG_DIR/%x-%A_%a.log" --export=ALL,SUCC_UCA_MUMO_DEV_SHARD_COUNT="$SHARD_COUNT" --wrap="bash '$SCRIPT_DIR/run_mumo_closed_loop_dev_v8.sh' generate")"
+ARRAY_SPEC="${SUCC_UCA_MUMO_DEV_ARRAY_SPEC:-0-${array_end}%${SHARD_COUNT}}"
+[[ "$ARRAY_SPEC" =~ ^[0-9,%\-]+$ ]] || { echo "ERROR: invalid array spec" >&2; exit 2; }
+generate="$(sbatch --parsable --account="$ACCOUNT" --job-name=uca-mumo-dev-generate "${generate_dependency[@]}" --array="$ARRAY_SPEC" --time=02:00:00 --cpus-per-task=4 --mem=12G --mail-user="$MAIL_USER" --mail-type=FAIL --output="$LOG_DIR/%x-%A_%a.log" --export=ALL,SUCC_UCA_MUMO_DEV_SHARD_COUNT="$SHARD_COUNT" --wrap="bash '$SCRIPT_DIR/run_mumo_closed_loop_dev_v8.sh' generate")"
 generate_id="$(parse_id "$generate")"
 merge="$(sbatch --parsable --account="$ACCOUNT" --job-name=uca-mumo-dev-merge --dependency="afterok:$generate_id" --kill-on-invalid-dep=yes --time=00:20:00 --cpus-per-task=2 --mem=8G --mail-user="$MAIL_USER" --mail-type=FAIL --output="$LOG_DIR/%x-%j.log" --export=ALL,SUCC_UCA_MUMO_DEV_SHARD_COUNT="$SHARD_COUNT" --wrap="bash '$SCRIPT_DIR/run_mumo_closed_loop_dev_v8.sh' merge")"
 merge_id="$(parse_id "$merge")"
@@ -35,6 +37,7 @@ gate="$(sbatch --parsable --account="$ACCOUNT" --job-name=uca-mumo-dev-gate --de
 gate_id="$(parse_id "$gate")"
 echo "prepare_job=$prepare_id"
 echo "generate_array_job=$generate_id"
+echo "generate_array_spec=$ARRAY_SPEC"
 echo "merge_job=$merge_id"
 echo "oracle_job=$oracle_id"
 echo "gate_job=$gate_id"

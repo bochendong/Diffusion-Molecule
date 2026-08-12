@@ -73,6 +73,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "candidate_budget": 20,
         "conditions": int(manifest["conditions"]),
         "candidate_rows": int(manifest["candidate_rows"]),
+        "attempted_candidates_total": int(manifest["attempted_candidates_total"]),
+        "unique_candidates_total": int(manifest["unique_candidates_total"]),
+        "unique_valid_candidates_total": int(manifest["unique_valid_candidates_total"]),
+        "mean_unique_candidates_per_condition": float(
+            manifest["mean_unique_candidates_per_condition"]
+        ),
+        "min_unique_candidates_per_condition": int(manifest["min_unique_candidates_per_condition"]),
+        "repeated_attempt_rows": int(manifest["repeated_attempt_rows"]),
         "success_rate": sr,
         "ind_success_rate": split_rates["ind"],
         "ood_success_rate": split_rates["ood"],

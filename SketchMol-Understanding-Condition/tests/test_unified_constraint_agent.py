@@ -220,6 +220,17 @@ def test_mumo_closed_loop_retrieves_only_similar_fit_analogs() -> None:
     ]
 
 
+def test_mumo_closed_loop_freezes_20_attempts_without_inventing_candidates() -> None:
+    ranked = [{"generated_smiles": "A"}, {"generated_smiles": "B"}, {"generated_smiles": "C"}]
+
+    frozen = mumo_closed_loop.freeze_attempts(ranked, budget=20)
+
+    assert len(frozen) == 20
+    assert {row["generated_smiles"] for row, _repeat, _unique_rank in frozen} == {"A", "B", "C"}
+    assert [repeat for _row, repeat, _unique_rank in frozen[:4]] == [False, False, False, True]
+    assert [rank for _row, _repeat, rank in frozen[:5]] == [1, 2, 3, 1, 2]
+
+
 def test_constraint_ir_separates_design_and_edit_actions() -> None:
     design = ir_module.build_constraint_ir(
         {
