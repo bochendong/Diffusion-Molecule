@@ -15,13 +15,17 @@ if [[ -n "$PREPARE_JOB_ID" ]]; then
   PREPARE_MANIFEST="$PROJECT_DIR/outputs/unified_constraint_agent_mumo_closed_loop_dev_v8/seed_1711/data/dev_sources.manifest.json"
   [[ -s "$PREPARE_MANIFEST" ]] || { echo "ERROR: reused prepare manifest missing" >&2; exit 2; }
   python -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["generation_target_access"] is False; assert p["target_fields_written"] == 0; assert p["rows"] == 1049' "$PREPARE_MANIFEST"
+  prepare_state="$(sacct -n -X -j "$PREPARE_JOB_ID" --format=State,ExitCode | awk 'NF {print $1, $2; exit}')"
+  [[ "$prepare_state" == "COMPLETED 0:0" ]] || { echo "ERROR: reused prepare job is not COMPLETED 0:0: $prepare_state" >&2; exit 2; }
   prepare_id="$PREPARE_JOB_ID"
+  generate_dependency=()
 else
   prepare="$(sbatch --parsable --account="$ACCOUNT" --job-name=uca-mumo-dev-prepare --time=00:20:00 --cpus-per-task=1 --mem=4G --mail-user="$MAIL_USER" --mail-type=BEGIN,END,FAIL --output="$LOG_DIR/%x-%j.log" --export=ALL --wrap="bash '$SCRIPT_DIR/run_mumo_closed_loop_dev_v8.sh' prepare")"
   prepare_id="$(parse_id "$prepare")"
+  generate_dependency=(--dependency="afterok:$prepare_id" --kill-on-invalid-dep=yes)
 fi
 array_end="$((SHARD_COUNT - 1))"
-generate="$(sbatch --parsable --account="$ACCOUNT" --job-name=uca-mumo-dev-generate --dependency="afterok:$prepare_id" --kill-on-invalid-dep=yes --array="0-${array_end}%${SHARD_COUNT}" --time=02:00:00 --cpus-per-task=4 --mem=12G --mail-user="$MAIL_USER" --mail-type=FAIL --output="$LOG_DIR/%x-%A_%a.log" --export=ALL,SUCC_UCA_MUMO_DEV_SHARD_COUNT="$SHARD_COUNT" --wrap="bash '$SCRIPT_DIR/run_mumo_closed_loop_dev_v8.sh' generate")"
+generate="$(sbatch --parsable --account="$ACCOUNT" --job-name=uca-mumo-dev-generate "${generate_dependency[@]}" --array="0-${array_end}%${SHARD_COUNT}" --time=02:00:00 --cpus-per-task=4 --mem=12G --mail-user="$MAIL_USER" --mail-type=FAIL --output="$LOG_DIR/%x-%A_%a.log" --export=ALL,SUCC_UCA_MUMO_DEV_SHARD_COUNT="$SHARD_COUNT" --wrap="bash '$SCRIPT_DIR/run_mumo_closed_loop_dev_v8.sh' generate")"
 generate_id="$(parse_id "$generate")"
 merge="$(sbatch --parsable --account="$ACCOUNT" --job-name=uca-mumo-dev-merge --dependency="afterok:$generate_id" --kill-on-invalid-dep=yes --time=00:20:00 --cpus-per-task=2 --mem=8G --mail-user="$MAIL_USER" --mail-type=FAIL --output="$LOG_DIR/%x-%j.log" --export=ALL,SUCC_UCA_MUMO_DEV_SHARD_COUNT="$SHARD_COUNT" --wrap="bash '$SCRIPT_DIR/run_mumo_closed_loop_dev_v8.sh' merge")"
 merge_id="$(parse_id "$merge")"
