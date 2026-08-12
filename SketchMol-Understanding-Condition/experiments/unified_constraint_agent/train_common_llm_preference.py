@@ -41,6 +41,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--replay-batch-size", type=int, default=1)
     parser.add_argument("--replay-max-per-origin", type=int, default=256)
     parser.add_argument("--replay-origins", default="denovo,table1,mumo")
+    parser.add_argument(
+        "--reference-margin-field",
+        default="",
+        help="Optional precomputed reference chosen-minus-rejected log-probability field for DPO.",
+    )
     return parser.parse_args(argv)
 
 
@@ -54,7 +59,14 @@ def read_jsonl(path: Path) -> list[dict[str, object]]:
 
 
 class PairDataset:
-    def __init__(self, rows: Sequence[Mapping[str, object]], tokenizer: object, max_length: int):
+    def __init__(
+        self,
+        rows: Sequence[Mapping[str, object]],
+        tokenizer: object,
+        max_length: int,
+        *,
+        reference_margin_field: str = "",
+    ):
         self.examples = []
         for row in rows:
             prompt = row.get("prompt_messages")
@@ -62,8 +74,7 @@ class PairDataset:
             rejected = row.get("rejected")
             if not isinstance(prompt, list) or not isinstance(chosen, Mapping) or not isinstance(rejected, Mapping):
                 continue
-            self.examples.append(
-                {
+            example = {
                     "chosen": constrained.encoded_action(
                         tokenizer,
                         prompt,
@@ -77,7 +88,14 @@ class PairDataset:
                         max_length=max_length,
                     ),
                 }
-            )
+            if reference_margin_field:
+                value = row.get(reference_margin_field)
+                if value is None:
+                    raise ValueError(
+                        f"Preference pair is missing reference margin field {reference_margin_field!r}"
+                    )
+                example["reference_margin"] = float(value)
+            self.examples.append(example)
         if not self.examples:
             raise ValueError("No tokenized preference pairs were produced")
 
@@ -105,11 +123,17 @@ class PairCollator:
             input_ids.append(item["input_ids"] + [self.pad_token_id] * padding)
             attention_mask.append(item["attention_mask"] + [0] * padding)
             labels.append(item["labels"] + [-100] * padding)
-        return {
+        output = {
             "input_ids": torch.tensor(input_ids, dtype=torch.long),
             "attention_mask": torch.tensor(attention_mask, dtype=torch.long),
             "labels": torch.tensor(labels, dtype=torch.long),
         }
+        if "reference_margin" in features[0]:
+            output["reference_margin"] = torch.tensor(
+                [float(feature["reference_margin"]) for feature in features],
+                dtype=torch.float32,
+            )
+        return output
 
 
 def task_balanced_replay_rows(
@@ -269,7 +293,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             parameter.data = parameter.data.float()
     model = model.cuda().train()
 
-    dataset = PairDataset(read_jsonl(args.train_jsonl), tokenizer, args.max_length)
+    dataset = PairDataset(
+        read_jsonl(args.train_jsonl),
+        tokenizer,
+        args.max_length,
+        reference_margin_field=str(args.reference_margin_field),
+    )
     generator = torch.Generator().manual_seed(args.seed)
     loader = torch.utils.data.DataLoader(
         dataset,
@@ -309,6 +338,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         running_pair = 0.0
         running_replay = 0.0
         running_accuracy = 0.0
+        running_reference_advantage_accuracy = 0.0
         seen = 0
         replay_seen = 0
         for batch_index, batch in enumerate(loader, start=1):
@@ -317,7 +347,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             chosen = scores[0::2]
             rejected = scores[1::2]
             margin = chosen - rejected
-            pair_loss = functional.softplus(-float(args.beta) * margin).mean()
+            reference_margin = batch.get("reference_margin")
+            preference_advantage = (
+                margin - reference_margin if reference_margin is not None else margin
+            )
+            pair_loss = functional.softplus(-float(args.beta) * preference_advantage).mean()
             sft_loss = -chosen.mean()
             loss = pair_loss + float(args.sft_weight) * sft_loss
             replay_loss = None
@@ -354,6 +388,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             if replay_loss is not None:
                 running_replay += float(replay_loss.detach()) * batch_pairs
             running_accuracy += float((margin.detach() > 0).float().sum())
+            running_reference_advantage_accuracy += float(
+                (preference_advantage.detach() > 0).float().sum()
+            )
             if global_step % int(args.logging_steps) == 0:
                 print(
                     json.dumps(
@@ -364,6 +401,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                             "pair_loss": running_pair / max(seen, 1),
                             "replay_sft_loss": running_replay / max(seen, 1) if replay_loader else None,
                             "ranking_accuracy": running_accuracy / max(seen, 1),
+                            "reference_advantage_accuracy": (
+                                running_reference_advantage_accuracy / max(seen, 1)
+                            ),
                             "replay_examples": replay_seen,
                             "updates": update_step,
                         },
@@ -379,6 +419,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "pair_loss": running_pair / max(seen, 1),
                 "replay_sft_loss": running_replay / max(seen, 1) if replay_loader else None,
                 "ranking_accuracy": running_accuracy / max(seen, 1),
+                "reference_advantage_accuracy": (
+                    running_reference_advantage_accuracy / max(seen, 1)
+                ),
                 "replay_examples": replay_seen,
                 "updates": update_step,
             }
@@ -409,6 +452,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "replay_origin_counts": (
             dict(sorted(replay_dataset.origin_counts.items())) if replay_dataset is not None else {}
         ),
+        "reference_margin_field": str(args.reference_margin_field) or None,
+        "reference_anchored_dpo": bool(args.reference_margin_field),
         "adapter_nonfinite_parameters": nonfinite,
         "history": history,
         "adapter_dir": str(adapter_dir),

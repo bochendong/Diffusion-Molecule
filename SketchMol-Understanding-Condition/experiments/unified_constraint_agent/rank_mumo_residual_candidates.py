@@ -29,12 +29,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--manifest-json", required=True, type=Path)
     parser.add_argument("--base-model", default="Qwen/Qwen2.5-1.5B-Instruct")
     parser.add_argument("--adapter-dir", required=True, type=Path)
+    parser.add_argument("--reference-adapter-dir", type=Path, default=None)
     parser.add_argument("--preference-manifest", required=True, type=Path)
     parser.add_argument("--baseline-prefix", type=int, default=15)
     parser.add_argument("--residual-slots", type=int, default=5)
     parser.add_argument("--max-llm-rank-shift", type=float, default=12.0)
     parser.add_argument("--score-batch-size", type=int, default=16)
     parser.add_argument("--max-length", type=int, default=512)
+    parser.add_argument("--method-name", default="common_llm_1p5b_residual_v9")
     return parser.parse_args(argv)
 
 
@@ -129,7 +131,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     base = transformers.AutoModelForCausalLM.from_pretrained(
         args.base_model, dtype=torch.float32, low_cpu_mem_usage=True
     )
-    model = peft.PeftModel.from_pretrained(base, args.adapter_dir).cuda().eval()
+    if args.reference_adapter_dir is not None:
+        model = peft.PeftModel.from_pretrained(
+            base, args.adapter_dir, adapter_name="candidate"
+        )
+        model.load_adapter(args.reference_adapter_dir, adapter_name="reference")
+        model.set_adapter("candidate")
+    else:
+        model = peft.PeftModel.from_pretrained(base, args.adapter_dir)
+    model = model.cuda().eval()
     model.config.use_cache = False
 
     baseline_groups: dict[str, list[dict[str, str]]] = defaultdict(list)
@@ -166,18 +176,41 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             for row in residual_pool
         ]
+        reference_scores = None
+        if args.reference_adapter_dir is not None:
+            model.set_adapter("reference")
+            reference_scores = constrained.score_encoded_actions(
+                model, tokenizer, encoded, batch_size=int(args.score_batch_size)
+            ) if encoded else []
+            model.set_adapter("candidate")
         scores = constrained.score_encoded_actions(
             model, tokenizer, encoded, batch_size=int(args.score_batch_size)
         ) if encoded else []
+        ranking_scores = (
+            [candidate - reference for candidate, reference in zip(scores, reference_scores)]
+            if reference_scores is not None
+            else scores
+        )
         scored = bounded_residual_ranking(
             residual_pool,
-            scores,
+            ranking_scores,
             max_llm_rank_shift=float(args.max_llm_rank_shift),
         )
         selected_tail = []
-        for row, score, combined_score in scored[: int(args.residual_slots)]:
+        score_by_smiles = {
+            str(row["generated_smiles"]): float(score)
+            for row, score in zip(residual_pool, scores)
+        }
+        reference_by_smiles = {
+            str(row["generated_smiles"]): float(score)
+            for row, score in zip(residual_pool, reference_scores or [])
+        }
+        for row, residual_score, combined_score in scored[: int(args.residual_slots)]:
             item = dict(row)
-            item["residual_llm_log_probability"] = float(score)
+            smiles = str(row["generated_smiles"])
+            item["residual_llm_log_probability"] = score_by_smiles[smiles]
+            item["stable_reference_log_probability"] = reference_by_smiles.get(smiles, "")
+            item["residual_log_probability_delta"] = float(residual_score)
             item["residual_combined_rank_score"] = float(combined_score)
             item["residual_selected"] = True
             selected_tail.append(item)
@@ -215,7 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             row["candidate_attempt_is_repeat"] = is_repeat
             row["candidate_unique_rank"] = unique_ranks[generated_smiles]
             row["residual_candidate_source"] = original_method
-            row["method"] = "common_llm_1p5b_residual_v9"
+            row["method"] = str(args.method_name)
             output.append(row)
             noop_attempt_rows += int(str(row.get("candidate_is_noop", "")).lower() == "true")
     write_csv(args.output_csv, output)
@@ -230,6 +263,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "residual_slots": int(args.residual_slots),
         "max_llm_rank_shift": float(args.max_llm_rank_shift),
         "selection_policy": "deterministic_prefix_plus_bounded_common_llm_residual",
+        "stable_reference_adapter": (
+            str(args.reference_adapter_dir) if args.reference_adapter_dir is not None else None
+        ),
+        "stable_reference_residual_scoring": args.reference_adapter_dir is not None,
         "conditions": len(baseline_groups),
         "output_rows": len(output),
         "attempted_candidates_total": len(output),

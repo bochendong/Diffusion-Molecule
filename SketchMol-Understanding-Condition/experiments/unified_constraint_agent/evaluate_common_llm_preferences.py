@@ -7,6 +7,7 @@ import argparse
 import json
 import math
 import sys
+from collections import defaultdict
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -75,6 +76,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         batch_size=int(args.batch_size),
     )
     margins = [scores[index] - scores[index + 1] for index in range(0, len(scores), 2)]
+    grouped: dict[str, list[float]] = defaultdict(list)
+    for row, margin in zip(rows, margins):
+        grouped[str(row.get("preference_family") or row.get("origin") or "unknown")].append(margin)
     nonfinite = sum(not math.isfinite(value) for value in scores)
     summary = {
         "protocol": "common_llm_residual_preference_eval_v1",
@@ -83,6 +87,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "ranking_accuracy": sum(value > 0.0 for value in margins) / max(len(margins), 1),
         "mean_log_probability_margin": sum(margins) / max(len(margins), 1),
         "nonfinite_scores": nonfinite,
+        "groups": {
+            name: {
+                "pairs": len(values),
+                "ranking_accuracy": sum(value > 0.0 for value in values) / max(len(values), 1),
+                "mean_log_probability_margin": sum(values) / max(len(values), 1),
+            }
+            for name, values in sorted(grouped.items())
+        },
     }
     args.output_json.parent.mkdir(parents=True, exist_ok=True)
     args.output_json.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")

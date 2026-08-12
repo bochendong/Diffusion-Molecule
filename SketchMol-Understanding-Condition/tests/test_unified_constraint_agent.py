@@ -65,6 +65,8 @@ mumo_residual_ranker = load_module("rank_mumo_residual_candidates")
 mumo_residual_gate = load_module("finalize_mumo_residual_gate")
 paper_replay_rows = load_module("build_paper_replay_smoke_rows")
 paper_replay_compare = load_module("compare_paper_replay_smoke")
+anchor_residual = load_module("anchor_residual_ranking")
+anchor_preferences = load_module("build_anchor_residual_preferences")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -1629,3 +1631,89 @@ def test_paper_replay_pool_identity_ignores_adapter_ranking(tmp_path: Path) -> N
     write_csv(right, list(reversed(rows)))
 
     assert paper_replay_compare.pool_identity(left) == paper_replay_compare.pool_identity(right)
+
+
+def test_anchor_residual_ranking_preserves_reference_top5_set() -> None:
+    reference = [10.0 - index for index in range(20)]
+    candidate = list(reference)
+    candidate[0] -= 100.0
+    candidate[4] += 100.0
+    candidate[5] += 1_000.0
+
+    order = anchor_residual.anchored_order(
+        reference, candidate, anchor_top_k=5, max_residual_rank_shift=12.0
+    )
+
+    assert set(order[:5]) == {0, 1, 2, 3, 4}
+    assert order[0] == 4
+    assert order[5] == 5
+
+
+def test_anchor_residual_ranking_validates_contract() -> None:
+    with pytest.raises(ValueError, match="lengths differ"):
+        anchor_residual.anchored_order([1.0], [1.0, 2.0], anchor_top_k=1, max_residual_rank_shift=4)
+    with pytest.raises(ValueError, match="outside"):
+        anchor_residual.anchored_order([1.0], [1.0], anchor_top_k=2, max_residual_rank_shift=4)
+
+
+def test_anchor_preference_balances_families_without_prompt_target() -> None:
+    args = type(
+        "Args",
+        (),
+        {
+            "max_table1_pairs": 2,
+            "max_mumo_graph_pairs": 1,
+            "max_mumo_residual_pairs": 2,
+            "seed": 1714,
+        },
+    )()
+    graph = [
+        {
+            "pair_id": f"t{index}",
+            "origin": "table1",
+            "prompt_messages": [{"content": "source only"}],
+        }
+        for index in range(4)
+    ] + [
+        {
+            "pair_id": f"m{index}",
+            "origin": "mumo",
+            "prompt_messages": [{"content": "source only"}],
+        }
+        for index in range(3)
+    ]
+    residual = [
+        {"pair_id": f"r{index}", "prompt_messages": [{"content": "source only"}]}
+        for index in range(4)
+    ]
+
+    rows = anchor_preferences.split_families(graph, residual, args=args, validation=False)
+
+    counts = {family: sum(row["preference_family"] == family for row in rows) for family in {
+        "table1_graph_edit", "mumo_graph_edit", "mumo_rank_candidate"
+    }}
+    assert counts == {
+        "table1_graph_edit": 2,
+        "mumo_graph_edit": 1,
+        "mumo_rank_candidate": 2,
+    }
+    assert all(row["coverage_rank"] == 5 for row in rows)
+
+
+def test_preference_collator_carries_reference_margin() -> None:
+    torch = pytest.importorskip("torch")
+    tokenizer = type("Tokenizer", (), {"pad_token_id": 0})()
+    collator = preference_train.PairCollator(tokenizer)
+    encoded = {"input_ids": [1, 2], "attention_mask": [1, 1], "labels": [-100, 2]}
+
+    batch = collator(
+        [
+            {
+                "chosen": encoded,
+                "rejected": encoded,
+                "reference_margin": 0.25,
+            }
+        ]
+    )
+
+    assert torch.allclose(batch["reference_margin"], torch.tensor([0.25]))

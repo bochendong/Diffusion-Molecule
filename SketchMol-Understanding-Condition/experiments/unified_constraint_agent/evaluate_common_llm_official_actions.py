@@ -37,6 +37,7 @@ from build_common_llm_sft_dataset import SYSTEM_PROMPT  # noqa: E402
 from molecular_constraint_ir import build_constraint_ir  # noqa: E402
 
 import evaluate_common_llm_constrained_actions as constrained  # noqa: E402
+import anchor_residual_ranking as anchor_ranking  # noqa: E402
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -56,6 +57,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--max-rows", type=int, default=0)
     parser.add_argument("--checkpoint-name", default="progress.jsonl")
+    parser.add_argument("--reference-adapter-dir", type=Path, default=None)
+    parser.add_argument("--anchor-top-k", type=int, default=5)
+    parser.add_argument("--max-residual-rank-shift", type=float, default=4.0)
     return parser.parse_args(argv)
 
 
@@ -170,6 +174,20 @@ def evaluate_row(
         )
         for action, _smiles, _program in candidates
     ]
+    reference_scores: list[float] | None = None
+    if args.reference_adapter_dir is not None:
+        model.set_adapter("reference")
+        reference_scores = (
+            constrained.score_encoded_actions(
+                model,
+                tokenizer,
+                encoded,
+                batch_size=int(args.score_batch_size),
+            )
+            if encoded
+            else []
+        )
+        model.set_adapter("candidate")
     scores = (
         constrained.score_encoded_actions(
             model,
@@ -180,18 +198,23 @@ def evaluate_row(
         if encoded
         else []
     )
-    ranked = sorted(
-        [(*candidate, score) for candidate, score in zip(candidates, scores)],
-        key=lambda item: item[-1],
-        reverse=True,
-    )
+    if reference_scores is None:
+        order = sorted(range(len(scores)), key=lambda item: scores[item], reverse=True)
+    else:
+        order = anchor_ranking.anchored_order(
+            reference_scores,
+            scores,
+            anchor_top_k=int(args.anchor_top_k),
+            max_residual_rank_shift=float(args.max_residual_rank_shift),
+        )
+    ranked = [(*candidates[item], scores[item], item) for item in order]
     identity = row_id(row, index)
     pool_hash = hashlib.sha256(
         "\n".join(item[1] for item in ranked).encode("utf-8")
     ).hexdigest()
     threshold = 0.65 if args.suite == "table1" else 0.40
     candidate_rows: list[dict[str, object]] = []
-    for rank, (action, smiles, program, score) in enumerate(ranked, start=1):
+    for rank, (action, smiles, program, score, original_index) in enumerate(ranked, start=1):
         if args.suite == "table1":
             oracle = policy.action_oracle_record(
                 planner_row,
@@ -238,6 +261,14 @@ def evaluate_row(
                 "graph_action_json": json.dumps(asdict(action), sort_keys=True),
                 "graph_action_program_tokens_json": json.dumps(program),
                 "llm_mean_log_probability": score,
+                "reference_mean_log_probability": (
+                    reference_scores[original_index] if reference_scores is not None else ""
+                ),
+                "residual_log_probability_delta": (
+                    score - reference_scores[original_index]
+                    if reference_scores is not None
+                    else ""
+                ),
                 "diagnostic_strict_success": "True" if oracle["strict_success"] else "False",
                 "diagnostic_instruction_success_fraction": oracle["instruction_success_fraction"],
                 "diagnostic_source_similarity": oracle["source_similarity"],
@@ -254,6 +285,11 @@ def evaluate_row(
         for item in candidate_rows
         if truthy(item.get("diagnostic_strict_success"))
     ]
+    reference_top_k_preserved = True
+    if reference_scores is not None:
+        reference_top_k_preserved = set(order[: int(args.anchor_top_k)]) == anchor_ranking.top_k_set(
+            reference_scores, int(args.anchor_top_k)
+        )
     detail = {
         "row_id": identity,
         "suite": args.suite,
@@ -264,6 +300,7 @@ def evaluate_row(
         "verifier_at_k_strict": truthy(selected_verifier.get("diagnostic_strict_success")),
         "any_strict_at_k": any(rank <= int(args.verifier_k) for rank in strict_ranks),
         "any_strict_at_20": bool(strict_ranks),
+        "reference_top_k_preserved": reference_top_k_preserved,
         "first_strict_rank": strict_ranks[0] if strict_ranks else None,
         "llm_selected_rank": selected_llm.get("candidate_rank"),
         "verifier_selected_rank": selected_verifier.get("candidate_rank"),
@@ -354,6 +391,9 @@ def summarize(details: Sequence[Mapping[str, object]], args: argparse.Namespace)
                 "verifier_at_k_strict": bool_rate(items, "verifier_at_k_strict"),
                 "any_strict_at_k": bool_rate(items, "any_strict_at_k"),
                 "any_strict_at_20": bool_rate(items, "any_strict_at_20"),
+                "reference_top_k_preserved_rate": bool_rate(
+                    items, "reference_top_k_preserved"
+                ),
                 "mean_llm_property_success_fraction": finite_mean(
                     items, "llm_selected_property_success_fraction"
                 ),
@@ -378,6 +418,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError("verifier_k must be inside the fixed candidate pool")
     if not args.adapter_dir.joinpath("adapter_model.safetensors").is_file():
         raise FileNotFoundError(f"Missing frozen adapter: {args.adapter_dir}")
+    if args.reference_adapter_dir is not None:
+        if not args.reference_adapter_dir.joinpath("adapter_model.safetensors").is_file():
+            raise FileNotFoundError(f"Missing reference adapter: {args.reference_adapter_dir}")
+        if not 1 <= int(args.anchor_top_k) <= int(args.candidate_budget):
+            raise ValueError("anchor_top_k must be inside the fixed candidate pool")
     try:
         import peft
         import torch
@@ -407,7 +452,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         dtype=torch.float32,
         low_cpu_mem_usage=True,
     )
-    model = peft.PeftModel.from_pretrained(model, args.adapter_dir)
+    if args.reference_adapter_dir is not None:
+        model = peft.PeftModel.from_pretrained(
+            model, args.adapter_dir, adapter_name="candidate"
+        )
+        model.load_adapter(args.reference_adapter_dir, adapter_name="reference")
+        model.set_adapter("candidate")
+    else:
+        model = peft.PeftModel.from_pretrained(model, args.adapter_dir)
     model.config.use_cache = False
     model = model.cuda().eval()
 
@@ -457,6 +509,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             "output_dir": str(args.output_dir),
             "enumeration_attempt_budget": int(args.enumeration_attempt_budget),
             "max_enumeration_attempt_budget": int(args.max_enumeration_attempt_budget),
+            "reference_adapter_dir": (
+                str(args.reference_adapter_dir) if args.reference_adapter_dir is not None else None
+            ),
+            "anchor_top_k": int(args.anchor_top_k) if args.reference_adapter_dir else None,
+            "max_residual_rank_shift": (
+                float(args.max_residual_rank_shift) if args.reference_adapter_dir else None
+            ),
         }
     )
     (args.output_dir / "summary.json").write_text(
