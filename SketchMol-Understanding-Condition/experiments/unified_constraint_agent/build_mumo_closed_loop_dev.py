@@ -38,8 +38,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--dev-sources-jsonl", required=True, type=Path)
     parser.add_argument("--output-csv", required=True, type=Path)
     parser.add_argument("--manifest-json", required=True, type=Path)
+    parser.add_argument("--enumerated-output-csv", type=Path, default=None)
     parser.add_argument("--candidate-budget", type=int, default=20)
     parser.add_argument("--max-transforms-per-fragment", type=int, default=96)
+    parser.add_argument("--planner-candidate-limit", type=int, default=48)
     parser.add_argument("--min-retrieval-similarity", type=float, default=0.15)
     parser.add_argument("--min-source-tanimoto", type=float, default=0.4)
     parser.add_argument("--min-core-heavy-atoms", type=int, default=5)
@@ -340,6 +342,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_rows.sort(key=lambda row: (str(row["_uca_task_id"]), str(row["_uca_source_group"])))
 
     output = []
+    enumerated_output = []
     task_counts: Counter[str] = Counter()
     candidate_sources: Counter[str] = Counter()
     proposal_counts: list[int] = []
@@ -436,6 +439,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 }
             )
         ranked_candidates = sorted(scored, key=lambda item: float(item["selection_score"]), reverse=True)
+        for internal_rank, candidate in enumerate(
+            ranked_candidates[: int(args.planner_candidate_limit)],
+            start=1,
+        ):
+            enumerated_output.append(
+                {
+                    **row,
+                    **candidate,
+                    "internal_candidate_rank": internal_rank,
+                    "candidate_is_noop": bool(candidate.get("candidate_is_noop", False)),
+                    "candidate_valid": True,
+                    "candidate_source_similarity_pass": True,
+                }
+            )
         unique_attempt_count = min(len(ranked_candidates), int(args.candidate_budget))
         unique_attempt_counts.append(unique_attempt_count)
         frozen_attempts = freeze_attempts(ranked_candidates, budget=int(args.candidate_budget))
@@ -460,6 +477,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"[closed-loop-dev] {index + 1}/{len(raw_rows)}", flush=True)
 
     write_rows(args.output_csv, output)
+    if args.enumerated_output_csv is not None:
+        write_rows(args.enumerated_output_csv, enumerated_output)
     manifest = {
         "protocol": "mumo_fit_only_pair_verifier_closed_loop_dev_v1",
         "data_role": "fit_models_to_disjoint_train_dev_sources",
@@ -470,6 +489,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "attempted_candidates_per_condition": 20,
         "conditions": len(raw_rows),
         "candidate_rows": len(output),
+        "enumerated_candidate_rows": len(enumerated_output),
+        "planner_candidate_limit": int(args.planner_candidate_limit),
         "unique_candidates_total": sum(unique_attempt_counts),
         "unique_valid_candidates_total": sum(unique_attempt_counts),
         "mean_unique_candidates_per_condition": (

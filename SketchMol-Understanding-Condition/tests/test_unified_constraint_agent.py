@@ -60,6 +60,9 @@ composed_delta = load_module("build_composed_retrieved_delta_candidates")
 mumo_parallel = load_module("mumo_parallel_protocol")
 mumo_verifier = load_module("train_mumo_property_verifier")
 mumo_closed_loop = load_module("build_mumo_closed_loop_dev")
+mumo_residual_preference = load_module("build_mumo_residual_preferences")
+mumo_residual_ranker = load_module("rank_mumo_residual_candidates")
+mumo_residual_gate = load_module("finalize_mumo_residual_gate")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -241,6 +244,59 @@ def test_mumo_closed_loop_empty_support_uses_explicit_source_noop() -> None:
     assert row["source_tanimoto"] == 1.0
     np.testing.assert_array_equal(returned_feature, feature)
     assert returned_feature is not feature
+
+
+def test_mumo_residual_prompt_hides_training_target() -> None:
+    row = {"source_smiles": "CCO", "_uca_task_id": "BDP"}
+
+    prompt = mumo_residual_preference.prompt_messages(row, ("bbbp", "drd2", "plogp"))
+    serialized = json.dumps(prompt)
+
+    assert "CCO" in serialized
+    assert "target_smiles" not in serialized
+    assert "verifier_margins" in serialized
+
+
+def test_mumo_residual_rank_shift_is_bounded_by_deterministic_order() -> None:
+    rows = [
+        {"internal_candidate_rank": str(rank), "generated_smiles": f"C{rank}"}
+        for rank in range(16, 24)
+    ]
+    # The worst deterministic row gets the strongest LLM score.  A bounded
+    # correction can promote it, but cannot make an arbitrary likelihood fully
+    # replace the verifier order.
+    ranked = mumo_residual_ranker.bounded_residual_ranking(
+        rows,
+        [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 100.0],
+        max_llm_rank_shift=4.0,
+    )
+
+    assert int(ranked[0][0]["internal_candidate_rank"]) < 23
+    assert {int(item[0]["internal_candidate_rank"]) for item in ranked} == set(range(16, 24))
+
+
+def test_mumo_residual_gate_anti_forgetting_checks_all_origins() -> None:
+    baseline = {
+        "groups": {
+            "all": {"rows": 30, "json_parse_rate": 1.0, "action_type_rate": 1.0},
+            "denovo": {"rows": 10, "json_parse_rate": 1.0, "action_type_rate": 1.0},
+            "mumo": {"rows": 10, "json_parse_rate": 1.0, "action_type_rate": 1.0},
+            "table1": {"rows": 10, "json_parse_rate": 1.0, "action_type_rate": 1.0},
+        }
+    }
+    candidate = json.loads(json.dumps(baseline))
+    candidate["groups"]["mumo"]["action_type_rate"] = 0.94
+
+    comparisons, checks = mumo_residual_gate.anti_forgetting_comparison(
+        baseline,
+        candidate,
+        overall_allowance=0.02,
+        origin_allowance=0.05,
+    )
+
+    assert comparisons["mumo"]["action_type_rate_delta"] == pytest.approx(-0.06)
+    assert checks["mumo_action_type_rate_preserved"] is False
+    assert checks["table1_action_type_rate_preserved"] is True
 
 
 def test_constraint_ir_separates_design_and_edit_actions() -> None:

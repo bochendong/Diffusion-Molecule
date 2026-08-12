@@ -24,6 +24,7 @@ DEV_SOURCES="$RUN_ROOT/data/dev_sources.jsonl"
 DEV_SOURCE_MANIFEST="$RUN_ROOT/data/dev_sources.manifest.json"
 SHARD_COUNT="${SUCC_UCA_MUMO_DEV_SHARD_COUNT:-16}"
 CANDIDATES="$RUN_ROOT/candidates/fixed_n20.csv"
+ENUMERATED="$RUN_ROOT/candidates/internal_top48.csv"
 MANIFEST="$RUN_ROOT/candidates/manifest.json"
 ORACLE="$RUN_ROOT/oracle/generated_properties.csv"
 EVAL_DIR="$RUN_ROOT/evaluation"
@@ -44,8 +45,10 @@ case "$STAGE" in
       --run-root "$EVIDENCE_ROOT" \
       --dev-sources-jsonl "$DEV_SOURCES" \
       --output-csv "$RUN_ROOT/candidates/shards/candidates_${SHARD_TAG}.csv" \
+      --enumerated-output-csv "$RUN_ROOT/candidates/shards/enumerated_${SHARD_TAG}.csv" \
       --manifest-json "$RUN_ROOT/candidates/shards/manifest_${SHARD_TAG}.json" \
       --candidate-budget 20 \
+      --planner-candidate-limit 48 \
       --shard-index "$SHARD_INDEX" \
       --shard-count "$SHARD_COUNT"
     ;;
@@ -54,6 +57,7 @@ case "$STAGE" in
     "$PYTHON_BIN" "$SCRIPT_DIR/merge_mumo_closed_loop_dev.py" \
       --shard-dir "$RUN_ROOT/candidates/shards" \
       --output-csv "$CANDIDATES" \
+      --enumerated-output-csv "$ENUMERATED" \
       --manifest-json "$MANIFEST" \
       --shard-count "$SHARD_COUNT" \
       --expected-conditions "$EXPECTED_CONDITIONS"

@@ -16,6 +16,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--shard-dir", required=True, type=Path)
     parser.add_argument("--output-csv", required=True, type=Path)
     parser.add_argument("--manifest-json", required=True, type=Path)
+    parser.add_argument("--enumerated-output-csv", type=Path, default=None)
     parser.add_argument("--shard-count", type=int, default=16)
     parser.add_argument("--expected-conditions", type=int, required=True)
     return parser.parse_args(argv)
@@ -38,6 +39,7 @@ def write_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     rows = []
+    enumerated_rows = []
     seen_conditions = set()
     for index in range(int(args.shard_count)):
         candidate_path = args.shard_dir / f"candidates_{index:03d}.csv"
@@ -60,6 +62,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError(f"Duplicate conditions across shard {index}")
         seen_conditions.update(shard_conditions)
         rows.extend(shard_rows)
+        if args.enumerated_output_csv is not None:
+            enumerated_path = args.shard_dir / f"enumerated_{index:03d}.csv"
+            shard_enumerated = read_csv(enumerated_path)
+            grouped_internal: dict[str, list[dict[str, str]]] = defaultdict(list)
+            for row in shard_enumerated:
+                grouped_internal[row["condition_id"]].append(row)
+            if set(grouped_internal) != shard_conditions:
+                raise ValueError(f"Shard {index} enumerated condition contract failed")
+            for condition, items in grouped_internal.items():
+                ranks = sorted(int(row["internal_candidate_rank"]) for row in items)
+                if ranks != list(range(1, len(items) + 1)) or len(items) > 48:
+                    raise ValueError(f"{condition} internal rank contract failed")
+            enumerated_rows.extend(shard_enumerated)
     grouped: dict[str, list[dict[str, str]]] = defaultdict(list)
     for row in rows:
         grouped[row["condition_id"]].append(row)
@@ -91,6 +106,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     rows.sort(key=lambda row: (row["condition_id"], int(row["candidate_rank"])))
     write_csv(args.output_csv, rows)
+    if args.enumerated_output_csv is not None:
+        enumerated_rows.sort(
+            key=lambda row: (row["condition_id"], int(row["internal_candidate_rank"]))
+        )
+        write_csv(args.enumerated_output_csv, enumerated_rows)
     manifest = {
         "protocol": "mumo_fit_only_pair_verifier_closed_loop_dev_v1",
         "evaluation_target_access": False,
@@ -99,6 +119,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "candidate_budget": 20,
         "conditions": len(grouped),
         "candidate_rows": len(rows),
+        "enumerated_candidate_rows": len(enumerated_rows),
+        "planner_candidate_limit": 48 if args.enumerated_output_csv is not None else 0,
         "attempted_candidates_total": len(rows),
         "unique_candidates_total": sum(unique_counts),
         "unique_valid_candidates_total": sum(unique_valid_counts),
