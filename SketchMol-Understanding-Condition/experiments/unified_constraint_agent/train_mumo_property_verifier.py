@@ -201,7 +201,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "dev_unique_molecules": len(dev_keys),
         "fit_dev_identical_smiles_removed": len(overlap_smiles),
         "mae": float(mean_absolute_error(y_dev, dev_prediction)),
-        "rmse": float(mean_squared_error(y_dev, dev_prediction, squared=False)),
+        "rmse": float(math.sqrt(mean_squared_error(y_dev, dev_prediction))),
         "spearman": safe_correlation(y_dev, dev_prediction, kind="spearman"),
         "pearson": safe_correlation(y_dev, dev_prediction, kind="pearson"),
         "pairwise": {
