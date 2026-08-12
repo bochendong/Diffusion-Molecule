@@ -54,6 +54,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             row.setdefault("candidate_source_similarity_pass", "True")
             row.setdefault("candidate_attempt_is_repeat", "False")
             row.setdefault("candidate_unique_rank", row["candidate_rank"])
+            row.setdefault("candidate_is_noop", "False")
         shard_conditions = {row["condition_id"] for row in shard_rows}
         if seen_conditions & shard_conditions:
             raise ValueError(f"Duplicate conditions across shard {index}")
@@ -80,6 +81,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     repeated_attempt_rows = sum(
         row.get("candidate_attempt_is_repeat") == "True" for row in rows
     )
+    noop_attempt_rows = sum(row.get("candidate_is_noop") == "True" for row in rows)
+    noop_conditions = len(
+        {
+            row["condition_id"]
+            for row in rows
+            if row.get("candidate_is_noop") == "True"
+        }
+    )
     rows.sort(key=lambda row: (row["condition_id"], int(row["candidate_rank"])))
     write_csv(args.output_csv, rows)
     manifest = {
@@ -96,9 +105,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "mean_unique_candidates_per_condition": sum(unique_counts) / max(len(unique_counts), 1),
         "min_unique_candidates_per_condition": min(unique_counts, default=0),
         "repeated_attempt_rows": repeated_attempt_rows,
+        "noop_attempt_rows": noop_attempt_rows,
+        "noop_fallback_conditions": noop_conditions,
         "validity": 1.0,
         "source_similarity_pass_rate": 1.0,
         "repeat_policy": "cycle_ranked_valid_candidates_only_when_unique_support_below_20",
+        "noop_policy": "repeat_source_only_when_constrained_unique_support_is_empty",
         "shard_count": int(args.shard_count),
     }
     args.manifest_json.parent.mkdir(parents=True, exist_ok=True)

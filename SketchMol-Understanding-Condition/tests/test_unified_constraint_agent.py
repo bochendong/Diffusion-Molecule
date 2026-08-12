@@ -231,6 +231,18 @@ def test_mumo_closed_loop_freezes_20_attempts_without_inventing_candidates() -> 
     assert [rank for _row, _repeat, rank in frozen[:5]] == [1, 2, 3, 1, 2]
 
 
+def test_mumo_closed_loop_empty_support_uses_explicit_source_noop() -> None:
+    feature = np.asarray([1.0, 0.0, 0.5], dtype=np.float32)
+
+    row, returned_feature = mumo_closed_loop.source_noop_candidate("C[N+](C)(C)C", feature)
+
+    assert row["generated_smiles"] == "C[N+](C)(C)C"
+    assert row["candidate_is_noop"] is True
+    assert row["source_tanimoto"] == 1.0
+    np.testing.assert_array_equal(returned_feature, feature)
+    assert returned_feature is not feature
+
+
 def test_constraint_ir_separates_design_and_edit_actions() -> None:
     design = ir_module.build_constraint_ir(
         {

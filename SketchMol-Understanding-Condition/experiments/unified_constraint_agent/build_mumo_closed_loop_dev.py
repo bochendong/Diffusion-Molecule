@@ -161,6 +161,27 @@ def freeze_attempts(
     return frozen
 
 
+def source_noop_candidate(
+    source_smiles: str,
+    source_feature: np.ndarray,
+) -> tuple[dict[str, object], np.ndarray]:
+    """Represent an explicit valid no-op when the constrained support is empty."""
+
+    return (
+        {
+            "generated_smiles": source_smiles,
+            "method": "source_noop_empty_support_fallback",
+            "source_tanimoto": 1.0,
+            "retrieval_similarity": 1.0,
+            "transform_frequency": 0,
+            "source_variable": "",
+            "target_variable": "",
+            "candidate_is_noop": True,
+        },
+        source_feature.copy(),
+    )
+
+
 def condition_row(raw: Mapping[str, object], _index: int) -> dict[str, object]:
     task_id = str(raw["_uca_task_id"])
     spec = next(spec for spec in export.TASK_SPECS if spec.suite == "mumo" and spec.task_id == task_id)
@@ -324,6 +345,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     proposal_counts: list[int] = []
     unique_attempt_counts: list[int] = []
     repeated_attempt_rows = 0
+    noop_fallback_conditions = 0
     for index, raw in enumerate(raw_rows):
         row = condition_row(raw, index)
         source = str(row["source_smiles"])
@@ -388,9 +410,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 generated_feature,
             )
         candidate_items = list(candidates.values())
-        proposal_counts.append(len(candidate_items))
         if not candidate_items:
-            raise ValueError(f"{row['condition_id']} has no candidates")
+            candidate_items = [source_noop_candidate(source_canonical, source_feature)]
+            noop_fallback_conditions += 1
+        proposal_counts.append(len(candidate_items))
         scores, candidate_margins = score_candidates_batch(
             source_feature,
             [item[1] for item in candidate_items],
@@ -427,6 +450,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     "candidate_unique_rank": unique_rank,
                     "candidate_valid": True,
                     "candidate_source_similarity_pass": True,
+                    "candidate_is_noop": bool(candidate.get("candidate_is_noop", False)),
                 }
             )
             repeated_attempt_rows += int(is_repeat)
@@ -454,6 +478,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "min_unique_candidates_per_condition": min(unique_attempt_counts, default=0),
         "repeated_attempt_rows": repeated_attempt_rows,
         "repeat_policy": "cycle_ranked_valid_candidates_only_when_unique_support_below_20",
+        "noop_fallback_conditions": noop_fallback_conditions,
+        "noop_policy": "repeat_source_only_when_constrained_unique_support_is_empty",
         "task_conditions": dict(sorted(task_counts.items())),
         "candidate_sources": dict(sorted(candidate_sources.items())),
         "selection": "hybrid_fit_delta_analog_then_pair_margin_similarity_frequency",

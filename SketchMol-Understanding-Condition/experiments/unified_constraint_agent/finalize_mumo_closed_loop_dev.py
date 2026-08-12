@@ -81,6 +81,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         "min_unique_candidates_per_condition": int(manifest["min_unique_candidates_per_condition"]),
         "repeated_attempt_rows": int(manifest["repeated_attempt_rows"]),
+        "noop_attempt_rows": int(manifest["noop_attempt_rows"]),
+        "noop_fallback_conditions": int(manifest["noop_fallback_conditions"]),
         "success_rate": sr,
         "ind_success_rate": split_rates["ind"],
         "ood_success_rate": split_rates["ood"],
