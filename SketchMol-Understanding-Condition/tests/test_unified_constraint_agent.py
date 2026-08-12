@@ -63,6 +63,8 @@ mumo_closed_loop = load_module("build_mumo_closed_loop_dev")
 mumo_residual_preference = load_module("build_mumo_residual_preferences")
 mumo_residual_ranker = load_module("rank_mumo_residual_candidates")
 mumo_residual_gate = load_module("finalize_mumo_residual_gate")
+paper_replay_rows = load_module("build_paper_replay_smoke_rows")
+paper_replay_compare = load_module("compare_paper_replay_smoke")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -1596,3 +1598,34 @@ def test_composed_delta_state_accumulates_anchor_and_revision_effects() -> None:
         min_source_tanimoto=0.4,
     )
     assert key[1:3] == (2, 2)
+
+
+def test_paper_replay_sampling_is_group_balanced_and_deterministic() -> None:
+    rows = [
+        {"condition_id": f"p{group}-{index}", "property_count": str(group)}
+        for group in (2, 3)
+        for index in range(4)
+    ]
+    first = paper_replay_rows.sample_by_group(
+        rows, group_key=paper_replay_rows.property_count, per_group=2, seed=17
+    )
+    second = paper_replay_rows.sample_by_group(
+        list(reversed(rows)), group_key=paper_replay_rows.property_count, per_group=2, seed=17
+    )
+
+    assert [row["condition_id"] for row in first] == [row["condition_id"] for row in second]
+    assert [paper_replay_rows.property_count(row) for row in first].count(2) == 2
+    assert [paper_replay_rows.property_count(row) for row in first].count(3) == 2
+
+
+def test_paper_replay_pool_identity_ignores_adapter_ranking(tmp_path: Path) -> None:
+    left = tmp_path / "left.csv"
+    right = tmp_path / "right.csv"
+    rows = [
+        {"condition_id": "c1", "generated_smiles": "CC", "graph_action_json": "a"},
+        {"condition_id": "c1", "generated_smiles": "CO", "graph_action_json": "b"},
+    ]
+    write_csv(left, rows)
+    write_csv(right, list(reversed(rows)))
+
+    assert paper_replay_compare.pool_identity(left) == paper_replay_compare.pool_identity(right)
