@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import numpy as np
+
 
 ROOT = Path(__file__).resolve().parents[2]
 MODULE_ROOT = (
@@ -55,6 +57,7 @@ delta_ceiling_pool = load_module("materialize_retrieved_delta_ceiling_pool")
 delta_ceiling_audit = load_module("audit_retrieved_delta_ceiling")
 composed_delta = load_module("build_composed_retrieved_delta_candidates")
 mumo_parallel = load_module("mumo_parallel_protocol")
+mumo_verifier = load_module("train_mumo_property_verifier")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -87,6 +90,20 @@ def test_mumo_parallel_partition_and_shard_are_deterministic() -> None:
         shard_count=32,
     )
     assert 0 <= mumo_parallel.stable_shard(group, seed=1711, shard_count=32) < 32
+
+
+def test_mumo_pair_verifier_uses_source_target_and_delta_features() -> None:
+    features = np.asarray([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    pair_features = mumo_verifier.pair_feature_matrix(features, [(0, 1)])
+    labels = mumo_verifier.threshold_labels(
+        np.asarray([0.1, 0.4], dtype=np.float32),
+        [(0, 1)],
+        direction=1.0,
+        threshold=0.2,
+    )
+
+    assert pair_features.tolist() == [[1.0, 0.0, 0.0, 1.0, -1.0, 1.0]]
+    assert labels.tolist() == [True]
 
 
 def test_constraint_ir_separates_design_and_edit_actions() -> None:

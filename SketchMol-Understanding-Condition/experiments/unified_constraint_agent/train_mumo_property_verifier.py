@@ -59,6 +59,90 @@ def safe_correlation(a: np.ndarray, b: np.ndarray, *, kind: str) -> float:
     return float(value) if math.isfinite(float(value)) else 0.0
 
 
+def paired_indices(
+    data: dict[str, np.ndarray],
+    labels: np.ndarray,
+    *,
+    partition: str,
+    excluded_smiles: set[str] | None = None,
+) -> list[tuple[int, int]]:
+    rows: dict[str, dict[str, int]] = defaultdict(dict)
+    excluded = excluded_smiles or set()
+    for index, (pair_id, raw_partition, role) in enumerate(
+        zip(data["pair_id"], data["partition"], data["role"])
+    ):
+        if str(raw_partition) != str(partition) or not np.isfinite(labels[index]):
+            continue
+        rows[str(pair_id)][str(role)] = index
+    output = []
+    for roles in rows.values():
+        if "source" not in roles or "target" not in roles:
+            continue
+        source_index = roles["source"]
+        target_index = roles["target"]
+        if str(data["smiles"][source_index]) in excluded or str(data["smiles"][target_index]) in excluded:
+            continue
+        output.append((source_index, target_index))
+    return output
+
+
+def pair_feature_matrix(
+    feature_matrix: np.ndarray,
+    pairs: Sequence[tuple[int, int]],
+) -> np.ndarray:
+    if not pairs:
+        return np.empty((0, int(feature_matrix.shape[1]) * 3), dtype=np.float32)
+    source_indices = np.asarray([source for source, _target in pairs], dtype=np.int64)
+    target_indices = np.asarray([target for _source, target in pairs], dtype=np.int64)
+    source = np.asarray(feature_matrix[source_indices], dtype=np.float32)
+    target = np.asarray(feature_matrix[target_indices], dtype=np.float32)
+    return np.concatenate([source, target, target - source], axis=1).astype(np.float32, copy=False)
+
+
+def threshold_labels(
+    labels: np.ndarray,
+    pairs: Sequence[tuple[int, int]],
+    *,
+    direction: float,
+    threshold: float,
+) -> np.ndarray:
+    return np.asarray(
+        [direction * float(labels[target] - labels[source]) >= threshold for source, target in pairs],
+        dtype=bool,
+    )
+
+
+def pairwise_metrics(
+    actual: np.ndarray,
+    predicted: np.ndarray,
+    *,
+    direction_name: str,
+    threshold: float,
+    decision_source: str,
+) -> dict[str, object]:
+    actual = np.asarray(actual, dtype=bool)
+    predicted = np.asarray(predicted, dtype=bool)
+    true_positive = int(np.logical_and(actual, predicted).sum())
+    false_negative = int(np.logical_and(actual, np.logical_not(predicted)).sum())
+    false_positive = int(np.logical_and(np.logical_not(actual), predicted).sum())
+    true_negative = int(np.logical_and(np.logical_not(actual), np.logical_not(predicted)).sum())
+    return {
+        "eligible_dev_pairs": int(len(actual)),
+        "actual_positive_pairs": int(actual.sum()),
+        "predicted_positive_pairs": int(predicted.sum()),
+        "true_positive": true_positive,
+        "false_negative": false_negative,
+        "false_positive": false_positive,
+        "true_negative": true_negative,
+        "threshold_recall": float(true_positive / max(true_positive + false_negative, 1)),
+        "threshold_precision": float(true_positive / max(true_positive + false_positive, 1)),
+        "threshold_accuracy": float((true_positive + true_negative) / max(len(actual), 1)),
+        "direction": direction_name,
+        "threshold": float(threshold),
+        "decision_source": decision_source,
+    }
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     files = sorted(args.feature_dir.glob("features_*.npz"))
@@ -124,7 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     x_fit, y_fit = materialize(fit_keys, "fit")
     x_dev, y_dev = materialize(dev_keys, "dev")
 
-    from sklearn.ensemble import ExtraTreesRegressor
+    from sklearn.ensemble import ExtraTreesClassifier, ExtraTreesRegressor
     from sklearn.metrics import mean_absolute_error, mean_squared_error
 
     model = ExtraTreesRegressor(
@@ -137,43 +221,57 @@ def main(argv: Sequence[str] | None = None) -> int:
     model.fit(x_fit, y_fit)
     dev_prediction = np.asarray(model.predict(x_dev), dtype=np.float32)
 
-    # Pairwise threshold recall is the verifier metric that matters to the
-    # planner: can it recognize a true requested improvement from source to
-    # target using only predicted property values?
-    dev_pair_rows: dict[str, dict[str, int]] = defaultdict(dict)
-    for index, (pair_id, partition, role) in enumerate(
-        zip(data["pair_id"], data["partition"], data["role"])
-    ):
-        if str(partition) != "dev" or not np.isfinite(labels[index]):
-            continue
-        dev_pair_rows[str(pair_id)][str(role)] = index
-    pair_indices = [
-        (roles["source"], roles["target"])
-        for roles in dev_pair_rows.values()
-        if "source" in roles and "target" in roles
-        and str(data["smiles"][roles["source"]]) not in fit_smiles
-        and str(data["smiles"][roles["target"]]) not in fit_smiles
-    ]
-    actual_positive: list[bool] = []
-    predicted_positive: list[bool] = []
-    if pair_indices:
-        unique_indices = sorted({index for pair in pair_indices for index in pair})
+    # A value regressor is useful for numeric margins, but threshold crossing
+    # is a pairwise decision. Train a second fit-only classifier directly on
+    # source -> candidate edits so the planner does not inherit conservative
+    # regression-to-the-mean at the MuMO boundary.
+    direction_name = export.DEFAULT_DIRECTION[args.property]
+    direction = -1.0 if direction_name == "decrease" else 1.0
+    threshold = float(export.MUMO_THRESHOLDS[args.property])
+    fit_pairs = paired_indices(data, labels, partition="fit")
+    dev_pairs = paired_indices(data, labels, partition="dev", excluded_smiles=fit_smiles)
+    if len(fit_pairs) < int(args.min_fit_labels) or len(dev_pairs) < int(args.min_dev_labels):
+        raise ValueError(
+            f"Insufficient {args.property} pairs: fit={len(fit_pairs)} dev={len(dev_pairs)}"
+        )
+    fit_pair_labels = threshold_labels(
+        labels,
+        fit_pairs,
+        direction=direction,
+        threshold=threshold,
+    )
+    dev_pair_labels = threshold_labels(
+        labels,
+        dev_pairs,
+        direction=direction,
+        threshold=threshold,
+    )
+    if len(np.unique(fit_pair_labels)) != 2:
+        raise ValueError(f"{args.property} fit pair labels need both classes")
+    pair_classifier = ExtraTreesClassifier(
+        n_estimators=int(args.estimators),
+        min_samples_leaf=int(args.min_samples_leaf),
+        max_features=0.5,
+        class_weight="balanced",
+        n_jobs=int(args.jobs),
+        random_state=int(args.seed),
+    )
+    pair_classifier.fit(pair_feature_matrix(feature_matrix, fit_pairs), fit_pair_labels)
+    pair_probability = pair_classifier.predict_proba(pair_feature_matrix(feature_matrix, dev_pairs))
+    positive_column = list(pair_classifier.classes_).index(True)
+    direct_pair_prediction = np.asarray(pair_probability[:, positive_column] >= 0.5, dtype=bool)
+
+    absolute_pair_prediction: list[bool] = []
+    if dev_pairs:
+        unique_indices = sorted({index for pair in dev_pairs for index in pair})
         prediction_lookup = dict(
             zip(unique_indices, model.predict(feature_matrix[unique_indices]).astype(float))
         )
-        direction = -1.0 if export.DEFAULT_DIRECTION[args.property] == "decrease" else 1.0
-        threshold = float(export.MUMO_THRESHOLDS[args.property])
-        for source_index, target_index in pair_indices:
-            actual_delta = direction * float(labels[target_index] - labels[source_index])
+        for source_index, target_index in dev_pairs:
             predicted_delta = direction * float(
                 prediction_lookup[target_index] - prediction_lookup[source_index]
             )
-            actual_positive.append(actual_delta >= threshold)
-            predicted_positive.append(predicted_delta >= threshold)
-    true_positive = sum(actual and predicted for actual, predicted in zip(actual_positive, predicted_positive))
-    false_negative = sum(actual and not predicted for actual, predicted in zip(actual_positive, predicted_positive))
-    false_positive = sum(not actual and predicted for actual, predicted in zip(actual_positive, predicted_positive))
-    true_negative = sum(not actual and not predicted for actual, predicted in zip(actual_positive, predicted_positive))
+            absolute_pair_prediction.append(predicted_delta >= threshold)
 
     args.output_model.parent.mkdir(parents=True, exist_ok=True)
     joblib.dump(
@@ -184,6 +282,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             "fingerprint_bits": int(data["fingerprint"].shape[1]),
             "descriptor_count": int(data["descriptors"].shape[1]),
             "estimator": model,
+            "pair_classifier": pair_classifier,
+            "pair_feature_schema": "source,target,target_minus_source",
+            "pair_threshold": threshold,
+            "pair_direction": direction_name,
         },
         args.output_model,
         compress=3,
@@ -204,25 +306,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         "rmse": float(math.sqrt(mean_squared_error(y_dev, dev_prediction))),
         "spearman": safe_correlation(y_dev, dev_prediction, kind="spearman"),
         "pearson": safe_correlation(y_dev, dev_prediction, kind="pearson"),
-        "pairwise": {
-            "eligible_dev_pairs": len(pair_indices),
-            "actual_positive_pairs": int(sum(actual_positive)),
-            "predicted_positive_pairs": int(sum(predicted_positive)),
-            "true_positive": int(true_positive),
-            "false_negative": int(false_negative),
-            "false_positive": int(false_positive),
-            "true_negative": int(true_negative),
-            "threshold_recall": float(true_positive / max(true_positive + false_negative, 1)),
-            "threshold_precision": float(true_positive / max(true_positive + false_positive, 1)),
-            "threshold_accuracy": float((true_positive + true_negative) / max(len(pair_indices), 1)),
-            "direction": export.DEFAULT_DIRECTION[args.property],
-            "threshold": float(export.MUMO_THRESHOLDS[args.property]),
-        },
+        "pairwise": pairwise_metrics(
+            dev_pair_labels,
+            direct_pair_prediction,
+            direction_name=direction_name,
+            threshold=threshold,
+            decision_source="direct_pair_classifier",
+        ),
+        "absolute_value_pairwise": pairwise_metrics(
+            dev_pair_labels,
+            np.asarray(absolute_pair_prediction, dtype=bool),
+            direction_name=direction_name,
+            threshold=threshold,
+            decision_source="difference_of_absolute_regressor_predictions",
+        ),
         "model": {
-            "kind": "ExtraTreesRegressor",
+            "kind": "ExtraTreesRegressor+ExtraTreesClassifier",
             "estimators": int(args.estimators),
             "min_samples_leaf": int(args.min_samples_leaf),
             "max_features": 0.5,
+            "pair_class_weight": "balanced",
+            "fit_pairs": len(fit_pairs),
             "seed": int(args.seed),
         },
     }
