@@ -403,6 +403,16 @@ def test_direct_repair_merge_keeps_attempt_indices_without_rank_semantics(
     assert manifest["output_rows_have_rank"] is False
 
 
+def test_direct_repair_cluster_runner_uses_stable_warm_start_hyperparameters() -> None:
+    script = (
+        MODULE_ROOT / "run_direct_repair_v12.sh"
+    ).read_text(encoding="utf-8")
+
+    assert "--compute-dtype float32" in script
+    assert "--learning-rate 2e-6" in script
+    assert "--compute-dtype bfloat16" not in script
+
+
 def test_mumo_residual_rank_shift_is_bounded_by_deterministic_order() -> None:
     rows = [
         {"internal_candidate_rank": str(rank), "generated_smiles": f"C{rank}"}

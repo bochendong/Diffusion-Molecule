@@ -67,8 +67,8 @@ case "$STAGE" in
       --output-dir "$CONTROLLER_MODEL" \
       --base-model "$BASE_MODEL" \
       --max-length 512 --epochs 1 --batch-size 2 \
-      --gradient-accumulation 8 --learning-rate 1e-5 \
-      --compute-dtype bfloat16 --seed 1715
+      --gradient-accumulation 8 --learning-rate 2e-6 \
+      --compute-dtype float32 --seed 1715
     "$PYTHON_BIN" "$SCRIPT_DIR/evaluate_common_llm_pilot.py" \
       --input-jsonl "$STABLE_SFT/validation.jsonl" \
       --output-dir "$FORGETTING_DIR/candidate" \

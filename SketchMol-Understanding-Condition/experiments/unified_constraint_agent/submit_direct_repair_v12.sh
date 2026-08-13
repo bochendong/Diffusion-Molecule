@@ -13,6 +13,7 @@ CPU_ACCOUNT="${SUCC_UCA_CPU_ACCOUNT:-def-hup-ab_cpu}"
 GPU_ACCOUNT="${SUCC_UCA_GPU_ACCOUNT:-def-hup-ab_gpu}"
 GPU_REQUEST="${SUCC_UCA_GPU_REQUEST:-nvidia_h100_80gb_hbm3_2g.20gb:1}"
 SHARD_COUNT="${SUCC_UCA_DIRECT_REPAIR_SHARD_COUNT:-16}"
+MODE="${1:-full}"
 command -v sbatch >/dev/null 2>&1 || { echo "ERROR: sbatch not found" >&2; exit 2; }
 mkdir -p "$LOG_DIR"
 export SUCC_UCA_SHARED_REPO_DIR="$SHARED_REPO_DIR"
@@ -24,13 +25,27 @@ submit() {
   printf '%s\n' "$output" | sed -n 's/^\([0-9][0-9]*\)\(;.*\)\?$/\1/p' | tail -1
 }
 
-prepare_job="$(submit --account="$CPU_ACCOUNT" --job-name=uca-direct-r12-prep \
-  --time=00:30:00 --cpus-per-task=4 --mem=16G \
-  --mail-user="$MAIL_USER" --mail-type=BEGIN,FAIL --output="$LOG_DIR/%x-%j.log" \
-  --export=ALL --wrap="bash '$SCRIPT_DIR/run_direct_repair_v12.sh' prepare")"
+if [[ "$MODE" == "resume_gpu" ]]; then
+  PREPARED_MANIFEST="$RUN_ROOT/controller/data/manifest.json"
+  [[ -s "$PREPARED_MANIFEST" ]] || {
+    echo "ERROR: resume_gpu requires completed controller preparation" >&2; exit 2;
+  }
+  python -c 'import json,sys; p=json.load(open(sys.argv[1])); assert p["prompt_target_access"] is False; assert p["evaluation_target_access"] is False; assert p["evaluation_oracle_access"] is False; assert p["source_group_overlap"] == 0; assert p["plan_train_rows"] > 0; assert p["plan_validation_rows"] > 0' "$PREPARED_MANIFEST"
+  gpu_dependency=()
+  prepare_job="reused"
+elif [[ "$MODE" == "full" ]]; then
+  prepare_job="$(submit --account="$CPU_ACCOUNT" --job-name=uca-direct-r12-prep \
+    --time=00:30:00 --cpus-per-task=4 --mem=16G \
+    --mail-user="$MAIL_USER" --mail-type=BEGIN,FAIL --output="$LOG_DIR/%x-%j.log" \
+    --export=ALL --wrap="bash '$SCRIPT_DIR/run_direct_repair_v12.sh' prepare")"
+  gpu_dependency=(--dependency="afterok:$prepare_job" --kill-on-invalid-dep=yes)
+else
+  echo "ERROR: mode must be full or resume_gpu" >&2
+  exit 2
+fi
 
 gpu_job="$(submit --account="$GPU_ACCOUNT" --job-name=uca-direct-r12-ctrl \
-  --dependency="afterok:$prepare_job" --kill-on-invalid-dep=yes \
+  "${gpu_dependency[@]}" \
   --time=02:00:00 --cpus-per-task=4 --mem=32G --gpus="$GPU_REQUEST" \
   --mail-user="$MAIL_USER" --mail-type=FAIL --output="$LOG_DIR/%x-%j.log" \
   --export=ALL --wrap="bash '$SCRIPT_DIR/run_direct_repair_v12.sh' gpu")"
@@ -75,5 +90,7 @@ generation_attempts_per_condition=20
 output_selection=none
 evaluation_target_access=false
 requested_accelerator_hours=2.0
+compute_dtype=float32
+learning_rate=2e-6
 output=$RUN_ROOT/gate/summary.json
 EOF
