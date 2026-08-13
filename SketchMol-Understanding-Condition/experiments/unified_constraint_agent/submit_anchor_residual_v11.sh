@@ -29,7 +29,7 @@ if [[ "$MODE" == "resume_rank" ]]; then
     echo "ERROR: resume_rank requires the completed v11 adapter" >&2; exit 2;
   }
   gpu_job="$(submit --account="$GPU_ACCOUNT" --job-name=uca-anchor-r11-rank \
-    --time=01:00:00 --cpus-per-task=4 --mem=32G --gpus="$GPU_REQUEST" \
+    --time=02:00:00 --cpus-per-task=4 --mem=32G --gpus="$GPU_REQUEST" \
     --mail-user="$MAIL_USER" --mail-type=FAIL --output="$LOG_DIR/%x-%j.log" \
     --export=ALL --wrap="bash '$SCRIPT_DIR/run_anchor_residual_v11.sh' gpu_rank")"
   gate_job="$(submit --account="$CPU_ACCOUNT" --job-name=uca-anchor-r11-gate \
@@ -43,7 +43,7 @@ gpu_rank_job=$gpu_job
 gate_job=$gate_job
 candidate_budget=20
 evaluation_target_access=false
-requested_accelerator_hours=1.0
+requested_accelerator_hours=2.0
 output=$RUN_ROOT/gate/summary.json
 EOF
   exit 0
