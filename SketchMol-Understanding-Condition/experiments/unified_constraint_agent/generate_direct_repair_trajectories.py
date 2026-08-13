@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Generate exactly 20 direct source-preserving repair trajectories per condition.
 
-Each trajectory samples and executes one train-derived symbolic delta at a time,
-then observes train-only verifier margins before the next edit.  No larger
-molecular candidate pool is built, scored, sorted, or truncated.
+Each trajectory samples one train-derived symbolic delta at a time and treats
+the edit as a transaction.  Train-only verifier feedback either commits the
+edit or rolls it back before the next proposal.  No larger molecular candidate
+pool is built, scored, sorted, or truncated.
 """
 
 from __future__ import annotations
@@ -48,6 +49,8 @@ class TrajectoryState:
     used_actions: set[tuple[str, str, str]] = field(default_factory=set)
     trace: list[dict[str, object]] = field(default_factory=list)
     action_rejections: int = 0
+    accepted_edits: int = 0
+    transaction_rollbacks: int = 0
 
 
 def next_focus_property(
@@ -69,11 +72,19 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--manifest-json", required=True, type=Path)
     parser.add_argument("--attempts-per-condition", type=int, default=20)
     parser.add_argument("--max-steps", type=int, default=3)
+    parser.add_argument("--max-transaction-proposals", type=int, default=9)
     parser.add_argument("--max-symbolic-actions", type=int, default=256)
     parser.add_argument("--action-retry-limit", type=int, default=12)
     parser.add_argument("--temperature", type=float, default=0.75)
     parser.add_argument("--min-retrieval-similarity", type=float, default=0.15)
     parser.add_argument("--min-source-tanimoto", type=float, default=0.4)
+    parser.add_argument("--min-focus-margin-improvement", type=float, default=0.005)
+    parser.add_argument("--min-total-violation-improvement", type=float, default=0.005)
+    parser.add_argument("--max-margin-regression", type=float, default=0.05)
+    parser.add_argument("--transactional", action="store_true")
+    parser.add_argument(
+        "--method", default="common_llm_direct_constraint_repair_v12"
+    )
     parser.add_argument("--min-core-heavy-atoms", type=int, default=5)
     parser.add_argument("--max-variable-heavy-atoms", type=int, default=30)
     parser.add_argument("--shard-index", type=int, default=0)
@@ -103,6 +114,58 @@ def focus_property(order: Sequence[str], margins: Mapping[str, float]) -> str | 
         if float(margins.get(prop, -math.inf)) < 0.0:
             return str(prop)
     return None
+
+
+def verifier_transaction_decision(
+    before: Mapping[str, float],
+    after: Mapping[str, float],
+    *,
+    focus: str,
+    min_focus_improvement: float,
+    min_total_violation_improvement: float,
+    max_margin_regression: float,
+) -> tuple[bool, str, dict[str, object]]:
+    """Accept only monotone constraint repair under train-only margins.
+
+    The focus constraint and total violation must improve, a previously
+    satisfied constraint may not become unsatisfied, and verifier margins are
+    protected by a small regression trust region.  This is a sequential
+    commit/rollback decision for one proposal, not candidate ranking.
+    """
+
+    if set(before) != set(after) or focus not in before:
+        raise ValueError("Transaction margins do not match the requested constraints")
+    deltas = {prop: float(after[prop]) - float(before[prop]) for prop in before}
+    lost_satisfied = sorted(
+        prop for prop in before if float(before[prop]) >= 0.0 > float(after[prop])
+    )
+    excessive_regressions = sorted(
+        prop for prop, value in deltas.items() if value < -float(max_margin_regression)
+    )
+    violation_before = sum(max(0.0, -float(value)) for value in before.values())
+    violation_after = sum(max(0.0, -float(value)) for value in after.values())
+    focus_improvement = deltas[focus]
+    violation_improvement = violation_before - violation_after
+    diagnostics: dict[str, object] = {
+        "focus_margin_improvement": focus_improvement,
+        "total_violation_before": violation_before,
+        "total_violation_after": violation_after,
+        "total_violation_improvement": violation_improvement,
+        "lost_satisfied_constraints": lost_satisfied,
+        "excessive_margin_regressions": excessive_regressions,
+    }
+    if lost_satisfied:
+        return False, "rollback_satisfied_constraint_lost", diagnostics
+    if excessive_regressions:
+        return False, "rollback_margin_trust_region", diagnostics
+    if focus_improvement < float(min_focus_improvement):
+        return False, "rollback_focus_not_improved", diagnostics
+    if (
+        violation_before > 0.0
+        and violation_improvement < float(min_total_violation_improvement)
+    ):
+        return False, "rollback_total_violation_not_improved", diagnostics
+    return True, "commit_monotone_repair", diagnostics
 
 
 def symbolic_actions(
@@ -238,9 +301,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     raw_rows.sort(key=lambda row: (str(row["_uca_task_id"]), str(row["_uca_source_group"])))
     output = []
     step_counts = []
+    proposal_counts = []
     unique_counts = []
     stop_counts: Counter[str] = Counter()
     total_rejections = 0
+    total_rollbacks = 0
     for row_index, raw in enumerate(raw_rows):
         row = closed_loop.condition_row(raw, row_index)
         condition_id = str(row["condition_id"])
@@ -275,12 +340,21 @@ def main(argv: Sequence[str] | None = None) -> int:
             for attempt_index in range(int(args.attempts_per_condition))
         ]
         task_transforms = transforms.get(str(row["external_task_key"]), [])
-        for step_index in range(int(args.max_steps)):
+        round_limit = (
+            int(args.max_transaction_proposals)
+            if args.transactional
+            else int(args.max_steps)
+        )
+        for proposal_index in range(round_limit):
             proposed = []
             proposed_states = []
             action_cache = {}
             for state in states:
                 if not state.active:
+                    continue
+                if state.accepted_edits >= int(args.max_steps):
+                    state.active = False
+                    state.stop_reason = "max_committed_edits"
                     continue
                 focus = next_focus_property(
                     order, state.margins, has_executed_edit=bool(state.trace)
@@ -348,36 +422,68 @@ def main(argv: Sequence[str] | None = None) -> int:
                     str(transform["source_variable"]),
                     str(transform["target_variable"]),
                 )
-                state.current_smiles = generated
-                state.current_feature = feature
-                state.source_tanimoto = float(tanimoto)
-                state.margins = dict(margins)
                 state.used_actions.add(identity)
+                if args.transactional:
+                    accepted, decision, transaction = verifier_transaction_decision(
+                        before,
+                        margins,
+                        focus=focus,
+                        min_focus_improvement=float(args.min_focus_margin_improvement),
+                        min_total_violation_improvement=float(
+                            args.min_total_violation_improvement
+                        ),
+                        max_margin_regression=float(args.max_margin_regression),
+                    )
+                else:
+                    accepted = True
+                    decision = "commit_unconditional_v12"
+                    transaction = {}
+                if accepted:
+                    state.current_smiles = generated
+                    state.current_feature = feature
+                    state.source_tanimoto = float(tanimoto)
+                    state.margins = dict(margins)
+                    state.accepted_edits += 1
+                else:
+                    state.transaction_rollbacks += 1
                 state.trace.append(
                     {
-                        "step": step_index + 1,
+                        "proposal": proposal_index + 1,
+                        "committed_step": state.accepted_edits if accepted else None,
                         "focus_property": focus,
+                        "proposed_smiles": generated,
+                        "committed_smiles_after": state.current_smiles,
                         "source_variable": transform["source_variable"],
                         "target_variable": transform["target_variable"],
                         "train_effects": transform.get("effects", {}),
                         "retrieval_similarity": round(float(retrieval_similarity), 6),
                         "source_tanimoto": round(float(tanimoto), 6),
                         "margins_before": before,
-                        "margins_after": state.margins,
+                        "proposed_margins": dict(margins),
+                        "margins_after": dict(state.margins),
+                        "transaction_accepted": accepted,
+                        "transaction_decision": decision,
+                        **transaction,
                     }
                 )
         unique_counts.append(len({state.current_smiles for state in states}))
         for attempt_number, state in enumerate(states, start=1):
             if state.active:
-                state.stop_reason = "max_steps"
+                state.stop_reason = (
+                    "max_transaction_proposals"
+                    if args.transactional
+                    else "max_steps"
+                )
             stop_counts[state.stop_reason] += 1
-            step_counts.append(len(state.trace))
+            step_counts.append(state.accepted_edits)
+            proposal_counts.append(len(state.trace))
             total_rejections += state.action_rejections
+            total_rollbacks += state.transaction_rollbacks
             output.append(
                 {
                     **row,
                     "generated_smiles": state.current_smiles,
-                    "method": "common_llm_direct_constraint_repair_v12",
+                    "method": str(args.method),
                     "generation_attempt_index": attempt_number,
                     "candidate_valid": True,
                     "candidate_source_similarity_pass": state.source_tanimoto >= float(args.min_source_tanimoto),
@@ -388,11 +494,13 @@ def main(argv: Sequence[str] | None = None) -> int:
                         for index, item in enumerate(states)
                         if item.current_smiles == state.current_smiles
                     ),
-                    "candidate_is_noop": len(state.trace) == 0,
+                    "candidate_is_noop": state.accepted_edits == 0,
                     "source_tanimoto": state.source_tanimoto,
                     "trajectory_id": f"{condition_id}:trajectory:{attempt_number:02d}",
                     "trajectory_attempt_index": state.attempt_index,
-                    "trajectory_step_count": len(state.trace),
+                    "trajectory_step_count": state.accepted_edits,
+                    "trajectory_proposal_count": len(state.trace),
+                    "trajectory_transaction_rollbacks": state.transaction_rollbacks,
                     "trajectory_stop_reason": state.stop_reason,
                     "trajectory_property_order_json": json.dumps(order),
                     "trajectory_final_margins_json": json.dumps(state.margins, sort_keys=True),
@@ -406,7 +514,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     write_csv(args.output_csv, output)
     manifest = {
-        "protocol": "common_llm_direct_constraint_repair_trajectories_v1",
+        "protocol": (
+            "common_llm_transactional_constraint_repair_trajectories_v1"
+            if args.transactional
+            else "common_llm_direct_constraint_repair_trajectories_v1"
+        ),
+        "method": str(args.method),
         "data_role": "fit_tools_to_source_only_disjoint_dev",
         "evaluation_target_access": False,
         "evaluation_oracle_access": False,
@@ -426,10 +539,28 @@ def main(argv: Sequence[str] | None = None) -> int:
         "repeated_attempt_rows": len(output) - sum(unique_counts),
         "noop_attempt_rows": sum(str(row["candidate_is_noop"]).lower() == "true" for row in output),
         "max_steps": int(args.max_steps),
+        "max_transaction_proposals": int(args.max_transaction_proposals),
         "mean_steps_per_attempt": sum(step_counts) / max(len(step_counts), 1),
+        "mean_proposals_per_attempt": sum(proposal_counts)
+        / max(len(proposal_counts), 1),
+        "committed_edits_total": sum(step_counts),
+        "transaction_rollbacks_total": total_rollbacks,
+        "transaction_acceptance_rate": sum(step_counts)
+        / max(sum(proposal_counts), 1),
         "stop_reason_counts": dict(sorted(stop_counts.items())),
         "symbolic_action_rejections": total_rejections,
         "train_verifier_observation_after_each_edit": True,
+        "train_verifier_transactional_acceptance": bool(args.transactional),
+        "transaction_policy": {
+            "min_focus_margin_improvement": float(args.min_focus_margin_improvement),
+            "min_total_violation_improvement": float(
+                args.min_total_violation_improvement
+            ),
+            "max_margin_regression": float(args.max_margin_regression),
+            "previously_satisfied_constraints_may_be_lost": False,
+        }
+        if args.transactional
+        else None,
         "official_oracle_used_only_after_freeze": True,
         "shard_index": int(args.shard_index),
         "shard_count": int(args.shard_count),

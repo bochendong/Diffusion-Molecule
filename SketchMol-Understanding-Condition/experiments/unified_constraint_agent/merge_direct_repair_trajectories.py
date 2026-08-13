@@ -90,8 +90,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     repeated = sum(truthy(row.get("candidate_attempt_is_repeat")) for row in rows)
     noop = sum(truthy(row.get("candidate_is_noop")) for row in rows)
     trace_rows = sum(int(row.get("trajectory_step_count", 0)) > 0 for row in rows)
+    transactional = all(
+        item.get("train_verifier_transactional_acceptance") is True
+        for item in shard_manifests
+    )
+    protocols = {str(item.get("protocol", "")) for item in shard_manifests}
+    if len(protocols) != 1:
+        raise ValueError("Direct-repair shard protocols differ")
+    transaction_policies = {
+        json.dumps(item.get("transaction_policy"), sort_keys=True)
+        for item in shard_manifests
+    }
+    if len(transaction_policies) != 1:
+        raise ValueError("Direct-repair shard transaction policies differ")
     manifest = {
-        "protocol": "common_llm_direct_constraint_repair_trajectories_v1",
+        "protocol": protocols.pop(),
+        "method": str(shard_manifests[0].get("method", "")),
         "data_role": "fit_tools_to_source_only_disjoint_dev",
         "evaluation_target_access": False,
         "evaluation_oracle_access": False,
@@ -116,6 +130,21 @@ def main(argv: Sequence[str] | None = None) -> int:
         "mean_steps_per_attempt": sum(
             int(row.get("trajectory_step_count", 0)) for row in rows
         ) / max(len(rows), 1),
+        "mean_proposals_per_attempt": sum(
+            int(row.get("trajectory_proposal_count", row.get("trajectory_step_count", 0)))
+            for row in rows
+        )
+        / max(len(rows), 1),
+        "committed_edits_total": sum(
+            int(item.get("committed_edits_total", 0)) for item in shard_manifests
+        ),
+        "transaction_rollbacks_total": sum(
+            int(item.get("transaction_rollbacks_total", 0)) for item in shard_manifests
+        ),
+        "train_verifier_transactional_acceptance": transactional,
+        "transaction_policy": (
+            shard_manifests[0].get("transaction_policy") if transactional else None
+        ),
         "train_verifier_observation_after_each_edit": all(
             item.get("train_verifier_observation_after_each_edit") is True
             for item in shard_manifests

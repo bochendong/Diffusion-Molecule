@@ -460,3 +460,18 @@ the frozen v8 dev baseline. The official 1,992-condition test remains closed.
 ```bash
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_direct_repair_v12.sh
 ```
+
+## Transactional constraint repair v13
+
+V13 keeps the same frozen common-LLM property plans and the same 20 direct
+trajectories, but makes verifier feedback causal. Each proposed delta is a
+transaction: it commits only when the focused margin and total constraint
+violation improve, no satisfied constraint is lost, and every margin stays
+inside a fixed regression trust region. Failed proposals are rolled back and
+recorded in the trajectory trace. This remains output-selection-free and
+target-hidden; it is a CPU-only causal comparison against v12, not a new model
+training run.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_transactional_repair_v13.sh
+```

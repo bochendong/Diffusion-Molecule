@@ -344,6 +344,62 @@ def test_direct_repair_action_sampling_is_deterministic_without_duplicates() -> 
     assert sorted(first) == [0, 1, 2]
 
 
+def test_transactional_repair_commits_monotone_focus_improvement() -> None:
+    accepted, reason, diagnostics = (
+        direct_repair_trajectories.verifier_transaction_decision(
+            {"bbbp": -0.20, "drd2": 0.10, "plogp": -0.30},
+            {"bbbp": -0.08, "drd2": 0.08, "plogp": -0.27},
+            focus="bbbp",
+            min_focus_improvement=0.005,
+            min_total_violation_improvement=0.005,
+            max_margin_regression=0.05,
+        )
+    )
+
+    assert accepted is True
+    assert reason == "commit_monotone_repair"
+    assert diagnostics["total_violation_improvement"] == pytest.approx(0.15)
+
+
+@pytest.mark.parametrize(
+    ("after", "reason"),
+    [
+        (
+            {"bbbp": -0.08, "drd2": -0.01, "plogp": -0.20},
+            "rollback_satisfied_constraint_lost",
+        ),
+        (
+            {"bbbp": -0.08, "drd2": 0.10, "plogp": -0.38},
+            "rollback_margin_trust_region",
+        ),
+        (
+            {"bbbp": -0.198, "drd2": 0.10, "plogp": -0.20},
+            "rollback_focus_not_improved",
+        ),
+        (
+            {"bbbp": -0.15, "drd2": 0.10, "plogp": -0.36},
+            "rollback_margin_trust_region",
+        ),
+    ],
+)
+def test_transactional_repair_rolls_back_non_monotone_edit(
+    after: dict[str, float], reason: str
+) -> None:
+    accepted, observed_reason, _diagnostics = (
+        direct_repair_trajectories.verifier_transaction_decision(
+            {"bbbp": -0.20, "drd2": 0.10, "plogp": -0.30},
+            after,
+            focus="bbbp",
+            min_focus_improvement=0.005,
+            min_total_violation_improvement=0.005,
+            max_margin_regression=0.05,
+        )
+    )
+
+    assert accepted is False
+    assert observed_reason == reason
+
+
 def test_direct_repair_merge_keeps_attempt_indices_without_rank_semantics(
     tmp_path: Path,
 ) -> None:

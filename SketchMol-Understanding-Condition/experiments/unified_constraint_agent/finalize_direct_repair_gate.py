@@ -29,6 +29,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--min-plan-parse-rate", type=float, default=0.95)
     parser.add_argument("--max-overall-forgetting-drop", type=float, default=0.02)
     parser.add_argument("--max-origin-forgetting-drop", type=float, default=0.05)
+    parser.add_argument("--require-transactional", action="store_true")
     return parser.parse_args(argv)
 
 
@@ -156,14 +157,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         and plans.get("evaluation_oracle_access") is False,
         "adapter_finite": int(training.get("adapter_nonfinite_parameters", -1)) == 0,
     }
+    if args.require_transactional:
+        protocol_checks["verifier_feedback_controls_commit_or_rollback"] = (
+            trajectories.get("train_verifier_transactional_acceptance") is True
+            and isinstance(trajectories.get("transaction_policy"), Mapping)
+        )
     checks = {**support_checks, **protocol_checks, **format_checks}
     passed = all(checks.values())
     result = {
-        "protocol": "common_llm_direct_constraint_repair_v12_gate_v1",
+        "protocol": (
+            "common_llm_transactional_constraint_repair_v13_gate_v1"
+            if args.require_transactional
+            else "common_llm_direct_constraint_repair_v12_gate_v1"
+        ),
         "passed": passed,
         "decision": "advance" if passed else "stop",
         "next_transition": "direct_repair_scale_signal" if passed else "STOP",
-        "method": "common_llm_direct_constraint_repair_v12",
+        "method": str(
+            trajectories.get("method", "common_llm_direct_constraint_repair_v12")
+        ),
         "output_selection": "none",
         "candidate_budget": 20,
         "baseline": baseline_metrics,
@@ -182,6 +194,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "noop_attempt_rows",
                 "trajectory_trace_rate",
                 "mean_steps_per_attempt",
+                "mean_proposals_per_attempt",
+                "committed_edits_total",
+                "transaction_rollbacks_total",
             )
         },
         "anti_forgetting": {
@@ -197,13 +212,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     lines = [
-        "# Common-LLM direct constraint repair v12",
+        f"# {str(trajectories.get('method', 'Common-LLM direct constraint repair'))}",
         "",
         f"Decision: **{'ADVANCE' if passed else 'STOP'}**",
         "",
         "No candidate ranking or output selection is used; each condition launches exactly 20 trajectories.",
         "",
-        "| Split | v8 ranked baseline | v12 direct trajectories | Gain |",
+        "| Split | v8 ranked baseline | direct trajectories | Gain |",
         "| --- | ---: | ---: | ---: |",
     ]
     for label, key in (("IND", "ind_success_rate"), ("OOD", "ood_success_rate"), ("All", "success_rate")):
