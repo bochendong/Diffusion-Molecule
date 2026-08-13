@@ -39,3 +39,35 @@ is a no-go if the decoder repeats the historical token/image diffusion failure
 signal requires non-trivial direct validity/diversity and property any@20 above
 an unconditioned/source-copy diagnostic; it does not by itself authorize an
 official test run.
+
+## Stage A: molecular latent representation
+
+The first direct-flow result isolated a representation bottleneck: the decoder
+was not yet able to turn a compressed molecular state into valid SMILES
+reliably. The v2 route therefore separates representation from dynamics before
+doing more conditional-flow training.
+
+`train_molecular_latent_autoencoder.py` trains only:
+
+```text
+molecule -> continuous latent tokens -> molecule
+```
+
+Train and validation molecules are canonicalized, deduplicated, and made
+disjoint. The objective combines corrupted-prefix reconstruction, noisy-latent
+decoding, Morgan-fingerprint geometry, and a shuffled-latent margin that checks
+the decoder actually uses the molecular latent. It has no property condition,
+oracle, candidate library, selector, or finalizer.
+
+The held-out molecule is intentionally the input and reconstruction target for
+this representation-only test; these numbers are not a MuMO, De novo, or
+Table1 benchmark result. The later conditional-generation evaluation remains
+target-blind.
+
+Stage B is blocked unless clean/noisy validity, exact reconstruction,
+Tanimoto similarity, scaffold retention, and latent usage all pass their fixed
+gates.
+
+```bash
+bash experiments/unified_latent_flow/submit_molecular_latent_autoencoder_v2.sh
+```
