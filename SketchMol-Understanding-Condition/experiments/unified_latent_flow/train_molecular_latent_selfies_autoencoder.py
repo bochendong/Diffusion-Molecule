@@ -35,6 +35,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--validation-csv", type=Path, required=True)
     parser.add_argument("--base-checkpoint", type=Path, required=True)
     parser.add_argument("--latent-checkpoint", type=Path, required=True)
+    parser.add_argument("--resume-checkpoint", type=Path, default=None)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--train-limit", type=int, default=30000)
     parser.add_argument("--validation-limit", type=int, default=400)
@@ -147,7 +148,10 @@ class SelfiesLatentAutoencoder(nn.Module):
         self.token_embedding = nn.Embedding(
             int(decoder_vocab_size), latent_model.d_model, padding_idx=self.pad_id
         )
-        self.position = latent_model.position
+        # SELFIES sequences are often longer than canonical SMILES.  Keep this
+        # decoder's positional capacity independent from the 176-token warm
+        # start buffer; the sinusoidal buffer has no trainable state.
+        self.position = unified.PositionalEncoding(latent_model.d_model, max_len=512)
         self.decoder = latent_model.decoder
         self.output = nn.Linear(latent_model.d_model, int(decoder_vocab_size))
         nn.init.normal_(self.token_embedding.weight, std=0.02)
@@ -398,7 +402,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     base_checkpoint = torch.load(args.base_checkpoint, map_location="cpu", weights_only=False)
     latent_checkpoint = torch.load(args.latent_checkpoint, map_location="cpu", weights_only=False)
     encoder_vocab = unified.SmilesVocabulary.from_dict(base_checkpoint["vocab"])
-    decoder_vocab = build_selfies_vocabulary()
+    resume_checkpoint = None
+    if args.resume_checkpoint is not None and args.resume_checkpoint.is_file():
+        resume_checkpoint = torch.load(args.resume_checkpoint, map_location="cpu", weights_only=False)
+    decoder_vocab = (
+        unified.SmilesVocabulary.from_dict(resume_checkpoint["decoder_vocab"])
+        if resume_checkpoint is not None
+        else build_selfies_vocabulary()
+    )
     model_config = dict(base_checkpoint["model_config"])
     base_model = unified.ConditionedSmilesDecoder(**model_config)
     base_model.load_state_dict(base_checkpoint["model_state"])
@@ -411,6 +422,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     latent_model.load_state_dict(latent_checkpoint["model_state"])
     model = SelfiesLatentAutoencoder(latent_model, len(decoder_vocab.token_to_id)).to(device)
+    if resume_checkpoint is not None:
+        model.load_state_dict(resume_checkpoint["model_state"])
 
     train_molecules, train_counts = stage_a.canonical_molecules(stage_a.read_rows(args.train_csv))
     validation_molecules, validation_counts = stage_a.canonical_molecules(
@@ -473,12 +486,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         "decoder_vocabulary_size": len(decoder_vocab.token_to_id),
         "latent_noise": float(args.latent_noise),
         "decoder_corruption": float(args.decoder_corruption),
+        "resumed_from_checkpoint": str(args.resume_checkpoint) if resume_checkpoint is not None else None,
     }
     (args.output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     print(json.dumps(manifest, indent=2, sort_keys=True), flush=True)
-    history = train_model(model, train_dataset, decoder_vocab, args, device)
+    history = (
+        list(resume_checkpoint.get("history", []))
+        if resume_checkpoint is not None
+        else train_model(model, train_dataset, decoder_vocab, args, device)
+    )
     checkpoint_path = args.output_dir / "molecular_latent_selfies_autoencoder.pt"
     torch.save(
         {
