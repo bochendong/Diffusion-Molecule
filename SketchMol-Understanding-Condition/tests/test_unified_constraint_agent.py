@@ -70,6 +70,8 @@ anchor_preferences = load_module("build_anchor_residual_preferences")
 direct_repair_protocol = load_module("direct_repair_agent_protocol")
 direct_repair_trajectories = load_module("generate_direct_repair_trajectories")
 direct_repair_merge = load_module("merge_direct_repair_trajectories")
+feedback_repair_protocol = load_module("feedback_repair_agent_protocol")
+feedback_repair_trajectories = load_module("generate_feedback_repair_trajectories")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -398,6 +400,113 @@ def test_transactional_repair_rolls_back_non_monotone_edit(
 
     assert accepted is False
     assert observed_reason == reason
+
+
+def test_feedback_repair_prompt_is_target_hidden_and_event_driven() -> None:
+    messages = feedback_repair_protocol.prompt_messages(
+        {
+            "_uca_task_id": "BDP",
+            "source_smiles": "CCO",
+            "target_smiles": "CCN",
+        },
+        ("bbbp", "drd2", "plogp"),
+        {"bbbp": -0.2, "drd2": 0.1, "plogp": -0.3},
+        {
+            "bbbp": {"executable_actions": 3},
+            "drd2": {"executable_actions": 2},
+            "plogp": {"executable_actions": 4},
+        },
+        current_smiles="CCO",
+        committed_edits=1,
+        proposal_count=2,
+        max_committed_edits=3,
+        max_proposals=6,
+        previous_event={
+            "property": "bbbp",
+            "outcome": "rollback",
+            "reason": "focus_not_improved",
+        },
+    )
+    payload = json.loads(messages[-1]["content"])
+
+    assert feedback_repair_protocol.state_contains_evaluation_target(messages) is False
+    assert "CCN" not in json.dumps(messages)
+    assert payload["trajectory"]["previous_event"]["outcome"] == "rollback"
+    assert {item["action_type"] for item in payload["available_actions"]} == {
+        "repair",
+        "stop",
+    }
+
+
+def test_feedback_repair_protocol_validates_only_constrained_actions() -> None:
+    assert feedback_repair_protocol.validate_action(
+        feedback_repair_protocol.repair_action("drd2"),
+        properties=("bbbp", "drd2"),
+        allow_stop=False,
+    ) == ("repair", "drd2")
+    assert feedback_repair_protocol.validate_action(
+        feedback_repair_protocol.stop_action(),
+        properties=("bbbp", "drd2"),
+        allow_stop=False,
+    ) is None
+    assert feedback_repair_protocol.validate_action(
+        {"action_type": "repair", "value": {"property": "qed"}},
+        properties=("bbbp", "drd2"),
+        allow_stop=True,
+    ) is None
+
+
+def test_feedback_repair_signal_is_stably_balanced_ind_ood() -> None:
+    rows = []
+    for task_id in mumo_parallel.TASK_IDS:
+        count = 40 if task_id in mumo_parallel.IND_TASK_IDS else 12
+        for index in range(count):
+            rows.append(
+                {
+                    "_uca_task_id": task_id,
+                    "_uca_source_group": f"{task_id}:source:{index}",
+                }
+            )
+
+    first = feedback_repair_trajectories.select_signal_rows(
+        rows, per_split=30, seed=1716
+    )
+    second = feedback_repair_trajectories.select_signal_rows(
+        rows, per_split=30, seed=1716
+    )
+
+    assert first == second
+    assert len(first) == 60
+    assert sum(row["_uca_task_id"] in mumo_parallel.IND_TASK_IDS for row in first) == 30
+    assert sum(row["_uca_task_id"] in mumo_parallel.OOD_TASK_IDS for row in first) == 30
+
+
+def test_feedback_transaction_keeps_uncertain_regressions_as_observations() -> None:
+    accepted, reason, diagnostics = (
+        feedback_repair_trajectories.feedback_transaction_decision(
+            {"bbbp": -0.2, "drd2": 0.1, "qed": -0.1},
+            {"bbbp": -0.05, "drd2": -0.1, "qed": 0.05},
+            focus="bbbp",
+        )
+    )
+
+    assert accepted is True
+    assert reason == "commit_progress_observed"
+    assert diagnostics["lost_satisfied_constraints"] == ["drd2"]
+    assert diagnostics["uncertain_nonexact_regressions_are_feedback_only"] is True
+
+
+def test_feedback_transaction_never_loses_exact_qed_safety() -> None:
+    accepted, reason, _diagnostics = (
+        feedback_repair_trajectories.feedback_transaction_decision(
+            {"bbbp": -0.2, "qed": 0.1},
+            {"bbbp": 0.1, "qed": -0.01},
+            focus="bbbp",
+        )
+    )
+
+    assert accepted is False
+    assert reason == "rollback_exact_qed_safety"
 
 
 def test_direct_repair_merge_keeps_attempt_indices_without_rank_semantics(

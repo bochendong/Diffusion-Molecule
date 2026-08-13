@@ -475,3 +475,22 @@ training run.
 ```bash
 bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_transactional_repair_v13.sh
 ```
+
+## Event-driven feedback repair v14a
+
+V14a replaces the fixed property order with a constrained common-LLM decision
+after every commit or rollback. The controller may repair one requested
+property or stop; it cannot emit molecules or rank candidates. Training states
+come only from successful MuMO fit pairs plus balanced De novo/Table1/MuMO
+format replay. A matched maximum-deficit deterministic controller uses the same
+symbolic actions, random seeds, verifier feedback, and exact n=20 protocol.
+
+The first signal is a stable 200-condition frozen-dev subset balanced as 100
+IND and 100 OOD conditions. It must reach 65% overall, 60% OOD, exceed the
+matched deterministic controller by at least two points, keep no-ops below
+20%, and retain at least 14 unique candidates per condition before scaling.
+The official test remains closed.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_feedback_repair_v14a.sh
+```
