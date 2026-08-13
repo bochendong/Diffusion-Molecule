@@ -71,3 +71,14 @@ gates.
 ```bash
 bash experiments/unified_latent_flow/submit_molecular_latent_autoencoder_v2.sh
 ```
+
+If the SMILES representation gate fails because autoregressive syntax errors
+compound, v3 keeps the learned molecular latent geometry but replaces only the
+output language with SELFIES. This is not a repair finalizer: the neural decoder
+generates SELFIES directly, which is deterministically interpreted as a
+molecule. It is evaluated under the same fixed reconstruction, Tanimoto,
+scaffold, noise, and latent-usage gates before any conditional flow is trained.
+
+```bash
+bash experiments/unified_latent_flow/submit_molecular_latent_selfies_autoencoder_v3.sh
+```
