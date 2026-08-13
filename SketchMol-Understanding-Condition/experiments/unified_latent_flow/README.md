@@ -82,3 +82,21 @@ scaffold, noise, and latent-usage gates before any conditional flow is trained.
 ```bash
 bash experiments/unified_latent_flow/submit_molecular_latent_selfies_autoencoder_v3.sh
 ```
+
+## Stage A4: graph-native latent representation
+
+The string gates identify a topology bottleneck rather than merely a syntax
+problem. The graph-native gate keeps variable-length atom slots and explicit
+unordered atom-pair bond slots. A permutation-equivariant encoder and one-shot
+categorical decoder reconstruct held-out molecules under clean and noisy
+latents. It reports raw-argmax graph validity, connectivity, exact topology,
+Morgan similarity, and scaffold retention. No valence repair, finalizer,
+property oracle, candidate library, or selector is available.
+
+This bounded representation test is informed by EDM-SyCo (ICLR 2025), DeFoG
+(ICML 2025), GrIDDD (NeurIPS 2025), and GraphBSI (ICLR 2026). Passing permits a
+later categorical graph-flow experiment; it is not itself a generation result.
+
+```bash
+bash experiments/unified_latent_flow/submit_graph_latent_autoencoder_v1.sh
+```
