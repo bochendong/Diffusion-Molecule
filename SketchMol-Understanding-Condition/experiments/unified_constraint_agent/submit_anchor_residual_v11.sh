@@ -12,6 +12,7 @@ MAIL_USER="${SUCC_UCA_MAIL_USER:-dongbochen1218@gmail.com}"
 CPU_ACCOUNT="${SUCC_UCA_CPU_ACCOUNT:-def-hup-ab_cpu}"
 GPU_ACCOUNT="${SUCC_UCA_GPU_ACCOUNT:-def-hup-ab_gpu}"
 GPU_REQUEST="${SUCC_UCA_GPU_REQUEST:-nvidia_h100_80gb_hbm3_2g.20gb:1}"
+MODE="${1:-full}"
 command -v sbatch >/dev/null 2>&1 || { echo "ERROR: sbatch not found" >&2; exit 2; }
 mkdir -p "$LOG_DIR"
 export SUCC_UCA_SHARED_REPO_DIR="$SHARED_REPO_DIR"
@@ -22,6 +23,32 @@ submit() {
   output="$(sbatch --parsable "$@")"
   printf '%s\n' "$output" | sed -n 's/^\([0-9][0-9]*\)\(;.*\)\?$/\1/p' | tail -1
 }
+
+if [[ "$MODE" == "resume_rank" ]]; then
+  [[ -s "$RUN_ROOT/model/adapter/adapter_model.safetensors" ]] || {
+    echo "ERROR: resume_rank requires the completed v11 adapter" >&2; exit 2;
+  }
+  gpu_job="$(submit --account="$GPU_ACCOUNT" --job-name=uca-anchor-r11-rank \
+    --time=01:00:00 --cpus-per-task=4 --mem=32G --gpus="$GPU_REQUEST" \
+    --mail-user="$MAIL_USER" --mail-type=FAIL --output="$LOG_DIR/%x-%j.log" \
+    --export=ALL --wrap="bash '$SCRIPT_DIR/run_anchor_residual_v11.sh' gpu_rank")"
+  gate_job="$(submit --account="$CPU_ACCOUNT" --job-name=uca-anchor-r11-gate \
+    --dependency="afterok:$gpu_job" --kill-on-invalid-dep=yes \
+    --time=01:00:00 --cpus-per-task=8 --mem=32G \
+    --mail-user="$MAIL_USER" --mail-type=END,FAIL --output="$LOG_DIR/%x-%j.log" \
+    --export=ALL --wrap="bash '$SCRIPT_DIR/run_anchor_residual_v11.sh' oracle_gate")"
+  cat <<EOF
+anchor_residual_v11_resume_submitted
+gpu_rank_job=$gpu_job
+gate_job=$gate_job
+candidate_budget=20
+evaluation_target_access=false
+requested_accelerator_hours=1.0
+output=$RUN_ROOT/gate/summary.json
+EOF
+  exit 0
+fi
+[[ "$MODE" == "full" ]] || { echo "ERROR: mode must be full or resume_rank" >&2; exit 2; }
 
 prepare_job="$(submit --account="$CPU_ACCOUNT" --job-name=uca-anchor-r11-prep \
   --time=00:20:00 --cpus-per-task=2 --mem=8G \

@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-STAGE="${1:?usage: run_anchor_residual_v11.sh prepare|gpu|oracle_gate}"
+STAGE="${1:?usage: run_anchor_residual_v11.sh prepare|gpu|gpu_rank|oracle_gate}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CODE_PROJECT_DIR="$REPO_DIR/SketchMol-Understanding-Condition"
@@ -94,7 +94,27 @@ case "$STAGE" in
       --base-model "$BASE_MODEL" --adapter-dir "$MODEL_DIR/adapter" \
       --reference-adapter-dir "$STABLE_ADAPTER" --preference-manifest "$RAW_PREF/manifest.json" \
       --baseline-prefix 15 --residual-slots 5 --max-llm-rank-shift 12 \
-      --score-batch-size 4 --max-length 512 --method-name common_llm_anchor_residual_v11
+      --score-batch-size 16 --max-length 512 --method-name common_llm_anchor_residual_v11 \
+      --progress-jsonl "$MUMO_DIR/ranking_progress.jsonl"
+    ;;
+  gpu_rank)
+    [[ -s "$MODEL_DIR/adapter/adapter_model.safetensors" ]] || {
+      echo "ERROR: completed v11 adapter is missing" >&2; exit 2;
+    }
+    [[ -s "$PREF_EVAL/candidate.json" && -s "$FORGETTING_DIR/candidate/summary.json" ]] || {
+      echo "ERROR: completed v11 evaluation artifacts are missing" >&2; exit 2;
+    }
+    [[ -s "$TABLE1_DIR/ranking/summary.json" && -s "$TABLE1_DIR/ranking/candidates.csv" ]] || {
+      echo "ERROR: completed v11 Table1 artifacts are missing" >&2; exit 2;
+    }
+    "$PYTHON_BIN" "$SCRIPT_DIR/rank_mumo_residual_candidates.py" \
+      --baseline-csv "$BASELINE_CANDIDATES" --enumerated-csv "$ENUMERATED_CANDIDATES" \
+      --output-csv "$MUMO_DIR/candidates.csv" --manifest-json "$MUMO_DIR/manifest.json" \
+      --base-model "$BASE_MODEL" --adapter-dir "$MODEL_DIR/adapter" \
+      --reference-adapter-dir "$STABLE_ADAPTER" --preference-manifest "$RAW_PREF/manifest.json" \
+      --baseline-prefix 15 --residual-slots 5 --max-llm-rank-shift 12 \
+      --score-batch-size 16 --max-length 512 --method-name common_llm_anchor_residual_v11 \
+      --progress-jsonl "$MUMO_DIR/ranking_progress.jsonl"
     ;;
   oracle_gate)
     SUCC_PYTHON_BIN="$PYTHON_BIN" \

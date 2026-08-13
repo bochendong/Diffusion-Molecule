@@ -7,6 +7,7 @@ import argparse
 import csv
 import hashlib
 import json
+import os
 import sys
 from collections import Counter, defaultdict
 from pathlib import Path
@@ -27,6 +28,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--enumerated-csv", required=True, type=Path)
     parser.add_argument("--output-csv", required=True, type=Path)
     parser.add_argument("--manifest-json", required=True, type=Path)
+    parser.add_argument("--progress-jsonl", type=Path, default=None)
     parser.add_argument("--base-model", default="Qwen/Qwen2.5-1.5B-Instruct")
     parser.add_argument("--adapter-dir", required=True, type=Path)
     parser.add_argument("--reference-adapter-dir", type=Path, default=None)
@@ -52,6 +54,47 @@ def write_csv(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
         writer = csv.DictWriter(handle, fieldnames=fields)
         writer.writeheader()
         writer.writerows(rows)
+
+
+def read_progress(path: Path, *, contract_digest: str) -> dict[str, list[dict[str, object]]]:
+    """Read completed conditions, tolerating only a truncated final record."""
+
+    if not path.is_file():
+        return {}
+    output: dict[str, list[dict[str, object]]] = {}
+    lines = path.read_text(encoding="utf-8").splitlines()
+    for index, line in enumerate(lines):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            if index == len(lines) - 1:
+                break
+            raise
+        if str(record.get("contract_digest", "")) != contract_digest:
+            raise ValueError("MuMO residual progress contract does not match this run")
+        output[str(record["condition_id"])] = [dict(row) for row in record["rows"]]
+    return output
+
+
+def append_progress(
+    path: Path,
+    *,
+    condition_id: str,
+    rows: Sequence[Mapping[str, object]],
+    contract_digest: str,
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    record = {
+        "condition_id": condition_id,
+        "contract_digest": contract_digest,
+        "rows": list(rows),
+    }
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def candidate_payload(row: Mapping[str, object]) -> dict[str, object]:
@@ -81,6 +124,31 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def progress_contract(args: argparse.Namespace) -> str:
+    """Bind resumable rows to the exact inputs, adapters, and ranking policy."""
+
+    payload = {
+        "protocol": "common_llm_mumo_residual_progress_v1",
+        "baseline_sha256": sha256(args.baseline_csv),
+        "enumerated_sha256": sha256(args.enumerated_csv),
+        "candidate_adapter_sha256": sha256(args.adapter_dir / "adapter_model.safetensors"),
+        "reference_adapter_sha256": (
+            sha256(args.reference_adapter_dir / "adapter_model.safetensors")
+            if args.reference_adapter_dir is not None else None
+        ),
+        "base_model": str(args.base_model),
+        "baseline_prefix": int(args.baseline_prefix),
+        "residual_slots": int(args.residual_slots),
+        "max_llm_rank_shift": float(args.max_llm_rank_shift),
+        "score_batch_size": int(args.score_batch_size),
+        "max_length": int(args.max_length),
+        "method_name": str(args.method_name),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
 
 
 def bounded_residual_ranking(
@@ -125,6 +193,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     import transformers
     if not torch.cuda.is_available():
         raise SystemExit("MuMO residual ranking requires CUDA")
+    torch.backends.cuda.matmul.allow_tf32 = True
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.base_model, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -150,12 +219,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         internal_groups[row["condition_id"]].append(row)
     if set(baseline_groups) != set(internal_groups):
         raise ValueError("Baseline/internal condition sets differ")
-    output = []
-    source_counts: Counter[str] = Counter()
-    changed_conditions = 0
-    unique_counts = []
-    noop_attempt_rows = 0
-    for condition in sorted(baseline_groups):
+    condition_order = sorted(baseline_groups)
+    contract_digest = progress_contract(args)
+    progress_path = args.progress_jsonl or args.output_csv.with_suffix(".progress.jsonl")
+    completed = read_progress(progress_path, contract_digest=contract_digest)
+    unknown_conditions = set(completed) - set(condition_order)
+    if unknown_conditions:
+        raise ValueError(f"Progress contains unknown conditions: {sorted(unknown_conditions)[:3]}")
+    for condition_index, condition in enumerate(condition_order, start=1):
+        if condition in completed:
+            print(
+                f"[mumo-residual] {condition_index}/{len(condition_order)} resume {condition}",
+                flush=True,
+            )
+            continue
         baseline = sorted(baseline_groups[condition], key=lambda row: int(row["candidate_rank"]))
         internal = sorted(internal_groups[condition], key=lambda row: int(row["internal_candidate_rank"]))
         if len(baseline) != 20:
@@ -214,7 +291,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             item["residual_combined_rank_score"] = float(combined_score)
             item["residual_selected"] = True
             selected_tail.append(item)
-            source_counts[str(item["method"])] += 1
         if len(selected_tail) < int(args.residual_slots):
             existing = {row["generated_smiles"] for row in prefix + selected_tail}
             for row in baseline[int(args.baseline_prefix):]:
@@ -230,12 +306,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         selected = prefix + selected_tail
         if len(selected) != 20:
             raise ValueError(f"{condition} residual output has {len(selected)} attempts")
-        baseline_tail = [
-            row["generated_smiles"]
-            for row in baseline[int(args.baseline_prefix) :]
-        ]
-        changed_conditions += int([row["generated_smiles"] for row in selected_tail] != baseline_tail)
-        unique_counts.append(len({row["generated_smiles"] for row in selected}))
         unique_ranks: dict[str, int] = {}
         for rank, row in enumerate(selected, start=1):
             generated_smiles = row["generated_smiles"]
@@ -249,8 +319,38 @@ def main(argv: Sequence[str] | None = None) -> int:
             row["candidate_unique_rank"] = unique_ranks[generated_smiles]
             row["residual_candidate_source"] = original_method
             row["method"] = str(args.method_name)
-            output.append(row)
-            noop_attempt_rows += int(str(row.get("candidate_is_noop", "")).lower() == "true")
+        append_progress(
+            progress_path,
+            condition_id=condition,
+            rows=selected,
+            contract_digest=contract_digest,
+        )
+        completed[condition] = selected
+        print(
+            f"[mumo-residual] {condition_index}/{len(condition_order)} done {condition}",
+            flush=True,
+        )
+
+    output = [dict(row) for condition in condition_order for row in completed[condition]]
+    source_counts: Counter[str] = Counter(
+        str(row.get("residual_candidate_source", ""))
+        for row in output
+        if str(row.get("residual_selected", "")).lower() == "true"
+    )
+    changed_conditions = 0
+    unique_counts = []
+    noop_attempt_rows = 0
+    output_groups: dict[str, list[dict[str, object]]] = defaultdict(list)
+    for row in output:
+        output_groups[str(row["condition_id"])].append(row)
+        noop_attempt_rows += int(str(row.get("candidate_is_noop", "")).lower() == "true")
+    for condition in condition_order:
+        selected = sorted(output_groups[condition], key=lambda row: int(row["candidate_rank"]))
+        baseline = sorted(baseline_groups[condition], key=lambda row: int(row["candidate_rank"]))
+        baseline_tail = [row["generated_smiles"] for row in baseline[int(args.baseline_prefix) :]]
+        selected_tail = [row["generated_smiles"] for row in selected[int(args.baseline_prefix) :]]
+        changed_conditions += int(selected_tail != baseline_tail)
+        unique_counts.append(len({str(row["generated_smiles"]) for row in selected}))
     write_csv(args.output_csv, output)
     pref = json.loads(args.preference_manifest.read_text(encoding="utf-8"))
     manifest = {
@@ -267,6 +367,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             str(args.reference_adapter_dir) if args.reference_adapter_dir is not None else None
         ),
         "stable_reference_residual_scoring": args.reference_adapter_dir is not None,
+        "progress_contract_digest": contract_digest,
+        "progress_jsonl": str(progress_path),
         "conditions": len(baseline_groups),
         "output_rows": len(output),
         "attempted_candidates_total": len(output),

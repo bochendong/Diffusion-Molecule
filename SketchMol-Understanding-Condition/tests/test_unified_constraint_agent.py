@@ -279,6 +279,24 @@ def test_mumo_residual_rank_shift_is_bounded_by_deterministic_order() -> None:
     assert {int(item[0]["internal_candidate_rank"]) for item in ranked} == set(range(16, 24))
 
 
+def test_mumo_residual_progress_round_trip_and_rejects_contract_drift(tmp_path) -> None:
+    progress = tmp_path / "ranking_progress.jsonl"
+    rows = [{"condition_id": "c1", "candidate_rank": 1, "generated_smiles": "CCO"}]
+
+    mumo_residual_ranker.append_progress(
+        progress,
+        condition_id="c1",
+        rows=rows,
+        contract_digest="digest-a",
+    )
+
+    assert mumo_residual_ranker.read_progress(
+        progress, contract_digest="digest-a"
+    ) == {"c1": rows}
+    with pytest.raises(ValueError, match="contract"):
+        mumo_residual_ranker.read_progress(progress, contract_digest="digest-b")
+
+
 def test_mumo_residual_gate_anti_forgetting_checks_all_origins() -> None:
     baseline = {
         "groups": {
