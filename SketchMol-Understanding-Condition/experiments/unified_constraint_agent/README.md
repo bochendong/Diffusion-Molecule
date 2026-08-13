@@ -440,3 +440,23 @@ dev closed loop that emits exactly 20 candidates per input. Only after that
 fixed-n gate reaches the reviewed signal threshold may a 20 GB MIG train the
 common-LLM residual planner; the 7B planner and official test remain later
 gated transitions.
+
+## Direct constraint-repair trajectories v12
+
+V12 removes the molecular ranking layer. A 1.5B common controller reads the
+source molecule and train-only verifier margins, then emits only a property
+repair order. Each condition launches exactly 20 independent edit trajectories;
+each trajectory executes train-derived source-preserving deltas and observes
+updated train-only margins after every edit. The 20 terminal trajectories are
+the 20 benchmark attempts. No larger molecular pool is created, no molecular
+row receives a rank or selected flag, and no evaluation target or oracle is
+available before the 20 attempts are frozen.
+
+The first run is a single-seed frozen MuMO dev signal. It reuses the passing v8
+verifiers and delta memory, warm-starts the stable common-LLM adapter with
+balanced De novo/Table1/MuMO format replay, and compares exact any@20 against
+the frozen v8 dev baseline. The official 1,992-condition test remains closed.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_constraint_agent/submit_direct_repair_v12.sh
+```

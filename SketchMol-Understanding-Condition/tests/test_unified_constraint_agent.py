@@ -67,6 +67,9 @@ paper_replay_rows = load_module("build_paper_replay_smoke_rows")
 paper_replay_compare = load_module("compare_paper_replay_smoke")
 anchor_residual = load_module("anchor_residual_ranking")
 anchor_preferences = load_module("build_anchor_residual_preferences")
+direct_repair_protocol = load_module("direct_repair_agent_protocol")
+direct_repair_trajectories = load_module("generate_direct_repair_trajectories")
+direct_repair_merge = load_module("merge_direct_repair_trajectories")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -259,6 +262,145 @@ def test_mumo_residual_prompt_hides_training_target() -> None:
     assert "CCO" in serialized
     assert "target_smiles" not in serialized
     assert "verifier_margins" in serialized
+
+
+def test_direct_repair_prompt_hides_target_and_forbids_molecule_ranking() -> None:
+    row = {
+        "source_smiles": "CCO",
+        "target_smiles": "CCN",
+        "_uca_task_id": "BDP",
+    }
+
+    messages = direct_repair_protocol.prompt_messages(
+        row,
+        ("bbbp", "drd2", "plogp"),
+        {"bbbp": -0.2, "drd2": 0.1, "plogp": -0.4},
+        max_steps=3,
+    )
+    serialized = json.dumps(messages)
+
+    assert "CCO" in serialized
+    assert "CCN" not in serialized
+    assert "target_smiles" not in serialized
+    assert "Do not propose or rank molecules" in serialized
+
+
+def test_direct_repair_plan_validation_requires_exact_constraint_permutation() -> None:
+    valid = direct_repair_protocol.plan_payload(
+        ("plogp", "bbbp", "drd2"), max_steps=3
+    )
+
+    assert direct_repair_protocol.validate_plan(
+        valid, properties=("bbbp", "drd2", "plogp"), max_steps=3
+    ) == ("plogp", "bbbp", "drd2")
+    assert direct_repair_protocol.validate_plan(
+        {"action_type": "constraint_repair_plan", "value": {"property_order": ["bbbp"]}},
+        properties=("bbbp", "drd2"),
+        max_steps=3,
+    ) is None
+    assert direct_repair_protocol.validate_plan(
+        {"action_type": "constraint_repair_plan", "value": {"property_order": ["bbbp", "drd2"], "max_steps": None}},
+        properties=("bbbp", "drd2"),
+        max_steps=3,
+    ) is None
+
+
+def test_direct_repair_focuses_first_unmet_controller_constraint() -> None:
+    assert direct_repair_trajectories.focus_property(
+        ("plogp", "bbbp", "drd2"),
+        {"plogp": 0.1, "bbbp": -0.2, "drd2": -0.4},
+    ) == "bbbp"
+    assert direct_repair_trajectories.focus_property(
+        ("plogp", "bbbp"), {"plogp": 0.1, "bbbp": 0.2}
+    ) is None
+    assert direct_repair_trajectories.next_focus_property(
+        ("plogp", "bbbp"),
+        {"plogp": 0.1, "bbbp": 0.2},
+        has_executed_edit=False,
+    ) == "plogp"
+    assert direct_repair_trajectories.next_focus_property(
+        ("plogp", "bbbp"),
+        {"plogp": 0.1, "bbbp": 0.2},
+        has_executed_edit=True,
+    ) is None
+
+
+def test_direct_repair_action_sampling_is_deterministic_without_duplicates() -> None:
+    actions = [
+        (2.0, "core-a", {"frequency": 2}, 0.8),
+        (1.0, "core-b", {"frequency": 1}, 0.7),
+        (0.5, "core-c", {"frequency": 1}, 0.6),
+    ]
+    import random
+
+    first = direct_repair_trajectories.sample_without_replacement(
+        actions, rng=random.Random(1715), temperature=0.75
+    )
+    second = direct_repair_trajectories.sample_without_replacement(
+        actions, rng=random.Random(1715), temperature=0.75
+    )
+
+    assert first == second
+    assert sorted(first) == [0, 1, 2]
+
+
+def test_direct_repair_merge_keeps_attempt_indices_without_rank_semantics(
+    tmp_path: Path,
+) -> None:
+    shard_dir = tmp_path / "shards"
+    rows = [
+        {
+            "condition_id": "condition-1",
+            "generation_attempt_index": attempt,
+            "trajectory_id": f"condition-1:trajectory:{attempt:02d}",
+            "generated_smiles": f"C{'C' * attempt}",
+            "candidate_valid": True,
+            "candidate_source_similarity_pass": True,
+            "candidate_attempt_is_repeat": False,
+            "candidate_is_noop": False,
+            "trajectory_step_count": 1,
+        }
+        for attempt in range(1, 21)
+    ]
+    write_csv(shard_dir / "trajectories_000.csv", rows)
+    (shard_dir / "manifest_000.json").write_text(
+        json.dumps(
+            {
+                "output_selection": "none",
+                "internal_molecular_candidate_pool": False,
+                "evaluation_target_access": False,
+                "evaluation_oracle_access": False,
+                "attempts_per_condition": 20,
+                "train_verifier_observation_after_each_edit": True,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    output_csv = tmp_path / "merged.csv"
+    manifest_json = tmp_path / "manifest.json"
+    assert direct_repair_merge.main(
+        [
+            "--shard-dir",
+            str(shard_dir),
+            "--output-csv",
+            str(output_csv),
+            "--manifest-json",
+            str(manifest_json),
+            "--shard-count",
+            "1",
+            "--expected-conditions",
+            "1",
+        ]
+    ) == 0
+    merged = list(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    manifest = json.loads(manifest_json.read_text(encoding="utf-8"))
+
+    assert len(merged) == 20
+    assert "candidate_rank" not in merged[0]
+    assert "candidate_selected" not in merged[0]
+    assert manifest["output_selection"] == "none"
+    assert manifest["output_rows_have_rank"] is False
 
 
 def test_mumo_residual_rank_shift_is_bounded_by_deterministic_order() -> None:

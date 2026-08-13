@@ -16,6 +16,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--validation-jsonl", type=Path, default=None)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--base-model", default="Qwen/Qwen2.5-1.5B-Instruct")
+    parser.add_argument("--input-adapter-dir", type=Path, default=None)
     parser.add_argument("--max-length", type=int, default=512)
     parser.add_argument("--epochs", type=float, default=1.0)
     parser.add_argument("--batch-size", type=int, default=2)
@@ -195,15 +196,24 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     model.config.use_cache = False
     model.gradient_checkpointing_enable()
-    lora_config = peft.LoraConfig(
-        task_type=peft.TaskType.CAUSAL_LM,
-        r=args.lora_r,
-        lora_alpha=args.lora_alpha,
-        lora_dropout=args.lora_dropout,
-        bias="none",
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-    )
-    model = peft.get_peft_model(model, lora_config)
+    if args.input_adapter_dir is not None:
+        if not args.input_adapter_dir.joinpath("adapter_model.safetensors").is_file():
+            raise FileNotFoundError(f"Missing input adapter: {args.input_adapter_dir}")
+        model = peft.PeftModel.from_pretrained(
+            model,
+            args.input_adapter_dir,
+            is_trainable=True,
+        )
+    else:
+        lora_config = peft.LoraConfig(
+            task_type=peft.TaskType.CAUSAL_LM,
+            r=args.lora_r,
+            lora_alpha=args.lora_alpha,
+            lora_dropout=args.lora_dropout,
+            bias="none",
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+        )
+        model = peft.get_peft_model(model, lora_config)
     for parameter in model.parameters():
         if parameter.requires_grad:
             parameter.data = parameter.data.float()
@@ -238,6 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     summary = {
         "protocol": "unified_constraint_common_llm_lora_v1",
         "base_model": args.base_model,
+        "input_adapter_dir": str(args.input_adapter_dir) if args.input_adapter_dir else None,
         "train_jsonl": str(args.train_jsonl),
         "validation_jsonl": str(args.validation_jsonl) if args.validation_jsonl else None,
         "tokenized_train_rows": len(train_dataset),
