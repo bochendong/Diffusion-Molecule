@@ -52,6 +52,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--max-variable-heavy-atoms", type=int, default=30)
     parser.add_argument("--score-batch-size", type=int, default=16)
     parser.add_argument("--max-length", type=int, default=512)
+    parser.add_argument("--shard-index", type=int, default=0)
+    parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("--seed", type=int, default=1716)
     return parser.parse_args(argv)
 
@@ -180,8 +182,11 @@ def load_controller(args: argparse.Namespace):
     tokenizer = transformers.AutoTokenizer.from_pretrained(args.base_model, use_fast=True)
     if tokenizer.pad_token_id is None:
         tokenizer.pad_token = tokenizer.eos_token
+    # H100 inference does not need the float32 training footprint.  Bfloat16
+    # preserves the adapter's scoring semantics while leaving enough room for
+    # the causal-LM logits on a 20 GB MIG slice.
     model = transformers.AutoModelForCausalLM.from_pretrained(
-        args.base_model, dtype=torch.float32, low_cpu_mem_usage=True
+        args.base_model, dtype=torch.bfloat16, low_cpu_mem_usage=True
     )
     model = peft.PeftModel.from_pretrained(model, args.adapter_dir).cuda().eval()
     model.config.use_cache = True
@@ -243,6 +248,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         per_split=int(args.conditions_per_split),
         seed=int(args.seed),
     )
+    if not 0 <= int(args.shard_index) < int(args.shard_count):
+        raise ValueError("Invalid feedback-repair shard index/count")
+    raw_rows = [
+        row
+        for row in raw_rows
+        if protocol.stable_shard(
+            str(row["_uca_source_group"]),
+            seed=int(args.seed),
+            shard_count=int(args.shard_count),
+        )
+        == int(args.shard_index)
+    ]
     model, tokenizer = load_controller(args)
     output = []
     action_counts: Counter[str] = Counter()
@@ -516,6 +533,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "soft_uncertainty_feedback": True,
         "exact_qed_safety_critic": True,
         "nonexact_verifier_is_hard_veto": False,
+        "shard_index": int(args.shard_index),
+        "shard_count": int(args.shard_count),
         "seed": int(args.seed),
     }
     protocol.write_json(args.manifest_json, manifest)

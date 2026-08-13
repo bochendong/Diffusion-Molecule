@@ -3,7 +3,7 @@
 
 set -euo pipefail
 
-STAGE="${1:?usage: run_feedback_repair_v14a.sh prepare|gpu|deterministic|oracle_llm|oracle_deterministic|gate}"
+STAGE="${1:?usage: run_feedback_repair_v14a.sh prepare|gpu|gpu_generate|deterministic|merge_llm|merge_deterministic|oracle_llm|oracle_deterministic|gate}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 CODE_PROJECT_DIR="$REPO_DIR/SketchMol-Understanding-Condition"
@@ -29,6 +29,8 @@ VALIDATION_DIR="$RUN_ROOT/controller/validation"
 LLM_DIR="$RUN_ROOT/llm"
 DET_DIR="$RUN_ROOT/deterministic"
 DEV_SOURCES="$V8_ROOT/data/dev_sources.jsonl"
+FEEDBACK_REPAIR_SHARD_COUNT="${SUCC_UCA_FEEDBACK_REPAIR_SHARD_COUNT:-8}"
+SCORE_BATCH_SIZE="${SUCC_UCA_FEEDBACK_SCORE_BATCH_SIZE:-4}"
 
 export PYTHONPATH="$DEP_OVERLAY:$CODE_PROJECT_DIR:$REPO_DIR/SketchMol-MultiProperty-EditDataset${PYTHONPATH:+:$PYTHONPATH}"
 export HF_HOME="${HF_HOME:-/scratch/bdong/hf_cache/uca_common_llm}"
@@ -79,13 +81,51 @@ case "$STAGE" in
       --max-committed-edits 3 --max-proposals 6 --max-symbolic-actions 256 \
       --action-retry-limit 12 --temperature 0.75 --min-source-tanimoto 0.4 --seed 1716
     ;;
-  deterministic)
+  gpu_generate)
+    [[ -s "$MODEL_DIR/adapter/adapter_model.safetensors" \
+      && -s "$MODEL_DIR/training_summary.json" \
+      && -s "$VALIDATION_DIR/baseline/summary.json" \
+      && -s "$VALIDATION_DIR/candidate/summary.json" ]] || {
+      echo "ERROR: the completed v14a adapter and validation artifacts are unavailable" >&2; exit 2;
+    }
+    SHARD_INDEX="${SLURM_ARRAY_TASK_ID:-0}"
+    SHARD_TAG="$(printf '%03d' "$SHARD_INDEX")"
     "$PYTHON_BIN" "$SCRIPT_DIR/generate_feedback_repair_trajectories.py" \
       --evidence-root "$EVIDENCE_ROOT" --dev-sources-jsonl "$DEV_SOURCES" \
-      --output-csv "$DET_DIR/exact_n20.csv" --manifest-json "$DET_DIR/manifest.json" \
+      --output-csv "$LLM_DIR/shards/trajectories_${SHARD_TAG}.csv" \
+      --manifest-json "$LLM_DIR/shards/manifest_${SHARD_TAG}.json" \
+      --controller-mode llm --adapter-dir "$MODEL_DIR/adapter" --base-model "$BASE_MODEL" \
+      --conditions-per-split 100 --attempts-per-condition 20 \
+      --max-committed-edits 3 --max-proposals 6 --max-symbolic-actions 256 \
+      --action-retry-limit 12 --temperature 0.75 --min-source-tanimoto 0.4 \
+      --score-batch-size "$SCORE_BATCH_SIZE" --shard-index "$SHARD_INDEX" \
+      --shard-count "$FEEDBACK_REPAIR_SHARD_COUNT" --seed 1716
+    ;;
+  deterministic)
+    SHARD_INDEX="${SLURM_ARRAY_TASK_ID:-0}"
+    SHARD_TAG="$(printf '%03d' "$SHARD_INDEX")"
+    "$PYTHON_BIN" "$SCRIPT_DIR/generate_feedback_repair_trajectories.py" \
+      --evidence-root "$EVIDENCE_ROOT" --dev-sources-jsonl "$DEV_SOURCES" \
+      --output-csv "$DET_DIR/shards/trajectories_${SHARD_TAG}.csv" \
+      --manifest-json "$DET_DIR/shards/manifest_${SHARD_TAG}.json" \
       --controller-mode deterministic --conditions-per-split 100 --attempts-per-condition 20 \
       --max-committed-edits 3 --max-proposals 6 --max-symbolic-actions 256 \
-      --action-retry-limit 12 --temperature 0.75 --min-source-tanimoto 0.4 --seed 1716
+      --action-retry-limit 12 --temperature 0.75 --min-source-tanimoto 0.4 \
+      --shard-index "$SHARD_INDEX" --shard-count "$FEEDBACK_REPAIR_SHARD_COUNT" --seed 1716
+    ;;
+  merge_llm|merge_deterministic)
+    if [[ "$STAGE" == "merge_llm" ]]; then
+      MERGE_DIR="$LLM_DIR"
+      MERGE_MODE="llm"
+    else
+      MERGE_DIR="$DET_DIR"
+      MERGE_MODE="deterministic"
+    fi
+    "$PYTHON_BIN" "$SCRIPT_DIR/merge_feedback_repair_trajectories.py" \
+      --shard-dir "$MERGE_DIR/shards" --output-csv "$MERGE_DIR/exact_n20.csv" \
+      --manifest-json "$MERGE_DIR/manifest.json" --controller-mode "$MERGE_MODE" \
+      --shard-count "$FEEDBACK_REPAIR_SHARD_COUNT" --expected-conditions 200 \
+      --expected-ind 100 --expected-ood 100
     ;;
   oracle_llm)
     SUCC_PYTHON_BIN="$PYTHON_BIN" SUCC_ADMET_PYTHON_BIN="$ADMET_PYTHON_BIN" \

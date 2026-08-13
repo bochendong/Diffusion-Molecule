@@ -72,6 +72,7 @@ direct_repair_trajectories = load_module("generate_direct_repair_trajectories")
 direct_repair_merge = load_module("merge_direct_repair_trajectories")
 feedback_repair_protocol = load_module("feedback_repair_agent_protocol")
 feedback_repair_trajectories = load_module("generate_feedback_repair_trajectories")
+feedback_repair_merge = load_module("merge_feedback_repair_trajectories")
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -479,6 +480,114 @@ def test_feedback_repair_signal_is_stably_balanced_ind_ood() -> None:
     assert len(first) == 60
     assert sum(row["_uca_task_id"] in mumo_parallel.IND_TASK_IDS for row in first) == 30
     assert sum(row["_uca_task_id"] in mumo_parallel.OOD_TASK_IDS for row in first) == 30
+
+
+def test_feedback_repair_signal_shards_are_disjoint_and_complete() -> None:
+    rows = []
+    for task_id in mumo_parallel.TASK_IDS:
+        for index in range(40):
+            rows.append(
+                {
+                    "_uca_task_id": task_id,
+                    "_uca_source_group": f"{task_id}:source:{index:03d}",
+                }
+            )
+    selected = feedback_repair_trajectories.select_signal_rows(
+        rows, per_split=100, seed=1716
+    )
+    shards = [
+        {
+            str(row["_uca_source_group"])
+            for row in selected
+            if mumo_parallel.stable_shard(
+                str(row["_uca_source_group"]), seed=1716, shard_count=8
+            )
+            == shard_index
+        }
+        for shard_index in range(8)
+    ]
+    assert set().union(*shards) == {
+        str(row["_uca_source_group"]) for row in selected
+    }
+    assert sum(len(shard) for shard in shards) == len(selected)
+
+
+def test_feedback_repair_merge_preserves_exact_n20_without_selection(tmp_path: Path) -> None:
+    shard_dir = tmp_path / "shards"
+    for shard_index, split in enumerate(("IND", "OOD")):
+        condition_id = f"condition-{shard_index}"
+        write_csv(
+            shard_dir / f"trajectories_{shard_index:03d}.csv",
+            [
+                {
+                    "condition_id": condition_id,
+                    "generation_attempt_index": attempt,
+                    "trajectory_id": f"{condition_id}:{attempt:02d}",
+                    "generated_smiles": f"C{'C' * attempt}",
+                    "candidate_valid": True,
+                    "candidate_source_similarity_pass": True,
+                    "candidate_is_noop": False,
+                }
+                for attempt in range(1, 21)
+            ],
+        )
+        manifest = {
+            "protocol": "common_llm_feedback_repair_signal_v14a",
+            "controller_mode": "deterministic",
+            "output_selection": "none",
+            "internal_molecular_candidate_pool": False,
+            "evaluation_target_access": False,
+            "evaluation_oracle_access": False,
+            "attempts_per_condition": 20,
+            "shard_index": shard_index,
+            "shard_count": 2,
+            "ind_conditions": int(split == "IND"),
+            "ood_conditions": int(split == "OOD"),
+            "max_committed_edits": 3,
+            "max_proposals": 6,
+            "controller_decisions": 20,
+            "controller_action_counts": {"repair:qed": 20},
+            "seed": 1716,
+            "soft_uncertainty_feedback": True,
+            "exact_qed_safety_critic": True,
+            "nonexact_verifier_is_hard_veto": False,
+        }
+        (shard_dir / f"manifest_{shard_index:03d}.json").write_text(
+            json.dumps(manifest), encoding="utf-8"
+        )
+
+    output_csv = tmp_path / "exact_n20.csv"
+    output_manifest = tmp_path / "manifest.json"
+    assert (
+        feedback_repair_merge.main(
+            [
+                "--shard-dir",
+                str(shard_dir),
+                "--output-csv",
+                str(output_csv),
+                "--manifest-json",
+                str(output_manifest),
+                "--controller-mode",
+                "deterministic",
+                "--shard-count",
+                "2",
+                "--expected-conditions",
+                "2",
+                "--expected-ind",
+                "1",
+                "--expected-ood",
+                "1",
+            ]
+        )
+        == 0
+    )
+    rows = list(csv.DictReader(output_csv.open(newline="", encoding="utf-8")))
+    merged = json.loads(output_manifest.read_text(encoding="utf-8"))
+    assert len(rows) == 40
+    assert merged["conditions"] == 2
+    assert merged["candidate_rows"] == 40
+    assert merged["attempts_per_condition"] == 20
+    assert merged["output_selection"] == "none"
 
 
 def test_feedback_transaction_keeps_uncertain_regressions_as_observations() -> None:
