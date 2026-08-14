@@ -120,8 +120,8 @@ the source graph and a sanitized property program. The validation target and
 property scorers are accessed only after exactly 20 direct raw decodes have
 been frozen.
 
-The pilot is deliberately small: one seed, at most 1,500 training edit pairs
-and 16 held-out conditions. It has no candidate library, selector, finalizer,
+The pilot is deliberately small: one seed, at most 1,500 two- or three-property
+training edit pairs and 16 held-out conditions. It has no candidate library, selector, finalizer,
 oracle reranking, or valence repair. Its purpose is to decide whether learned
 latent motion improves over source-copy target proximity while retaining high
 validity and source similarity; it is not a Table1 or MuMO headline result.

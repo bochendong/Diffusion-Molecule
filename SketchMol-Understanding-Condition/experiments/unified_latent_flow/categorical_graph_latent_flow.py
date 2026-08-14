@@ -61,7 +61,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--train-limit", type=int, default=3000)
     parser.add_argument("--validation-limit", type=int, default=24)
-    parser.add_argument("--property-counts", default="1,2,3")
+    parser.add_argument("--property-counts", default="2,3")
     parser.add_argument("--fingerprint-bits", type=int, default=512)
     parser.add_argument("--condition-dim", type=int, default=64)
     parser.add_argument("--hidden-dim", type=int, default=256)

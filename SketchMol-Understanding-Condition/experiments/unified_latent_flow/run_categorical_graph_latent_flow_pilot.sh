@@ -39,7 +39,7 @@ exec "$PYTHON_BIN" "$SCRIPT_DIR/categorical_graph_latent_flow.py" \
   --output-dir "$OUTPUT_DIR" \
   --train-limit "${SUCC_GRAPH_FLOW_TRAIN_LIMIT:-1500}" \
   --validation-limit "${SUCC_GRAPH_FLOW_VALIDATION_LIMIT:-16}" \
-  --property-counts "${SUCC_GRAPH_FLOW_PROPERTY_COUNTS:-1,2,3}" \
+  --property-counts "${SUCC_GRAPH_FLOW_PROPERTY_COUNTS:-2,3}" \
   --epochs "${SUCC_GRAPH_FLOW_EPOCHS:-2}" \
   --batch-size "${SUCC_GRAPH_FLOW_BATCH_SIZE:-8}" \
   --hidden-dim "${SUCC_GRAPH_FLOW_HIDDEN_DIM:-256}" \

@@ -33,6 +33,7 @@ def test_categorical_graph_flow_runner_is_small_and_exact_n20() -> None:
     submit_source = SUBMIT_PATH.read_text(encoding="utf-8")
     assert '--train-limit "${SUCC_GRAPH_FLOW_TRAIN_LIMIT:-1500}"' in run_source
     assert '--validation-limit "${SUCC_GRAPH_FLOW_VALIDATION_LIMIT:-16}"' in run_source
+    assert '--property-counts "${SUCC_GRAPH_FLOW_PROPERTY_COUNTS:-2,3}"' in run_source
     assert "--num-attempts 20" in run_source
     assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
     assert "00:20:00" in submit_source
