@@ -13,6 +13,7 @@ atom/bond sampling, finalizer, or chemistry repair during generation.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.util
 import json
 import math
@@ -42,11 +43,21 @@ RESIDUAL_PROPERTY_SLOTS_PROTOCOL = "residual_property_slots_motif_graph_flow_pil
 PROPERTY_INTERACTION_LATENTS_PROTOCOL = (
     "property_interaction_latents_motif_graph_flow_pilot_v15"
 )
+ATOM_STATE_VALENCE_GRAMMAR_PROTOCOL = (
+    "atom_state_valence_grammar_motif_graph_flow_pilot_v16"
+)
 
 NODE_KEEP, NODE_DELETE, NODE_BIRTH, NODE_REPLACE = range(4)
 EDGE_KEEP, EDGE_DELETE, EDGE_SET = range(3)
 MAX_VALENCE_UNITS = 12
 BOND_VALENCE_UNITS = (0, 2, 4, 6, 3)
+ATOM_STATE_FIELDS = (
+    "atomic_number",
+    "formal_charge",
+    "aromatic",
+    "explicit_hs",
+    "no_implicit",
+)
 
 
 def load_module(name: str, path: Path):
@@ -114,6 +125,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--property-latent-slots", action="store_true")
     parser.add_argument("--residual-property-latent-slots", action="store_true")
     parser.add_argument("--property-interaction-latents", action="store_true")
+    parser.add_argument("--atom-state-valence-grammar", action="store_true")
     parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
     parser.add_argument("--delta-loss-weight", type=float, default=0.50)
     parser.add_argument("--valence-budget-loss-weight", type=float, default=0.25)
@@ -939,6 +951,102 @@ def valence_budget_targets(target: Mapping[str, torch.Tensor]) -> torch.Tensor:
     return (bond_units + explicit_h_units).clamp_max(MAX_VALENCE_UNITS)
 
 
+def build_train_atom_state_grammar(
+    pairs: Sequence[object],
+) -> dict[str, object]:
+    """Build legal joint atom states and capacities from train molecules only."""
+    maximum_valence: dict[tuple[int, ...], int] = {}
+    unit_table = np.asarray(BOND_VALENCE_UNITS, dtype=np.int64)
+    for pair in pairs:
+        for example in (pair.source, pair.target):
+            atomic_number = np.asarray(example.atomic_number, dtype=np.int64)
+            active = atomic_number > 0
+            bond = np.asarray(example.bond, dtype=np.int64)
+            explicit_hs = np.asarray(example.explicit_hs, dtype=np.int64)
+            total_valence = unit_table[bond].sum(axis=1) + 2 * explicit_hs
+            field_values = {
+                field: np.asarray(getattr(example, field), dtype=np.int64)
+                for field in ATOM_STATE_FIELDS
+            }
+            for position in np.flatnonzero(active).tolist():
+                state = tuple(
+                    int(field_values[field][position]) for field in ATOM_STATE_FIELDS
+                )
+                maximum_valence[state] = max(
+                    maximum_valence.get(state, 0),
+                    min(MAX_VALENCE_UNITS, int(total_valence[position])),
+                )
+    if not maximum_valence:
+        raise ValueError("Train-only atom-state grammar has no active atom states")
+    ordered = sorted(maximum_valence.items())
+    states = np.asarray([state for state, _ in ordered], dtype=np.int64)
+    capacities = np.asarray([capacity for _, capacity in ordered], dtype=np.int64)
+    payload = json.dumps(
+        [list(state) + [int(capacity)] for state, capacity in ordered],
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return {
+        "fields": ATOM_STATE_FIELDS,
+        "states": states,
+        "capacities": capacities,
+        "sha256": hashlib.sha256(payload).hexdigest(),
+    }
+
+
+def decode_train_supported_atom_states(
+    logits: Mapping[str, torch.Tensor], grammar: Mapping[str, object]
+) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+    """Jointly decode a legal atom state and its train-observed valence cap."""
+    states = torch.as_tensor(
+        np.asarray(grammar["states"]),
+        device=logits["atomic_number"].device,
+        dtype=torch.long,
+    )
+    capacities = torch.as_tensor(
+        np.asarray(grammar["capacities"]),
+        device=logits["atomic_number"].device,
+        dtype=torch.long,
+    )
+    joint_score: torch.Tensor | None = None
+    for field_index, field in enumerate(ATOM_STATE_FIELDS):
+        field_score = logits[field].float().log_softmax(dim=-1)[..., states[:, field_index]]
+        joint_score = field_score if joint_score is None else joint_score + field_score
+    if joint_score is None:
+        raise RuntimeError("Atom-state grammar has no fields")
+    selected = joint_score.argmax(dim=-1)
+    selected_states = states[selected]
+    candidate_nodes = {
+        field: value.argmax(dim=-1) for field, value in logits.items() if field in vq.NODE_FIELDS
+    }
+    for field_index, field in enumerate(ATOM_STATE_FIELDS):
+        candidate_nodes[field] = selected_states[..., field_index]
+    return candidate_nodes, capacities[selected]
+
+
+def source_atom_state_valence_caps(
+    source: Mapping[str, torch.Tensor], grammar: Mapping[str, object]
+) -> torch.Tensor:
+    """Look up source-state capacity, falling back to its already valid valence."""
+    device = source["atomic_number"].device
+    states = torch.as_tensor(
+        np.asarray(grammar["states"]), device=device, dtype=torch.long
+    )
+    capacities = torch.as_tensor(
+        np.asarray(grammar["capacities"]), device=device, dtype=torch.long
+    )
+    source_states = torch.stack(
+        [source[field].long() for field in ATOM_STATE_FIELDS], dim=-1
+    )
+    matches = source_states.unsqueeze(-2).eq(states).all(dim=-1)
+    matched_capacity = (
+        matches.long() * capacities.view(1, 1, -1)
+    ).max(dim=-1).values
+    unit_table = torch.as_tensor(BOND_VALENCE_UNITS, device=device, dtype=torch.long)
+    current_valence = unit_table[source["bond"].long()].sum(dim=2)
+    current_valence += 2 * source["explicit_hs"].long()
+    return torch.where(matches.any(dim=-1), matched_capacity, current_valence)
+
+
 def decoder_auxiliary_losses(
     flow: HierarchicalVQGraphFlow,
     decoded: tuple[torch.Tensor, ...],
@@ -1186,6 +1294,8 @@ def apply_motif_attachment_graph_delta(
     region: torch.Tensor,
     upper: torch.Tensor,
     candidate_adjacency: torch.Tensor,
+    candidate_valence_cap: torch.Tensor | None = None,
+    source_valence_cap: torch.Tensor | None = None,
 ) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
     """Generate one connected latent motif from a single source attachment atom."""
     result = {
@@ -1268,6 +1378,16 @@ def apply_motif_attachment_graph_delta(
         result["atomic_number"],
     )
     result = belief.enforce_categorical_consistency(result)
+
+    if candidate_valence_cap is not None:
+        if source_valence_cap is None:
+            raise ValueError("Source valence caps are required with candidate caps")
+        state_capacity = torch.where(
+            preserved_anchor,
+            source_valence_cap.detach().cpu().long(),
+            candidate_valence_cap.detach().cpu().long(),
+        )
+        budget = torch.minimum(budget, state_capacity)
 
     active = result["atomic_number"].gt(0)
     region_pair = region_cpu[:, :, None] & region_cpu[:, None, :]
@@ -1691,6 +1811,7 @@ def sample_from_source(
     temperature: float,
     device: torch.device,
     seed: int,
+    atom_state_grammar: Mapping[str, object] | None = None,
 ) -> list[tuple[str | None, int, int, int, int, int]]:
     """Sample two latent tokens without a target graph or property oracle."""
     if not active_constraint_codes or not active_motif_codes:
@@ -1747,9 +1868,19 @@ def sample_from_source(
                 key: value.clone() if isinstance(value, torch.Tensor) else value
                 for key, value in source.items()
             }
-            candidate_nodes = {
-                key: logits[key].argmax(dim=-1) for key in vq.NODE_FIELDS
-            }
+            candidate_valence_cap: torch.Tensor | None = None
+            source_valence_cap: torch.Tensor | None = None
+            if atom_state_grammar is not None:
+                candidate_nodes, candidate_valence_cap = (
+                    decode_train_supported_atom_states(logits, atom_state_grammar)
+                )
+                source_valence_cap = source_atom_state_valence_caps(
+                    source, atom_state_grammar
+                )
+            else:
+                candidate_nodes = {
+                    key: logits[key].argmax(dim=-1) for key in vq.NODE_FIELDS
+                }
             nodes = source["node_mask"].shape[1]
             upper = torch.triu(
                 torch.ones(nodes, nodes, device=device, dtype=torch.bool), diagonal=1
@@ -1779,9 +1910,10 @@ def sample_from_source(
                 node_edit = decoded[2].gt(0) & node_eligible
             if flow.categorical_delta:
                 delta_nodes = dict(candidate_nodes)
-                delta_nodes["atomic_number"] = (
-                    logits["atomic_number"][..., 1:].argmax(dim=-1) + 1
-                )
+                if atom_state_grammar is None:
+                    delta_nodes["atomic_number"] = (
+                        logits["atomic_number"][..., 1:].argmax(dim=-1) + 1
+                    )
                 delta_edges = dict(candidate_edges)
                 set_bond = logits["bond"][..., 1:].argmax(dim=-1) + 1
                 set_bond = torch.where(
@@ -1799,6 +1931,8 @@ def sample_from_source(
                             node_edit,
                             upper,
                             candidate_edges["bond"].gt(graph.BOND_NONE),
+                            candidate_valence_cap=candidate_valence_cap,
+                            source_valence_cap=source_valence_cap,
                         )
                     )
                 else:
@@ -1876,6 +2010,7 @@ def evaluate(
     active_motif_codes: Sequence[int],
     args: argparse.Namespace,
     device: torch.device,
+    atom_state_grammar: Mapping[str, object] | None = None,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     candidate_rows: list[dict[str, object]] = []
     for pair_index, pair in enumerate(pairs):
@@ -1891,6 +2026,7 @@ def evaluate(
             temperature=float(args.sampling_temperature),
             device=device,
             seed=int(args.seed) * 100000 + pair_index,
+            atom_state_grammar=atom_state_grammar,
         )
         source_copy_target = graph.morgan_tanimoto(pair.source_smiles, pair.target_smiles) or 0.0
         specs = base.task_specs(pair.row)
@@ -1967,6 +2103,8 @@ def evaluate(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.atom_state_valence_grammar:
+        args.property_interaction_latents = True
     condition_variants = (
         bool(args.condition_attention),
         bool(args.property_latent_slots),
@@ -1994,7 +2132,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.connected_region:
         args.source_anchored = True
     protocol = (
-        PROPERTY_INTERACTION_LATENTS_PROTOCOL
+        ATOM_STATE_VALENCE_GRAMMAR_PROTOCOL
+        if args.atom_state_valence_grammar
+        else PROPERTY_INTERACTION_LATENTS_PROTOCOL
         if args.property_interaction_latents
         else RESIDUAL_PROPERTY_SLOTS_PROTOCOL
         if args.residual_property_latent_slots
@@ -2053,6 +2193,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if len(train_pairs) < 32:
         raise ValueError(f"Need at least 32 train pairs, found {len(train_pairs)}")
+    atom_state_grammar = (
+        build_train_atom_state_grammar(train_pairs)
+        if args.atom_state_valence_grammar
+        else None
+    )
     if args.residual_property_latent_slots:
         for pair in [*train_pairs, *validation_pairs]:
             pair.condition = residual_property_latent_slot_tokens(
@@ -2100,6 +2245,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         active_motif_codes,
         args,
         device,
+        atom_state_grammar=atom_state_grammar,
     )
     checks = {
         "exact_attempts": {"value": metrics["attempted_per_condition"], "threshold": 20},
@@ -2187,6 +2333,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.residual_property_latent_slots
         ),
         "property_interaction_latents": bool(args.property_interaction_latents),
+        "atom_state_valence_grammar": bool(args.atom_state_valence_grammar),
+        "joint_atom_state_fields": list(ATOM_STATE_FIELDS)
+        if args.atom_state_valence_grammar
+        else [],
+        "train_atom_state_support_size": int(
+            len(atom_state_grammar["states"]) if atom_state_grammar is not None else 0
+        ),
+        "train_atom_state_support_sha256": str(
+            atom_state_grammar["sha256"] if atom_state_grammar is not None else ""
+        ),
+        "train_only_atom_state_support": bool(args.atom_state_valence_grammar),
+        "joint_atom_state_decode_before_graph_assembly": bool(
+            args.atom_state_valence_grammar
+        ),
+        "atom_state_conditioned_valence_capacity": bool(
+            args.atom_state_valence_grammar
+        ),
+        "training_dynamics_exactly_b15": bool(args.atom_state_valence_grammar),
         "property_latent_slot_count": len(unified.PROPERTY_COLUMNS)
         if (
             args.property_latent_slots
@@ -2276,7 +2440,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "source_target_mcs_alignment_training_only": True,
     }
     checkpoint_name = (
-        "property_interaction_latents_motif_graph_flow.pt"
+        "atom_state_valence_grammar_motif_graph_flow.pt"
+        if args.atom_state_valence_grammar
+        else "property_interaction_latents_motif_graph_flow.pt"
         if args.property_interaction_latents
         else "residual_property_slots_motif_graph_flow.pt"
         if args.residual_property_latent_slots
@@ -2323,9 +2489,20 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "property_interaction_latents": bool(
                     args.property_interaction_latents
                 ),
+                "atom_state_valence_grammar": bool(
+                    args.atom_state_valence_grammar
+                ),
             },
             "active_constraint_codes": active_constraint_codes,
             "active_motif_codes": active_motif_codes,
+            "atom_state_grammar": {
+                "fields": list(ATOM_STATE_FIELDS),
+                "states": np.asarray(atom_state_grammar["states"]).tolist(),
+                "capacities": np.asarray(atom_state_grammar["capacities"]).tolist(),
+                "sha256": str(atom_state_grammar["sha256"]),
+            }
+            if atom_state_grammar is not None
+            else None,
             "history": history,
             "manifest": manifest,
         },
@@ -2344,7 +2521,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "gate": {"passed": not failures, "checks": checks, "failures": failures},
         "next_stage": (
             (
-                "expand_residual_property_slots_motif_signal"
+                "freeze_atom_state_valence_grammar_signal"
+                if args.atom_state_valence_grammar
+                else "expand_residual_property_slots_motif_signal"
                 if args.residual_property_latent_slots
                 else "expand_property_latent_slots_motif_signal"
                 if args.property_latent_slots
@@ -2362,7 +2541,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if not failures
             else (
-                "diagnose_residual_property_slots_or_atom_count"
+                "diagnose_aromatic_cycle_or_bond_state_support"
+                if args.atom_state_valence_grammar
+                else "diagnose_residual_property_slots_or_atom_count"
                 if args.residual_property_latent_slots
                 else "diagnose_property_slot_composition_or_atom_count"
                 if args.property_latent_slots

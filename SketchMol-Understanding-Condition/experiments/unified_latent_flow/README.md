@@ -428,3 +428,29 @@ held-out 2p/3p conditions, eight epochs, exact n=20, and one 10GB H100 MIG.
 ```bash
 bash experiments/unified_latent_flow/submit_property_interaction_latents_motif_graph_flow_pilot.sh
 ```
+
+## Stage B16: train-supported joint atom-state valence grammar
+
+B15 is the strongest matched latent result so far: overall strict any@20 rose
+to 77.8% and 3p strict rose to 66.7%.  Its 78.9% candidate validity missed the
+80% gate by only four of 360 candidates.  The remaining decoder factorization
+chooses atomic number, charge, aromaticity, explicit hydrogens, implicit-H
+policy, and total valence as independent categorical predictions.  Each field
+can be likely while their assembled atom state never occurs in a valid train
+molecule.
+
+B16 keeps the complete B15 model and training dynamics.  It builds a vocabulary
+of joint atom states from the selected train source/target molecules only.  At
+generation time, the decoder selects one complete state by summed field log
+likelihood, then caps its learned valence budget at the maximum valence observed
+for that train-supported state before motif edges are generated.  Validation
+targets never enter this vocabulary.  The constraint is part of generative
+support before graph assembly; it is not RDKit sanitization, post-hoc repair,
+candidate filtering, ranking, or a task-specific exception.
+
+The matched pilot retains seed 1741, 1,500 requested train pairs, the same 18
+held-out 2p/3p conditions, eight epochs, exact n=20, and one 10GB H100 MIG.
+
+```bash
+bash experiments/unified_latent_flow/submit_atom_state_valence_grammar_motif_graph_flow_pilot.sh
+```
