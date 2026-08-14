@@ -366,3 +366,23 @@ decoder.  Generation remains target- and oracle-blind.
 ```bash
 bash experiments/unified_latent_flow/submit_constraint_attention_motif_graph_flow_pilot.sh
 ```
+
+## Stage B13: compositional property latent slots
+
+B12 rejected the hypothesis that source-to-condition cross-attention would fix
+3p composition: validity fell to 68.1%, 3p strict remained 16.7%, and 3p atom
+count MAE rose to 7.96.  B13 therefore removes cross-attention and represents
+the request as a set of independently encoded active-property contributions.
+
+The representation contains one global request token and one fixed slot for
+each supported property.  Inactive slots are exactly zero.  A shared residual
+encoder maps each active slot independently; their normalized sum plus an
+explicit active-count residual produces the joint condition supplied to the
+unchanged B11 constraint token, motif token, and graph decoder.  The operation
+is permutation invariant, target/oracle blind, and uses no candidate ranking.
+The slot module is instantiated after all shared B11 modules so seed 1741 gives
+identical initialization for every shared parameter.
+
+```bash
+bash experiments/unified_latent_flow/submit_property_latent_slots_motif_graph_flow_pilot.sh
+```

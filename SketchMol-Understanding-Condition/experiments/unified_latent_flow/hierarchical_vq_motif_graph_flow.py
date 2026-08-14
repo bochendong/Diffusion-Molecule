@@ -37,6 +37,7 @@ CATEGORICAL_DELTA_PROTOCOL = "categorical_delta_hierarchical_vq_graph_flow_pilot
 VALENCE_BUDGET_PROTOCOL = "valence_budget_hierarchical_vq_graph_flow_pilot_v10"
 MOTIF_ATTACHMENT_PROTOCOL = "motif_attachment_hierarchical_vq_graph_flow_pilot_v11"
 CONSTRAINT_ATTENTION_PROTOCOL = "constraint_attention_motif_graph_flow_pilot_v12"
+PROPERTY_LATENT_SLOTS_PROTOCOL = "property_latent_slots_motif_graph_flow_pilot_v13"
 
 NODE_KEEP, NODE_DELETE, NODE_BIRTH, NODE_REPLACE = range(4)
 EDGE_KEEP, EDGE_DELETE, EDGE_SET = range(3)
@@ -106,6 +107,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--motif-attachment", action="store_true")
     parser.add_argument("--condition-attention", action="store_true")
     parser.add_argument("--condition-attention-heads", type=int, default=4)
+    parser.add_argument("--property-latent-slots", action="store_true")
     parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
     parser.add_argument("--delta-loss-weight", type=float, default=0.50)
     parser.add_argument("--valence-budget-loss-weight", type=float, default=0.25)
@@ -134,6 +136,30 @@ def condition_tokens(row: Mapping[str, str], condition_dim: int) -> np.ndarray:
     mode = unified.mode_condition_token(unified.EDIT_MODE, int(condition_dim))
     program = unified.property_program_tokens(safe, int(condition_dim))
     return np.concatenate([fallback, mode, program], axis=0).astype(np.float32)
+
+
+def property_latent_slot_tokens(
+    row: Mapping[str, str], condition_dim: int
+) -> np.ndarray:
+    """Return one global token plus one independently masked token per property."""
+    safe = base.sanitized_condition_row(row)
+    fallback = unified.fallback_condition_features(safe, int(condition_dim))[0]
+    mode = unified.mode_condition_token(unified.EDIT_MODE, int(condition_dim))[0]
+    program = unified.property_program_tokens(safe, int(condition_dim))
+    global_token = np.stack([fallback, mode, program[0]], axis=0).mean(axis=0)
+    selected = set(unified.selected_properties(safe))
+    property_tokens = program[1:].copy()
+    active = np.asarray(
+        [prop in selected for prop in unified.PROPERTY_COLUMNS], dtype=np.float32
+    )
+    if property_tokens.shape[0] != active.shape[0]:
+        raise ValueError(
+            f"Expected {active.shape[0]} property tokens, got {property_tokens.shape[0]}"
+        )
+    property_tokens *= active[:, None]
+    return np.concatenate([global_token[None, :], property_tokens], axis=0).astype(
+        np.float32
+    )
 
 
 class SourceConstraintCrossAttention(nn.Module):
@@ -170,6 +196,50 @@ class SourceConstraintCrossAttention(nn.Module):
         pooled = pooled / mask.sum(dim=1).clamp_min(1.0)
         token_mean = tokens.mean(dim=1)
         return self.output(torch.cat([pooled, token_mean], dim=-1))
+
+
+class PropertyLatentSlotComposer(nn.Module):
+    """Compose active property latents as a permutation-invariant residual set."""
+
+    def __init__(self, condition_dim: int, hidden_dim: int, property_count: int) -> None:
+        super().__init__()
+        self.property_count = int(property_count)
+        self.slot_residual = nn.Sequential(
+            nn.LayerNorm(condition_dim),
+            nn.Linear(condition_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, condition_dim),
+        )
+        self.count_residual = nn.Linear(1, condition_dim, bias=False)
+        self.output_norm = nn.LayerNorm(condition_dim)
+        # Start from the explicit additive property program.  Only the new
+        # residuals start at zero, so the unchanged B11 modules keep both their
+        # initialization order and a stable condition scale.
+        nn.init.zeros_(self.slot_residual[-1].weight)
+        nn.init.zeros_(self.slot_residual[-1].bias)
+        nn.init.zeros_(self.count_residual.weight)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        if tokens.ndim != 3 or tokens.shape[1] != self.property_count + 1:
+            raise ValueError(
+                "Property-slot condition must contain one global token plus "
+                f"{self.property_count} property tokens, got {tokens.shape}"
+            )
+        global_token = tokens[:, 0, :]
+        slots = tokens[:, 1:, :]
+        active = slots.abs().sum(dim=-1).gt(0)
+        mask = active.unsqueeze(-1).to(slots.dtype)
+        active_count = mask.sum(dim=1).clamp_min(1.0)
+        scale = active_count.sqrt()
+        raw_sum = (slots * mask).sum(dim=1) / scale
+        learned_sum = (self.slot_residual(slots) * mask).sum(dim=1) / scale
+        count_fraction = active_count / max(1, self.property_count)
+        return self.output_norm(
+            global_token
+            + raw_sum
+            + learned_sum
+            + self.count_residual(count_fraction)
+        )
 
 
 class SourceAnchoredEndpointField(nn.Module):
@@ -336,6 +406,7 @@ class HierarchicalVQGraphFlow(nn.Module):
         motif_attachment: bool = False,
         condition_attention: bool = False,
         condition_attention_heads: int = 4,
+        property_latent_slots: bool = False,
     ) -> None:
         super().__init__()
         self.source_anchored = bool(source_anchored)
@@ -344,6 +415,11 @@ class HierarchicalVQGraphFlow(nn.Module):
         self.valence_budget = bool(valence_budget)
         self.motif_attachment = bool(motif_attachment)
         self.condition_attention = bool(condition_attention)
+        self.property_latent_slots = bool(property_latent_slots)
+        if self.condition_attention and self.property_latent_slots:
+            raise ValueError(
+                "Condition attention and property latent slots are isolated alternatives"
+            )
         if self.connected_region and not self.source_anchored:
             raise ValueError("Connected-region decoding requires source anchoring")
         if self.categorical_delta and not self.connected_region:
@@ -405,6 +481,15 @@ class HierarchicalVQGraphFlow(nn.Module):
             hidden_dim,
             max_atoms,
         )
+        # Deliberately instantiate this after every B11 module.  With the same
+        # seed, all shared B11 weights therefore have identical initialization.
+        self.property_slot_router = (
+            PropertyLatentSlotComposer(
+                condition_dim, hidden_dim, len(unified.PROPERTY_COLUMNS)
+            )
+            if self.property_latent_slots
+            else None
+        )
 
     @staticmethod
     def source_pool(source_node: torch.Tensor, source_mask: torch.Tensor) -> torch.Tensor:
@@ -421,6 +506,8 @@ class HierarchicalVQGraphFlow(nn.Module):
             return condition
         if condition.ndim != 3:
             raise ValueError(f"Expected condition [B,D] or [B,L,D], got {condition.shape}")
+        if self.property_slot_router is not None:
+            return self.property_slot_router(condition)
         if self.condition_router is None:
             return condition.mean(dim=1)
         return self.condition_router(source_node, source_mask, condition)
@@ -1741,6 +1828,12 @@ def evaluate(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.condition_attention and args.property_latent_slots:
+        raise ValueError(
+            "Condition attention and property latent slots are isolated alternatives"
+        )
+    if args.property_latent_slots:
+        args.motif_attachment = True
     if args.condition_attention:
         args.motif_attachment = True
     if args.motif_attachment:
@@ -1752,7 +1845,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.connected_region:
         args.source_anchored = True
     protocol = (
-        CONSTRAINT_ATTENTION_PROTOCOL
+        PROPERTY_LATENT_SLOTS_PROTOCOL
+        if args.property_latent_slots
+        else CONSTRAINT_ATTENTION_PROTOCOL
         if args.condition_attention
         else MOTIF_ATTACHMENT_PROTOCOL
         if args.motif_attachment
@@ -1805,7 +1900,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if len(train_pairs) < 32:
         raise ValueError(f"Need at least 32 train pairs, found {len(train_pairs)}")
-    if args.condition_attention:
+    if args.property_latent_slots:
+        for pair in [*train_pairs, *validation_pairs]:
+            pair.condition = property_latent_slot_tokens(
+                pair.row, int(args.condition_dim)
+            )
+    elif args.condition_attention:
         for pair in [*train_pairs, *validation_pairs]:
             pair.condition = condition_tokens(pair.row, int(args.condition_dim))
     flow = HierarchicalVQGraphFlow(
@@ -1825,6 +1925,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         motif_attachment=bool(args.motif_attachment),
         condition_attention=bool(args.condition_attention),
         condition_attention_heads=int(args.condition_attention_heads),
+        property_latent_slots=bool(args.property_latent_slots),
     ).to(device)
     history, constraint_usage, motif_usage = train_flow(
         flow, representation, train_pairs, args, device
@@ -1912,9 +2013,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         "constraint_conditioned_motif_prior": True,
         "condition_token_pooling": "source_node_cross_attention"
         if args.condition_attention
+        else "permutation_invariant_active_property_latent_sum"
+        if args.property_latent_slots
         else "mean",
         "condition_attention": bool(args.condition_attention),
         "condition_attention_heads": int(args.condition_attention_heads),
+        "property_latent_slots": bool(args.property_latent_slots),
+        "property_latent_slot_count": len(unified.PROPERTY_COLUMNS)
+        if args.property_latent_slots
+        else 0,
+        "inactive_property_slots_zeroed": bool(args.property_latent_slots),
+        "property_slot_composition_permutation_invariant": bool(
+            args.property_latent_slots
+        ),
+        "shared_b11_module_initialization_order_preserved": bool(
+            args.property_latent_slots
+        ),
         "separate_token_contrastive_reconstruction": True,
         "deterministic_category_decode_given_tokens": True,
         "source_anchored_residual_decoder": bool(args.source_anchored),
@@ -1967,7 +2081,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "source_target_mcs_alignment_training_only": True,
     }
     checkpoint_name = (
-        "motif_attachment_hierarchical_vq_graph_flow.pt"
+        "property_latent_slots_motif_graph_flow.pt"
+        if args.property_latent_slots
+        else "motif_attachment_hierarchical_vq_graph_flow.pt"
         if args.motif_attachment
         else "valence_budget_hierarchical_vq_graph_flow.pt"
         if args.valence_budget
@@ -2001,6 +2117,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "motif_attachment": bool(args.motif_attachment),
                 "condition_attention": bool(args.condition_attention),
                 "condition_attention_heads": int(args.condition_attention_heads),
+                "property_latent_slots": bool(args.property_latent_slots),
             },
             "active_constraint_codes": active_constraint_codes,
             "active_motif_codes": active_motif_codes,
@@ -2022,7 +2139,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "gate": {"passed": not failures, "checks": checks, "failures": failures},
         "next_stage": (
             (
-                "expand_motif_attachment_hierarchical_vq_signal"
+                "expand_property_latent_slots_motif_signal"
+                if args.property_latent_slots
+                else "expand_motif_attachment_hierarchical_vq_signal"
                 if args.motif_attachment
                 else "expand_valence_budget_hierarchical_vq_signal"
                 if args.valence_budget
@@ -2036,7 +2155,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if not failures
             else (
-                "diagnose_motif_attachment_support_or_atom_count"
+                "diagnose_property_slot_composition_or_atom_count"
+                if args.property_latent_slots
+                else "diagnose_motif_attachment_support_or_atom_count"
                 if args.motif_attachment
                 else "diagnose_valence_budget_support_or_connectivity"
                 if args.valence_budget
