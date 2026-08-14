@@ -204,3 +204,26 @@ The v5b signal adds one code-utilization objective: the correct motif token
 must reconstruct its paired endpoint better than a mismatched token by a fixed
 margin. This directly tests and prevents the decoder from ignoring the VQ
 latent; it does not change candidate budget, generation inputs, or evaluation.
+
+## Stage B6: hierarchical constraint and motif VQ latents
+
+B5b increased motif-code use and target-improvement signal, but one token still
+had to represent both the requested multi-property direction and the local
+structural realization. B6 separates those roles. A train-only global-delta
+posterior learns a small constraint code; a second posterior encodes the
+changed local subgraph into a motif code conditioned on that constraint. At
+generation time a source-and-condition prior samples the constraint code first,
+then a conditional motif prior samples the motif code, and one categorical
+graph decoder deterministically produces the endpoint from both codes.
+
+Both codebooks have independent active-code and perplexity diagnostics. The
+correct constraint and motif codes must each outperform a mismatched code in
+reconstruction, preventing either hierarchy level from being ignored. The
+pilot remains one seed, 1,500 train pairs, 20 held-out 2p/3p conditions and
+exact n=20. It has no target or property-oracle generation access, candidate
+selector, finalizer, independent atom/bond sampling, GraphEditDSL action, or
+chemistry repair.
+
+```bash
+bash experiments/unified_latent_flow/submit_hierarchical_vq_motif_graph_flow_pilot.sh
+```

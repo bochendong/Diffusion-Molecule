@@ -20,6 +20,9 @@ COUPLED_SUBMIT_PATH = EXPERIMENT_DIR / "submit_coupled_local_graph_belief_flow_p
 VQ_MOTIF_PATH = EXPERIMENT_DIR / "vq_motif_graph_belief_flow.py"
 VQ_MOTIF_RUN_PATH = EXPERIMENT_DIR / "run_vq_motif_graph_belief_flow_pilot.sh"
 VQ_MOTIF_SUBMIT_PATH = EXPERIMENT_DIR / "submit_vq_motif_graph_belief_flow_pilot.sh"
+HIERARCHICAL_VQ_PATH = EXPERIMENT_DIR / "hierarchical_vq_motif_graph_flow.py"
+HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_hierarchical_vq_motif_graph_flow_pilot.sh"
+HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_hierarchical_vq_motif_graph_flow_pilot.sh"
 
 
 def test_categorical_graph_flow_has_target_blind_direct_generation_contract() -> None:
@@ -168,6 +171,48 @@ def test_vq_motif_runner_is_bounded_2p3p_exact_n20_and_mig() -> None:
     assert '--codebook-size "${SUCC_VQ_MOTIF_CODEBOOK_SIZE:-64}"' in run_source
     assert '--gate-min-active-codes "${SUCC_VQ_MOTIF_MIN_ACTIVE_CODES:-4}"' in run_source
     assert '--contrastive-loss-weight "${SUCC_VQ_MOTIF_CONTRASTIVE_WEIGHT:-0.25}"' in run_source
+    assert "--num-attempts 20" in run_source
+    assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
+    assert "00:20:00" in submit_source
+    assert "dongbochen1218@gmail.com" in submit_source
+
+
+def test_hierarchical_vq_flow_is_two_level_and_target_blind() -> None:
+    source = HIERARCHICAL_VQ_PATH.read_text(encoding="utf-8")
+    ast.parse(source)
+    assert "class HierarchicalVQGraphFlow" in source
+    assert "def constraint_prior_logits" in source
+    assert "def motif_prior_logits" in source
+    assert '"hierarchical_constraint_then_motif_tokens": True' in source
+    assert '"constraint_posterior_train_only": True' in source
+    assert '"motif_posterior_train_only": True' in source
+    assert '"source_condition_constraint_prior": True' in source
+    assert '"constraint_conditioned_motif_prior": True' in source
+    assert '"separate_token_contrastive_reconstruction": True' in source
+    assert '"deterministic_category_decode_given_tokens": True' in source
+    assert '"generation_target_access": False' in source
+    assert '"property_oracle_generation_access": False' in source
+    assert '"independent_atom_or_bond_sampling": False' in source
+    assert '"selector": False' in source
+    assert '"finalizer": False' in source
+    assert '"valence_projection_or_repair": False' in source
+    sample_source = source[source.index("def sample_from_source") : source.index("def evaluate")]
+    assert "target_smiles" not in sample_source
+    assert "target_example" not in sample_source
+    assert "property_oracle" not in sample_source
+    assert "categorical_sample" not in sample_source
+
+
+def test_hierarchical_vq_runner_is_bounded_2p3p_exact_n20_and_mig() -> None:
+    run_source = HIERARCHICAL_VQ_RUN_PATH.read_text(encoding="utf-8")
+    submit_source = HIERARCHICAL_VQ_SUBMIT_PATH.read_text(encoding="utf-8")
+    assert '--train-limit "${SUCC_HIER_VQ_TRAIN_LIMIT:-1500}"' in run_source
+    assert '--validation-limit "${SUCC_HIER_VQ_VALIDATION_LIMIT:-20}"' in run_source
+    assert '--property-counts "${SUCC_HIER_VQ_PROPERTY_COUNTS:-2,3}"' in run_source
+    assert '--constraint-codebook-size "${SUCC_HIER_VQ_CONSTRAINT_CODEBOOK_SIZE:-16}"' in run_source
+    assert '--motif-codebook-size "${SUCC_HIER_VQ_MOTIF_CODEBOOK_SIZE:-64}"' in run_source
+    assert '--gate-min-constraint-codes "${SUCC_HIER_VQ_MIN_CONSTRAINT_CODES:-3}"' in run_source
+    assert '--gate-min-motif-codes "${SUCC_HIER_VQ_MIN_MOTIF_CODES:-4}"' in run_source
     assert "--num-attempts 20" in run_source
     assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
     assert "00:20:00" in submit_source
