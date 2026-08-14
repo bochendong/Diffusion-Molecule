@@ -9,6 +9,8 @@ EXPERIMENT_DIR = ROOT / "SketchMol-Understanding-Condition" / "experiments" / "u
 FLOW_PATH = EXPERIMENT_DIR / "categorical_graph_latent_flow.py"
 RUN_PATH = EXPERIMENT_DIR / "run_categorical_graph_latent_flow_pilot.sh"
 SUBMIT_PATH = EXPERIMENT_DIR / "submit_categorical_graph_latent_flow_pilot.sh"
+SIZE_RUN_PATH = EXPERIMENT_DIR / "run_size_adaptive_graph_latent_flow_pilot.sh"
+SIZE_SUBMIT_PATH = EXPERIMENT_DIR / "submit_size_adaptive_graph_latent_flow_pilot.sh"
 
 
 def test_categorical_graph_flow_has_target_blind_direct_generation_contract() -> None:
@@ -38,3 +40,19 @@ def test_categorical_graph_flow_runner_is_small_and_exact_n20() -> None:
     assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
     assert "00:20:00" in submit_source
     assert "dongbochen1218@gmail.com" in submit_source
+
+
+def test_size_adaptive_flow_models_birth_death_without_target_access() -> None:
+    flow_source = FLOW_PATH.read_text(encoding="utf-8")
+    run_source = SIZE_RUN_PATH.read_text(encoding="utf-8")
+    submit_source = SIZE_SUBMIT_PATH.read_text(encoding="utf-8")
+    assert "def target_structure" in flow_source
+    assert "def sample_target_masks" in flow_source
+    assert '"size_adaptive_target_count_head": bool(args.size_adaptive)' in flow_source
+    assert '"inactive_slot_velocity_mask": bool(args.size_adaptive)' in flow_source
+    mask_source = flow_source[flow_source.index("def sample_target_masks") : flow_source.index("def sample_from_source")]
+    assert "target_smiles" not in mask_source
+    assert "--size-adaptive" in run_source
+    assert '--epochs "${SUCC_GRAPH_FLOW_EPOCHS:-6}"' in run_source
+    assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
+    assert "00:20:00" in submit_source

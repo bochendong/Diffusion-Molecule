@@ -129,3 +129,14 @@ validity and source similarity; it is not a Table1 or MuMO headline result.
 ```bash
 bash experiments/unified_latent_flow/submit_categorical_graph_latent_flow_pilot.sh
 ```
+
+The v1 signal exposed a size-modeling failure when most paired edits add or
+remove atoms. The v2 pilot therefore learns an explicit target-count
+distribution and source-slot retention head. At sampling time it draws the
+birth/death mask before integrating the latent velocity and leaves all other
+inactive slots fixed. Count masking is a learned categorical component of the
+generator, not a target-derived mask or a chemical repair pass.
+
+```bash
+bash experiments/unified_latent_flow/submit_size_adaptive_graph_latent_flow_pilot.sh
+```

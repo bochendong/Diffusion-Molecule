@@ -35,7 +35,8 @@ GRAPH_AE_PATH = SCRIPT_DIR / "train_graph_latent_autoencoder.py"
 UNIFIED_GENERATOR_PATH = (
     PROJECT_DIR / "experiments" / "unified_smiles_generator" / "unified_smiles_generator.py"
 )
-PROTOCOL = "categorical_graph_latent_rectified_flow_pilot_v1"
+BASE_PROTOCOL = "categorical_graph_latent_rectified_flow_pilot_v1"
+SIZE_ADAPTIVE_PROTOCOL = "size_adaptive_categorical_graph_latent_flow_pilot_v2"
 
 
 def load_module(name: str, path: Path):
@@ -72,6 +73,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--source-noise", type=float, default=0.08)
     parser.add_argument("--endpoint-weight", type=float, default=0.10)
+    parser.add_argument("--count-loss-weight", type=float, default=0.30)
+    parser.add_argument("--occupancy-loss-weight", type=float, default=0.20)
+    parser.add_argument("--size-adaptive", action="store_true")
     parser.add_argument("--flow-steps", type=int, default=6)
     parser.add_argument("--num-attempts", type=int, default=20)
     parser.add_argument("--sample-batch-size", type=int, default=5)
@@ -368,10 +372,18 @@ class TimeEmbedding(nn.Module):
 
 
 class EquivariantGraphVelocity(nn.Module):
-    """Index-free node and symmetric unordered-pair velocity field."""
+    """Node-count-aware node and symmetric unordered-pair velocity field."""
 
-    def __init__(self, node_dim: int, edge_dim: int, condition_dim: int, hidden_dim: int) -> None:
+    def __init__(
+        self,
+        node_dim: int,
+        edge_dim: int,
+        condition_dim: int,
+        hidden_dim: int,
+        max_atoms: int,
+    ) -> None:
         super().__init__()
+        self.max_atoms = int(max_atoms)
         self.condition = nn.Sequential(
             nn.Linear(condition_dim, hidden_dim), nn.SiLU(), nn.Linear(hidden_dim, node_dim)
         )
@@ -380,6 +392,18 @@ class EquivariantGraphVelocity(nn.Module):
         )
         self.edge_summary = nn.Linear(edge_dim, node_dim)
         self.source_mask = nn.Linear(1, node_dim)
+        self.count_head = nn.Sequential(
+            nn.LayerNorm(node_dim * 2),
+            nn.Linear(node_dim * 2, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, self.max_atoms),
+        )
+        self.occupancy_head = nn.Sequential(
+            nn.LayerNorm(node_dim * 2),
+            nn.Linear(node_dim * 2, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1),
+        )
         self.node_velocity = nn.Sequential(
             nn.LayerNorm(node_dim * 5),
             nn.Linear(node_dim * 5, hidden_dim),
@@ -399,6 +423,22 @@ class EquivariantGraphVelocity(nn.Module):
         )
         nn.init.zeros_(self.node_velocity[-1].bias)
         nn.init.zeros_(self.edge_velocity[-1].bias)
+
+    def target_structure(
+        self,
+        source_node: torch.Tensor,
+        source_mask: torch.Tensor,
+        condition: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        context = self.condition(condition)
+        pooled = (source_node * source_mask.unsqueeze(-1)).sum(dim=1)
+        pooled = pooled / source_mask.sum(dim=1, keepdim=True).clamp_min(1.0)
+        count_logits = self.count_head(torch.cat([pooled, context], dim=-1))
+        occupancy_context = context[:, None, :].expand_as(source_node)
+        occupancy_logits = self.occupancy_head(
+            torch.cat([source_node, occupancy_context], dim=-1)
+        ).squeeze(-1)
+        return count_logits, occupancy_logits
 
     def forward(
         self,
@@ -498,9 +538,14 @@ def train_flow(
             with torch.no_grad(), torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
                 source_node, source_edge = representation.encode(source)
                 target_node, target_edge = representation.encode(target)
+            union_mask = torch.maximum(source["node_mask"], target["node_mask"])
+            union_pair_mask = union_mask[:, :, None] * union_mask[:, None, :]
             noise_node = torch.randn_like(source_node) * float(args.source_noise)
             noise_edge = torch.randn_like(source_edge) * float(args.source_noise)
             noise_edge = 0.5 * (noise_edge + noise_edge.transpose(1, 2))
+            if bool(args.size_adaptive):
+                noise_node = noise_node * union_mask.unsqueeze(-1)
+                noise_edge = noise_edge * union_pair_mask.unsqueeze(-1)
             node_zero, edge_zero = source_node + noise_node, source_edge + noise_edge
             time = torch.rand(len(items), device=device).clamp_(0.02, 0.98)
             node_t = (1.0 - time[:, None, None]) * node_zero + time[:, None, None] * target_node
@@ -515,8 +560,13 @@ def train_flow(
                     time,
                     condition,
                 )
+                count_logits, occupancy_logits = flow.target_structure(
+                    source_node, source["node_mask"], condition
+                )
+                if bool(args.size_adaptive):
+                    predicted_node = predicted_node * union_mask.unsqueeze(-1)
+                    predicted_edge = predicted_edge * union_pair_mask.unsqueeze(-1)
                 true_node, true_edge = target_node - node_zero, target_edge - edge_zero
-                union_mask = torch.maximum(source["node_mask"], target["node_mask"])
                 node_loss, edge_loss = weighted_latent_loss(
                     predicted_node, predicted_edge, true_node, true_edge, union_mask
                 )
@@ -527,6 +577,20 @@ def train_flow(
                     endpoint_logits, target, endpoint_node, geometry_weight=0.0
                 )
                 loss = node_loss + edge_loss + float(args.endpoint_weight) * endpoint_loss
+                target_counts = target["node_mask"].sum(dim=1).long().clamp(1, flow.max_atoms) - 1
+                count_loss = F.cross_entropy(count_logits, target_counts)
+                occupancy_raw = F.binary_cross_entropy_with_logits(
+                    occupancy_logits, target["node_mask"], reduction="none"
+                )
+                occupancy_weight = 0.10 + 0.90 * union_mask
+                occupancy_loss = (occupancy_raw * occupancy_weight).sum()
+                occupancy_loss = occupancy_loss / occupancy_weight.sum().clamp_min(1.0)
+                if bool(args.size_adaptive):
+                    loss = (
+                        loss
+                        + float(args.count_loss_weight) * count_loss
+                        + float(args.occupancy_loss_weight) * occupancy_loss
+                    )
             loss.backward()
             nn.utils.clip_grad_norm_(flow.parameters(), float(args.grad_clip))
             optimizer.step()
@@ -534,11 +598,54 @@ def train_flow(
             totals["node_velocity_loss"] += float(node_loss.detach())
             totals["edge_velocity_loss"] += float(edge_loss.detach())
             totals["endpoint_reconstruction_loss"] += float(endpoint_loss.detach())
+            totals["count_loss"] += float(count_loss.detach())
+            totals["occupancy_loss"] += float(occupancy_loss.detach())
             batches += 1
         row = {"epoch": epoch, **{name: value / max(1, batches) for name, value in totals.items()}}
         history.append(row)
         print(json.dumps(row, sort_keys=True), flush=True)
     return history
+
+
+@torch.no_grad()
+def sample_target_masks(
+    flow: EquivariantGraphVelocity,
+    source_node: torch.Tensor,
+    source_mask: torch.Tensor,
+    condition: torch.Tensor,
+    generator: torch.Generator,
+) -> torch.Tensor:
+    """Sample size first, then source retention and birth slots."""
+    count_logits, occupancy_logits = flow.target_structure(source_node, source_mask, condition)
+    top_values, top_indices = torch.topk(count_logits, k=min(3, count_logits.shape[-1]), dim=-1)
+    top_probabilities = torch.softmax(top_values.float(), dim=-1)
+    sampled_top = torch.multinomial(top_probabilities, 1, generator=generator).squeeze(-1)
+    target_counts = top_indices.gather(1, sampled_top[:, None]).squeeze(1) + 1
+    masks = torch.zeros_like(source_mask)
+    for index in range(source_mask.shape[0]):
+        target_count = int(target_counts[index].clamp(1, flow.max_atoms))
+        active = torch.nonzero(source_mask[index].bool(), as_tuple=False).flatten()
+        inactive = torch.nonzero(~source_mask[index].bool(), as_tuple=False).flatten()
+        jitter = -torch.log(
+            -torch.log(
+                torch.rand(
+                    occupancy_logits[index].shape,
+                    generator=generator,
+                    device=occupancy_logits.device,
+                    dtype=torch.float32,
+                ).clamp_(1e-6, 1.0 - 1e-6)
+            )
+        )
+        if target_count <= len(active):
+            scores = occupancy_logits[index, active].float() + 0.15 * jitter[active]
+            selected = active[torch.topk(scores, k=target_count).indices]
+        else:
+            birth_count = min(target_count - len(active), len(inactive))
+            birth_scores = occupancy_logits[index, inactive].float() + jitter[inactive]
+            births = inactive[torch.topk(birth_scores, k=birth_count).indices]
+            selected = torch.cat([active, births], dim=0)
+        masks[index, selected] = 1.0
+    return masks
 
 
 @torch.no_grad()
@@ -552,12 +659,13 @@ def sample_from_source(
     batch_size: int,
     flow_steps: int,
     source_noise: float,
+    size_adaptive: bool,
     device: torch.device,
     seed: int,
-) -> list[str | None]:
+) -> list[tuple[str | None, int]]:
     """Generate without accepting a target graph, target SMILES, or property oracle."""
     use_bf16 = device.type == "cuda" and torch.cuda.is_bf16_supported()
-    outputs: list[str | None] = []
+    outputs: list[tuple[str | None, int]] = []
     generator = torch.Generator(device=device)
     generator.manual_seed(int(seed))
     flow.eval()
@@ -567,20 +675,50 @@ def sample_from_source(
         conditions = torch.from_numpy(np.repeat(condition[None, :], count, axis=0)).to(device)
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
             source_node, source_edge = representation.encode(source)
-            node = source_node + torch.randn(source_node.shape, generator=generator, device=device, dtype=source_node.dtype) * float(source_noise)
+            target_mask = (
+                sample_target_masks(flow, source_node, source["node_mask"], conditions, generator)
+                if bool(size_adaptive)
+                else source["node_mask"].clone()
+            )
+            union_mask = torch.maximum(source["node_mask"], target_mask)
+            union_pair_mask = union_mask[:, :, None] * union_mask[:, None, :]
+            node_noise = torch.randn(
+                source_node.shape, generator=generator, device=device, dtype=source_node.dtype
+            ) * float(source_noise)
             edge_noise = torch.randn(source_edge.shape, generator=generator, device=device, dtype=source_edge.dtype) * float(source_noise)
-            edge = source_edge + 0.5 * (edge_noise + edge_noise.transpose(1, 2))
+            edge_noise = 0.5 * (edge_noise + edge_noise.transpose(1, 2))
+            if bool(size_adaptive):
+                node_noise = node_noise * union_mask.unsqueeze(-1)
+                edge_noise = edge_noise * union_pair_mask.unsqueeze(-1)
+            node = source_node + node_noise
+            edge = source_edge + edge_noise
             for step in range(int(flow_steps)):
                 time = torch.full((count,), (step + 0.5) / max(1, int(flow_steps)), device=device)
                 node_velocity, edge_velocity = flow(
                     node, edge, source_node, source_edge, source["node_mask"], time, conditions
                 )
+                if bool(size_adaptive):
+                    node_velocity = node_velocity * union_mask.unsqueeze(-1)
+                    edge_velocity = edge_velocity * union_pair_mask.unsqueeze(-1)
                 node = node + node_velocity / max(1, int(flow_steps))
                 edge = edge + edge_velocity / max(1, int(flow_steps))
-            prediction = graph.predictions_from_logits(representation.decode(node, edge))
+            logits = representation.decode(node, edge)
+            if bool(size_adaptive):
+                atomic_logits = logits["atomic_number"].clone()
+                flat_logits = atomic_logits.reshape(-1, atomic_logits.shape[-1])
+                flat_mask = target_mask.bool().reshape(-1)
+                flat_logits[~flat_mask] = -1e4
+                flat_logits[~flat_mask, 0] = 1e4
+                flat_logits[flat_mask, 0] = -1e4
+                logits = {**logits, "atomic_number": atomic_logits}
+            prediction = graph.predictions_from_logits(logits)
+            if bool(size_adaptive):
+                target_pair = target_mask[:, :, None].bool() & target_mask[:, None, :].bool()
+                prediction["bond"][~target_pair.cpu().numpy()] = graph.BOND_NONE
+                prediction["bond_stereo"][~target_pair.cpu().numpy()] = 0
         for index in range(count):
             smiles, _ = graph.graph_to_smiles(prediction, index)
-            outputs.append(smiles)
+            outputs.append((smiles, int(target_mask[index].sum().item())))
     if len(outputs) != int(attempts):
         raise RuntimeError(f"Expected {attempts} attempts, produced {len(outputs)}")
     return outputs
@@ -625,6 +763,12 @@ def summarize_candidates(rows: Sequence[dict[str, object]], attempts: int) -> di
         "mean_unique_valid": finite_mean([float(row["unique_valid"]) for row in condition_rows]),
         "mean_source_tanimoto": finite_mean([float(row["source_tanimoto"]) for row in valid_rows]),
         "mean_target_tanimoto": finite_mean([float(row["target_tanimoto"]) for row in valid_rows]),
+        "predicted_atom_count_mae": finite_mean(
+            [abs(float(row["predicted_atom_count"]) - float(row["target_atom_count"])) for row in rows]
+        ),
+        "predicted_atom_count_exact": sum(
+            int(row["predicted_atom_count"]) == int(row["target_atom_count"]) for row in rows
+        ) / max(1, len(rows)),
         "mean_best_target_tanimoto": finite_mean([float(row["best_target_tanimoto"]) for row in condition_rows]),
         "source_copy_target_tanimoto": finite_mean([float(row["source_copy_target_tanimoto"]) for row in condition_rows]),
         "target_improvement_any20": sum(bool(row["target_improved"]) for row in condition_rows) / max(1, len(condition_rows)),
@@ -671,13 +815,14 @@ def evaluate(
             batch_size=int(args.sample_batch_size),
             flow_steps=int(args.flow_steps),
             source_noise=float(args.source_noise),
+            size_adaptive=bool(args.size_adaptive),
             device=device,
             seed=int(args.seed) * 100000 + pair_index,
         )
         source_copy_target = graph.morgan_tanimoto(pair.source_smiles, pair.target_smiles) or 0.0
         specs = task_specs(pair.row)
         condition_id = str(pair.row.get("condition_id", "") or pair.row.get("sample_id", "") or f"validation_{pair_index:04d}")
-        for rank, smiles in enumerate(generated, start=1):
+        for rank, (smiles, predicted_atom_count) in enumerate(generated, start=1):
             canonical = graph.canonical_smiles(smiles or "")
             valid = bool(canonical)
             source_tanimoto = graph.morgan_tanimoto(pair.source_smiles, canonical) if valid else None
@@ -695,6 +840,9 @@ def evaluate(
                     "source_smiles": pair.source_smiles,
                     "target_smiles": pair.target_smiles,
                     "generated_smiles": canonical or "",
+                    "source_atom_count": int(pair.source.node_mask.sum()),
+                    "target_atom_count": int(pair.target.node_mask.sum()),
+                    "predicted_atom_count": int(predicted_atom_count),
                     "valid": valid,
                     "source_tanimoto": float(source_tanimoto or 0.0),
                     "target_tanimoto": float(target_tanimoto or 0.0),
@@ -711,6 +859,7 @@ def evaluate(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    protocol = SIZE_ADAPTIVE_PROTOCOL if bool(args.size_adaptive) else BASE_PROTOCOL
     if int(args.num_attempts) != 20:
         raise ValueError("The pilot contract requires exactly 20 raw attempts per condition")
     seed_everything(int(args.seed))
@@ -758,6 +907,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         edge_dim=int(config["edge_dim"]),
         condition_dim=int(args.condition_dim),
         hidden_dim=int(args.hidden_dim),
+        max_atoms=int(config["max_atoms"]),
     ).to(device)
     history = train_flow(flow, representation, train_pairs, args, device)
     candidate_rows, metrics = evaluate(flow, representation, validation_pairs, args, device)
@@ -776,7 +926,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     train_sources = {pair.source_smiles for pair in train_pairs}
     train_pair_keys = {(pair.source_smiles, pair.target_smiles) for pair in train_pairs}
     manifest = {
-        "protocol": PROTOCOL,
+        "protocol": protocol,
         "seed": int(args.seed),
         "device": str(device),
         "representation_protocol": representation_summary.get("protocol"),
@@ -806,18 +956,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         "valence_projection_or_repair": False,
         "exact_raw_attempts_per_condition": 20,
         "source_target_mcs_alignment_training_only": True,
+        "size_adaptive_target_count_head": bool(args.size_adaptive),
+        "size_adaptive_source_retention_head": bool(args.size_adaptive),
+        "inactive_slot_velocity_mask": bool(args.size_adaptive),
         "permutation_equivariant_velocity": True,
     }
     checkpoint_path = args.output_dir / "categorical_graph_latent_flow.pt"
     torch.save(
         {
-            "stage": PROTOCOL,
+            "stage": protocol,
             "model_state": flow.state_dict(),
             "model_config": {
                 "node_dim": int(config["node_dim"]),
                 "edge_dim": int(config["edge_dim"]),
                 "condition_dim": int(args.condition_dim),
                 "hidden_dim": int(args.hidden_dim),
+                "max_atoms": int(config["max_atoms"]),
+                "size_adaptive": bool(args.size_adaptive),
             },
             "history": history,
             "manifest": manifest,
@@ -829,7 +984,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     summary = {
-        "protocol": PROTOCOL,
+        "protocol": protocol,
         "checkpoint": str(checkpoint_path),
         "manifest": manifest,
         "training": history,
