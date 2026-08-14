@@ -32,6 +32,9 @@ DELTA_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_categorical_delta_h
 VALENCE_HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_valence_budget_hierarchical_vq_graph_flow_pilot.sh"
 VALENCE_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_valence_budget_hierarchical_vq_graph_flow_pilot.sh"
 VALENCE_HIERARCHICAL_VQ_CONTROLLER_PATH = EXPERIMENT_DIR / "run_valence_budget_scale_controller.sh"
+MOTIF_ATTACHMENT_RUN_PATH = EXPERIMENT_DIR / "run_motif_attachment_hierarchical_vq_graph_flow_pilot.sh"
+MOTIF_ATTACHMENT_SUBMIT_PATH = EXPERIMENT_DIR / "submit_motif_attachment_hierarchical_vq_graph_flow_pilot.sh"
+MOTIF_ATTACHMENT_CONTROLLER_PATH = EXPERIMENT_DIR / "run_motif_attachment_scale_controller.sh"
 
 
 def test_categorical_graph_flow_has_target_blind_direct_generation_contract() -> None:
@@ -372,3 +375,36 @@ def test_valence_budget_submitter_gates_the_long_scale_run() -> None:
     assert "SUCC_VALENCE_HIER_VQ_TRAIN_LIMIT=10000" in controller_source
     assert "SUCC_VALENCE_HIER_VQ_EPOCHS=16" in controller_source
     assert "dongbochen1218@gmail.com" in submit_source
+
+
+def test_motif_attachment_decoder_is_one_connected_latent_object() -> None:
+    source = HIERARCHICAL_VQ_PATH.read_text(encoding="utf-8")
+    ast.parse(source)
+    assert "def apply_motif_attachment_graph_delta" in source
+    assert '"motif_attachment_decoder": bool(args.motif_attachment)' in source
+    assert '"single_source_attachment_anchor": bool(args.motif_attachment)' in source
+    assert '"learned_motif_atom_count": bool(args.motif_attachment)' in source
+    assert '"connected_spanning_tree_support": bool(args.motif_attachment)' in source
+    assert '"budgeted_ring_closure_edges": bool(args.motif_attachment)' in source
+    sample_source = source[source.index("def sample_from_source") : source.index("def evaluate")]
+    assert "target_smiles" not in sample_source
+    assert "property_oracle" not in sample_source
+    assert "apply_motif_attachment_graph_delta" in sample_source
+
+
+def test_motif_attachment_submitter_is_matched_and_scale_gated() -> None:
+    run_source = MOTIF_ATTACHMENT_RUN_PATH.read_text(encoding="utf-8")
+    submit_source = MOTIF_ATTACHMENT_SUBMIT_PATH.read_text(encoding="utf-8")
+    controller_source = MOTIF_ATTACHMENT_CONTROLLER_PATH.read_text(encoding="utf-8")
+    assert '--train-limit "${SUCC_MOTIF_ATTACH_TRAIN_LIMIT:-1500}"' in run_source
+    assert '--validation-limit "${SUCC_MOTIF_ATTACH_VALIDATION_LIMIT:-20}"' in run_source
+    assert "--motif-attachment" in run_source
+    assert "--num-attempts 20" in run_source
+    assert 'SEED="${SUCC_MOTIF_ATTACH_SEED:-1741}"' in run_source
+    assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
+    assert 'dependency="afterok:${pilot_job_id}"' in submit_source
+    assert "validity>=0.80" in controller_source
+    assert "strict>=0.65" in controller_source
+    assert "3p strict>=0.50" in controller_source
+    assert "SUCC_MOTIF_ATTACH_TRAIN_LIMIT=10000" in controller_source
+    assert "SUCC_MOTIF_ATTACH_EPOCHS=16" in controller_source

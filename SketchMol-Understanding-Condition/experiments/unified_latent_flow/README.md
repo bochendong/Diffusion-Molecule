@@ -322,3 +322,28 @@ validity >=80%, overall strict any@20 >=65%, and 3p strict any@20 >=50%.
 ```bash
 bash experiments/unified_latent_flow/submit_valence_budget_hierarchical_vq_graph_flow_pilot.sh
 ```
+
+## Stage B11: latent motif-attachment grammar
+
+B10 reduced invalid-candidate edge edits from 10.35 to 6.52 but improved
+validity only from 64.4% to 66.7%; invalid node edits rose from 6.70 to 8.74.
+This identifies the remaining failure as atom-by-atom composition rather than
+the frozen graph representation or edge valence alone.
+
+B11 treats the edited subgraph as one latent motif. It predicts the number of
+active motif atoms, retains one source boundary atom as the attachment anchor,
+grows a connected motif support inside the latent-selected region, and emits a
+required spanning tree before optional ring-closure edges. Tree and closure
+bonds are categorical endpoint predictions constrained by the learned node
+valence budgets. Region-external source structure remains exact. The procedure
+does not retrieve a motif library, rank molecular candidates, inspect a
+property oracle, or sanitize/repair a completed molecule.
+
+The seed-1741 matched pilot uses the same 1,450 train pairs, 18 held-out 2p/3p
+conditions and exact n=20 as B6-B10. A dependent controller submits the
+10,000-pair, 16-epoch scale run only after validity >=80%, overall strict
+any@20 >=65%, and 3p strict any@20 >=50%.
+
+```bash
+bash experiments/unified_latent_flow/submit_motif_attachment_hierarchical_vq_graph_flow_pilot.sh
+```
