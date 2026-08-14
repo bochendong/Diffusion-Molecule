@@ -140,3 +140,24 @@ generator, not a target-derived mask or a chemical repair pass.
 ```bash
 bash experiments/unified_latent_flow/submit_size_adaptive_graph_latent_flow_pilot.sh
 ```
+
+## Stage B3: native categorical graph-belief flow
+
+The v2 signal showed that a separate atom-count head can unlock structural
+movement, but its independently sampled occupancy mask destabilizes validity.
+Stage B3 removes that factorization. Its state and stochastic path are the
+atom occupancy/type/attribute and bond/order/stereo categories themselves;
+class zero natively represents atom or bond absence. A conditional endpoint
+field predicts category distributions through the frozen, gate-passed graph
+decoder, and the sampler performs joint categorical birth/death transitions
+starting from the source graph.
+
+Empty source slots receive an ordered birth-rank query solely to distinguish
+otherwise exchangeable birth locations. There is no target-count prediction,
+continuous-latent regression loss, candidate library, selector, finalizer,
+oracle reranking, or valence repair. Validation targets are inaccessible to
+generation and are opened only after exactly 20 raw candidates are frozen.
+
+```bash
+bash experiments/unified_latent_flow/submit_categorical_graph_belief_flow_pilot.sh
+```
