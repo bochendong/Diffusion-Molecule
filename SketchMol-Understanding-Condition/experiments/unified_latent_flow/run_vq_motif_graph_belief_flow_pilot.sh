@@ -8,8 +8,8 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SHARED_REPO_DIR="${SUCC_SHARED_REPO_DIR:-/scratch/bdong/projects/Diffusion-Molecule}"
 SHARED_PROJECT_DIR="$SHARED_REPO_DIR/SketchMol-Understanding-Condition"
 PYTHON_BIN="${SUCC_VQ_MOTIF_PYTHON:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
-SEED="${SUCC_VQ_MOTIF_SEED:-1737}"
-OUTPUT_DIR="${SUCC_VQ_MOTIF_OUTPUT_DIR:-$SHARED_PROJECT_DIR/outputs/vq_motif_graph_belief_flow_v5/seed_${SEED}}"
+SEED="${SUCC_VQ_MOTIF_SEED:-1739}"
+OUTPUT_DIR="${SUCC_VQ_MOTIF_OUTPUT_DIR:-$SHARED_PROJECT_DIR/outputs/vq_motif_graph_belief_flow_v5b/seed_${SEED}}"
 DATASET_DIR="${SUCC_VQ_MOTIF_DATASET_DIR:-$SHARED_PROJECT_DIR/outputs/unified_smiles_generator_joint_v2/dataset}"
 REPRESENTATION_DIR="${SUCC_VQ_MOTIF_REPRESENTATION_DIR:-$SHARED_PROJECT_DIR/outputs/graph_latent_autoencoder_v2/seed_1725}"
 
@@ -46,6 +46,8 @@ exec "$PYTHON_BIN" "$SCRIPT_DIR/vq_motif_graph_belief_flow.py" \
   --batch-size "${SUCC_VQ_MOTIF_BATCH_SIZE:-8}" \
   --hidden-dim "${SUCC_VQ_MOTIF_HIDDEN_DIM:-256}" \
   --sampling-temperature "${SUCC_VQ_MOTIF_TEMPERATURE:-0.80}" \
+  --contrastive-loss-weight "${SUCC_VQ_MOTIF_CONTRASTIVE_WEIGHT:-0.25}" \
+  --contrastive-margin "${SUCC_VQ_MOTIF_CONTRASTIVE_MARGIN:-0.20}" \
   --gate-min-active-codes "${SUCC_VQ_MOTIF_MIN_ACTIVE_CODES:-4}" \
   --num-attempts 20 \
   --sample-batch-size "${SUCC_VQ_MOTIF_SAMPLE_BATCH_SIZE:-5}" \

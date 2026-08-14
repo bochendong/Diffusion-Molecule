@@ -31,7 +31,7 @@ import torch.nn.functional as F
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 BELIEF_PATH = SCRIPT_DIR / "categorical_graph_belief_flow.py"
-PROTOCOL = "single_token_vq_motif_graph_belief_flow_pilot_v5"
+PROTOCOL = "contrastive_single_token_vq_motif_graph_belief_flow_pilot_v5b"
 
 
 def load_module(name: str, path: Path):
@@ -75,6 +75,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--prior-loss-weight", type=float, default=0.50)
     parser.add_argument("--vq-loss-weight", type=float, default=0.25)
     parser.add_argument("--commitment-weight", type=float, default=0.25)
+    parser.add_argument("--contrastive-loss-weight", type=float, default=0.25)
+    parser.add_argument("--contrastive-margin", type=float, default=0.20)
     parser.add_argument("--sampling-temperature", type=float, default=0.80)
     parser.add_argument("--num-attempts", type=int, default=20)
     parser.add_argument("--sample-batch-size", type=int, default=5)
@@ -273,6 +275,28 @@ def train_flow(
                 endpoint_loss, parts = graph.reconstruction_loss(
                     logits, target, endpoint_node, geometry_weight=0.0
                 )
+                wrong_index = torch.roll(code_index, shifts=1, dims=0)
+                wrong_index = torch.where(
+                    wrong_index.eq(code_index),
+                    (code_index + 1) % flow.codebook_size,
+                    wrong_index,
+                )
+                wrong_code = flow.codebook(wrong_index).detach()
+                wrong_node, wrong_edge = flow.decode_endpoint(
+                    source_node,
+                    source_edge,
+                    source["node_mask"],
+                    belief.source_birth_ranks(source["node_mask"]),
+                    condition,
+                    wrong_code,
+                )
+                wrong_logits = representation.decode(wrong_node, wrong_edge)
+                wrong_endpoint_loss, _ = graph.reconstruction_loss(
+                    wrong_logits, target, wrong_node, geometry_weight=0.0
+                )
+                contrastive_loss = F.relu(
+                    float(args.contrastive_margin) + endpoint_loss - wrong_endpoint_loss
+                )
                 prior_loss = F.cross_entropy(prior_logits, code_index.detach())
                 codebook_loss = F.mse_loss(quantized, posterior.detach())
                 commitment_loss = F.mse_loss(posterior, quantized.detach())
@@ -281,6 +305,7 @@ def train_flow(
                     endpoint_loss
                     + float(args.prior_loss_weight) * prior_loss
                     + float(args.vq_loss_weight) * vq_loss
+                    + float(args.contrastive_loss_weight) * contrastive_loss
                 )
             loss.backward()
             nn.utils.clip_grad_norm_(flow.parameters(), float(args.grad_clip))
@@ -290,6 +315,8 @@ def train_flow(
             totals["total_loss"] += float(loss.detach())
             totals["prior_loss"] += float(prior_loss.detach())
             totals["vq_loss"] += float(vq_loss.detach())
+            totals["wrong_endpoint_loss"] += float(wrong_endpoint_loss.detach())
+            totals["contrastive_loss"] += float(contrastive_loss.detach())
             epoch_usage.update(int(value) for value in code_index.detach().cpu().tolist())
             batches += 1
         final_usage = epoch_usage
@@ -563,6 +590,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "posterior_train_only": True,
         "source_condition_prior": True,
         "deterministic_category_decode_given_token": True,
+        "token_contrastive_reconstruction": True,
+        "contrastive_margin": float(args.contrastive_margin),
         "independent_atom_or_bond_sampling": False,
         "candidate_library": False,
         "selector": False,

@@ -5,9 +5,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHARED_REPO_DIR="${SUCC_SHARED_REPO_DIR:-/scratch/bdong/projects/Diffusion-Molecule}"
-SEED="${SUCC_VQ_MOTIF_SEED:-1737}"
-LOG_DIR="${SUCC_VQ_MOTIF_LOG_DIR:-$SHARED_REPO_DIR/SketchMol-Understanding-Condition/logs/vq_motif_graph_belief_flow_v5}"
-OUTPUT_DIR="${SUCC_VQ_MOTIF_OUTPUT_DIR:-$SHARED_REPO_DIR/SketchMol-Understanding-Condition/outputs/vq_motif_graph_belief_flow_v5/seed_${SEED}}"
+SEED="${SUCC_VQ_MOTIF_SEED:-1739}"
+LOG_DIR="${SUCC_VQ_MOTIF_LOG_DIR:-$SHARED_REPO_DIR/SketchMol-Understanding-Condition/logs/vq_motif_graph_belief_flow_v5b}"
+OUTPUT_DIR="${SUCC_VQ_MOTIF_OUTPUT_DIR:-$SHARED_REPO_DIR/SketchMol-Understanding-Condition/outputs/vq_motif_graph_belief_flow_v5b/seed_${SEED}}"
 MAIL_USER="${SUCC_VQ_MOTIF_MAIL_USER:-dongbochen1218@gmail.com}"
 
 mkdir -p "$LOG_DIR"

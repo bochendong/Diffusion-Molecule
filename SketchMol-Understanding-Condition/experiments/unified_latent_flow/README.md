@@ -199,3 +199,8 @@ reranking, independent category sampling, or valence repair.
 ```bash
 bash experiments/unified_latent_flow/submit_vq_motif_graph_belief_flow_pilot.sh
 ```
+
+The v5b signal adds one code-utilization objective: the correct motif token
+must reconstruct its paired endpoint better than a mismatched token by a fixed
+margin. This directly tests and prevents the decoder from ignoring the VQ
+latent; it does not change candidate budget, generation inputs, or evaluation.

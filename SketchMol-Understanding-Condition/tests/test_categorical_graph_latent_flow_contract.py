@@ -146,6 +146,7 @@ def test_vq_motif_flow_samples_one_latent_token_without_target_access() -> None:
     assert '"posterior_train_only": True' in source
     assert '"source_condition_prior": True' in source
     assert '"deterministic_category_decode_given_token": True' in source
+    assert '"token_contrastive_reconstruction": True' in source
     assert '"independent_atom_or_bond_sampling": False' in source
     assert '"generation_target_access": False' in source
     assert '"candidate_library": False' in source
@@ -166,6 +167,7 @@ def test_vq_motif_runner_is_bounded_2p3p_exact_n20_and_mig() -> None:
     assert '--property-counts "${SUCC_VQ_MOTIF_PROPERTY_COUNTS:-2,3}"' in run_source
     assert '--codebook-size "${SUCC_VQ_MOTIF_CODEBOOK_SIZE:-64}"' in run_source
     assert '--gate-min-active-codes "${SUCC_VQ_MOTIF_MIN_ACTIVE_CODES:-4}"' in run_source
+    assert '--contrastive-loss-weight "${SUCC_VQ_MOTIF_CONTRASTIVE_WEIGHT:-0.25}"' in run_source
     assert "--num-attempts 20" in run_source
     assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
     assert "00:20:00" in submit_source
