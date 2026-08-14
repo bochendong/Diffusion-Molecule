@@ -573,11 +573,15 @@ def masked_categorical_loss(
         return logits.sum() * 0.0
     selected = target[eligible].long()
     classes = int(logits.shape[-1])
-    counts = torch.bincount(selected, minlength=classes).to(logits.dtype)
-    weights = torch.ones(classes, device=logits.device, dtype=logits.dtype)
+    # Keep class reweighting and CE in FP32 under CUDA autocast. Assigning an
+    # FP32 inverse-frequency value into BF16 weights fails before the first
+    # training step, and the small categorical heads do not benefit from BF16.
+    selected_logits = logits[eligible].float()
+    counts = torch.bincount(selected, minlength=classes).float()
+    weights = torch.ones(classes, device=logits.device, dtype=torch.float32)
     present = counts.gt(0)
     weights[present] = torch.sqrt(selected.numel() / counts[present]).clamp(1.0, 10.0)
-    return F.cross_entropy(logits[eligible], selected, weight=weights)
+    return F.cross_entropy(selected_logits, selected, weight=weights)
 
 
 def categorical_delta_losses(

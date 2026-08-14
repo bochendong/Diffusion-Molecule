@@ -304,6 +304,8 @@ def test_categorical_delta_decoder_has_sparse_legal_target_blind_grammar() -> No
     assert "def categorical_delta_targets" in source
     assert "def categorical_delta_losses" in source
     assert "def apply_categorical_graph_delta" in source
+    assert "selected_logits = logits[eligible].float()" in source
+    assert "dtype=torch.float32" in source
     assert '["KEEP", "DELETE", "BIRTH", "REPLACE"]' in source
     assert '["KEEP", "DELETE", "SET"]' in source
     assert '"explicit_keep_category": bool(args.categorical_delta)' in source
