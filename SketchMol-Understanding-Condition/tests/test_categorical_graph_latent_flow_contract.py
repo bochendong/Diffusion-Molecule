@@ -29,6 +29,9 @@ REGION_HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_connected_region_hierarc
 REGION_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_connected_region_hierarchical_vq_graph_flow_pilot.sh"
 DELTA_HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_categorical_delta_hierarchical_vq_graph_flow_pilot.sh"
 DELTA_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_categorical_delta_hierarchical_vq_graph_flow_pilot.sh"
+VALENCE_HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_valence_budget_hierarchical_vq_graph_flow_pilot.sh"
+VALENCE_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_valence_budget_hierarchical_vq_graph_flow_pilot.sh"
+VALENCE_HIERARCHICAL_VQ_CONTROLLER_PATH = EXPERIMENT_DIR / "run_valence_budget_scale_controller.sh"
 
 
 def test_categorical_graph_flow_has_target_blind_direct_generation_contract() -> None:
@@ -333,4 +336,39 @@ def test_categorical_delta_runner_is_matched_exact_n20_and_mig() -> None:
     assert 'SEED="${SUCC_DELTA_HIER_VQ_SEED:-1741}"' in run_source
     assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
     assert "00:20:00" in submit_source
+    assert "dongbochen1218@gmail.com" in submit_source
+
+
+def test_valence_budget_decoder_is_learned_grammar_not_posthoc_repair() -> None:
+    source = HIERARCHICAL_VQ_PATH.read_text(encoding="utf-8")
+    ast.parse(source)
+    assert "def valence_budget_targets" in source
+    assert "def apply_valence_budget_graph_delta" in source
+    assert "BOND_VALENCE_UNITS = (0, 2, 4, 6, 3)" in source
+    assert '"grammar_native_valence_budget": bool(args.valence_budget)' in source
+    assert '"learned_total_explicit_valence_units": bool(args.valence_budget)' in source
+    assert '"fixed_order_autoregressive_edge_operations": bool(args.valence_budget)' in source
+    assert '"valence_projection_or_repair": False' in source
+    sample_source = source[source.index("def sample_from_source") : source.index("def evaluate")]
+    assert "target_smiles" not in sample_source
+    assert "property_oracle" not in sample_source
+    assert "apply_valence_budget_graph_delta" in sample_source
+
+
+def test_valence_budget_submitter_gates_the_long_scale_run() -> None:
+    run_source = VALENCE_HIERARCHICAL_VQ_RUN_PATH.read_text(encoding="utf-8")
+    submit_source = VALENCE_HIERARCHICAL_VQ_SUBMIT_PATH.read_text(encoding="utf-8")
+    controller_source = VALENCE_HIERARCHICAL_VQ_CONTROLLER_PATH.read_text(encoding="utf-8")
+    assert '--train-limit "${SUCC_VALENCE_HIER_VQ_TRAIN_LIMIT:-1500}"' in run_source
+    assert '--validation-limit "${SUCC_VALENCE_HIER_VQ_VALIDATION_LIMIT:-20}"' in run_source
+    assert "--valence-budget" in run_source
+    assert "--num-attempts 20" in run_source
+    assert 'SEED="${SUCC_VALENCE_HIER_VQ_SEED:-1741}"' in run_source
+    assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
+    assert 'dependency="afterok:${pilot_job_id}"' in submit_source
+    assert "validity>=0.80" in controller_source
+    assert "strict>=0.65" in controller_source
+    assert "3p strict>=0.50" in controller_source
+    assert "SUCC_VALENCE_HIER_VQ_TRAIN_LIMIT=10000" in controller_source
+    assert "SUCC_VALENCE_HIER_VQ_EPOCHS=16" in controller_source
     assert "dongbochen1218@gmail.com" in submit_source

@@ -34,9 +34,12 @@ PROTOCOL = "hierarchical_constraint_motif_vq_graph_flow_pilot_v6"
 SOURCE_ANCHORED_PROTOCOL = "source_anchored_hierarchical_vq_graph_flow_pilot_v7"
 CONNECTED_REGION_PROTOCOL = "connected_region_hierarchical_vq_graph_flow_pilot_v8"
 CATEGORICAL_DELTA_PROTOCOL = "categorical_delta_hierarchical_vq_graph_flow_pilot_v9"
+VALENCE_BUDGET_PROTOCOL = "valence_budget_hierarchical_vq_graph_flow_pilot_v10"
 
 NODE_KEEP, NODE_DELETE, NODE_BIRTH, NODE_REPLACE = range(4)
 EDGE_KEEP, EDGE_DELETE, EDGE_SET = range(3)
+MAX_VALENCE_UNITS = 12
+BOND_VALENCE_UNITS = (0, 2, 4, 6, 3)
 
 
 def load_module(name: str, path: Path):
@@ -97,8 +100,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--source-anchored", action="store_true")
     parser.add_argument("--connected-region", action="store_true")
     parser.add_argument("--categorical-delta", action="store_true")
+    parser.add_argument("--valence-budget", action="store_true")
     parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
     parser.add_argument("--delta-loss-weight", type=float, default=0.50)
+    parser.add_argument("--valence-budget-loss-weight", type=float, default=0.25)
     parser.add_argument("--seed", type=int, default=1741)
     parser.add_argument("--device", default="auto")
     return parser.parse_args(argv)
@@ -173,6 +178,12 @@ class SourceAnchoredEndpointField(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, 3),
         )
+        self.node_valence_budget = nn.Sequential(
+            nn.LayerNorm(node_dim * 4),
+            nn.Linear(node_dim * 4, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, MAX_VALENCE_UNITS + 1),
+        )
 
     def forward(
         self,
@@ -232,6 +243,7 @@ class SourceAnchoredEndpointField(nn.Module):
         edge_delta_logits = 0.5 * (
             edge_delta_logits + edge_delta_logits.transpose(1, 2)
         )
+        valence_budget_logits = self.node_valence_budget(node_input)
         return (
             endpoint_node,
             endpoint_edge,
@@ -240,6 +252,7 @@ class SourceAnchoredEndpointField(nn.Module):
             region_size_logits,
             node_delta_logits,
             edge_delta_logits,
+            valence_budget_logits,
         )
 
 
@@ -258,15 +271,19 @@ class HierarchicalVQGraphFlow(nn.Module):
         source_anchored: bool = False,
         connected_region: bool = False,
         categorical_delta: bool = False,
+        valence_budget: bool = False,
     ) -> None:
         super().__init__()
         self.source_anchored = bool(source_anchored)
         self.connected_region = bool(connected_region)
         self.categorical_delta = bool(categorical_delta)
+        self.valence_budget = bool(valence_budget)
         if self.connected_region and not self.source_anchored:
             raise ValueError("Connected-region decoding requires source anchoring")
         if self.categorical_delta and not self.connected_region:
             raise ValueError("Categorical graph deltas require connected-region decoding")
+        if self.valence_budget and not self.categorical_delta:
+            raise ValueError("Valence budgets require categorical graph deltas")
         self.constraint_codebook_size = int(constraint_codebook_size)
         self.motif_codebook_size = int(motif_codebook_size)
         global_input = node_dim + edge_dim + condition_dim
@@ -597,6 +614,16 @@ def categorical_delta_losses(
     )
 
 
+def valence_budget_targets(target: Mapping[str, torch.Tensor]) -> torch.Tensor:
+    """Return total explicit valence in integer half-bond units per atom."""
+    unit_table = torch.as_tensor(
+        BOND_VALENCE_UNITS, device=target["bond"].device, dtype=torch.long
+    )
+    bond_units = unit_table[target["bond"].long()].sum(dim=2)
+    explicit_h_units = 2 * target["explicit_hs"].long()
+    return (bond_units + explicit_h_units).clamp_max(MAX_VALENCE_UNITS)
+
+
 def decoder_auxiliary_losses(
     flow: HierarchicalVQGraphFlow,
     decoded: tuple[torch.Tensor, ...],
@@ -609,11 +636,14 @@ def decoder_auxiliary_losses(
     node_delta_eligible: torch.Tensor,
     edge_delta_target: torch.Tensor,
     edge_delta_eligible: torch.Tensor,
+    valence_budget_target: torch.Tensor,
+    valence_budget_eligible: torch.Tensor,
     args: argparse.Namespace,
 ) -> tuple[torch.Tensor, ...]:
     zero = decoded[0].sum() * 0.0
     node_gate_loss = edge_gate_loss = region_size_loss = zero
     node_delta_loss = edge_delta_loss = zero
+    valence_budget_loss = zero
     if flow.connected_region:
         node_gate_loss, region_size_loss = connected_region_losses(
             decoded, region_target
@@ -634,15 +664,22 @@ def decoder_auxiliary_losses(
             edge_delta_target,
             edge_delta_eligible,
         )
+    if flow.valence_budget:
+        valence_budget_loss = masked_categorical_loss(
+            decoded[7], valence_budget_target, valence_budget_eligible
+        )
     weighted = float(args.edit_gate_loss_weight) * (
         node_gate_loss + edge_gate_loss + region_size_loss
-    ) + float(args.delta_loss_weight) * (node_delta_loss + edge_delta_loss)
+    ) + float(args.delta_loss_weight) * (
+        node_delta_loss + edge_delta_loss
+    ) + float(args.valence_budget_loss_weight) * valence_budget_loss
     return (
         node_gate_loss,
         edge_gate_loss,
         region_size_loss,
         node_delta_loss,
         edge_delta_loss,
+        valence_budget_loss,
         weighted,
     )
 
@@ -707,6 +744,113 @@ def apply_categorical_graph_delta(
     node_changed = node_operation.ne(NODE_KEEP)
     edge_changed_upper = edge_operation.ne(EDGE_KEEP) & internal
     return result, node_changed, edge_changed_upper
+
+
+def apply_valence_budget_graph_delta(
+    source: Mapping[str, torch.Tensor],
+    candidate_nodes: Mapping[str, torch.Tensor],
+    candidate_edges: Mapping[str, torch.Tensor],
+    decoded: tuple[torch.Tensor, ...],
+    region: torch.Tensor,
+    upper: torch.Tensor,
+) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
+    """Decode the delta grammar in fixed pair order under learned valence budgets.
+
+    This is the support of the generative distribution, not a repair pass: the
+    decoder never creates an edge operation that exceeds either endpoint's
+    remaining learned target budget.
+    """
+    source_cpu = {
+        key: value.detach().cpu().clone() if isinstance(value, torch.Tensor) else value
+        for key, value in source.items()
+    }
+    node_cpu = {key: value.detach().cpu() for key, value in candidate_nodes.items()}
+    edge_cpu = {key: value.detach().cpu() for key, value in candidate_edges.items()}
+    region_cpu = region.detach().cpu().bool()
+    upper_cpu = upper.detach().cpu().bool()
+    node_logits = decoded[5].detach().float().cpu()
+    edge_logits = decoded[6].detach().float().cpu()
+    budget = decoded[7].detach().float().cpu().argmax(dim=-1).long()
+    unit_table = torch.as_tensor(BOND_VALENCE_UNITS, dtype=torch.long)
+
+    result = source_cpu
+    source_active = result["atomic_number"].gt(0)
+    source_units = unit_table[result["bond"].long()]
+    region_pair = region_cpu[:, :, None] & region_cpu[:, None, :]
+    boundary_units = (source_units * ~region_pair).sum(dim=2)
+    write_required = boundary_units + 2 * node_cpu["explicit_hs"].long()
+    node_legal = torch.zeros_like(node_logits, dtype=torch.bool)
+    node_legal[..., NODE_KEEP] = True
+    node_legal[..., NODE_DELETE] = region_cpu & source_active
+    node_legal[..., NODE_BIRTH] = (
+        region_cpu & ~source_active & write_required.le(budget)
+    )
+    node_legal[..., NODE_REPLACE] = (
+        region_cpu & source_active & write_required.le(budget)
+    )
+    node_operation = masked_operation_argmax(node_logits, node_legal)
+    node_delete = node_operation.eq(NODE_DELETE)
+    node_write = node_operation.eq(NODE_BIRTH) | node_operation.eq(NODE_REPLACE)
+    for key in vq.NODE_FIELDS:
+        result[key] = torch.where(node_write, node_cpu[key], result[key])
+    result["atomic_number"] = torch.where(
+        node_delete, torch.zeros_like(result["atomic_number"]), result["atomic_number"]
+    )
+    result = belief.enforce_categorical_consistency(result)
+
+    active = result["atomic_number"].gt(0)
+    active_pair = active[:, :, None] & active[:, None, :]
+    internal = region_pair & active_pair & upper_cpu.unsqueeze(0)
+    internal_symmetric = internal | internal.transpose(1, 2)
+    current_units = unit_table[result["bond"].long()]
+    preserved_units = (current_units * (active_pair & ~internal_symmetric)).sum(dim=2)
+    remaining = (
+        budget - 2 * result["explicit_hs"].long() - preserved_units
+    ).clamp_min(0)
+    edge_changed_upper = torch.zeros_like(internal)
+
+    for batch_index in range(internal.shape[0]):
+        for left, right in torch.nonzero(internal[batch_index], as_tuple=False).tolist():
+            current_bond = int(result["bond"][batch_index, left, right].item())
+            current_value = int(BOND_VALENCE_UNITS[current_bond])
+            set_bond = int(edge_cpu["bond"][batch_index, left, right].item())
+            set_value = int(BOND_VALENCE_UNITS[set_bond])
+            legal = [False, False, False]
+            legal[EDGE_KEEP] = (
+                current_value <= int(remaining[batch_index, left])
+                and current_value <= int(remaining[batch_index, right])
+            )
+            legal[EDGE_DELETE] = current_bond > graph.BOND_NONE
+            legal[EDGE_SET] = (
+                set_bond > graph.BOND_NONE
+                and set_value <= int(remaining[batch_index, left])
+                and set_value <= int(remaining[batch_index, right])
+            )
+            legal_tensor = torch.as_tensor(legal, dtype=torch.bool)
+            operation = int(
+                edge_logits[batch_index, left, right]
+                .masked_fill(~legal_tensor, -torch.inf)
+                .argmax()
+                .item()
+            )
+            chosen_value = current_value if operation == EDGE_KEEP else 0
+            if operation == EDGE_DELETE:
+                for key in vq.EDGE_FIELDS:
+                    result[key][batch_index, left, right] = 0
+                    result[key][batch_index, right, left] = 0
+            elif operation == EDGE_SET:
+                chosen_value = set_value
+                for key in vq.EDGE_FIELDS:
+                    value = edge_cpu[key][batch_index, left, right]
+                    result[key][batch_index, left, right] = value
+                    result[key][batch_index, right, left] = value
+            if operation != EDGE_KEEP:
+                edge_changed_upper[batch_index, left, right] = True
+            remaining[batch_index, left] -= chosen_value
+            remaining[batch_index, right] -= chosen_value
+
+    result = belief.enforce_categorical_consistency(result)
+    return result, node_operation.ne(NODE_KEEP), edge_changed_upper
 
 
 def project_connected_region(
@@ -777,6 +921,8 @@ def train_flow(
                 edge_delta_target,
                 edge_delta_eligible,
             ) = categorical_delta_targets(source, target)
+            valence_target = valence_budget_targets(target)
+            valence_eligible = source["node_mask"].bool() | target["node_mask"].bool()
             optimizer.zero_grad(set_to_none=True)
             with torch.no_grad(), torch.autocast(
                 device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16
@@ -829,6 +975,7 @@ def train_flow(
                     region_size_loss,
                     node_delta_loss,
                     edge_delta_loss,
+                    valence_budget_loss,
                     auxiliary_loss,
                 ) = decoder_auxiliary_losses(
                     flow,
@@ -842,6 +989,8 @@ def train_flow(
                     node_delta_eligible,
                     edge_delta_target,
                     edge_delta_eligible,
+                    valence_target,
+                    valence_eligible,
                     args,
                 )
                 structured_loss = endpoint_loss + auxiliary_loss
@@ -877,6 +1026,8 @@ def train_flow(
                     node_delta_eligible,
                     edge_delta_target,
                     edge_delta_eligible,
+                    valence_target,
+                    valence_eligible,
                     args,
                 )[-1]
                 wrong_constraint_loss = (
@@ -913,6 +1064,8 @@ def train_flow(
                     node_delta_eligible,
                     edge_delta_target,
                     edge_delta_eligible,
+                    valence_target,
+                    valence_eligible,
                     args,
                 )[-1]
                 wrong_motif_loss = wrong_motif_loss + wrong_motif_auxiliary
@@ -960,6 +1113,7 @@ def train_flow(
             totals["region_size_loss"] += float(region_size_loss.detach())
             totals["node_delta_loss"] += float(node_delta_loss.detach())
             totals["edge_delta_loss"] += float(edge_delta_loss.detach())
+            totals["valence_budget_loss"] += float(valence_budget_loss.detach())
             totals["node_change_rate"] += float(
                 node_target[node_eligible].float().mean()
             )
@@ -1108,13 +1262,13 @@ def sample_from_source(
                     upper.unsqueeze(0), set_bond, torch.zeros_like(set_bond)
                 )
                 delta_edges["bond"] = set_bond + set_bond.transpose(1, 2)
-                result, node_edit, edge_edit_upper = apply_categorical_graph_delta(
-                    source,
-                    delta_nodes,
-                    delta_edges,
-                    decoded,
-                    node_edit,
-                    upper,
+                delta_decoder = (
+                    apply_valence_budget_graph_delta
+                    if flow.valence_budget
+                    else apply_categorical_graph_delta
+                )
+                result, node_edit, edge_edit_upper = delta_decoder(
+                    source, delta_nodes, delta_edges, decoded, node_edit, upper
                 )
             else:
                 for key in vq.NODE_FIELDS:
@@ -1273,12 +1427,16 @@ def evaluate(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.valence_budget:
+        args.categorical_delta = True
     if args.categorical_delta:
         args.connected_region = True
     if args.connected_region:
         args.source_anchored = True
     protocol = (
-        CATEGORICAL_DELTA_PROTOCOL
+        VALENCE_BUDGET_PROTOCOL
+        if args.valence_budget
+        else CATEGORICAL_DELTA_PROTOCOL
         if args.categorical_delta
         else CONNECTED_REGION_PROTOCOL
         if args.connected_region
@@ -1338,6 +1496,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         source_anchored=bool(args.source_anchored),
         connected_region=bool(args.connected_region),
         categorical_delta=bool(args.categorical_delta),
+        valence_budget=bool(args.valence_budget),
     ).to(device)
     history, constraint_usage, motif_usage = train_flow(
         flow, representation, train_pairs, args, device
@@ -1449,8 +1608,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "explicit_keep_category": bool(args.categorical_delta),
         "legal_operation_mask_from_source_occupancy": bool(args.categorical_delta),
         "region_internal_sparse_delta": bool(args.categorical_delta),
+        "grammar_native_valence_budget": bool(args.valence_budget),
+        "learned_total_explicit_valence_units": bool(args.valence_budget),
+        "fixed_order_autoregressive_edge_operations": bool(args.valence_budget),
+        "bond_valence_half_units": list(BOND_VALENCE_UNITS)
+        if args.valence_budget
+        else [],
         "edit_gate_loss_weight": float(args.edit_gate_loss_weight),
         "delta_loss_weight": float(args.delta_loss_weight),
+        "valence_budget_loss_weight": float(args.valence_budget_loss_weight),
         "posthoc_source_copy_heuristic": False,
         "independent_atom_or_bond_sampling": False,
         "candidate_library": False,
@@ -1462,7 +1628,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "source_target_mcs_alignment_training_only": True,
     }
     checkpoint_name = (
-        "categorical_delta_hierarchical_vq_graph_flow.pt"
+        "valence_budget_hierarchical_vq_graph_flow.pt"
+        if args.valence_budget
+        else "categorical_delta_hierarchical_vq_graph_flow.pt"
         if args.categorical_delta
         else "connected_region_hierarchical_vq_graph_flow.pt"
         if args.connected_region
@@ -1488,6 +1656,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "source_anchored": bool(args.source_anchored),
                 "connected_region": bool(args.connected_region),
                 "categorical_delta": bool(args.categorical_delta),
+                "valence_budget": bool(args.valence_budget),
             },
             "active_constraint_codes": active_constraint_codes,
             "active_motif_codes": active_motif_codes,
@@ -1509,7 +1678,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "gate": {"passed": not failures, "checks": checks, "failures": failures},
         "next_stage": (
             (
-                "expand_categorical_delta_hierarchical_vq_signal"
+                "expand_valence_budget_hierarchical_vq_signal"
+                if args.valence_budget
+                else "expand_categorical_delta_hierarchical_vq_signal"
                 if args.categorical_delta
                 else "expand_connected_region_hierarchical_vq_signal"
                 if args.connected_region
@@ -1519,7 +1690,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if not failures
             else (
-                "diagnose_categorical_delta_support_or_calibration"
+                "diagnose_valence_budget_support_or_connectivity"
+                if args.valence_budget
+                else "diagnose_categorical_delta_support_or_calibration"
                 if args.categorical_delta
                 else "diagnose_connected_region_endpoint_validity"
             )

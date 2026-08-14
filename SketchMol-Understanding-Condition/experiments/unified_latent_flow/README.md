@@ -297,3 +297,28 @@ train pairs, the same 18 held-out 2p/3p conditions, and exact n=20.
 ```bash
 bash experiments/unified_latent_flow/submit_categorical_delta_hierarchical_vq_graph_flow_pilot.sh
 ```
+
+## Stage B10: grammar-native valence-budget delta decoder
+
+B9 recovered strong 2-property support (`strict any@20 = 83.3%`) but reached
+only 64.4% candidate validity and 16.7% 3-property strict success. Invalid B9
+candidates changed 8.5 internal edges on 2p and 11.8 on 3p, compared with 1.6
+and 2.8 for valid candidates. The graph representation is not the bottleneck:
+the frozen v2 graph autoencoder has 100% clean validity and 97.25% masked
+validity. The failure is independent internal edge composition.
+
+B10 therefore predicts a train-only target total explicit-valence budget for
+each node in half-bond units, including explicit hydrogens. After the latent
+node operations, internal edge operations are generated in a fixed tensor
+order. `KEEP`, `DELETE`, and `SET` remain learned categorical operations, but
+an operation outside either endpoint's remaining predicted budget is not in
+the decoder support. This is a grammar-native autoregressive decoder, not a
+post-hoc sanitization/repair pass, candidate selector, or ranking stage.
+
+The submitter first runs the seed-1741 matched 1,450-pair pilot. A dependent CPU
+controller submits a 10,000-pair, 16-epoch scale run only if the pilot reaches
+validity >=80%, overall strict any@20 >=65%, and 3p strict any@20 >=50%.
+
+```bash
+bash experiments/unified_latent_flow/submit_valence_budget_hierarchical_vq_graph_flow_pilot.sh
+```
