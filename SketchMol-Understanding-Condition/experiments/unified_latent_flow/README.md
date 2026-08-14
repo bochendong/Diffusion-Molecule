@@ -100,3 +100,12 @@ later categorical graph-flow experiment; it is not itself a generation result.
 ```bash
 bash experiments/unified_latent_flow/submit_graph_latent_autoencoder_v1.sh
 ```
+
+The complete-schema v2 adds explicit-H/no-implicit atom state and invariant
+R/S plus E/Z stereochemistry. It also evaluates a much stronger latent-noise
+stress test and random atom/bond category masking. It writes a separate v2
+checkpoint and leaves the v1 result reproducible.
+
+```bash
+bash experiments/unified_latent_flow/submit_graph_latent_autoencoder_v2.sh
+```

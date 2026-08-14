@@ -9,6 +9,8 @@ EXPERIMENT_DIR = ROOT / "SketchMol-Understanding-Condition" / "experiments" / "u
 TRAIN_PATH = EXPERIMENT_DIR / "train_graph_latent_autoencoder.py"
 RUN_PATH = EXPERIMENT_DIR / "run_graph_latent_autoencoder_v1.sh"
 SUBMIT_PATH = EXPERIMENT_DIR / "submit_graph_latent_autoencoder_v1.sh"
+RUN_V2_PATH = EXPERIMENT_DIR / "run_graph_latent_autoencoder_v2.sh"
+SUBMIT_V2_PATH = EXPERIMENT_DIR / "submit_graph_latent_autoencoder_v2.sh"
 
 
 def test_graph_latent_stage_is_graph_native_and_has_no_selector() -> None:
@@ -26,6 +28,11 @@ def test_graph_latent_stage_is_graph_native_and_has_no_selector() -> None:
     assert '"selector": False' in source
     assert '"benchmark_generation_target_access": False' in source
     assert '"stop_before_flow"' in source
+    assert "explicit_hs" in source
+    assert "no_implicit" in source
+    assert "bond_stereo" in source
+    assert "category_mask_probability" in source
+    assert '"stereo_labels_are_permutation_invariant": True' in source
 
 
 def test_graph_latent_gate_covers_validity_and_structure() -> None:
@@ -52,3 +59,15 @@ def test_graph_latent_runner_is_bounded_and_uses_mig() -> None:
     assert "01:00:00" in submit_source
     assert "nvidia_h100_80gb_hbm3_2g.20gb:1" in submit_source
     assert "dongbochen1218@gmail.com" in submit_source
+    assert 'EXPECTED_COMMIT="321e7af"' in run_source
+
+
+def test_complete_schema_runner_is_bounded_and_preserves_v1() -> None:
+    run_source = RUN_V2_PATH.read_text(encoding="utf-8")
+    submit_source = SUBMIT_V2_PATH.read_text(encoding="utf-8")
+    assert "graph_latent_autoencoder_v2" in run_source
+    assert '--epochs "${SUCC_GRAPH_LATENT_EPOCHS:-8}"' in run_source
+    assert '--stress-latent-noise "${SUCC_GRAPH_LATENT_STRESS_NOISE:-0.50}"' in run_source
+    assert '--category-mask-probability "${SUCC_GRAPH_LATENT_MASK_PROBABILITY:-0.03}"' in run_source
+    assert "00:30:00" in submit_source
+    assert "nvidia_h100_80gb_hbm3_2g.20gb:1" in submit_source

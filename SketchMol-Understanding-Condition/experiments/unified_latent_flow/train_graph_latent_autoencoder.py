@@ -35,13 +35,23 @@ from sketchmol_understanding_condition.chem import (
 )
 
 
-PROTOCOL = "graph_latent_reconstruction_gate_v1"
+PROTOCOL = "graph_latent_reconstruction_gate_v2_complete_schema"
 BOND_NONE, BOND_SINGLE, BOND_DOUBLE, BOND_TRIPLE, BOND_AROMATIC = range(5)
 BOND_CLASSES = 5
 MAX_ATOMIC_NUMBER = 118
 CHARGE_OFFSET = 5
 CHARGE_CLASSES = 11
-CHIRAL_CLASSES = 10
+CHIRAL_CLASSES = 3  # none, R, S; invariant to atom ordering
+EXPLICIT_H_CLASSES = 6
+BOND_STEREO_CLASSES = 3  # none, E/trans, Z/cis
+ATOM_MASK_ID = MAX_ATOMIC_NUMBER + 1
+CHARGE_MASK_ID = CHARGE_CLASSES
+CHIRAL_MASK_ID = CHIRAL_CLASSES
+AROMATIC_MASK_ID = 2
+EXPLICIT_H_MASK_ID = EXPLICIT_H_CLASSES
+NO_IMPLICIT_MASK_ID = 2
+BOND_MASK_ID = BOND_CLASSES
+BOND_STEREO_MASK_ID = BOND_STEREO_CLASSES
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -63,16 +73,23 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--weight-decay", type=float, default=1e-4)
     parser.add_argument("--grad-clip", type=float, default=1.0)
     parser.add_argument("--latent-noise", type=float, default=0.05)
+    parser.add_argument("--stress-latent-noise", type=float, default=0.50)
+    parser.add_argument("--category-mask-probability", type=float, default=0.03)
     parser.add_argument("--geometry-weight", type=float, default=0.05)
     parser.add_argument("--gate-validation-coverage", type=float, default=0.90)
     parser.add_argument("--gate-clean-validity", type=float, default=0.95)
     parser.add_argument("--gate-clean-connected", type=float, default=0.95)
     parser.add_argument("--gate-clean-tensor-exact", type=float, default=0.50)
     parser.add_argument("--gate-clean-topology-exact", type=float, default=0.50)
+    parser.add_argument("--gate-clean-isomeric-exact", type=float, default=0.90)
     parser.add_argument("--gate-clean-tanimoto", type=float, default=0.85)
     parser.add_argument("--gate-clean-scaffold", type=float, default=0.80)
     parser.add_argument("--gate-noisy-validity", type=float, default=0.90)
     parser.add_argument("--gate-noisy-tanimoto", type=float, default=0.75)
+    parser.add_argument("--gate-stress-validity", type=float, default=0.80)
+    parser.add_argument("--gate-stress-tanimoto", type=float, default=0.70)
+    parser.add_argument("--gate-masked-validity", type=float, default=0.70)
+    parser.add_argument("--gate-masked-tanimoto", type=float, default=0.65)
     parser.add_argument("--seed", type=int, default=1723)
     parser.add_argument("--device", default="auto")
     return parser.parse_args(argv)
@@ -148,7 +165,10 @@ class GraphExample:
     formal_charge: np.ndarray
     chirality: np.ndarray
     aromatic: np.ndarray
+    explicit_hs: np.ndarray
+    no_implicit: np.ndarray
     bond: np.ndarray
+    bond_stereo: np.ndarray
     node_mask: np.ndarray
     fingerprint: np.ndarray
 
@@ -159,36 +179,58 @@ def molecule_example(smiles: str, max_atoms: int, fingerprint_bits: int) -> Grap
     molecule = Chem.MolFromSmiles(smiles)
     if molecule is None or not (0 < molecule.GetNumAtoms() <= int(max_atoms)):
         return None
+    Chem.AssignStereochemistry(molecule, cleanIt=True, force=True)
     atomic_number = np.zeros(max_atoms, dtype=np.int64)
     formal_charge = np.full(max_atoms, CHARGE_OFFSET, dtype=np.int64)
     chirality = np.zeros(max_atoms, dtype=np.int64)
     aromatic = np.zeros(max_atoms, dtype=np.int64)
+    explicit_hs = np.zeros(max_atoms, dtype=np.int64)
+    no_implicit = np.zeros(max_atoms, dtype=np.int64)
     bond = np.zeros((max_atoms, max_atoms), dtype=np.int64)
+    bond_stereo = np.zeros((max_atoms, max_atoms), dtype=np.int64)
     node_mask = np.zeros(max_atoms, dtype=np.float32)
     for index, atom in enumerate(molecule.GetAtoms()):
-        number, charge, chiral = int(atom.GetAtomicNum()), int(atom.GetFormalCharge()), int(atom.GetChiralTag())
+        number, charge = int(atom.GetAtomicNum()), int(atom.GetFormalCharge())
+        chiral = {"R": 1, "S": 2}.get(atom.GetProp("_CIPCode"), 0) if atom.HasProp("_CIPCode") else 0
         if not (1 <= number <= MAX_ATOMIC_NUMBER):
             return None
+        hydrogens = int(atom.GetNumExplicitHs())
         if not (-CHARGE_OFFSET <= charge <= CHARGE_OFFSET) or not (0 <= chiral < CHIRAL_CLASSES):
+            return None
+        if not (0 <= hydrogens < EXPLICIT_H_CLASSES):
             return None
         atomic_number[index] = number
         formal_charge[index] = charge + CHARGE_OFFSET
         chirality[index] = chiral
         aromatic[index] = int(atom.GetIsAromatic())
+        explicit_hs[index] = hydrogens
+        no_implicit[index] = int(atom.GetNoImplicit())
         node_mask[index] = 1.0
     try:
         for edge in molecule.GetBonds():
             left, right = int(edge.GetBeginAtomIdx()), int(edge.GetEndAtomIdx())
             value = bond_class(edge)
             bond[left, right] = bond[right, left] = value
+            stereo_name = str(edge.GetStereo())
+            stereo = {
+                "STEREONONE": 0,
+                "STEREOE": 1,
+                "STEREOTRANS": 1,
+                "STEREOZ": 2,
+                "STEREOCIS": 2,
+            }.get(stereo_name)
+            if stereo is None:
+                return None
+            bond_stereo[left, right] = bond_stereo[right, left] = stereo
     except ValueError:
         return None
     fingerprint = morgan_fingerprint_bits(smiles, radius=2, n_bits=int(fingerprint_bits))
     if fingerprint is None:
         return None
     return GraphExample(
-        smiles, atomic_number, formal_charge, chirality, aromatic, bond,
-        node_mask, np.asarray(fingerprint, dtype=np.float32),
+        smiles, atomic_number, formal_charge, chirality, aromatic,
+        explicit_hs, no_implicit, bond, bond_stereo, node_mask,
+        np.asarray(fingerprint, dtype=np.float32),
     )
 
 
@@ -217,7 +259,10 @@ def permute_example(example: GraphExample, generator: random.Random) -> GraphExa
         example.formal_charge[permutation],
         example.chirality[permutation],
         example.aromatic[permutation],
+        example.explicit_hs[permutation],
+        example.no_implicit[permutation],
         example.bond[np.ix_(permutation, permutation)],
+        example.bond_stereo[np.ix_(permutation, permutation)],
         example.node_mask[permutation],
         example.fingerprint,
     )
@@ -229,7 +274,10 @@ def collate(items: Sequence[GraphExample]) -> dict[str, object]:
         "formal_charge": torch.from_numpy(np.stack([item.formal_charge for item in items])),
         "chirality": torch.from_numpy(np.stack([item.chirality for item in items])),
         "aromatic": torch.from_numpy(np.stack([item.aromatic for item in items])),
+        "explicit_hs": torch.from_numpy(np.stack([item.explicit_hs for item in items])),
+        "no_implicit": torch.from_numpy(np.stack([item.no_implicit for item in items])),
         "bond": torch.from_numpy(np.stack([item.bond for item in items])),
+        "bond_stereo": torch.from_numpy(np.stack([item.bond_stereo for item in items])),
         "node_mask": torch.from_numpy(np.stack([item.node_mask for item in items])),
         "fingerprint": torch.from_numpy(np.stack([item.fingerprint for item in items])),
         "smiles": [item.smiles for item in items],
@@ -273,11 +321,14 @@ class GraphLatentAutoencoder(nn.Module):
 
     def __init__(self, node_dim: int, edge_dim: int, layers: int) -> None:
         super().__init__()
-        self.atomic_embedding = nn.Embedding(MAX_ATOMIC_NUMBER + 1, node_dim)
-        self.charge_embedding = nn.Embedding(CHARGE_CLASSES, node_dim)
-        self.chiral_embedding = nn.Embedding(CHIRAL_CLASSES, node_dim)
-        self.aromatic_embedding = nn.Embedding(2, node_dim)
-        self.bond_embedding = nn.Embedding(BOND_CLASSES, edge_dim)
+        self.atomic_embedding = nn.Embedding(MAX_ATOMIC_NUMBER + 2, node_dim)
+        self.charge_embedding = nn.Embedding(CHARGE_CLASSES + 1, node_dim)
+        self.chiral_embedding = nn.Embedding(CHIRAL_CLASSES + 1, node_dim)
+        self.aromatic_embedding = nn.Embedding(3, node_dim)
+        self.explicit_h_embedding = nn.Embedding(EXPLICIT_H_CLASSES + 1, node_dim)
+        self.no_implicit_embedding = nn.Embedding(3, node_dim)
+        self.bond_embedding = nn.Embedding(BOND_CLASSES + 1, edge_dim)
+        self.bond_stereo_embedding = nn.Embedding(BOND_STEREO_CLASSES + 1, edge_dim)
         self.layers = nn.ModuleList([GraphMessageLayer(node_dim, edge_dim) for _ in range(int(layers))])
         self.node_latent = nn.Sequential(nn.Linear(node_dim, node_dim), nn.SiLU(), nn.LayerNorm(node_dim))
         self.edge_latent = nn.Sequential(
@@ -288,8 +339,15 @@ class GraphLatentAutoencoder(nn.Module):
         self.charge_head = nn.Linear(node_dim, CHARGE_CLASSES)
         self.chiral_head = nn.Linear(node_dim, CHIRAL_CLASSES)
         self.aromatic_head = nn.Linear(node_dim, 2)
+        self.explicit_h_head = nn.Linear(node_dim, EXPLICIT_H_CLASSES)
+        self.no_implicit_head = nn.Linear(node_dim, 2)
         self.bond_head = nn.Sequential(
             nn.Linear(node_dim * 2 + edge_dim, node_dim), nn.SiLU(), nn.Linear(node_dim, BOND_CLASSES)
+        )
+        self.bond_stereo_head = nn.Sequential(
+            nn.Linear(node_dim * 2 + edge_dim, node_dim),
+            nn.SiLU(),
+            nn.Linear(node_dim, BOND_STEREO_CLASSES),
         )
 
     @staticmethod
@@ -305,8 +363,13 @@ class GraphLatentAutoencoder(nn.Module):
             + self.charge_embedding(batch["formal_charge"])
             + self.chiral_embedding(batch["chirality"])
             + self.aromatic_embedding(batch["aromatic"])
+            + self.explicit_h_embedding(batch["explicit_hs"])
+            + self.no_implicit_embedding(batch["no_implicit"])
         ) * node_mask.unsqueeze(-1)
-        edge_embedding = self.bond_embedding(batch["bond"])
+        edge_embedding = (
+            self.bond_embedding(batch["bond"])
+            + self.bond_stereo_embedding(batch["bond_stereo"])
+        )
         for layer in self.layers:
             node = layer(node, edge_embedding, batch["bond"], node_mask)
         node_latent = self.node_latent(node) * node_mask.unsqueeze(-1)
@@ -317,12 +380,16 @@ class GraphLatentAutoencoder(nn.Module):
 
     def decode(self, node_latent: torch.Tensor, edge_latent: torch.Tensor) -> dict[str, torch.Tensor]:
         bond_logits = self.bond_head(self.pair_features(node_latent, edge_latent))
+        stereo_logits = self.bond_stereo_head(self.pair_features(node_latent, edge_latent))
         return {
             "atomic_number": self.atomic_head(node_latent),
             "formal_charge": self.charge_head(node_latent),
             "chirality": self.chiral_head(node_latent),
             "aromatic": self.aromatic_head(node_latent),
+            "explicit_hs": self.explicit_h_head(node_latent),
+            "no_implicit": self.no_implicit_head(node_latent),
             "bond": 0.5 * (bond_logits + bond_logits.transpose(1, 2)),
+            "bond_stereo": 0.5 * (stereo_logits + stereo_logits.transpose(1, 2)),
         }
 
     def forward(
@@ -333,6 +400,41 @@ class GraphLatentAutoencoder(nn.Module):
             node_latent = node_latent + torch.randn_like(node_latent) * float(latent_noise)
             edge_latent = edge_latent + torch.randn_like(edge_latent) * float(latent_noise)
         return self.decode(node_latent, edge_latent), node_latent, edge_latent
+
+
+def mask_graph_categories(
+    batch: Mapping[str, torch.Tensor], probability: float
+) -> dict[str, torch.Tensor | object]:
+    """Mask true atom and bond categories before encoding for denoising."""
+    masked: dict[str, torch.Tensor | object] = {
+        key: value.clone() if isinstance(value, torch.Tensor) else value
+        for key, value in batch.items()
+    }
+    probability = max(0.0, min(1.0, float(probability)))
+    if probability <= 0:
+        return masked
+    node_mask = batch["node_mask"].bool()
+    selected_nodes = torch.rand_like(batch["node_mask"], dtype=torch.float32).lt(probability) & node_mask
+    node_mask_ids = {
+        "atomic_number": ATOM_MASK_ID,
+        "formal_charge": CHARGE_MASK_ID,
+        "chirality": CHIRAL_MASK_ID,
+        "aromatic": AROMATIC_MASK_ID,
+        "explicit_hs": EXPLICIT_H_MASK_ID,
+        "no_implicit": NO_IMPLICIT_MASK_ID,
+    }
+    for key, mask_id in node_mask_ids.items():
+        masked[key][selected_nodes] = int(mask_id)
+    nodes = batch["node_mask"].shape[1]
+    upper = torch.triu(
+        torch.ones(nodes, nodes, device=batch["node_mask"].device, dtype=torch.bool), diagonal=1
+    )
+    bonded = upper.unsqueeze(0) & batch["bond"].gt(BOND_NONE)
+    selected_edges = torch.rand_like(batch["bond"], dtype=torch.float32).lt(probability) & bonded
+    selected_edges = selected_edges | selected_edges.transpose(1, 2)
+    masked["bond"][selected_edges] = BOND_MASK_ID
+    masked["bond_stereo"][selected_edges] = BOND_STEREO_MASK_ID
+    return masked
 
 
 def upper_pair_mask(node_mask: torch.Tensor) -> torch.Tensor:
@@ -371,16 +473,45 @@ def reconstruction_loss(
         batch["atomic_number"].reshape(-1), weight=atom_weight,
     )
     charge_loss = F.cross_entropy(logits["formal_charge"][node_mask], batch["formal_charge"][node_mask])
-    chiral_loss = F.cross_entropy(logits["chirality"][node_mask], batch["chirality"][node_mask])
+    chiral_weight = torch.tensor([0.10, 1.0, 1.0], device=node_latent.device)
+    explicit_h_weight = torch.tensor([0.10, 1.0, 1.0, 1.0, 1.0, 1.0], device=node_latent.device)
+    no_implicit_weight = torch.tensor([0.10, 1.0], device=node_latent.device)
+    stereo_weight = torch.tensor([0.02, 1.0, 1.0], device=node_latent.device)
+    chiral_loss = F.cross_entropy(
+        logits["chirality"][node_mask], batch["chirality"][node_mask], weight=chiral_weight
+    )
     aromatic_loss = F.cross_entropy(logits["aromatic"][node_mask], batch["aromatic"][node_mask])
+    explicit_h_loss = F.cross_entropy(
+        logits["explicit_hs"][node_mask], batch["explicit_hs"][node_mask], weight=explicit_h_weight
+    )
+    no_implicit_loss = F.cross_entropy(
+        logits["no_implicit"][node_mask], batch["no_implicit"][node_mask], weight=no_implicit_weight
+    )
     bond_loss = F.cross_entropy(logits["bond"][pair_mask], batch["bond"][pair_mask], weight=bond_weight)
+    stereo_loss = F.cross_entropy(
+        logits["bond_stereo"][pair_mask],
+        batch["bond_stereo"][pair_mask],
+        weight=stereo_weight,
+    )
     geometry = fingerprint_geometry_loss(node_latent, batch["node_mask"], batch["fingerprint"])
-    total = atom_loss + 0.5 * charge_loss + 0.2 * chiral_loss + 0.2 * aromatic_loss + 2.0 * bond_loss
+    total = (
+        atom_loss
+        + 0.5 * charge_loss
+        + 0.2 * chiral_loss
+        + 0.2 * aromatic_loss
+        + 0.3 * explicit_h_loss
+        + 0.2 * no_implicit_loss
+        + 2.0 * bond_loss
+        + 0.2 * stereo_loss
+    )
     total = total + float(geometry_weight) * geometry
     parts = {
         "loss": float(total.detach()), "atom_loss": float(atom_loss.detach()),
         "charge_loss": float(charge_loss.detach()), "chiral_loss": float(chiral_loss.detach()),
         "aromatic_loss": float(aromatic_loss.detach()), "bond_loss": float(bond_loss.detach()),
+        "explicit_h_loss": float(explicit_h_loss.detach()),
+        "no_implicit_loss": float(no_implicit_loss.detach()),
+        "stereo_loss": float(stereo_loss.detach()),
         "geometry_loss": float(geometry.detach()),
     }
     return total, parts
@@ -410,7 +541,8 @@ def train_model(
             batch = move_batch(collate(examples), device)
             optimizer.zero_grad(set_to_none=True)
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
-                logits, node_latent, _ = model(batch, latent_noise=float(args.latent_noise))
+                masked_input = mask_graph_categories(batch, float(args.category_mask_probability))
+                logits, node_latent, _ = model(masked_input, latent_noise=float(args.latent_noise))
                 loss, parts = reconstruction_loss(logits, batch, node_latent, float(args.geometry_weight))
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), float(args.grad_clip))
@@ -438,15 +570,21 @@ def graph_to_smiles(prediction: Mapping[str, np.ndarray], index: int) -> tuple[s
         return None, False
     rw_molecule = Chem.RWMol()
     position_to_atom: dict[int, int] = {}
+    desired_cip: dict[int, str] = {}
+    desired_bond_stereo: list[tuple[int, int, int]] = []
     try:
         for position in active:
             atom = Chem.Atom(int(atom_values[position]))
             atom.SetFormalCharge(int(prediction["formal_charge"][index, position]) - CHARGE_OFFSET)
             chiral_value = int(prediction["chirality"][index, position])
-            if chiral_value not in Chem.ChiralType.values:
-                raise ValueError(f"Unsupported predicted chiral type: {chiral_value}")
-            atom.SetChiralTag(Chem.ChiralType.values[chiral_value])
+            if chiral_value not in (0, 1, 2):
+                raise ValueError(f"Unsupported predicted CIP class: {chiral_value}")
+            if chiral_value:
+                atom.SetChiralTag(Chem.ChiralType.CHI_TETRAHEDRAL_CW)
+                desired_cip[position] = "R" if chiral_value == 1 else "S"
             atom.SetIsAromatic(bool(prediction["aromatic"][index, position]))
+            atom.SetNumExplicitHs(int(prediction["explicit_hs"][index, position]))
+            atom.SetNoImplicit(bool(prediction["no_implicit"][index, position]))
             position_to_atom[position] = int(rw_molecule.AddAtom(atom))
         bond_types = {
             BOND_SINGLE: Chem.BondType.SINGLE, BOND_DOUBLE: Chem.BondType.DOUBLE,
@@ -461,8 +599,48 @@ def graph_to_smiles(prediction: Mapping[str, np.ndarray], index: int) -> tuple[s
                 if value == BOND_AROMATIC:
                     rw_molecule.GetAtomWithIdx(position_to_atom[left]).SetIsAromatic(True)
                     rw_molecule.GetAtomWithIdx(position_to_atom[right]).SetIsAromatic(True)
+        for offset, left in enumerate(active):
+            for right in active[offset + 1 :]:
+                stereo_value = int(prediction["bond_stereo"][index, left, right])
+                if stereo_value == 0 or int(prediction["bond"][index, left, right]) != BOND_DOUBLE:
+                    continue
+                desired_bond_stereo.append((left, right, stereo_value))
         molecule = rw_molecule.GetMol()
         Chem.SanitizeMol(molecule)
+        Chem.AssignStereochemistry(molecule, cleanIt=True, force=True)
+        for position, desired in desired_cip.items():
+            atom = molecule.GetAtomWithIdx(position_to_atom[position])
+            current = atom.GetProp("_CIPCode") if atom.HasProp("_CIPCode") else ""
+            if current and current != desired:
+                atom.InvertChirality()
+        Chem.AssignStereochemistry(molecule, cleanIt=True, force=True)
+        for left, right, stereo_value in desired_bond_stereo:
+            left_index, right_index = position_to_atom[left], position_to_atom[right]
+            decoded_bond = molecule.GetBondBetweenAtoms(left_index, right_index)
+            left_neighbours = [
+                atom.GetIdx()
+                for atom in molecule.GetAtomWithIdx(left_index).GetNeighbors()
+                if atom.GetIdx() != right_index
+            ]
+            right_neighbours = [
+                atom.GetIdx()
+                for atom in molecule.GetAtomWithIdx(right_index).GetNeighbors()
+                if atom.GetIdx() != left_index
+            ]
+            if not left_neighbours or not right_neighbours:
+                raise ValueError("Stereo bond lacks substituent atoms")
+
+            def cip_rank(atom_index: int) -> int:
+                atom = molecule.GetAtomWithIdx(atom_index)
+                return int(atom.GetProp("_CIPRank")) if atom.HasProp("_CIPRank") else atom_index
+
+            decoded_bond.SetStereoAtoms(
+                max(left_neighbours, key=cip_rank), max(right_neighbours, key=cip_rank)
+            )
+            decoded_bond.SetStereo(
+                Chem.BondStereo.STEREOE if stereo_value == 1 else Chem.BondStereo.STEREOZ
+            )
+        Chem.AssignStereochemistry(molecule, cleanIt=False, force=True)
         return Chem.MolToSmiles(molecule, canonical=True), len(Chem.GetMolFrags(molecule)) == 1
     except Exception:
         return None, False
@@ -482,7 +660,10 @@ def batch_tensor_metrics(
 ) -> list[dict[str, float]]:
     target = {
         key: batch[key].detach().cpu().numpy()
-        for key in ("atomic_number", "formal_charge", "chirality", "aromatic", "bond", "node_mask")
+        for key in (
+            "atomic_number", "formal_charge", "chirality", "aromatic",
+            "explicit_hs", "no_implicit", "bond", "bond_stereo", "node_mask",
+        )
     }
     rows: list[dict[str, float]] = []
     for index in range(len(batch["smiles"])):
@@ -491,13 +672,18 @@ def batch_tensor_metrics(
         atom_exact = bool(np.array_equal(prediction["atomic_number"][index], target["atomic_number"][index]))
         attributes_exact = all(
             np.array_equal(prediction[key][index][mask], target[key][index][mask])
-            for key in ("formal_charge", "chirality", "aromatic")
+            for key in ("formal_charge", "chirality", "aromatic", "explicit_hs", "no_implicit")
         )
-        edge_exact = bool(np.array_equal(prediction["bond"][index][pair], target["bond"][index][pair]))
+        bond_exact = bool(np.array_equal(prediction["bond"][index][pair], target["bond"][index][pair]))
+        stereo_exact = bool(
+            np.array_equal(prediction["bond_stereo"][index][pair], target["bond_stereo"][index][pair])
+        )
+        edge_exact = bond_exact and stereo_exact
         predicted_count = int((prediction["atomic_number"][index] > 0).sum())
         rows.append({
             "node_count_exact": float(predicted_count == int(mask.sum())),
             "atom_tensor_exact": float(atom_exact), "attribute_tensor_exact": float(attributes_exact),
+            "bond_tensor_exact": float(bond_exact), "stereo_tensor_exact": float(stereo_exact),
             "edge_tensor_exact": float(edge_exact),
             "graph_tensor_exact": float(atom_exact and attributes_exact and edge_exact),
         })
@@ -524,7 +710,7 @@ def summarize_reconstructions(rows: Sequence[Mapping[str, object]], prefix: str)
             metric: sum(float(row[f"{prefix}_{metric}"]) for row in rows) / max(1, count)
             for metric in (
                 "node_count_exact", "atom_tensor_exact", "attribute_tensor_exact",
-                "edge_tensor_exact", "graph_tensor_exact",
+                "bond_tensor_exact", "stereo_tensor_exact", "edge_tensor_exact", "graph_tensor_exact",
             )
         },
     }
@@ -547,8 +733,17 @@ def evaluate(
             node_latent + torch.randn_like(node_latent) * float(args.latent_noise),
             edge_latent + torch.randn_like(edge_latent) * float(args.latent_noise),
         ))
+        stress_prediction = predictions_from_logits(model.decode(
+            node_latent + torch.randn_like(node_latent) * float(args.stress_latent_noise),
+            edge_latent + torch.randn_like(edge_latent) * float(args.stress_latent_noise),
+        ))
+        masked_batch = mask_graph_categories(batch, float(args.category_mask_probability))
+        masked_node_latent, masked_edge_latent = model.encode(masked_batch)
+        masked_prediction = predictions_from_logits(model.decode(masked_node_latent, masked_edge_latent))
         clean_tensor = batch_tensor_metrics(clean_prediction, batch)
         noisy_tensor = batch_tensor_metrics(noisy_prediction, batch)
+        stress_tensor = batch_tensor_metrics(stress_prediction, batch)
+        masked_tensor = batch_tensor_metrics(masked_prediction, batch)
         pooled = (node_latent * batch["node_mask"].unsqueeze(-1)).sum(dim=1)
         pooled = pooled / batch["node_mask"].sum(dim=1, keepdim=True).clamp_min(1)
         pooled_latents.extend(pooled.detach().float().cpu().numpy())
@@ -560,6 +755,8 @@ def evaluate(
             for prefix, prediction, tensor_metrics in (
                 ("clean", clean_prediction, clean_tensor[index]),
                 ("noisy", noisy_prediction, noisy_tensor[index]),
+                ("stress", stress_prediction, stress_tensor[index]),
+                ("masked", masked_prediction, masked_tensor[index]),
             ):
                 decoded, connected = graph_to_smiles(prediction, index)
                 decoded_topology = topology_smiles(decoded)
@@ -596,6 +793,8 @@ def evaluate(
     return rows, {
         "clean": summarize_reconstructions(rows, "clean"),
         "noisy": summarize_reconstructions(rows, "noisy"),
+        "stress": summarize_reconstructions(rows, "stress"),
+        "masked": summarize_reconstructions(rows, "masked"),
         "latent_fingerprint_geometry_spearman": geometry_spearman,
         "raw_argmax_decoder": True, "valence_projection_or_repair": False,
     }
@@ -604,17 +803,24 @@ def evaluate(
 def build_gate(
     metrics: Mapping[str, object], validation_coverage: float, args: argparse.Namespace
 ) -> dict[str, object]:
-    clean, noisy = metrics["clean"], metrics["noisy"]
+    clean, noisy, stress, masked = (
+        metrics["clean"], metrics["noisy"], metrics["stress"], metrics["masked"]
+    )
     checks = {
         "validation_coverage": {"value": validation_coverage, "threshold": args.gate_validation_coverage},
         "clean_validity": {"value": clean["validity"], "threshold": args.gate_clean_validity},
         "clean_connected": {"value": clean["connected_rate"], "threshold": args.gate_clean_connected},
         "clean_graph_tensor_exact": {"value": clean["graph_tensor_exact"], "threshold": args.gate_clean_tensor_exact},
         "clean_topology_exact": {"value": clean["topology_exact"], "threshold": args.gate_clean_topology_exact},
+        "clean_isomeric_exact": {"value": clean["isomeric_exact"], "threshold": args.gate_clean_isomeric_exact},
         "clean_mean_tanimoto": {"value": clean["mean_tanimoto"], "threshold": args.gate_clean_tanimoto},
         "clean_scaffold_match": {"value": clean["scaffold_match"], "threshold": args.gate_clean_scaffold},
         "noisy_validity": {"value": noisy["validity"], "threshold": args.gate_noisy_validity},
         "noisy_mean_tanimoto": {"value": noisy["mean_tanimoto"], "threshold": args.gate_noisy_tanimoto},
+        "stress_validity": {"value": stress["validity"], "threshold": args.gate_stress_validity},
+        "stress_mean_tanimoto": {"value": stress["mean_tanimoto"], "threshold": args.gate_stress_tanimoto},
+        "masked_validity": {"value": masked["validity"], "threshold": args.gate_masked_validity},
+        "masked_mean_tanimoto": {"value": masked["mean_tanimoto"], "threshold": args.gate_masked_tanimoto},
     }
     failures = [name for name, check in checks.items() if float(check["value"]) < float(check["threshold"])]
     return {"passed": not failures, "checks": checks, "failures": failures}
@@ -660,6 +866,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "seed": int(args.seed), "device": str(device), "rdkit_version": rdkit_version(),
         "representation_stage_only": True, "variable_length_atom_slots": True,
         "explicit_bond_latent_slots": True, "permutation_equivariant_encoder": True,
+        "complete_chemical_state_schema": {
+            "atom": ["atomic_number", "formal_charge", "R_S", "aromatic", "explicit_hs", "no_implicit"],
+            "bond": ["bond_order", "E_Z"],
+            "stereo_labels_are_permutation_invariant": True,
+        },
         "one_shot_graph_decoder": True, "raw_argmax_decoder": True,
         "valence_projection_or_repair": False, "condition_access": False,
         "property_oracle_access": False, "candidate_library": False,
@@ -676,7 +887,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "validation_omitted_over_max_atoms_or_unsupported": validation_omitted,
         "validation_coverage": validation_coverage, "max_atoms": int(args.max_atoms),
         "node_dim": int(args.node_dim), "edge_dim": int(args.edge_dim), "layers": int(args.layers),
-        "latent_noise": float(args.latent_noise), "fingerprint_bits": int(args.fingerprint_bits),
+        "latent_noise": float(args.latent_noise),
+        "stress_latent_noise": float(args.stress_latent_noise),
+        "category_mask_probability": float(args.category_mask_probability),
+        "fingerprint_bits": int(args.fingerprint_bits),
     }
     (args.output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
