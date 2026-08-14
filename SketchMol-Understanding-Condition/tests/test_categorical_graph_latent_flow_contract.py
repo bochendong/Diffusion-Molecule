@@ -27,6 +27,8 @@ ANCHORED_HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_source_anchored_hierar
 ANCHORED_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_source_anchored_hierarchical_vq_graph_flow_pilot.sh"
 REGION_HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_connected_region_hierarchical_vq_graph_flow_pilot.sh"
 REGION_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_connected_region_hierarchical_vq_graph_flow_pilot.sh"
+DELTA_HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_categorical_delta_hierarchical_vq_graph_flow_pilot.sh"
+DELTA_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_categorical_delta_hierarchical_vq_graph_flow_pilot.sh"
 
 
 def test_categorical_graph_flow_has_target_blind_direct_generation_contract() -> None:
@@ -267,7 +269,8 @@ def test_connected_region_decoder_is_structured_target_blind_generation() -> Non
     assert '"connected_region_decoder": bool(args.connected_region)' in source
     assert '"learned_region_size": bool(args.connected_region)' in source
     assert '"latent_scored_connected_projection": bool(args.connected_region)' in source
-    assert '"whole_region_endpoint_subgraph": bool(args.connected_region)' in source
+    assert '"whole_region_endpoint_subgraph": bool(' in source
+    assert 'args.connected_region and not args.categorical_delta' in source
     assert '"source_boundary_preserved": bool(args.connected_region)' in source
     assert '"posthoc_source_copy_heuristic": False' in source
     assert '"valence_projection_or_repair": False' in source
@@ -290,6 +293,42 @@ def test_connected_region_runner_is_matched_exact_n20_and_mig() -> None:
     assert "--connected-region" in run_source
     assert "--num-attempts 20" in run_source
     assert 'SEED="${SUCC_REGION_HIER_VQ_SEED:-1741}"' in run_source
+    assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
+    assert "00:20:00" in submit_source
+    assert "dongbochen1218@gmail.com" in submit_source
+
+
+def test_categorical_delta_decoder_has_sparse_legal_target_blind_grammar() -> None:
+    source = HIERARCHICAL_VQ_PATH.read_text(encoding="utf-8")
+    ast.parse(source)
+    assert "def categorical_delta_targets" in source
+    assert "def categorical_delta_losses" in source
+    assert "def apply_categorical_graph_delta" in source
+    assert '["KEEP", "DELETE", "BIRTH", "REPLACE"]' in source
+    assert '["KEEP", "DELETE", "SET"]' in source
+    assert '"explicit_keep_category": bool(args.categorical_delta)' in source
+    assert '"legal_operation_mask_from_source_occupancy": bool(args.categorical_delta)' in source
+    assert '"region_internal_sparse_delta": bool(args.categorical_delta)' in source
+    assert 'args.connected_region and not args.categorical_delta' in source
+    sample_source = source[source.index("def sample_from_source") : source.index("def evaluate")]
+    assert "target_smiles" not in sample_source
+    assert "target_example" not in sample_source
+    assert "property_oracle" not in sample_source
+    assert "apply_categorical_graph_delta" in sample_source
+
+
+def test_categorical_delta_runner_is_matched_exact_n20_and_mig() -> None:
+    run_source = DELTA_HIERARCHICAL_VQ_RUN_PATH.read_text(encoding="utf-8")
+    submit_source = DELTA_HIERARCHICAL_VQ_SUBMIT_PATH.read_text(encoding="utf-8")
+    assert '--train-limit "${SUCC_DELTA_HIER_VQ_TRAIN_LIMIT:-1500}"' in run_source
+    assert '--validation-limit "${SUCC_DELTA_HIER_VQ_VALIDATION_LIMIT:-20}"' in run_source
+    assert '--property-counts "${SUCC_DELTA_HIER_VQ_PROPERTY_COUNTS:-2,3}"' in run_source
+    assert '--delta-loss-weight "${SUCC_DELTA_HIER_VQ_DELTA_WEIGHT:-0.50}"' in run_source
+    assert "--source-anchored" in run_source
+    assert "--connected-region" in run_source
+    assert "--categorical-delta" in run_source
+    assert "--num-attempts 20" in run_source
+    assert 'SEED="${SUCC_DELTA_HIER_VQ_SEED:-1741}"' in run_source
     assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
     assert "00:20:00" in submit_source
     assert "dongbochen1218@gmail.com" in submit_source

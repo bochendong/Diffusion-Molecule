@@ -272,3 +272,28 @@ same 18 held-out conditions, and exact n=20.
 ```bash
 bash experiments/unified_latent_flow/submit_connected_region_hierarchical_vq_graph_flow_pilot.sh
 ```
+
+## Stage B9: sparse categorical graph-delta grammar
+
+B8 learned the right connected support scale and improved validity over the
+independent B7 block decoder, but replacing every edge inside a region still
+changed a dense quadratic set of endpoint pairs. Its invalid samples changed
+substantially more internal pairs than its valid samples. B9 keeps the same
+two-level constraint/motif latent and connected-region projector, while making
+the source-relative edit itself categorical and sparse.
+
+Every selected node predicts one of `KEEP`, `DELETE`, `BIRTH`, or `REPLACE`;
+every internal pair predicts `KEEP`, `DELETE`, or `SET`. Illegal operations are
+masked deterministically from source occupancy. `KEEP` is a native learned
+category, the region boundary remains the exact source graph, and only explicit
+non-KEEP pairs are changed. Endpoint categories and delta operations are jointly
+conditioned on the source, request and both latent tokens. There is no target or
+property oracle at generation time, chemistry repair, candidate selector,
+action-plan executor, or ranking stage.
+
+The pilot is a strict matched ablation against B6-B8: seed 1741, the same 1,450
+train pairs, the same 18 held-out 2p/3p conditions, and exact n=20.
+
+```bash
+bash experiments/unified_latent_flow/submit_categorical_delta_hierarchical_vq_graph_flow_pilot.sh
+```

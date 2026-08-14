@@ -33,6 +33,10 @@ VQ_PATH = SCRIPT_DIR / "vq_motif_graph_belief_flow.py"
 PROTOCOL = "hierarchical_constraint_motif_vq_graph_flow_pilot_v6"
 SOURCE_ANCHORED_PROTOCOL = "source_anchored_hierarchical_vq_graph_flow_pilot_v7"
 CONNECTED_REGION_PROTOCOL = "connected_region_hierarchical_vq_graph_flow_pilot_v8"
+CATEGORICAL_DELTA_PROTOCOL = "categorical_delta_hierarchical_vq_graph_flow_pilot_v9"
+
+NODE_KEEP, NODE_DELETE, NODE_BIRTH, NODE_REPLACE = range(4)
+EDGE_KEEP, EDGE_DELETE, EDGE_SET = range(3)
 
 
 def load_module(name: str, path: Path):
@@ -92,7 +96,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--gate-min-motif-codes", type=int, default=4)
     parser.add_argument("--source-anchored", action="store_true")
     parser.add_argument("--connected-region", action="store_true")
+    parser.add_argument("--categorical-delta", action="store_true")
     parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
+    parser.add_argument("--delta-loss-weight", type=float, default=0.50)
     parser.add_argument("--seed", type=int, default=1741)
     parser.add_argument("--device", default="auto")
     return parser.parse_args(argv)
@@ -155,6 +161,18 @@ class SourceAnchoredEndpointField(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, max_atoms + 1),
         )
+        self.node_delta_operation = nn.Sequential(
+            nn.LayerNorm(node_dim * 4),
+            nn.Linear(node_dim * 4, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 4),
+        )
+        self.edge_delta_operation = nn.Sequential(
+            nn.LayerNorm(edge_input),
+            nn.Linear(edge_input, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 3),
+        )
 
     def forward(
         self,
@@ -167,13 +185,7 @@ class SourceAnchoredEndpointField(nn.Module):
         birth_rank: torch.Tensor,
         time: torch.Tensor,
         condition: torch.Tensor,
-    ) -> tuple[
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-        torch.Tensor,
-    ]:
+    ) -> tuple[torch.Tensor, ...]:
         endpoint_node, endpoint_edge = self.endpoint(
             current_node,
             current_edge,
@@ -215,12 +227,19 @@ class SourceAnchoredEndpointField(nn.Module):
         region_size_logits = self.region_size(
             torch.cat([source_pool, context[:, 0, :]], dim=-1)
         )
+        node_delta_logits = self.node_delta_operation(node_input)
+        edge_delta_logits = self.edge_delta_operation(edge_input)
+        edge_delta_logits = 0.5 * (
+            edge_delta_logits + edge_delta_logits.transpose(1, 2)
+        )
         return (
             endpoint_node,
             endpoint_edge,
             node_change_logits,
             edge_change_logits,
             region_size_logits,
+            node_delta_logits,
+            edge_delta_logits,
         )
 
 
@@ -238,12 +257,16 @@ class HierarchicalVQGraphFlow(nn.Module):
         max_atoms: int,
         source_anchored: bool = False,
         connected_region: bool = False,
+        categorical_delta: bool = False,
     ) -> None:
         super().__init__()
         self.source_anchored = bool(source_anchored)
         self.connected_region = bool(connected_region)
+        self.categorical_delta = bool(categorical_delta)
         if self.connected_region and not self.source_anchored:
             raise ValueError("Connected-region decoding requires source anchoring")
+        if self.categorical_delta and not self.connected_region:
+            raise ValueError("Categorical graph deltas require connected-region decoding")
         self.constraint_codebook_size = int(constraint_codebook_size)
         self.motif_codebook_size = int(motif_codebook_size)
         global_input = node_dim + edge_dim + condition_dim
@@ -488,6 +511,200 @@ def connected_region_losses(
     return region_loss, size_loss
 
 
+def categorical_delta_targets(
+    source: Mapping[str, torch.Tensor], target: Mapping[str, torch.Tensor]
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Map an aligned train pair to the sparse source-relative delta grammar."""
+    source_active = source["atomic_number"].gt(0)
+    target_active = target["atomic_number"].gt(0)
+    node_changed = torch.zeros_like(source_active)
+    for key in vq.NODE_FIELDS:
+        node_changed |= source[key].ne(target[key])
+    node_operation = torch.full_like(source["atomic_number"], NODE_KEEP)
+    node_operation = torch.where(
+        source_active & ~target_active,
+        torch.full_like(node_operation, NODE_DELETE),
+        node_operation,
+    )
+    node_operation = torch.where(
+        ~source_active & target_active,
+        torch.full_like(node_operation, NODE_BIRTH),
+        node_operation,
+    )
+    node_operation = torch.where(
+        source_active & target_active & node_changed,
+        torch.full_like(node_operation, NODE_REPLACE),
+        node_operation,
+    )
+    node_eligible = torch.ones_like(source_active, dtype=torch.bool)
+
+    source_bond = source["bond"].gt(graph.BOND_NONE)
+    target_bond = target["bond"].gt(graph.BOND_NONE)
+    edge_changed = torch.zeros_like(source_bond)
+    for key in vq.EDGE_FIELDS:
+        edge_changed |= source[key].ne(target[key])
+    edge_operation = torch.full_like(source["bond"], EDGE_KEEP)
+    edge_operation = torch.where(
+        source_bond & ~target_bond,
+        torch.full_like(edge_operation, EDGE_DELETE),
+        edge_operation,
+    )
+    edge_operation = torch.where(
+        target_bond & (~source_bond | edge_changed),
+        torch.full_like(edge_operation, EDGE_SET),
+        edge_operation,
+    )
+    nodes = source_active.shape[1]
+    upper = torch.triu(
+        torch.ones(nodes, nodes, device=source_active.device, dtype=torch.bool),
+        diagonal=1,
+    )
+    union_active = source_active | target_active
+    edge_eligible = (
+        upper.unsqueeze(0) & union_active[:, :, None] & union_active[:, None, :]
+    )
+    return node_operation, node_eligible, edge_operation, edge_eligible
+
+
+def masked_categorical_loss(
+    logits: torch.Tensor, target: torch.Tensor, eligible: torch.Tensor
+) -> torch.Tensor:
+    if not bool(eligible.any()):
+        return logits.sum() * 0.0
+    selected = target[eligible].long()
+    classes = int(logits.shape[-1])
+    counts = torch.bincount(selected, minlength=classes).to(logits.dtype)
+    weights = torch.ones(classes, device=logits.device, dtype=logits.dtype)
+    present = counts.gt(0)
+    weights[present] = torch.sqrt(selected.numel() / counts[present]).clamp(1.0, 10.0)
+    return F.cross_entropy(logits[eligible], selected, weight=weights)
+
+
+def categorical_delta_losses(
+    decoded: tuple[torch.Tensor, ...],
+    node_target: torch.Tensor,
+    node_eligible: torch.Tensor,
+    edge_target: torch.Tensor,
+    edge_eligible: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    return (
+        masked_categorical_loss(decoded[5], node_target, node_eligible),
+        masked_categorical_loss(decoded[6], edge_target, edge_eligible),
+    )
+
+
+def decoder_auxiliary_losses(
+    flow: HierarchicalVQGraphFlow,
+    decoded: tuple[torch.Tensor, ...],
+    region_target: torch.Tensor,
+    node_change_target: torch.Tensor,
+    node_change_eligible: torch.Tensor,
+    edge_change_target: torch.Tensor,
+    edge_change_eligible: torch.Tensor,
+    node_delta_target: torch.Tensor,
+    node_delta_eligible: torch.Tensor,
+    edge_delta_target: torch.Tensor,
+    edge_delta_eligible: torch.Tensor,
+    args: argparse.Namespace,
+) -> tuple[torch.Tensor, ...]:
+    zero = decoded[0].sum() * 0.0
+    node_gate_loss = edge_gate_loss = region_size_loss = zero
+    node_delta_loss = edge_delta_loss = zero
+    if flow.connected_region:
+        node_gate_loss, region_size_loss = connected_region_losses(
+            decoded, region_target
+        )
+    elif flow.source_anchored:
+        node_gate_loss, edge_gate_loss = edit_gate_losses(
+            decoded,
+            node_change_target,
+            node_change_eligible,
+            edge_change_target,
+            edge_change_eligible,
+        )
+    if flow.categorical_delta:
+        node_delta_loss, edge_delta_loss = categorical_delta_losses(
+            decoded,
+            node_delta_target,
+            node_delta_eligible,
+            edge_delta_target,
+            edge_delta_eligible,
+        )
+    weighted = float(args.edit_gate_loss_weight) * (
+        node_gate_loss + edge_gate_loss + region_size_loss
+    ) + float(args.delta_loss_weight) * (node_delta_loss + edge_delta_loss)
+    return (
+        node_gate_loss,
+        edge_gate_loss,
+        region_size_loss,
+        node_delta_loss,
+        edge_delta_loss,
+        weighted,
+    )
+
+
+def masked_operation_argmax(logits: torch.Tensor, legal: torch.Tensor) -> torch.Tensor:
+    if logits.shape != legal.shape:
+        raise ValueError(f"Operation logits {logits.shape} and mask {legal.shape} differ")
+    return logits.float().masked_fill(~legal, -torch.inf).argmax(dim=-1)
+
+
+def apply_categorical_graph_delta(
+    source: Mapping[str, torch.Tensor],
+    candidate_nodes: Mapping[str, torch.Tensor],
+    candidate_edges: Mapping[str, torch.Tensor],
+    decoded: tuple[torch.Tensor, ...],
+    region: torch.Tensor,
+    upper: torch.Tensor,
+) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
+    """Apply one legal sparse graph delta inside a latent-selected region."""
+    result = {
+        key: value.clone() if isinstance(value, torch.Tensor) else value
+        for key, value in source.items()
+    }
+    source_active = source["atomic_number"].gt(0)
+    node_legal = torch.zeros_like(decoded[5], dtype=torch.bool)
+    node_legal[..., NODE_KEEP] = True
+    node_legal[..., NODE_DELETE] = region & source_active
+    node_legal[..., NODE_BIRTH] = region & ~source_active
+    node_legal[..., NODE_REPLACE] = region & source_active
+    node_operation = masked_operation_argmax(decoded[5], node_legal)
+    node_delete = node_operation.eq(NODE_DELETE)
+    node_write = node_operation.eq(NODE_BIRTH) | node_operation.eq(NODE_REPLACE)
+    for key in vq.NODE_FIELDS:
+        result[key] = torch.where(node_write, candidate_nodes[key], result[key])
+    result["atomic_number"] = torch.where(
+        node_delete, torch.zeros_like(result["atomic_number"]), result["atomic_number"]
+    )
+    result = belief.enforce_categorical_consistency(result)
+
+    active = result["atomic_number"].gt(0)
+    internal = (
+        region[:, :, None]
+        & region[:, None, :]
+        & active[:, :, None]
+        & active[:, None, :]
+        & upper.unsqueeze(0)
+    )
+    source_bond = source["bond"].gt(graph.BOND_NONE)
+    edge_legal = torch.zeros_like(decoded[6], dtype=torch.bool)
+    edge_legal[..., EDGE_KEEP] = True
+    edge_legal[..., EDGE_DELETE] = internal & source_bond
+    edge_legal[..., EDGE_SET] = internal
+    edge_operation = masked_operation_argmax(decoded[6], edge_legal)
+    edge_delete_upper = edge_operation.eq(EDGE_DELETE) & internal
+    edge_set_upper = edge_operation.eq(EDGE_SET) & internal
+    edge_delete = edge_delete_upper | edge_delete_upper.transpose(1, 2)
+    edge_set = edge_set_upper | edge_set_upper.transpose(1, 2)
+    for key in vq.EDGE_FIELDS:
+        result[key] = torch.where(edge_set, candidate_edges[key], result[key])
+        result[key] = torch.where(edge_delete, torch.zeros_like(result[key]), result[key])
+    result = belief.enforce_categorical_consistency(result)
+    node_changed = node_operation.ne(NODE_KEEP)
+    edge_changed_upper = edge_operation.ne(EDGE_KEEP) & internal
+    return result, node_changed, edge_changed_upper
+
+
 def project_connected_region(
     scores: torch.Tensor,
     sizes: torch.Tensor,
@@ -550,6 +767,12 @@ def train_flow(
                 source, target
             )
             region_target = connected_region_target(node_target, edge_target)
+            (
+                node_delta_target,
+                node_delta_eligible,
+                edge_delta_target,
+                edge_delta_eligible,
+            ) = categorical_delta_targets(source, target)
             optimizer.zero_grad(set_to_none=True)
             with torch.no_grad(), torch.autocast(
                 device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16
@@ -596,27 +819,28 @@ def train_flow(
                 endpoint_loss, parts = graph.reconstruction_loss(
                     logits, target, endpoint_node, geometry_weight=0.0
                 )
-                if flow.connected_region:
-                    node_gate_loss, region_size_loss = connected_region_losses(
-                        decoded, region_target
-                    )
-                    edge_gate_loss = endpoint_loss * 0.0
-                elif flow.source_anchored:
-                    node_gate_loss, edge_gate_loss = edit_gate_losses(
-                        decoded,
-                        node_target,
-                        node_eligible,
-                        edge_target,
-                        edge_eligible,
-                    )
-                    region_size_loss = endpoint_loss * 0.0
-                else:
-                    node_gate_loss = endpoint_loss * 0.0
-                    edge_gate_loss = endpoint_loss * 0.0
-                    region_size_loss = endpoint_loss * 0.0
-                structured_loss = endpoint_loss + float(args.edit_gate_loss_weight) * (
-                    node_gate_loss + edge_gate_loss + region_size_loss
+                (
+                    node_gate_loss,
+                    edge_gate_loss,
+                    region_size_loss,
+                    node_delta_loss,
+                    edge_delta_loss,
+                    auxiliary_loss,
+                ) = decoder_auxiliary_losses(
+                    flow,
+                    decoded,
+                    region_target,
+                    node_target,
+                    node_eligible,
+                    edge_target,
+                    edge_eligible,
+                    node_delta_target,
+                    node_delta_eligible,
+                    edge_delta_target,
+                    edge_delta_eligible,
+                    args,
                 )
+                structured_loss = endpoint_loss + auxiliary_loss
 
                 wrong_constraint = flow.constraint_codebook(
                     different_indices(constraint_index, flow.constraint_codebook_size)
@@ -637,30 +861,23 @@ def train_flow(
                     wrong_node,
                     geometry_weight=0.0,
                 )
-                if flow.source_anchored:
-                    if flow.connected_region:
-                        wrong_node_gate_loss, wrong_region_size_loss = (
-                            connected_region_losses(
-                                wrong_constraint_decoded, region_target
-                            )
-                        )
-                        wrong_edge_gate_loss = endpoint_loss * 0.0
-                    else:
-                        wrong_node_gate_loss, wrong_edge_gate_loss = edit_gate_losses(
-                            wrong_constraint_decoded,
-                            node_target,
-                            node_eligible,
-                            edge_target,
-                            edge_eligible,
-                        )
-                        wrong_region_size_loss = endpoint_loss * 0.0
-                    wrong_constraint_loss = wrong_constraint_loss + float(
-                        args.edit_gate_loss_weight
-                    ) * (
-                        wrong_node_gate_loss
-                        + wrong_edge_gate_loss
-                        + wrong_region_size_loss
-                    )
+                wrong_constraint_auxiliary = decoder_auxiliary_losses(
+                    flow,
+                    wrong_constraint_decoded,
+                    region_target,
+                    node_target,
+                    node_eligible,
+                    edge_target,
+                    edge_eligible,
+                    node_delta_target,
+                    node_delta_eligible,
+                    edge_delta_target,
+                    edge_delta_eligible,
+                    args,
+                )[-1]
+                wrong_constraint_loss = (
+                    wrong_constraint_loss + wrong_constraint_auxiliary
+                )
                 wrong_motif = flow.motif_codebook(
                     different_indices(motif_index, flow.motif_codebook_size)
                 ).detach()
@@ -680,28 +897,21 @@ def train_flow(
                     wrong_node,
                     geometry_weight=0.0,
                 )
-                if flow.source_anchored:
-                    if flow.connected_region:
-                        wrong_node_gate_loss, wrong_region_size_loss = (
-                            connected_region_losses(wrong_motif_decoded, region_target)
-                        )
-                        wrong_edge_gate_loss = endpoint_loss * 0.0
-                    else:
-                        wrong_node_gate_loss, wrong_edge_gate_loss = edit_gate_losses(
-                            wrong_motif_decoded,
-                            node_target,
-                            node_eligible,
-                            edge_target,
-                            edge_eligible,
-                        )
-                        wrong_region_size_loss = endpoint_loss * 0.0
-                    wrong_motif_loss = wrong_motif_loss + float(
-                        args.edit_gate_loss_weight
-                    ) * (
-                        wrong_node_gate_loss
-                        + wrong_edge_gate_loss
-                        + wrong_region_size_loss
-                    )
+                wrong_motif_auxiliary = decoder_auxiliary_losses(
+                    flow,
+                    wrong_motif_decoded,
+                    region_target,
+                    node_target,
+                    node_eligible,
+                    edge_target,
+                    edge_eligible,
+                    node_delta_target,
+                    node_delta_eligible,
+                    edge_delta_target,
+                    edge_delta_eligible,
+                    args,
+                )[-1]
+                wrong_motif_loss = wrong_motif_loss + wrong_motif_auxiliary
                 constraint_contrastive = F.relu(
                     float(args.contrastive_margin)
                     + structured_loss
@@ -744,6 +954,8 @@ def train_flow(
             totals["node_gate_loss"] += float(node_gate_loss.detach())
             totals["edge_gate_loss"] += float(edge_gate_loss.detach())
             totals["region_size_loss"] += float(region_size_loss.detach())
+            totals["node_delta_loss"] += float(node_delta_loss.detach())
+            totals["edge_delta_loss"] += float(edge_delta_loss.detach())
             totals["node_change_rate"] += float(
                 node_target[node_eligible].float().mean()
             )
@@ -881,29 +1093,51 @@ def sample_from_source(
                 )
             else:
                 node_edit = decoded[2].gt(0) & node_eligible
-            for key in vq.NODE_FIELDS:
-                result[key] = torch.where(node_edit, candidate_nodes[key], source[key])
-            result = belief.enforce_categorical_consistency(result)
-
-            active = result["node_mask"].bool()
-            active_pair = active[:, :, None] & active[:, None, :]
-            if flow.connected_region:
-                region_pair = node_edit[:, :, None] & node_edit[:, None, :]
-                edge_edit_upper = region_pair & active_pair & upper.unsqueeze(0)
+            if flow.categorical_delta:
+                delta_nodes = dict(candidate_nodes)
+                delta_nodes["atomic_number"] = (
+                    logits["atomic_number"][..., 1:].argmax(dim=-1) + 1
+                )
+                delta_edges = dict(candidate_edges)
+                set_bond = logits["bond"][..., 1:].argmax(dim=-1) + 1
+                set_bond = torch.where(
+                    upper.unsqueeze(0), set_bond, torch.zeros_like(set_bond)
+                )
+                delta_edges["bond"] = set_bond + set_bond.transpose(1, 2)
+                result, node_edit, edge_edit_upper = apply_categorical_graph_delta(
+                    source,
+                    delta_nodes,
+                    delta_edges,
+                    decoded,
+                    node_edit,
+                    upper,
+                )
             else:
-                edge_eligible = active_pair & (
-                    source["bond"].gt(graph.BOND_NONE)
-                    | candidate_edges["bond"].gt(graph.BOND_NONE)
-                )
-                edge_edit_upper = (
-                    decoded[3].gt(0) & edge_eligible & upper.unsqueeze(0)
-                )
-            edge_edit = edge_edit_upper | edge_edit_upper.transpose(1, 2)
-            for key in vq.EDGE_FIELDS:
-                result[key] = torch.where(
-                    edge_edit, candidate_edges[key], result[key]
-                )
-            result = belief.enforce_categorical_consistency(result)
+                for key in vq.NODE_FIELDS:
+                    result[key] = torch.where(
+                        node_edit, candidate_nodes[key], source[key]
+                    )
+                result = belief.enforce_categorical_consistency(result)
+
+                active = result["node_mask"].bool()
+                active_pair = active[:, :, None] & active[:, None, :]
+                if flow.connected_region:
+                    region_pair = node_edit[:, :, None] & node_edit[:, None, :]
+                    edge_edit_upper = region_pair & active_pair & upper.unsqueeze(0)
+                else:
+                    edge_eligible = active_pair & (
+                        source["bond"].gt(graph.BOND_NONE)
+                        | candidate_edges["bond"].gt(graph.BOND_NONE)
+                    )
+                    edge_edit_upper = (
+                        decoded[3].gt(0) & edge_eligible & upper.unsqueeze(0)
+                    )
+                edge_edit = edge_edit_upper | edge_edit_upper.transpose(1, 2)
+                for key in vq.EDGE_FIELDS:
+                    result[key] = torch.where(
+                        edge_edit, candidate_edges[key], result[key]
+                    )
+                result = belief.enforce_categorical_consistency(result)
             prediction = {
                 key: result[key].detach().cpu().numpy()
                 for key in (*vq.NODE_FIELDS, *vq.EDGE_FIELDS)
@@ -1035,10 +1269,14 @@ def evaluate(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.categorical_delta:
+        args.connected_region = True
     if args.connected_region:
         args.source_anchored = True
     protocol = (
-        CONNECTED_REGION_PROTOCOL
+        CATEGORICAL_DELTA_PROTOCOL
+        if args.categorical_delta
+        else CONNECTED_REGION_PROTOCOL
         if args.connected_region
         else SOURCE_ANCHORED_PROTOCOL
         if args.source_anchored
@@ -1095,6 +1333,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         max_atoms=int(config["max_atoms"]),
         source_anchored=bool(args.source_anchored),
         connected_region=bool(args.connected_region),
+        categorical_delta=bool(args.categorical_delta),
     ).to(device)
     history, constraint_usage, motif_usage = train_flow(
         flow, representation, train_pairs, args, device
@@ -1192,9 +1431,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         "connected_region_decoder": bool(args.connected_region),
         "learned_region_size": bool(args.connected_region),
         "latent_scored_connected_projection": bool(args.connected_region),
-        "whole_region_endpoint_subgraph": bool(args.connected_region),
+        "whole_region_endpoint_subgraph": bool(
+            args.connected_region and not args.categorical_delta
+        ),
         "source_boundary_preserved": bool(args.connected_region),
+        "categorical_graph_delta_grammar": bool(args.categorical_delta),
+        "node_delta_operations": ["KEEP", "DELETE", "BIRTH", "REPLACE"]
+        if args.categorical_delta
+        else [],
+        "edge_delta_operations": ["KEEP", "DELETE", "SET"]
+        if args.categorical_delta
+        else [],
+        "explicit_keep_category": bool(args.categorical_delta),
+        "legal_operation_mask_from_source_occupancy": bool(args.categorical_delta),
+        "region_internal_sparse_delta": bool(args.categorical_delta),
         "edit_gate_loss_weight": float(args.edit_gate_loss_weight),
+        "delta_loss_weight": float(args.delta_loss_weight),
         "posthoc_source_copy_heuristic": False,
         "independent_atom_or_bond_sampling": False,
         "candidate_library": False,
@@ -1206,7 +1458,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "source_target_mcs_alignment_training_only": True,
     }
     checkpoint_name = (
-        "connected_region_hierarchical_vq_graph_flow.pt"
+        "categorical_delta_hierarchical_vq_graph_flow.pt"
+        if args.categorical_delta
+        else "connected_region_hierarchical_vq_graph_flow.pt"
         if args.connected_region
         else "source_anchored_hierarchical_vq_graph_flow.pt"
         if args.source_anchored
@@ -1229,6 +1483,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "max_atoms": int(config["max_atoms"]),
                 "source_anchored": bool(args.source_anchored),
                 "connected_region": bool(args.connected_region),
+                "categorical_delta": bool(args.categorical_delta),
             },
             "active_constraint_codes": active_constraint_codes,
             "active_motif_codes": active_motif_codes,
@@ -1250,14 +1505,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         "gate": {"passed": not failures, "checks": checks, "failures": failures},
         "next_stage": (
             (
-                "expand_connected_region_hierarchical_vq_signal"
+                "expand_categorical_delta_hierarchical_vq_signal"
+                if args.categorical_delta
+                else "expand_connected_region_hierarchical_vq_signal"
                 if args.connected_region
                 else "expand_source_anchored_hierarchical_vq_signal"
                 if args.source_anchored
                 else "expand_hierarchical_vq_signal"
             )
             if not failures
-            else "diagnose_connected_region_endpoint_validity"
+            else (
+                "diagnose_categorical_delta_support_or_calibration"
+                if args.categorical_delta
+                else "diagnose_connected_region_endpoint_validity"
+            )
         ),
     }
     (args.output_dir / "summary.json").write_text(
