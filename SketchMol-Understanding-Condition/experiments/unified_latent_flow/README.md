@@ -109,3 +109,23 @@ checkpoint and leaves the v1 result reproducible.
 ```bash
 bash experiments/unified_latent_flow/submit_graph_latent_autoencoder_v2.sh
 ```
+
+## Stage B1: source-conditioned categorical graph flow
+
+After the complete-schema representation gate passes, the bounded B1 pilot
+freezes that autoencoder and trains a permutation-equivariant rectified-flow
+velocity over its atom and unordered-pair latent slots. Paired training targets
+are MCS-aligned to the source slots, while validation generation accepts only
+the source graph and a sanitized property program. The validation target and
+property scorers are accessed only after exactly 20 direct raw decodes have
+been frozen.
+
+The pilot is deliberately small: one seed, at most 1,500 training edit pairs
+and 16 held-out conditions. It has no candidate library, selector, finalizer,
+oracle reranking, or valence repair. Its purpose is to decide whether learned
+latent motion improves over source-copy target proximity while retaining high
+validity and source similarity; it is not a Table1 or MuMO headline result.
+
+```bash
+bash experiments/unified_latent_flow/submit_categorical_graph_latent_flow_pilot.sh
+```
