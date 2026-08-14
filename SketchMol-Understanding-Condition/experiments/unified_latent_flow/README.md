@@ -180,3 +180,22 @@ Tanimoto at least 0.4 and nontrivial strict/target-improvement signal.
 ```bash
 bash experiments/unified_latent_flow/submit_coupled_local_graph_belief_flow_pilot.sh
 ```
+
+## Stage B5: single-token VQ motif latent
+
+B4 established a strong 2-property signal, but its independent Bernoulli edit
+gates accumulated too many simultaneous edits when 2- and 3-property training
+were mixed. B5 removes per-atom and per-bond sampling entirely. A train-only
+posterior compresses the aligned graph delta into one VQ motif token; a
+source-and-condition prior predicts that token; and one shared graph-latent
+decoder deterministically maps source plus token to all endpoint categories.
+The 20 attempts sample only the latent token.
+
+This pilot uses one seed, 1,500 train pairs and 20 held-out 2p/3p conditions.
+The posterior and validation targets are absent during generation. There is no
+retrieved transform library, GraphEditDSL action, selector, finalizer, oracle
+reranking, independent category sampling, or valence repair.
+
+```bash
+bash experiments/unified_latent_flow/submit_vq_motif_graph_belief_flow_pilot.sh
+```
