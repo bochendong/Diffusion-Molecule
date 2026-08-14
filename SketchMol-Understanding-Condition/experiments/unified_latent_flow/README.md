@@ -227,3 +227,24 @@ chemistry repair.
 ```bash
 bash experiments/unified_latent_flow/submit_hierarchical_vq_motif_graph_flow_pilot.sh
 ```
+
+## Stage B7: source-anchored hierarchical latent decoder
+
+B6 showed that separating constraint and motif tokens restores 3-property
+signal and improves structure retention, but raw full-graph decoding still
+changed the predicted atom count too often and left validity below the 80%
+gate. B7 is a controlled decoder ablation on the exact same seed and held-out
+conditions. The two-level posterior, priors, codebooks, n=20 contract and graph
+endpoint head remain unchanged.
+
+The new endpoint field jointly learns atom-block and bond-block change logits
+from the source graph, decoded endpoint, condition and both latent tokens.
+Their deterministic sign selects either the decoded block or the exact source
+block. This makes source preservation part of the learned generative decoder;
+it is not an after-the-fact source-copy heuristic, chemistry repair, candidate
+selector, or ranking stage. Randomness still enters only through the two latent
+tokens.
+
+```bash
+bash experiments/unified_latent_flow/submit_source_anchored_hierarchical_vq_graph_flow_pilot.sh
+```

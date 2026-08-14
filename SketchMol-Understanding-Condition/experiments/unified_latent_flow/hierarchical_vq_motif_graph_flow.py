@@ -31,6 +31,7 @@ import torch.nn.functional as F
 SCRIPT_DIR = Path(__file__).resolve().parent
 VQ_PATH = SCRIPT_DIR / "vq_motif_graph_belief_flow.py"
 PROTOCOL = "hierarchical_constraint_motif_vq_graph_flow_pilot_v6"
+SOURCE_ANCHORED_PROTOCOL = "source_anchored_hierarchical_vq_graph_flow_pilot_v7"
 
 
 def load_module(name: str, path: Path):
@@ -88,6 +89,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--gate-strict-any20", type=float, default=0.20)
     parser.add_argument("--gate-min-constraint-codes", type=int, default=3)
     parser.add_argument("--gate-min-motif-codes", type=int, default=4)
+    parser.add_argument("--source-anchored", action="store_true")
+    parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
     parser.add_argument("--seed", type=int, default=1741)
     parser.add_argument("--device", default="auto")
     return parser.parse_args(argv)
@@ -105,6 +108,97 @@ def perplexity(usage: Counter[int]) -> float:
     return float(np.exp(-(probability * np.log(probability + 1e-12)).sum()))
 
 
+class SourceAnchoredEndpointField(nn.Module):
+    """Decode endpoint categories and learned source-relative edit blocks.
+
+    The edit logits are part of the latent-conditioned decoder.  At generation
+    time their deterministic sign chooses whether an entire atom or bond block
+    comes from the decoded endpoint or is copied exactly from the source.  This
+    is neither a chemistry repair nor a post-hoc candidate operation.
+    """
+
+    def __init__(
+        self,
+        node_dim: int,
+        edge_dim: int,
+        condition_dim: int,
+        hidden_dim: int,
+        max_atoms: int,
+    ) -> None:
+        super().__init__()
+        self.endpoint = belief.CategoricalEndpointField(
+            node_dim, edge_dim, condition_dim, hidden_dim, max_atoms
+        )
+        self.gate_condition = nn.Sequential(
+            nn.Linear(condition_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, node_dim),
+        )
+        self.node_change = nn.Sequential(
+            nn.LayerNorm(node_dim * 4),
+            nn.Linear(node_dim * 4, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+        edge_input = edge_dim * 2 + node_dim * 3
+        self.edge_change = nn.Sequential(
+            nn.LayerNorm(edge_input),
+            nn.Linear(edge_input, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, 1),
+        )
+
+    def forward(
+        self,
+        current_node: torch.Tensor,
+        current_edge: torch.Tensor,
+        source_node: torch.Tensor,
+        source_edge: torch.Tensor,
+        current_mask: torch.Tensor,
+        source_mask: torch.Tensor,
+        birth_rank: torch.Tensor,
+        time: torch.Tensor,
+        condition: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        endpoint_node, endpoint_edge = self.endpoint(
+            current_node,
+            current_edge,
+            source_node,
+            source_edge,
+            current_mask,
+            source_mask,
+            birth_rank,
+            time,
+            condition,
+        )
+        birth = self.endpoint.birth_rank(birth_rank)
+        context = self.gate_condition(condition)[:, None, :].expand_as(source_node)
+        node_input = torch.cat(
+            [source_node, endpoint_node, birth, context], dim=-1
+        )
+        node_change_logits = self.node_change(node_input).squeeze(-1)
+        source_left = source_node[:, :, None, :]
+        source_right = source_node[:, None, :, :]
+        endpoint_left = endpoint_node[:, :, None, :]
+        endpoint_right = endpoint_node[:, None, :, :]
+        edge_context = context[:, :, None, :] + context[:, None, :, :]
+        edge_input = torch.cat(
+            [
+                source_edge,
+                endpoint_edge,
+                source_left + source_right,
+                endpoint_left + endpoint_right,
+                edge_context,
+            ],
+            dim=-1,
+        )
+        edge_change_logits = self.edge_change(edge_input).squeeze(-1)
+        edge_change_logits = 0.5 * (
+            edge_change_logits + edge_change_logits.transpose(1, 2)
+        )
+        return endpoint_node, endpoint_edge, node_change_logits, edge_change_logits
+
+
 class HierarchicalVQGraphFlow(nn.Module):
     def __init__(
         self,
@@ -117,8 +211,10 @@ class HierarchicalVQGraphFlow(nn.Module):
         motif_codebook_size: int,
         hidden_dim: int,
         max_atoms: int,
+        source_anchored: bool = False,
     ) -> None:
         super().__init__()
+        self.source_anchored = bool(source_anchored)
         self.constraint_codebook_size = int(constraint_codebook_size)
         self.motif_codebook_size = int(motif_codebook_size)
         global_input = node_dim + edge_dim + condition_dim
@@ -153,7 +249,12 @@ class HierarchicalVQGraphFlow(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, motif_codebook_size),
         )
-        self.decoder = belief.CategoricalEndpointField(
+        decoder_class = (
+            SourceAnchoredEndpointField
+            if self.source_anchored
+            else belief.CategoricalEndpointField
+        )
+        self.decoder = decoder_class(
             node_dim,
             edge_dim,
             condition_dim + constraint_code_dim + motif_code_dim,
@@ -260,7 +361,7 @@ class HierarchicalVQGraphFlow(nn.Module):
         condition: torch.Tensor,
         constraint_code: torch.Tensor,
         motif_code: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor]:
+    ) -> tuple[torch.Tensor, ...]:
         combined = torch.cat([condition, constraint_code, motif_code], dim=-1)
         time = torch.zeros(source_node.shape[0], device=source_node.device, dtype=source_node.dtype)
         return self.decoder(
@@ -291,6 +392,55 @@ def different_indices(index: torch.Tensor, size: int) -> torch.Tensor:
     return torch.where(rolled.eq(index), (index + 1) % int(size), rolled)
 
 
+def change_targets(
+    source: Mapping[str, torch.Tensor], target: Mapping[str, torch.Tensor]
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    node_changed = torch.zeros_like(source["atomic_number"], dtype=torch.bool)
+    for key in vq.NODE_FIELDS:
+        node_changed |= source[key].ne(target[key])
+    # Blank positions are important negative examples for spontaneous births.
+    node_eligible = torch.ones_like(node_changed, dtype=torch.bool)
+    edge_changed = torch.zeros_like(source["bond"], dtype=torch.bool)
+    for key in vq.EDGE_FIELDS:
+        edge_changed |= source[key].ne(target[key])
+    nodes = source["atomic_number"].shape[1]
+    upper = torch.triu(
+        torch.ones(nodes, nodes, device=node_changed.device, dtype=torch.bool),
+        diagonal=1,
+    )
+    union_node = source["node_mask"].bool() | target["node_mask"].bool()
+    edge_eligible = upper.unsqueeze(0) & union_node[:, :, None] & union_node[:, None, :]
+    return node_changed, node_eligible, edge_changed, edge_eligible
+
+
+def masked_binary_loss(
+    logits: torch.Tensor, target: torch.Tensor, eligible: torch.Tensor
+) -> torch.Tensor:
+    if not bool(eligible.any()):
+        return logits.sum() * 0.0
+    selected_target = target[eligible].float()
+    positives = selected_target.sum().clamp_min(1.0)
+    negatives = (1.0 - selected_target).sum().clamp_min(1.0)
+    positive_weight = torch.sqrt(negatives / positives).clamp(1.0, 10.0)
+    return F.binary_cross_entropy_with_logits(
+        logits[eligible], selected_target, pos_weight=positive_weight
+    )
+
+
+def edit_gate_losses(
+    decoded: tuple[torch.Tensor, ...],
+    node_target: torch.Tensor,
+    node_eligible: torch.Tensor,
+    edge_target: torch.Tensor,
+    edge_eligible: torch.Tensor,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    node_gate, edge_gate = decoded[2], decoded[3]
+    return (
+        masked_binary_loss(node_gate, node_target, node_eligible),
+        masked_binary_loss(edge_gate, edge_target, edge_eligible),
+    )
+
+
 def train_flow(
     flow: HierarchicalVQGraphFlow,
     representation,
@@ -319,6 +469,9 @@ def train_flow(
             source = base.move_graph_batch(collated["source"], device)
             target = base.move_graph_batch(collated["target"], device)
             condition = collated["condition"].to(device)
+            node_target, node_eligible, edge_target, edge_eligible = change_targets(
+                source, target
+            )
             optimizer.zero_grad(set_to_none=True)
             with torch.no_grad(), torch.autocast(
                 device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16
@@ -351,7 +504,7 @@ def train_flow(
                     source_node, source["node_mask"], condition, constraint_code
                 )
                 birth_rank = belief.source_birth_ranks(source["node_mask"])
-                endpoint_node, endpoint_edge = flow.decode_endpoint(
+                decoded = flow.decode_endpoint(
                     source_node,
                     source_edge,
                     source["node_mask"],
@@ -360,15 +513,30 @@ def train_flow(
                     constraint_code,
                     motif_code,
                 )
+                endpoint_node, endpoint_edge = decoded[:2]
                 logits = representation.decode(endpoint_node, endpoint_edge)
                 endpoint_loss, parts = graph.reconstruction_loss(
                     logits, target, endpoint_node, geometry_weight=0.0
+                )
+                if flow.source_anchored:
+                    node_gate_loss, edge_gate_loss = edit_gate_losses(
+                        decoded,
+                        node_target,
+                        node_eligible,
+                        edge_target,
+                        edge_eligible,
+                    )
+                else:
+                    node_gate_loss = endpoint_loss * 0.0
+                    edge_gate_loss = endpoint_loss * 0.0
+                structured_loss = endpoint_loss + float(args.edit_gate_loss_weight) * (
+                    node_gate_loss + edge_gate_loss
                 )
 
                 wrong_constraint = flow.constraint_codebook(
                     different_indices(constraint_index, flow.constraint_codebook_size)
                 ).detach()
-                wrong_node, wrong_edge = flow.decode_endpoint(
+                wrong_constraint_decoded = flow.decode_endpoint(
                     source_node,
                     source_edge,
                     source["node_mask"],
@@ -377,16 +545,28 @@ def train_flow(
                     wrong_constraint,
                     motif_code,
                 )
+                wrong_node, wrong_edge = wrong_constraint_decoded[:2]
                 wrong_constraint_loss, _ = graph.reconstruction_loss(
                     representation.decode(wrong_node, wrong_edge),
                     target,
                     wrong_node,
                     geometry_weight=0.0,
                 )
+                if flow.source_anchored:
+                    wrong_node_gate_loss, wrong_edge_gate_loss = edit_gate_losses(
+                        wrong_constraint_decoded,
+                        node_target,
+                        node_eligible,
+                        edge_target,
+                        edge_eligible,
+                    )
+                    wrong_constraint_loss = wrong_constraint_loss + float(
+                        args.edit_gate_loss_weight
+                    ) * (wrong_node_gate_loss + wrong_edge_gate_loss)
                 wrong_motif = flow.motif_codebook(
                     different_indices(motif_index, flow.motif_codebook_size)
                 ).detach()
-                wrong_node, wrong_edge = flow.decode_endpoint(
+                wrong_motif_decoded = flow.decode_endpoint(
                     source_node,
                     source_edge,
                     source["node_mask"],
@@ -395,17 +575,31 @@ def train_flow(
                     constraint_code,
                     wrong_motif,
                 )
+                wrong_node, wrong_edge = wrong_motif_decoded[:2]
                 wrong_motif_loss, _ = graph.reconstruction_loss(
                     representation.decode(wrong_node, wrong_edge),
                     target,
                     wrong_node,
                     geometry_weight=0.0,
                 )
+                if flow.source_anchored:
+                    wrong_node_gate_loss, wrong_edge_gate_loss = edit_gate_losses(
+                        wrong_motif_decoded,
+                        node_target,
+                        node_eligible,
+                        edge_target,
+                        edge_eligible,
+                    )
+                    wrong_motif_loss = wrong_motif_loss + float(
+                        args.edit_gate_loss_weight
+                    ) * (wrong_node_gate_loss + wrong_edge_gate_loss)
                 constraint_contrastive = F.relu(
-                    float(args.contrastive_margin) + endpoint_loss - wrong_constraint_loss
+                    float(args.contrastive_margin)
+                    + structured_loss
+                    - wrong_constraint_loss
                 )
                 motif_contrastive = F.relu(
-                    float(args.contrastive_margin) + endpoint_loss - wrong_motif_loss
+                    float(args.contrastive_margin) + structured_loss - wrong_motif_loss
                 )
                 constraint_prior_loss = F.cross_entropy(
                     constraint_prior, constraint_index.detach()
@@ -420,7 +614,7 @@ def train_flow(
                     motif_posterior, motif_raw, float(args.commitment_weight)
                 )
                 loss = (
-                    endpoint_loss
+                    structured_loss
                     + float(args.prior_loss_weight)
                     * (constraint_prior_loss + motif_prior_loss)
                     + float(args.vq_loss_weight)
@@ -438,6 +632,14 @@ def train_flow(
             totals["motif_prior_loss"] += float(motif_prior_loss.detach())
             totals["constraint_vq_loss"] += float(constraint_vq_loss.detach())
             totals["motif_vq_loss"] += float(motif_vq_loss.detach())
+            totals["node_gate_loss"] += float(node_gate_loss.detach())
+            totals["edge_gate_loss"] += float(edge_gate_loss.detach())
+            totals["node_change_rate"] += float(
+                node_target[node_eligible].float().mean()
+            )
+            totals["edge_change_rate"] += float(
+                edge_target[edge_eligible].float().mean()
+            )
             totals["constraint_contrastive_loss"] += float(constraint_contrastive.detach())
             totals["motif_contrastive_loss"] += float(motif_contrastive.detach())
             constraint_usage.update(
@@ -486,7 +688,7 @@ def sample_from_source(
     temperature: float,
     device: torch.device,
     seed: int,
-) -> list[tuple[str | None, int, int, int]]:
+) -> list[tuple[str | None, int, int, int, int, int]]:
     """Sample two latent tokens without a target graph or property oracle."""
     if not active_constraint_codes or not active_motif_codes:
         raise ValueError("Both train-used code supports are required")
@@ -497,7 +699,7 @@ def sample_from_source(
         active_constraint_codes, device=device, dtype=torch.long
     )
     motif_support = torch.as_tensor(active_motif_codes, device=device, dtype=torch.long)
-    outputs: list[tuple[str | None, int, int, int]] = []
+    outputs: list[tuple[str | None, int, int, int, int, int]] = []
     flow.eval()
     for start in range(0, int(attempts), int(batch_size)):
         count = min(int(batch_size), int(attempts) - start)
@@ -523,7 +725,7 @@ def sample_from_source(
         )
         motif_code = flow.motif_codebook(motif_index)
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
-            endpoint_node, endpoint_edge = flow.decode_endpoint(
+            decoded = flow.decode_endpoint(
                 source_node,
                 source_edge,
                 source["node_mask"],
@@ -532,12 +734,63 @@ def sample_from_source(
                 constraint_code,
                 motif_code,
             )
+            endpoint_node, endpoint_edge = decoded[:2]
             logits = representation.decode(endpoint_node, endpoint_edge)
-        prediction = graph.predictions_from_logits(logits)
-        atomic = prediction["atomic_number"] > 0
-        active_pair = atomic[:, :, None] & atomic[:, None, :]
-        prediction["bond"][~active_pair] = graph.BOND_NONE
-        prediction["bond_stereo"][~active_pair] = 0
+        if flow.source_anchored:
+            result = {
+                key: value.clone() if isinstance(value, torch.Tensor) else value
+                for key, value in source.items()
+            }
+            candidate_nodes = {
+                key: logits[key].argmax(dim=-1) for key in vq.NODE_FIELDS
+            }
+            node_eligible = source["node_mask"].bool() | candidate_nodes[
+                "atomic_number"
+            ].gt(0)
+            node_edit = decoded[2].gt(0) & node_eligible
+            for key in vq.NODE_FIELDS:
+                result[key] = torch.where(node_edit, candidate_nodes[key], source[key])
+            result = belief.enforce_categorical_consistency(result)
+
+            nodes = source["node_mask"].shape[1]
+            upper = torch.triu(
+                torch.ones(nodes, nodes, device=device, dtype=torch.bool), diagonal=1
+            )
+            candidate_edges: dict[str, torch.Tensor] = {}
+            for key in vq.EDGE_FIELDS:
+                candidate = logits[key].argmax(dim=-1)
+                candidate = torch.where(
+                    upper.unsqueeze(0), candidate, torch.zeros_like(candidate)
+                )
+                candidate_edges[key] = candidate + candidate.transpose(1, 2)
+            active = result["node_mask"].bool()
+            active_pair = active[:, :, None] & active[:, None, :]
+            edge_eligible = active_pair & (
+                source["bond"].gt(graph.BOND_NONE)
+                | candidate_edges["bond"].gt(graph.BOND_NONE)
+            )
+            edge_edit_upper = decoded[3].gt(0) & edge_eligible & upper.unsqueeze(0)
+            edge_edit = edge_edit_upper | edge_edit_upper.transpose(1, 2)
+            for key in vq.EDGE_FIELDS:
+                result[key] = torch.where(
+                    edge_edit, candidate_edges[key], result[key]
+                )
+            result = belief.enforce_categorical_consistency(result)
+            prediction = {
+                key: result[key].detach().cpu().numpy()
+                for key in (*vq.NODE_FIELDS, *vq.EDGE_FIELDS)
+            }
+            atomic = prediction["atomic_number"] > 0
+            node_edit_count = node_edit.sum(dim=1).detach().cpu().tolist()
+            edge_edit_count = edge_edit_upper.sum(dim=(1, 2)).detach().cpu().tolist()
+        else:
+            prediction = graph.predictions_from_logits(logits)
+            atomic = prediction["atomic_number"] > 0
+            active_pair = atomic[:, :, None] & atomic[:, None, :]
+            prediction["bond"][~active_pair] = graph.BOND_NONE
+            prediction["bond_stereo"][~active_pair] = 0
+            node_edit_count = [0] * count
+            edge_edit_count = [0] * count
         for index in range(count):
             smiles, _ = graph.graph_to_smiles(prediction, index)
             outputs.append(
@@ -546,6 +799,8 @@ def sample_from_source(
                     int(atomic[index].sum()),
                     int(constraint_index[index].item()),
                     int(motif_index[index].item()),
+                    int(node_edit_count[index]),
+                    int(edge_edit_count[index]),
                 )
             )
     if len(outputs) != int(attempts):
@@ -584,9 +839,14 @@ def evaluate(
             or pair.row.get("sample_id", "")
             or f"validation_{pair_index:04d}"
         )
-        for rank, (smiles, predicted_count, constraint_index, motif_index) in enumerate(
-            generated, start=1
-        ):
+        for rank, (
+            smiles,
+            predicted_count,
+            constraint_index,
+            motif_index,
+            node_edit_count,
+            edge_edit_count,
+        ) in enumerate(generated, start=1):
             canonical = graph.canonical_smiles(smiles or "")
             valid = bool(canonical)
             source_tanimoto = graph.morgan_tanimoto(pair.source_smiles, canonical) if valid else None
@@ -603,6 +863,8 @@ def evaluate(
                     "task": pair.task,
                     "constraint_code": int(constraint_index),
                     "motif_code": int(motif_index),
+                    "node_edit_count": int(node_edit_count),
+                    "edge_edit_count": int(edge_edit_count),
                     "source_smiles": pair.source_smiles,
                     "target_smiles": pair.target_smiles,
                     "generated_smiles": canonical or "",
@@ -630,11 +892,22 @@ def evaluate(
     metrics["sampled_code_pairs"] = len(
         {(int(row["constraint_code"]), int(row["motif_code"])) for row in candidate_rows}
     )
+    metrics["mean_node_edits"] = float(
+        np.mean([int(row["node_edit_count"]) for row in candidate_rows])
+    )
+    metrics["mean_edge_edits"] = float(
+        np.mean([int(row["edge_edit_count"]) for row in candidate_rows])
+    )
+    metrics["source_copy_rate"] = sum(
+        str(row["generated_smiles"]) == graph.canonical_smiles(str(row["source_smiles"]))
+        for row in candidate_rows
+    ) / max(1, len(candidate_rows))
     return candidate_rows, metrics
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    protocol = SOURCE_ANCHORED_PROTOCOL if args.source_anchored else PROTOCOL
     if int(args.num_attempts) != 20:
         raise ValueError("The protocol requires exactly 20 raw attempts per condition")
     base.seed_everything(int(args.seed))
@@ -684,6 +957,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         motif_codebook_size=int(args.motif_codebook_size),
         hidden_dim=int(args.hidden_dim),
         max_atoms=int(config["max_atoms"]),
+        source_anchored=bool(args.source_anchored),
     ).to(device)
     history, constraint_usage, motif_usage = train_flow(
         flow, representation, train_pairs, args, device
@@ -735,7 +1009,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     train_sources = {pair.source_smiles for pair in train_pairs}
     train_pair_keys = {(pair.source_smiles, pair.target_smiles) for pair in train_pairs}
     manifest = {
-        "protocol": PROTOCOL,
+        "protocol": protocol,
         "seed": int(args.seed),
         "device": str(device),
         "representation_protocol": representation_summary.get("protocol"),
@@ -771,6 +1045,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "constraint_conditioned_motif_prior": True,
         "separate_token_contrastive_reconstruction": True,
         "deterministic_category_decode_given_tokens": True,
+        "source_anchored_residual_decoder": bool(args.source_anchored),
+        "learned_atom_and_bond_edit_blocks": bool(args.source_anchored),
+        "deterministic_edit_gates": bool(args.source_anchored),
+        "edit_gate_loss_weight": float(args.edit_gate_loss_weight),
+        "posthoc_source_copy_heuristic": False,
         "independent_atom_or_bond_sampling": False,
         "candidate_library": False,
         "selector": False,
@@ -780,10 +1059,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         "exact_raw_attempts_per_condition": 20,
         "source_target_mcs_alignment_training_only": True,
     }
-    checkpoint_path = args.output_dir / "hierarchical_vq_motif_graph_flow.pt"
+    checkpoint_name = (
+        "source_anchored_hierarchical_vq_graph_flow.pt"
+        if args.source_anchored
+        else "hierarchical_vq_motif_graph_flow.pt"
+    )
+    checkpoint_path = args.output_dir / checkpoint_name
     torch.save(
         {
-            "stage": PROTOCOL,
+            "stage": protocol,
             "model_state": flow.state_dict(),
             "model_config": {
                 "node_dim": int(config["node_dim"]),
@@ -795,6 +1079,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "motif_codebook_size": int(args.motif_codebook_size),
                 "hidden_dim": int(args.hidden_dim),
                 "max_atoms": int(config["max_atoms"]),
+                "source_anchored": bool(args.source_anchored),
             },
             "active_constraint_codes": active_constraint_codes,
             "active_motif_codes": active_motif_codes,
@@ -808,16 +1093,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
     summary = {
-        "protocol": PROTOCOL,
+        "protocol": protocol,
         "checkpoint": str(checkpoint_path),
         "manifest": manifest,
         "training": history,
         "evaluation": metrics,
         "gate": {"passed": not failures, "checks": checks, "failures": failures},
         "next_stage": (
-            "expand_hierarchical_vq_signal"
+            (
+                "expand_source_anchored_hierarchical_vq_signal"
+                if args.source_anchored
+                else "expand_hierarchical_vq_signal"
+            )
             if not failures
-            else "diagnose_hierarchical_capacity_or_validity"
+            else "diagnose_source_anchor_support_or_validity"
         ),
     }
     (args.output_dir / "summary.json").write_text(
