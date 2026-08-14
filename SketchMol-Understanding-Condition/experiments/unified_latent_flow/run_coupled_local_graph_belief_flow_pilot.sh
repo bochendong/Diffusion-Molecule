@@ -39,7 +39,7 @@ exec "$PYTHON_BIN" "$SCRIPT_DIR/coupled_local_graph_belief_flow.py" \
   --output-dir "$OUTPUT_DIR" \
   --train-limit "${SUCC_COUPLED_BELIEF_TRAIN_LIMIT:-1500}" \
   --validation-limit "${SUCC_COUPLED_BELIEF_VALIDATION_LIMIT:-12}" \
-  --property-counts 2 \
+  --property-counts "${SUCC_COUPLED_BELIEF_PROPERTY_COUNTS:-2}" \
   --epochs "${SUCC_COUPLED_BELIEF_EPOCHS:-8}" \
   --batch-size "${SUCC_COUPLED_BELIEF_BATCH_SIZE:-8}" \
   --hidden-dim "${SUCC_COUPLED_BELIEF_HIDDEN_DIM:-256}" \

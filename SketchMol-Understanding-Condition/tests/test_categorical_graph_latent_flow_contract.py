@@ -125,7 +125,7 @@ def test_coupled_local_runner_is_small_2p_exact_n20_and_mig() -> None:
     submit_source = COUPLED_SUBMIT_PATH.read_text(encoding="utf-8")
     assert '--train-limit "${SUCC_COUPLED_BELIEF_TRAIN_LIMIT:-1500}"' in run_source
     assert '--validation-limit "${SUCC_COUPLED_BELIEF_VALIDATION_LIMIT:-12}"' in run_source
-    assert "--property-counts 2" in run_source
+    assert '--property-counts "${SUCC_COUPLED_BELIEF_PROPERTY_COUNTS:-2}"' in run_source
     assert "--num-attempts 20" in run_source
     assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
     assert "00:20:00" in submit_source

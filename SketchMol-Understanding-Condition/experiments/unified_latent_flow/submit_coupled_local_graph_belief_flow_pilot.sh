@@ -8,6 +8,7 @@ SHARED_REPO_DIR="${SUCC_SHARED_REPO_DIR:-/scratch/bdong/projects/Diffusion-Molec
 SEED="${SUCC_COUPLED_BELIEF_SEED:-1733}"
 LOG_DIR="${SUCC_COUPLED_BELIEF_LOG_DIR:-$SHARED_REPO_DIR/SketchMol-Understanding-Condition/logs/coupled_local_graph_belief_flow_v4}"
 MAIL_USER="${SUCC_COUPLED_BELIEF_MAIL_USER:-dongbochen1218@gmail.com}"
+OUTPUT_DIR="${SUCC_COUPLED_BELIEF_OUTPUT_DIR:-$SHARED_REPO_DIR/SketchMol-Understanding-Condition/outputs/coupled_local_graph_belief_flow_v4/seed_${SEED}}"
 
 mkdir -p "$LOG_DIR"
 
@@ -27,4 +28,4 @@ job_id="$(printf '%s\n' "$submission" | awk '{print $NF}')"
 echo "$submission"
 echo "coupled_local_graph_belief_job=$job_id"
 echo "log=$LOG_DIR/uca-coupled-v4-s${SEED}-${job_id}.log"
-echo "summary=$SHARED_REPO_DIR/SketchMol-Understanding-Condition/outputs/coupled_local_graph_belief_flow_v4/seed_${SEED}/summary.json"
+echo "summary=$OUTPUT_DIR/summary.json"
