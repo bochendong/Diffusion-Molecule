@@ -386,3 +386,21 @@ identical initialization for every shared parameter.
 ```bash
 bash experiments/unified_latent_flow/submit_property_latent_slots_motif_graph_flow_pilot.sh
 ```
+
+## Stage B14: B11-preserving residual property slots
+
+B13 confirmed that compositional property slots help the hard regime: 3p
+strict doubled from 16.7% to 33.3%, 3p validity reached 92.5%, and 3p atom-count
+MAE fell to 2.42.  Its additive raw-slot baseline nevertheless reduced 2p
+strict from B11's 100% to 83.3%.
+
+B14 keeps the exact B11 mean-pooled condition as the main path.  Independently
+encoded active-property slots and the active-property count can only enter as
+zero-initialized residuals.  Thus the initial condition and every shared model
+parameter are exactly B11-equivalent, while training can learn a permutation-
+invariant compositional correction for 3p.  No property-count branch, candidate
+selector, target/oracle access, or graph-decoder change is introduced.
+
+```bash
+bash experiments/unified_latent_flow/submit_residual_property_slots_motif_graph_flow_pilot.sh
+```
