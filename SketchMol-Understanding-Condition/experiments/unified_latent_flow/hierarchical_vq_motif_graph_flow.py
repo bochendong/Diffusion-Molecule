@@ -36,6 +36,7 @@ CONNECTED_REGION_PROTOCOL = "connected_region_hierarchical_vq_graph_flow_pilot_v
 CATEGORICAL_DELTA_PROTOCOL = "categorical_delta_hierarchical_vq_graph_flow_pilot_v9"
 VALENCE_BUDGET_PROTOCOL = "valence_budget_hierarchical_vq_graph_flow_pilot_v10"
 MOTIF_ATTACHMENT_PROTOCOL = "motif_attachment_hierarchical_vq_graph_flow_pilot_v11"
+CONSTRAINT_ATTENTION_PROTOCOL = "constraint_attention_motif_graph_flow_pilot_v12"
 
 NODE_KEEP, NODE_DELETE, NODE_BIRTH, NODE_REPLACE = range(4)
 EDGE_KEEP, EDGE_DELETE, EDGE_SET = range(3)
@@ -103,6 +104,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--categorical-delta", action="store_true")
     parser.add_argument("--valence-budget", action="store_true")
     parser.add_argument("--motif-attachment", action="store_true")
+    parser.add_argument("--condition-attention", action="store_true")
+    parser.add_argument("--condition-attention-heads", type=int, default=4)
     parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
     parser.add_argument("--delta-loss-weight", type=float, default=0.50)
     parser.add_argument("--valence-budget-loss-weight", type=float, default=0.25)
@@ -122,6 +125,51 @@ def perplexity(usage: Counter[int]) -> float:
     probability = np.asarray(list(usage.values()), dtype=np.float64)
     probability = probability / max(1.0, probability.sum())
     return float(np.exp(-(probability * np.log(probability + 1e-12)).sum()))
+
+
+def condition_tokens(row: Mapping[str, str], condition_dim: int) -> np.ndarray:
+    """Keep the sanitized request as tokens instead of destroying it by averaging."""
+    safe = base.sanitized_condition_row(row)
+    fallback = unified.fallback_condition_features(safe, int(condition_dim))
+    mode = unified.mode_condition_token(unified.EDIT_MODE, int(condition_dim))
+    program = unified.property_program_tokens(safe, int(condition_dim))
+    return np.concatenate([fallback, mode, program], axis=0).astype(np.float32)
+
+
+class SourceConstraintCrossAttention(nn.Module):
+    """Route individual constraint tokens through source atom queries."""
+
+    def __init__(self, node_dim: int, condition_dim: int, heads: int) -> None:
+        super().__init__()
+        valid_heads = max(
+            value for value in range(1, max(1, int(heads)) + 1) if int(node_dim) % value == 0
+        )
+        self.condition_projection = nn.Linear(condition_dim, node_dim)
+        self.query_norm = nn.LayerNorm(node_dim)
+        self.cross_attention = nn.MultiheadAttention(
+            node_dim, valid_heads, batch_first=True
+        )
+        self.output = nn.Sequential(
+            nn.LayerNorm(node_dim + condition_dim),
+            nn.Linear(node_dim + condition_dim, condition_dim),
+            nn.SiLU(),
+        )
+
+    def forward(
+        self,
+        source_node: torch.Tensor,
+        source_mask: torch.Tensor,
+        tokens: torch.Tensor,
+    ) -> torch.Tensor:
+        memory = self.condition_projection(tokens)
+        attended, _ = self.cross_attention(
+            self.query_norm(source_node), memory, memory, need_weights=False
+        )
+        mask = source_mask.unsqueeze(-1).to(attended.dtype)
+        pooled = ((source_node + attended) * mask).sum(dim=1)
+        pooled = pooled / mask.sum(dim=1).clamp_min(1.0)
+        token_mean = tokens.mean(dim=1)
+        return self.output(torch.cat([pooled, token_mean], dim=-1))
 
 
 class SourceAnchoredEndpointField(nn.Module):
@@ -286,6 +334,8 @@ class HierarchicalVQGraphFlow(nn.Module):
         categorical_delta: bool = False,
         valence_budget: bool = False,
         motif_attachment: bool = False,
+        condition_attention: bool = False,
+        condition_attention_heads: int = 4,
     ) -> None:
         super().__init__()
         self.source_anchored = bool(source_anchored)
@@ -293,6 +343,7 @@ class HierarchicalVQGraphFlow(nn.Module):
         self.categorical_delta = bool(categorical_delta)
         self.valence_budget = bool(valence_budget)
         self.motif_attachment = bool(motif_attachment)
+        self.condition_attention = bool(condition_attention)
         if self.connected_region and not self.source_anchored:
             raise ValueError("Connected-region decoding requires source anchoring")
         if self.categorical_delta and not self.connected_region:
@@ -303,6 +354,13 @@ class HierarchicalVQGraphFlow(nn.Module):
             raise ValueError("Motif attachment requires valence-budget decoding")
         self.constraint_codebook_size = int(constraint_codebook_size)
         self.motif_codebook_size = int(motif_codebook_size)
+        self.condition_router = (
+            SourceConstraintCrossAttention(
+                node_dim, condition_dim, condition_attention_heads
+            )
+            if self.condition_attention
+            else None
+        )
         global_input = node_dim + edge_dim + condition_dim
         local_input = node_dim + edge_dim + condition_dim + constraint_code_dim
         self.constraint_posterior = nn.Sequential(
@@ -352,6 +410,20 @@ class HierarchicalVQGraphFlow(nn.Module):
     def source_pool(source_node: torch.Tensor, source_mask: torch.Tensor) -> torch.Tensor:
         total = (source_node * source_mask.unsqueeze(-1)).sum(dim=1)
         return total / source_mask.sum(dim=1, keepdim=True).clamp_min(1.0)
+
+    def route_condition(
+        self,
+        source_node: torch.Tensor,
+        source_mask: torch.Tensor,
+        condition: torch.Tensor,
+    ) -> torch.Tensor:
+        if condition.ndim == 2:
+            return condition
+        if condition.ndim != 3:
+            raise ValueError(f"Expected condition [B,D] or [B,L,D], got {condition.shape}")
+        if self.condition_router is None:
+            return condition.mean(dim=1)
+        return self.condition_router(source_node, source_mask, condition)
 
     @staticmethod
     def quantize(
@@ -1124,7 +1196,7 @@ def train_flow(
             collated = base.pair_collate(items)
             source = base.move_graph_batch(collated["source"], device)
             target = base.move_graph_batch(collated["target"], device)
-            condition = collated["condition"].to(device)
+            raw_condition = collated["condition"].to(device)
             node_target, node_eligible, edge_target, edge_eligible = change_targets(
                 source, target
             )
@@ -1147,6 +1219,9 @@ def train_flow(
                 source_node, source_edge = representation.encode(source)
                 target_node, target_edge = representation.encode(target)
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
+                condition = flow.route_condition(
+                    source_node, source["node_mask"], raw_condition
+                )
                 (
                     constraint_code,
                     constraint_posterior,
@@ -1407,10 +1482,13 @@ def sample_from_source(
         count = min(int(batch_size), int(attempts) - start)
         source = base.move_graph_batch(graph.collate([source_example] * count), device)
         condition_batch = torch.from_numpy(
-            np.repeat(condition[None, :], count, axis=0)
+            np.repeat(condition[None, ...], count, axis=0)
         ).to(device)
         with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16):
             source_node, source_edge = representation.encode(source)
+            condition_batch = flow.route_condition(
+                source_node, source["node_mask"], condition_batch
+            )
             constraint_logits = flow.constraint_prior_logits(
                 source_node, source["node_mask"], condition_batch
             )
@@ -1663,6 +1741,8 @@ def evaluate(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.condition_attention:
+        args.motif_attachment = True
     if args.motif_attachment:
         args.valence_budget = True
     if args.valence_budget:
@@ -1672,7 +1752,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.connected_region:
         args.source_anchored = True
     protocol = (
-        MOTIF_ATTACHMENT_PROTOCOL
+        CONSTRAINT_ATTENTION_PROTOCOL
+        if args.condition_attention
+        else MOTIF_ATTACHMENT_PROTOCOL
         if args.motif_attachment
         else VALENCE_BUDGET_PROTOCOL
         if args.valence_budget
@@ -1723,6 +1805,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     if len(train_pairs) < 32:
         raise ValueError(f"Need at least 32 train pairs, found {len(train_pairs)}")
+    if args.condition_attention:
+        for pair in [*train_pairs, *validation_pairs]:
+            pair.condition = condition_tokens(pair.row, int(args.condition_dim))
     flow = HierarchicalVQGraphFlow(
         node_dim=int(config["node_dim"]),
         edge_dim=int(config["edge_dim"]),
@@ -1738,6 +1823,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         categorical_delta=bool(args.categorical_delta),
         valence_budget=bool(args.valence_budget),
         motif_attachment=bool(args.motif_attachment),
+        condition_attention=bool(args.condition_attention),
+        condition_attention_heads=int(args.condition_attention_heads),
     ).to(device)
     history, constraint_usage, motif_usage = train_flow(
         flow, representation, train_pairs, args, device
@@ -1823,6 +1910,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "motif_posterior_train_only": True,
         "source_condition_constraint_prior": True,
         "constraint_conditioned_motif_prior": True,
+        "condition_token_pooling": "source_node_cross_attention"
+        if args.condition_attention
+        else "mean",
+        "condition_attention": bool(args.condition_attention),
+        "condition_attention_heads": int(args.condition_attention_heads),
         "separate_token_contrastive_reconstruction": True,
         "deterministic_category_decode_given_tokens": True,
         "source_anchored_residual_decoder": bool(args.source_anchored),
@@ -1907,6 +1999,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "categorical_delta": bool(args.categorical_delta),
                 "valence_budget": bool(args.valence_budget),
                 "motif_attachment": bool(args.motif_attachment),
+                "condition_attention": bool(args.condition_attention),
+                "condition_attention_heads": int(args.condition_attention_heads),
             },
             "active_constraint_codes": active_constraint_codes,
             "active_motif_codes": active_motif_codes,

@@ -347,3 +347,22 @@ any@20 >=65%, and 3p strict any@20 >=50%.
 ```bash
 bash experiments/unified_latent_flow/submit_motif_attachment_hierarchical_vq_graph_flow_pilot.sh
 ```
+
+## Stage B12: source-aware constraint-token attention
+
+B11 raised matched-pilot validity from 66.7% to 77.2% and strict any@20 from
+55.6% to 72.2%.  Its 2-property strict success reached 100%, while 3-property
+strict success fell to 16.7%.  The remaining question is therefore not whether
+the motif-attachment grammar works, but whether averaging the property program
+into one condition vector destroys the composition signal needed by 3p tasks.
+
+B12 is an isolated representation ablation.  It keeps the B11 decoder, losses,
+data, seed, training budget, and exact n=20 protocol unchanged.  Each source
+atom instead queries the fixed train/test-safe property-program tokens through
+multi-head cross-attention; the masked source responses are pooled only after
+that interaction and feed the same constraint prior, motif prior, and endpoint
+decoder.  Generation remains target- and oracle-blind.
+
+```bash
+bash experiments/unified_latent_flow/submit_constraint_attention_motif_graph_flow_pilot.sh
+```
