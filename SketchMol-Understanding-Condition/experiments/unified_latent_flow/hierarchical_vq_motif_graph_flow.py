@@ -46,6 +46,7 @@ PROPERTY_INTERACTION_LATENTS_PROTOCOL = (
 ATOM_STATE_VALENCE_GRAMMAR_PROTOCOL = (
     "atom_state_valence_grammar_motif_graph_flow_pilot_v16"
 )
+NODE_EDGE_STATE_GRAMMAR_PROTOCOL = "node_edge_state_grammar_motif_graph_flow_pilot_v17"
 
 NODE_KEEP, NODE_DELETE, NODE_BIRTH, NODE_REPLACE = range(4)
 EDGE_KEEP, EDGE_DELETE, EDGE_SET = range(3)
@@ -126,6 +127,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--residual-property-latent-slots", action="store_true")
     parser.add_argument("--property-interaction-latents", action="store_true")
     parser.add_argument("--atom-state-valence-grammar", action="store_true")
+    parser.add_argument("--node-edge-state-grammar", action="store_true")
+    parser.add_argument("--validation-selection-seed", type=int)
+    parser.add_argument("--validation-exclusion-seed", type=int)
     parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
     parser.add_argument("--delta-loss-weight", type=float, default=0.50)
     parser.add_argument("--valence-budget-loss-weight", type=float, default=0.25)
@@ -981,21 +985,74 @@ def build_train_atom_state_grammar(
     ordered = sorted(maximum_valence.items())
     states = np.asarray([state for state, _ in ordered], dtype=np.int64)
     capacities = np.asarray([capacity for _, capacity in ordered], dtype=np.int64)
+    state_to_index = {state: index for index, (state, _) in enumerate(ordered)}
+    coarse_states = np.asarray(
+        sorted({state[:3] for state, _ in ordered}), dtype=np.int64
+    )
+    coarse_to_index = {
+        tuple(state): index for index, state in enumerate(coarse_states.tolist())
+    }
+    state_to_coarse = np.asarray(
+        [coarse_to_index[tuple(state[:3])] for state in states.tolist()],
+        dtype=np.int64,
+    )
+    bond_support = np.zeros(
+        (len(states), len(states), len(BOND_VALENCE_UNITS)), dtype=np.bool_
+    )
+    coarse_bond_support = np.zeros(
+        (len(coarse_states), len(coarse_states), len(BOND_VALENCE_UNITS)),
+        dtype=np.bool_,
+    )
+    for pair in pairs:
+        for example in (pair.source, pair.target):
+            field_values = {
+                field: np.asarray(getattr(example, field), dtype=np.int64)
+                for field in ATOM_STATE_FIELDS
+            }
+            atom_states = [
+                tuple(int(field_values[field][position]) for field in ATOM_STATE_FIELDS)
+                for position in range(len(field_values["atomic_number"]))
+            ]
+            bond = np.asarray(example.bond, dtype=np.int64)
+            for left, right in np.argwhere(np.triu(bond > graph.BOND_NONE, k=1)).tolist():
+                bond_type = int(bond[left, right])
+                left_state = state_to_index[atom_states[left]]
+                right_state = state_to_index[atom_states[right]]
+                bond_support[left_state, right_state, bond_type] = True
+                bond_support[right_state, left_state, bond_type] = True
+                left_coarse = int(state_to_coarse[left_state])
+                right_coarse = int(state_to_coarse[right_state])
+                coarse_bond_support[left_coarse, right_coarse, bond_type] = True
+                coarse_bond_support[right_coarse, left_coarse, bond_type] = True
     payload = json.dumps(
         [list(state) + [int(capacity)] for state, capacity in ordered],
         separators=(",", ":"),
+    ).encode("utf-8")
+    bond_payload = json.dumps(
+        {
+            "full": np.argwhere(bond_support).tolist(),
+            "coarse_states": coarse_states.tolist(),
+            "coarse": np.argwhere(coarse_bond_support).tolist(),
+        },
+        separators=(",", ":"),
+        sort_keys=True,
     ).encode("utf-8")
     return {
         "fields": ATOM_STATE_FIELDS,
         "states": states,
         "capacities": capacities,
         "sha256": hashlib.sha256(payload).hexdigest(),
+        "coarse_states": coarse_states,
+        "state_to_coarse": state_to_coarse,
+        "bond_support": bond_support,
+        "coarse_bond_support": coarse_bond_support,
+        "bond_support_sha256": hashlib.sha256(bond_payload).hexdigest(),
     }
 
 
 def decode_train_supported_atom_states(
     logits: Mapping[str, torch.Tensor], grammar: Mapping[str, object]
-) -> tuple[dict[str, torch.Tensor], torch.Tensor]:
+) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
     """Jointly decode a legal atom state and its train-observed valence cap."""
     states = torch.as_tensor(
         np.asarray(grammar["states"]),
@@ -1020,7 +1077,7 @@ def decode_train_supported_atom_states(
     }
     for field_index, field in enumerate(ATOM_STATE_FIELDS):
         candidate_nodes[field] = selected_states[..., field_index]
-    return candidate_nodes, capacities[selected]
+    return candidate_nodes, capacities[selected], selected
 
 
 def source_atom_state_valence_caps(
@@ -1045,6 +1102,36 @@ def source_atom_state_valence_caps(
     current_valence = unit_table[source["bond"].long()].sum(dim=2)
     current_valence += 2 * source["explicit_hs"].long()
     return torch.where(matches.any(dim=-1), matched_capacity, current_valence)
+
+
+def source_atom_state_ids(
+    source: Mapping[str, torch.Tensor], grammar: Mapping[str, object]
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Return full and coarse train-support IDs for each source atom."""
+    device = source["atomic_number"].device
+    states = torch.as_tensor(
+        np.asarray(grammar["states"]), device=device, dtype=torch.long
+    )
+    source_states = torch.stack(
+        [source[field].long() for field in ATOM_STATE_FIELDS], dim=-1
+    )
+    full_matches = source_states.unsqueeze(-2).eq(states).all(dim=-1)
+    full_ids = full_matches.long().argmax(dim=-1)
+    full_ids = torch.where(
+        full_matches.any(dim=-1), full_ids, torch.full_like(full_ids, -1)
+    )
+    coarse_states = torch.as_tensor(
+        np.asarray(grammar["coarse_states"]), device=device, dtype=torch.long
+    )
+    source_coarse = source_states[..., :3]
+    coarse_matches = source_coarse.unsqueeze(-2).eq(coarse_states).all(dim=-1)
+    coarse_ids = coarse_matches.long().argmax(dim=-1)
+    coarse_ids = torch.where(
+        coarse_matches.any(dim=-1),
+        coarse_ids,
+        torch.full_like(coarse_ids, -1),
+    )
+    return full_ids, coarse_ids
 
 
 def decoder_auxiliary_losses(
@@ -1296,6 +1383,11 @@ def apply_motif_attachment_graph_delta(
     candidate_adjacency: torch.Tensor,
     candidate_valence_cap: torch.Tensor | None = None,
     source_valence_cap: torch.Tensor | None = None,
+    atom_state_grammar: Mapping[str, object] | None = None,
+    candidate_state_ids: torch.Tensor | None = None,
+    candidate_coarse_ids: torch.Tensor | None = None,
+    source_state_ids: torch.Tensor | None = None,
+    source_coarse_ids: torch.Tensor | None = None,
 ) -> tuple[dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
     """Generate one connected latent motif from a single source attachment atom."""
     result = {
@@ -1389,6 +1481,36 @@ def apply_motif_attachment_graph_delta(
         )
         budget = torch.minimum(budget, state_capacity)
 
+    selected_state_ids: torch.Tensor | None = None
+    selected_coarse_ids: torch.Tensor | None = None
+    full_bond_support: torch.Tensor | None = None
+    coarse_bond_support: torch.Tensor | None = None
+    if atom_state_grammar is not None:
+        required_ids = (
+            candidate_state_ids,
+            candidate_coarse_ids,
+            source_state_ids,
+            source_coarse_ids,
+        )
+        if any(value is None for value in required_ids):
+            raise ValueError("Node-edge grammar requires candidate and source state IDs")
+        selected_state_ids = torch.where(
+            preserved_anchor,
+            source_state_ids.detach().cpu().long(),
+            candidate_state_ids.detach().cpu().long(),
+        )
+        selected_coarse_ids = torch.where(
+            preserved_anchor,
+            source_coarse_ids.detach().cpu().long(),
+            candidate_coarse_ids.detach().cpu().long(),
+        )
+        full_bond_support = torch.as_tensor(
+            np.asarray(atom_state_grammar["bond_support"]), dtype=torch.bool
+        )
+        coarse_bond_support = torch.as_tensor(
+            np.asarray(atom_state_grammar["coarse_bond_support"]), dtype=torch.bool
+        )
+
     active = result["atomic_number"].gt(0)
     region_pair = region_cpu[:, :, None] & region_cpu[:, None, :]
     clear_pair = region_pair & upper_cpu.unsqueeze(0)
@@ -1407,9 +1529,27 @@ def apply_motif_attachment_graph_delta(
     def best_bond(
         batch_index: int, left: int, right: int
     ) -> tuple[float, int] | None:
+        supported: torch.Tensor | None = None
+        if full_bond_support is not None:
+            left_state = int(selected_state_ids[batch_index, left])
+            right_state = int(selected_state_ids[batch_index, right])
+            if left_state >= 0 and right_state >= 0:
+                full_supported = full_bond_support[left_state, right_state]
+                if bool(full_supported[1:].any()):
+                    supported = full_supported
+            if supported is None:
+                left_coarse = int(selected_coarse_ids[batch_index, left])
+                right_coarse = int(selected_coarse_ids[batch_index, right])
+                if left_coarse >= 0 and right_coarse >= 0:
+                    coarse_supported = coarse_bond_support[left_coarse, right_coarse]
+                    if bool(coarse_supported[1:].any()):
+                        supported = coarse_supported
+            if supported is None:
+                return None
         allowed = [
             bond
             for bond in range(1, len(BOND_VALENCE_UNITS))
+            if (supported is None or bool(supported[bond]))
             if BOND_VALENCE_UNITS[bond] <= int(remaining[batch_index, left])
             and BOND_VALENCE_UNITS[bond] <= int(remaining[batch_index, right])
         ]
@@ -1812,6 +1952,7 @@ def sample_from_source(
     device: torch.device,
     seed: int,
     atom_state_grammar: Mapping[str, object] | None = None,
+    node_edge_state_grammar: bool = False,
 ) -> list[tuple[str | None, int, int, int, int, int]]:
     """Sample two latent tokens without a target graph or property oracle."""
     if not active_constraint_codes or not active_motif_codes:
@@ -1870,13 +2011,27 @@ def sample_from_source(
             }
             candidate_valence_cap: torch.Tensor | None = None
             source_valence_cap: torch.Tensor | None = None
+            candidate_state_ids: torch.Tensor | None = None
+            candidate_coarse_ids: torch.Tensor | None = None
+            source_state_ids: torch.Tensor | None = None
+            source_coarse_ids: torch.Tensor | None = None
             if atom_state_grammar is not None:
-                candidate_nodes, candidate_valence_cap = (
+                candidate_nodes, candidate_valence_cap, candidate_state_ids = (
                     decode_train_supported_atom_states(logits, atom_state_grammar)
                 )
                 source_valence_cap = source_atom_state_valence_caps(
                     source, atom_state_grammar
                 )
+                if node_edge_state_grammar:
+                    state_to_coarse = torch.as_tensor(
+                        np.asarray(atom_state_grammar["state_to_coarse"]),
+                        device=device,
+                        dtype=torch.long,
+                    )
+                    candidate_coarse_ids = state_to_coarse[candidate_state_ids]
+                    source_state_ids, source_coarse_ids = source_atom_state_ids(
+                        source, atom_state_grammar
+                    )
             else:
                 candidate_nodes = {
                     key: logits[key].argmax(dim=-1) for key in vq.NODE_FIELDS
@@ -1933,6 +2088,13 @@ def sample_from_source(
                             candidate_edges["bond"].gt(graph.BOND_NONE),
                             candidate_valence_cap=candidate_valence_cap,
                             source_valence_cap=source_valence_cap,
+                            atom_state_grammar=atom_state_grammar
+                            if node_edge_state_grammar
+                            else None,
+                            candidate_state_ids=candidate_state_ids,
+                            candidate_coarse_ids=candidate_coarse_ids,
+                            source_state_ids=source_state_ids,
+                            source_coarse_ids=source_coarse_ids,
                         )
                     )
                 else:
@@ -2011,6 +2173,7 @@ def evaluate(
     args: argparse.Namespace,
     device: torch.device,
     atom_state_grammar: Mapping[str, object] | None = None,
+    node_edge_state_grammar: bool = False,
 ) -> tuple[list[dict[str, object]], dict[str, object]]:
     candidate_rows: list[dict[str, object]] = []
     for pair_index, pair in enumerate(pairs):
@@ -2027,6 +2190,7 @@ def evaluate(
             device=device,
             seed=int(args.seed) * 100000 + pair_index,
             atom_state_grammar=atom_state_grammar,
+            node_edge_state_grammar=node_edge_state_grammar,
         )
         source_copy_target = graph.morgan_tanimoto(pair.source_smiles, pair.target_smiles) or 0.0
         specs = base.task_specs(pair.row)
@@ -2103,6 +2267,8 @@ def evaluate(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.node_edge_state_grammar:
+        args.atom_state_valence_grammar = True
     if args.atom_state_valence_grammar:
         args.property_interaction_latents = True
     condition_variants = (
@@ -2132,7 +2298,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.connected_region:
         args.source_anchored = True
     protocol = (
-        ATOM_STATE_VALENCE_GRAMMAR_PROTOCOL
+        NODE_EDGE_STATE_GRAMMAR_PROTOCOL
+        if args.node_edge_state_grammar
+        else ATOM_STATE_VALENCE_GRAMMAR_PROTOCOL
         if args.atom_state_valence_grammar
         else PROPERTY_INTERACTION_LATENTS_PROTOCOL
         if args.property_interaction_latents
@@ -2163,6 +2331,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         args.representation_checkpoint, args.representation_summary, device
     )
     allowed_counts = base.parse_property_counts(str(args.property_counts))
+    historical_validation_pairs: list[object] = []
+    historical_validation_counts: dict[str, int] = {}
+    if args.validation_exclusion_seed is not None:
+        historical_validation_pairs, historical_validation_counts = base.build_pairs(
+            base.read_rows(args.validation_csv),
+            max_atoms=int(config["max_atoms"]),
+            fingerprint_bits=int(args.fingerprint_bits),
+            condition_dim=int(args.condition_dim),
+            allowed_counts=allowed_counts,
+            timeout=int(args.mcs_timeout),
+            min_common_fraction=float(args.min_common_fraction),
+            limit=int(args.validation_limit),
+            seed=int(args.validation_exclusion_seed),
+        )
+    historical_validation_sources = {
+        pair.source_smiles for pair in historical_validation_pairs
+    }
+    historical_validation_pair_keys = {
+        (pair.source_smiles, pair.target_smiles) for pair in historical_validation_pairs
+    }
+    validation_selection_seed = (
+        int(args.validation_selection_seed)
+        if args.validation_selection_seed is not None
+        else int(args.seed) + 1
+    )
     validation_pairs, validation_counts = base.build_pairs(
         base.read_rows(args.validation_csv),
         max_atoms=int(config["max_atoms"]),
@@ -2172,7 +2365,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout=int(args.mcs_timeout),
         min_common_fraction=float(args.min_common_fraction),
         limit=int(args.validation_limit),
-        seed=int(args.seed) + 1,
+        seed=validation_selection_seed,
+        forbidden_sources=historical_validation_sources,
+        forbidden_pairs=historical_validation_pair_keys,
     )
     if not validation_pairs:
         raise ValueError("No validation edit pairs survived the fixed filters")
@@ -2237,6 +2432,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     active_constraint_codes = sorted(constraint_usage)
     active_motif_codes = sorted(motif_usage)
+    matched_b16_candidate_rows: list[dict[str, object]] | None = None
+    matched_b16_metrics: dict[str, object] | None = None
+    if args.node_edge_state_grammar:
+        matched_b16_candidate_rows, matched_b16_metrics = evaluate(
+            flow,
+            representation,
+            validation_pairs,
+            active_constraint_codes,
+            active_motif_codes,
+            args,
+            device,
+            atom_state_grammar=atom_state_grammar,
+            node_edge_state_grammar=False,
+        )
     candidate_rows, metrics = evaluate(
         flow,
         representation,
@@ -2246,6 +2455,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         args,
         device,
         atom_state_grammar=atom_state_grammar,
+        node_edge_state_grammar=bool(args.node_edge_state_grammar),
     )
     checks = {
         "exact_attempts": {"value": metrics["attempted_per_condition"], "threshold": 20},
@@ -2271,6 +2481,26 @@ def main(argv: Sequence[str] | None = None) -> int:
             "threshold": float(args.gate_strict_any20),
         },
     }
+    if matched_b16_metrics is not None:
+        checks["matched_b16_validity_delta"] = {
+            "value": float(metrics["validity"])
+            - float(matched_b16_metrics["validity"]),
+            "threshold": 0.0,
+        }
+        checks["matched_b16_strict_any20_delta"] = {
+            "value": float(metrics["strict_any20"])
+            - float(matched_b16_metrics["strict_any20"]),
+            "threshold": 0.0,
+        }
+        checks["matched_b16_3p_strict_any20_delta"] = {
+            "value": float(metrics["by_property_count"].get("3", {}).get("strict_any20", 0.0))
+            - float(
+                matched_b16_metrics["by_property_count"]
+                .get("3", {})
+                .get("strict_any20", 0.0)
+            ),
+            "threshold": 0.0,
+        }
     failures = [
         name
         for name, item in checks.items()
@@ -2302,6 +2532,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         "selected_validation_pairs": len(validation_pairs),
         "train_filter_counts": train_counts,
         "validation_filter_counts": validation_counts,
+        "validation_selection_seed": validation_selection_seed,
+        "validation_exclusion_seed": args.validation_exclusion_seed,
+        "historical_validation_filter_counts": historical_validation_counts,
+        "historical_validation_pairs": len(historical_validation_pairs),
+        "historical_validation_source_overlap": len(
+            validation_sources & historical_validation_sources
+        ),
+        "historical_validation_pair_overlap": len(
+            validation_pair_keys & historical_validation_pair_keys
+        ),
         "train_validation_source_overlap": len(train_sources & validation_sources),
         "train_validation_pair_overlap": len(train_pair_keys & validation_pair_keys),
         "property_counts": sorted(allowed_counts),
@@ -2334,6 +2574,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         ),
         "property_interaction_latents": bool(args.property_interaction_latents),
         "atom_state_valence_grammar": bool(args.atom_state_valence_grammar),
+        "node_edge_state_grammar": bool(args.node_edge_state_grammar),
         "joint_atom_state_fields": list(ATOM_STATE_FIELDS)
         if args.atom_state_valence_grammar
         else [],
@@ -2351,6 +2592,30 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.atom_state_valence_grammar
         ),
         "training_dynamics_exactly_b15": bool(args.atom_state_valence_grammar),
+        "full_node_pair_bond_support_size": int(
+            np.asarray(atom_state_grammar["bond_support"]).sum()
+            if atom_state_grammar is not None and args.node_edge_state_grammar
+            else 0
+        ),
+        "coarse_node_pair_bond_support_size": int(
+            np.asarray(atom_state_grammar["coarse_bond_support"]).sum()
+            if atom_state_grammar is not None and args.node_edge_state_grammar
+            else 0
+        ),
+        "node_pair_bond_support_sha256": str(
+            atom_state_grammar["bond_support_sha256"]
+            if atom_state_grammar is not None and args.node_edge_state_grammar
+            else ""
+        ),
+        "full_then_coarse_bond_support_backoff": bool(
+            args.node_edge_state_grammar
+        ),
+        "unsupported_generated_bonds_absent_from_support": bool(
+            args.node_edge_state_grammar
+        ),
+        "matched_b16_same_training_and_latent_samples": bool(
+            args.node_edge_state_grammar
+        ),
         "property_latent_slot_count": len(unified.PROPERTY_COLUMNS)
         if (
             args.property_latent_slots
@@ -2440,7 +2705,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "source_target_mcs_alignment_training_only": True,
     }
     checkpoint_name = (
-        "atom_state_valence_grammar_motif_graph_flow.pt"
+        "node_edge_state_grammar_motif_graph_flow.pt"
+        if args.node_edge_state_grammar
+        else "atom_state_valence_grammar_motif_graph_flow.pt"
         if args.atom_state_valence_grammar
         else "property_interaction_latents_motif_graph_flow.pt"
         if args.property_interaction_latents
@@ -2492,6 +2759,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "atom_state_valence_grammar": bool(
                     args.atom_state_valence_grammar
                 ),
+                "node_edge_state_grammar": bool(
+                    args.node_edge_state_grammar
+                ),
             },
             "active_constraint_codes": active_constraint_codes,
             "active_motif_codes": active_motif_codes,
@@ -2500,6 +2770,21 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "states": np.asarray(atom_state_grammar["states"]).tolist(),
                 "capacities": np.asarray(atom_state_grammar["capacities"]).tolist(),
                 "sha256": str(atom_state_grammar["sha256"]),
+                "coarse_states": np.asarray(
+                    atom_state_grammar["coarse_states"]
+                ).tolist(),
+                "state_to_coarse": np.asarray(
+                    atom_state_grammar["state_to_coarse"]
+                ).tolist(),
+                "bond_support": np.asarray(
+                    atom_state_grammar["bond_support"]
+                ).tolist(),
+                "coarse_bond_support": np.asarray(
+                    atom_state_grammar["coarse_bond_support"]
+                ).tolist(),
+                "bond_support_sha256": str(
+                    atom_state_grammar["bond_support_sha256"]
+                ),
             }
             if atom_state_grammar is not None
             else None,
@@ -2509,6 +2794,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         checkpoint_path,
     )
     base.write_candidate_rows(args.output_dir / "validation_candidates.csv", candidate_rows)
+    if matched_b16_candidate_rows is not None:
+        base.write_candidate_rows(
+            args.output_dir / "matched_b16_validation_candidates.csv",
+            matched_b16_candidate_rows,
+        )
     (args.output_dir / "manifest.json").write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
@@ -2518,10 +2808,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "manifest": manifest,
         "training": history,
         "evaluation": metrics,
+        "matched_b16_evaluation": matched_b16_metrics,
         "gate": {"passed": not failures, "checks": checks, "failures": failures},
         "next_stage": (
             (
-                "freeze_atom_state_valence_grammar_signal"
+                "freeze_node_edge_state_grammar_signal"
+                if args.node_edge_state_grammar
+                else "freeze_atom_state_valence_grammar_signal"
                 if args.atom_state_valence_grammar
                 else "expand_residual_property_slots_motif_signal"
                 if args.residual_property_latent_slots
@@ -2541,7 +2834,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
             if not failures
             else (
-                "diagnose_aromatic_cycle_or_bond_state_support"
+                "diagnose_aromatic_cycle_construction"
+                if args.node_edge_state_grammar
+                else "diagnose_aromatic_cycle_or_bond_state_support"
                 if args.atom_state_valence_grammar
                 else "diagnose_residual_property_slots_or_atom_count"
                 if args.residual_property_latent_slots

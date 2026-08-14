@@ -454,3 +454,32 @@ held-out 2p/3p conditions, eight epochs, exact n=20, and one 10GB H100 MIG.
 ```bash
 bash experiments/unified_latent_flow/submit_atom_state_valence_grammar_motif_graph_flow_pilot.sh
 ```
+
+## Stage B17: train-supported joint node-edge grammar on fresh held-out data
+
+B16 raised overall strict any@20 to 83.3% and 3p strict to 83.3%, but validity
+fell to 76.4%.  All nine newly invalid candidates occurred in two already-hard
+QED-up/SA-down conditions, while every other condition retained exactly the
+same valid-candidate count.  Legal node states therefore improve property
+support but do not guarantee that independently decoded bonds are compatible
+with both endpoint states.
+
+B17 extends the train-only grammar with bond support for unordered pairs of
+joint atom states.  A generated bond must have been observed for the exact
+state pair in a train molecule; if that support is absent, the grammar backs
+off once to the train-observed `(atomic number, charge, aromatic)` state pair.
+If neither support contains a bond, that edge is outside the generative
+distribution.  The mask is applied while the motif spanning tree and closure
+edges are constructed, before a molecular graph exists.  It is not molecule
+repair, filtering, ranking, validation-target access, or a task exception.
+
+To stop tuning on the historical 18 conditions, B17 reproduces and excludes
+the old validation selection seed 1742, then freezes a new held-out selection
+with seed 2719.  One model training produces two evaluations with identical
+latent samples: the B16 node-only grammar and the B17 node-edge grammar.  The
+primary gate requires >=80% validity and non-negative overall/3p strict deltas
+relative to that matched B16 evaluation.  Candidate budget remains exact n=20.
+
+```bash
+bash experiments/unified_latent_flow/submit_node_edge_state_grammar_motif_graph_flow_pilot.sh
+```
