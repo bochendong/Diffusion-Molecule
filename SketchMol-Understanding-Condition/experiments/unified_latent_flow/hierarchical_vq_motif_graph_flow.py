@@ -39,6 +39,9 @@ MOTIF_ATTACHMENT_PROTOCOL = "motif_attachment_hierarchical_vq_graph_flow_pilot_v
 CONSTRAINT_ATTENTION_PROTOCOL = "constraint_attention_motif_graph_flow_pilot_v12"
 PROPERTY_LATENT_SLOTS_PROTOCOL = "property_latent_slots_motif_graph_flow_pilot_v13"
 RESIDUAL_PROPERTY_SLOTS_PROTOCOL = "residual_property_slots_motif_graph_flow_pilot_v14"
+PROPERTY_INTERACTION_LATENTS_PROTOCOL = (
+    "property_interaction_latents_motif_graph_flow_pilot_v15"
+)
 
 NODE_KEEP, NODE_DELETE, NODE_BIRTH, NODE_REPLACE = range(4)
 EDGE_KEEP, EDGE_DELETE, EDGE_SET = range(3)
@@ -110,6 +113,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--condition-attention-heads", type=int, default=4)
     parser.add_argument("--property-latent-slots", action="store_true")
     parser.add_argument("--residual-property-latent-slots", action="store_true")
+    parser.add_argument("--property-interaction-latents", action="store_true")
     parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
     parser.add_argument("--delta-loss-weight", type=float, default=0.50)
     parser.add_argument("--valence-budget-loss-weight", type=float, default=0.25)
@@ -264,6 +268,53 @@ class PropertyLatentSlotComposer(nn.Module):
             + learned_sum
             + self.count_residual(count_fraction)
         )
+
+
+class PropertyInteractionLatentComposer(PropertyLatentSlotComposer):
+    """Add symmetric second-order interactions to the exact B13 composer.
+
+    Each unordered pair is represented only through commutative features.  The
+    last interaction layer starts at zero, so this class is exactly B13 at
+    initialization while exposing a direct gradient path for joint constraints.
+    """
+
+    def __init__(self, condition_dim: int, hidden_dim: int, property_count: int) -> None:
+        super().__init__(condition_dim, hidden_dim, property_count)
+        self.pair_residual = nn.Sequential(
+            nn.LayerNorm(condition_dim * 3),
+            nn.Linear(condition_dim * 3, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, condition_dim),
+        )
+        nn.init.zeros_(self.pair_residual[-1].weight)
+        nn.init.zeros_(self.pair_residual[-1].bias)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        b13_condition = super().forward(tokens)
+        slots = tokens[:, 1:, :]
+        active = slots.abs().sum(dim=-1).gt(0)
+        left = slots.unsqueeze(2)
+        right = slots.unsqueeze(1)
+        pair_features = torch.cat(
+            [left + right, left * right, (left - right).abs()], dim=-1
+        )
+        upper_triangle = torch.triu(
+            torch.ones(
+                self.property_count,
+                self.property_count,
+                dtype=torch.bool,
+                device=tokens.device,
+            ),
+            diagonal=1,
+        )
+        pair_mask = (
+            active.unsqueeze(2) & active.unsqueeze(1) & upper_triangle.unsqueeze(0)
+        )
+        mask = pair_mask.unsqueeze(-1).to(slots.dtype)
+        pair_count = mask.sum(dim=(1, 2)).clamp_min(1.0)
+        pair_sum = (self.pair_residual(pair_features) * mask).sum(dim=(1, 2))
+        pair_sum = pair_sum / pair_count.sqrt()
+        return b13_condition + pair_sum
 
 
 class ResidualPropertyLatentSlotComposer(nn.Module):
@@ -466,6 +517,7 @@ class HierarchicalVQGraphFlow(nn.Module):
         condition_attention_heads: int = 4,
         property_latent_slots: bool = False,
         residual_property_latent_slots: bool = False,
+        property_interaction_latents: bool = False,
     ) -> None:
         super().__init__()
         self.source_anchored = bool(source_anchored)
@@ -476,12 +528,14 @@ class HierarchicalVQGraphFlow(nn.Module):
         self.condition_attention = bool(condition_attention)
         self.property_latent_slots = bool(property_latent_slots)
         self.residual_property_latent_slots = bool(residual_property_latent_slots)
+        self.property_interaction_latents = bool(property_interaction_latents)
         if sum(
             int(value)
             for value in (
                 self.condition_attention,
                 self.property_latent_slots,
                 self.residual_property_latent_slots,
+                self.property_interaction_latents,
             )
         ) > 1:
             raise ValueError(
@@ -564,6 +618,13 @@ class HierarchicalVQGraphFlow(nn.Module):
             if self.residual_property_latent_slots
             else None
         )
+        self.property_interaction_router = (
+            PropertyInteractionLatentComposer(
+                condition_dim, hidden_dim, len(unified.PROPERTY_COLUMNS)
+            )
+            if self.property_interaction_latents
+            else None
+        )
 
     @staticmethod
     def source_pool(source_node: torch.Tensor, source_mask: torch.Tensor) -> torch.Tensor:
@@ -580,6 +641,8 @@ class HierarchicalVQGraphFlow(nn.Module):
             return condition
         if condition.ndim != 3:
             raise ValueError(f"Expected condition [B,D] or [B,L,D], got {condition.shape}")
+        if self.property_interaction_router is not None:
+            return self.property_interaction_router(condition)
         if self.residual_property_slot_router is not None:
             return self.residual_property_slot_router(condition)
         if self.property_slot_router is not None:
@@ -1908,11 +1971,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         bool(args.condition_attention),
         bool(args.property_latent_slots),
         bool(args.residual_property_latent_slots),
+        bool(args.property_interaction_latents),
     )
     if sum(int(value) for value in condition_variants) > 1:
         raise ValueError(
             "Condition attention and property-slot variants are isolated alternatives"
         )
+    if args.property_interaction_latents:
+        args.motif_attachment = True
     if args.residual_property_latent_slots:
         args.motif_attachment = True
     if args.property_latent_slots:
@@ -1928,7 +1994,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.connected_region:
         args.source_anchored = True
     protocol = (
-        RESIDUAL_PROPERTY_SLOTS_PROTOCOL
+        PROPERTY_INTERACTION_LATENTS_PROTOCOL
+        if args.property_interaction_latents
+        else RESIDUAL_PROPERTY_SLOTS_PROTOCOL
         if args.residual_property_latent_slots
         else PROPERTY_LATENT_SLOTS_PROTOCOL
         if args.property_latent_slots
@@ -1990,7 +2058,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             pair.condition = residual_property_latent_slot_tokens(
                 pair.row, int(args.condition_dim)
             )
-    elif args.property_latent_slots:
+    elif args.property_latent_slots or args.property_interaction_latents:
         for pair in [*train_pairs, *validation_pairs]:
             pair.condition = property_latent_slot_tokens(
                 pair.row, int(args.condition_dim)
@@ -2017,6 +2085,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         condition_attention_heads=int(args.condition_attention_heads),
         property_latent_slots=bool(args.property_latent_slots),
         residual_property_latent_slots=bool(args.residual_property_latent_slots),
+        property_interaction_latents=bool(args.property_interaction_latents),
     ).to(device)
     history, constraint_usage, motif_usage = train_flow(
         flow, representation, train_pairs, args, device
@@ -2104,6 +2173,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "constraint_conditioned_motif_prior": True,
         "condition_token_pooling": "source_node_cross_attention"
         if args.condition_attention
+        else "permutation_invariant_unary_plus_pairwise_property_latents"
+        if args.property_interaction_latents
         else "exact_b11_mean_plus_zero_init_property_residuals"
         if args.residual_property_latent_slots
         else "permutation_invariant_active_property_latent_sum"
@@ -2115,18 +2186,40 @@ def main(argv: Sequence[str] | None = None) -> int:
         "residual_property_latent_slots": bool(
             args.residual_property_latent_slots
         ),
+        "property_interaction_latents": bool(args.property_interaction_latents),
         "property_latent_slot_count": len(unified.PROPERTY_COLUMNS)
-        if args.property_latent_slots or args.residual_property_latent_slots
+        if (
+            args.property_latent_slots
+            or args.residual_property_latent_slots
+            or args.property_interaction_latents
+        )
         else 0,
         "inactive_property_slots_zeroed": bool(
-            args.property_latent_slots or args.residual_property_latent_slots
+            args.property_latent_slots
+            or args.residual_property_latent_slots
+            or args.property_interaction_latents
         ),
         "property_slot_composition_permutation_invariant": bool(
-            args.property_latent_slots or args.residual_property_latent_slots
+            args.property_latent_slots
+            or args.residual_property_latent_slots
+            or args.property_interaction_latents
         ),
         "shared_b11_module_initialization_order_preserved": bool(
-            args.property_latent_slots or args.residual_property_latent_slots
+            args.property_latent_slots
+            or args.residual_property_latent_slots
+            or args.property_interaction_latents
         ),
+        "symmetric_pairwise_property_features": [
+            "sum",
+            "product",
+            "absolute_difference",
+        ]
+        if args.property_interaction_latents
+        else [],
+        "zero_initialized_pairwise_residuals": bool(
+            args.property_interaction_latents
+        ),
+        "initial_condition_exactly_b13": bool(args.property_interaction_latents),
         "exact_b11_condition_baseline": bool(args.residual_property_latent_slots),
         "zero_initialized_property_residuals": bool(
             args.residual_property_latent_slots
@@ -2183,7 +2276,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "source_target_mcs_alignment_training_only": True,
     }
     checkpoint_name = (
-        "residual_property_slots_motif_graph_flow.pt"
+        "property_interaction_latents_motif_graph_flow.pt"
+        if args.property_interaction_latents
+        else "residual_property_slots_motif_graph_flow.pt"
         if args.residual_property_latent_slots
         else "property_latent_slots_motif_graph_flow.pt"
         if args.property_latent_slots
@@ -2224,6 +2319,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "property_latent_slots": bool(args.property_latent_slots),
                 "residual_property_latent_slots": bool(
                     args.residual_property_latent_slots
+                ),
+                "property_interaction_latents": bool(
+                    args.property_interaction_latents
                 ),
             },
             "active_constraint_codes": active_constraint_codes,

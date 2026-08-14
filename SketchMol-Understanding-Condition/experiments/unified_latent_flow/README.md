@@ -404,3 +404,27 @@ selector, target/oracle access, or graph-decoder change is introduced.
 ```bash
 bash experiments/unified_latent_flow/submit_residual_property_slots_motif_graph_flow_pilot.sh
 ```
+
+## Stage B15: symmetric property-interaction latents
+
+B14 preserved B11 too strongly: source similarity rose to 0.779, but 3p strict
+success fell to 0%.  B13 remains the strongest compositional base, with 92.5%
+3p validity and 33.3% 3p strict success.  B15 therefore keeps B13's complete
+unary property-slot path and adds one structural capability: an unordered
+latent for every pair of active properties.
+
+Each pair is encoded through the symmetric sum, product, and absolute
+difference of its two property slots.  A shared network composes these pair
+latents with a normalized set sum, making the result invariant to property
+order.  Its output layer is initialized to zero, so the initial condition is
+exactly B13 and every B11-shared parameter retains the matched seed-1741
+initialization.  Training can then learn second-order constraint interactions
+without property-count routing, sorting, prompt decisions, candidate ranking,
+target/oracle generation access, or any decoder change.
+
+The pilot remains a strict matched ablation: 1,500 train pairs, the same 20
+held-out 2p/3p conditions, eight epochs, exact n=20, and one 10GB H100 MIG.
+
+```bash
+bash experiments/unified_latent_flow/submit_property_interaction_latents_motif_graph_flow_pilot.sh
+```
