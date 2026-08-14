@@ -161,3 +161,22 @@ generation and are opened only after exactly 20 raw candidates are frozen.
 ```bash
 bash experiments/unified_latent_flow/submit_categorical_graph_belief_flow_pilot.sh
 ```
+
+## Stage B4: coupled local no-edit transitions
+
+The native B3 sampler improved target movement and strict any@20, but sampling
+every atom and bond category independently reduced validity. B4 makes source
+retention a learned no-edit category. It samples an aligned atom block first,
+re-encodes that provisional categorical graph, and then samples its bond blocks
+from a distribution conditioned on the sampled atoms. Unchanged node and bond
+blocks remain exactly on the source graph inside the generative transition.
+
+This is a bounded 2-property falsification pilot: 1,500 training pairs, 12
+held-out conditions, one seed and exact n=20. It does not use a valence rule,
+repair pass, candidate selector, finalizer, or property oracle during
+generation. The immediate gate is validity at least 80% while retaining source
+Tanimoto at least 0.4 and nontrivial strict/target-improvement signal.
+
+```bash
+bash experiments/unified_latent_flow/submit_coupled_local_graph_belief_flow_pilot.sh
+```
