@@ -32,6 +32,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 VQ_PATH = SCRIPT_DIR / "vq_motif_graph_belief_flow.py"
 PROTOCOL = "hierarchical_constraint_motif_vq_graph_flow_pilot_v6"
 SOURCE_ANCHORED_PROTOCOL = "source_anchored_hierarchical_vq_graph_flow_pilot_v7"
+CONNECTED_REGION_PROTOCOL = "connected_region_hierarchical_vq_graph_flow_pilot_v8"
 
 
 def load_module(name: str, path: Path):
@@ -90,6 +91,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--gate-min-constraint-codes", type=int, default=3)
     parser.add_argument("--gate-min-motif-codes", type=int, default=4)
     parser.add_argument("--source-anchored", action="store_true")
+    parser.add_argument("--connected-region", action="store_true")
     parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
     parser.add_argument("--seed", type=int, default=1741)
     parser.add_argument("--device", default="auto")
@@ -147,6 +149,12 @@ class SourceAnchoredEndpointField(nn.Module):
             nn.SiLU(),
             nn.Linear(hidden_dim, 1),
         )
+        self.region_size = nn.Sequential(
+            nn.LayerNorm(node_dim * 2),
+            nn.Linear(node_dim * 2, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, max_atoms + 1),
+        )
 
     def forward(
         self,
@@ -159,7 +167,13 @@ class SourceAnchoredEndpointField(nn.Module):
         birth_rank: torch.Tensor,
         time: torch.Tensor,
         condition: torch.Tensor,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+        torch.Tensor,
+    ]:
         endpoint_node, endpoint_edge = self.endpoint(
             current_node,
             current_edge,
@@ -196,7 +210,18 @@ class SourceAnchoredEndpointField(nn.Module):
         edge_change_logits = 0.5 * (
             edge_change_logits + edge_change_logits.transpose(1, 2)
         )
-        return endpoint_node, endpoint_edge, node_change_logits, edge_change_logits
+        source_total = (source_node * source_mask.unsqueeze(-1)).sum(dim=1)
+        source_pool = source_total / source_mask.sum(dim=1, keepdim=True).clamp_min(1.0)
+        region_size_logits = self.region_size(
+            torch.cat([source_pool, context[:, 0, :]], dim=-1)
+        )
+        return (
+            endpoint_node,
+            endpoint_edge,
+            node_change_logits,
+            edge_change_logits,
+            region_size_logits,
+        )
 
 
 class HierarchicalVQGraphFlow(nn.Module):
@@ -212,9 +237,13 @@ class HierarchicalVQGraphFlow(nn.Module):
         hidden_dim: int,
         max_atoms: int,
         source_anchored: bool = False,
+        connected_region: bool = False,
     ) -> None:
         super().__init__()
         self.source_anchored = bool(source_anchored)
+        self.connected_region = bool(connected_region)
+        if self.connected_region and not self.source_anchored:
+            raise ValueError("Connected-region decoding requires source anchoring")
         self.constraint_codebook_size = int(constraint_codebook_size)
         self.motif_codebook_size = int(motif_codebook_size)
         global_input = node_dim + edge_dim + condition_dim
@@ -441,6 +470,54 @@ def edit_gate_losses(
     )
 
 
+def connected_region_target(
+    node_changed: torch.Tensor, edge_changed: torch.Tensor
+) -> torch.Tensor:
+    edge_endpoint = edge_changed.any(dim=1) | edge_changed.any(dim=2)
+    return node_changed | edge_endpoint
+
+
+def connected_region_losses(
+    decoded: tuple[torch.Tensor, ...], region_target: torch.Tensor
+) -> tuple[torch.Tensor, torch.Tensor]:
+    region_loss = masked_binary_loss(
+        decoded[2], region_target, torch.ones_like(region_target, dtype=torch.bool)
+    )
+    region_size = region_target.sum(dim=1).long().clamp_max(decoded[4].shape[-1] - 1)
+    size_loss = F.cross_entropy(decoded[4], region_size)
+    return region_loss, size_loss
+
+
+def project_connected_region(
+    scores: torch.Tensor,
+    sizes: torch.Tensor,
+    eligible: torch.Tensor,
+    adjacency: torch.Tensor,
+) -> torch.Tensor:
+    """Deterministically select one latent-scored connected graph region."""
+    selected = torch.zeros_like(eligible, dtype=torch.bool)
+    for batch_index in range(scores.shape[0]):
+        available = eligible[batch_index].bool()
+        available_count = int(available.sum().item())
+        if available_count == 0:
+            continue
+        requested = max(1, int(sizes[batch_index].item()))
+        requested = min(requested, available_count)
+        masked = scores[batch_index].float().masked_fill(~available, -torch.inf)
+        root = int(masked.argmax().item())
+        selected[batch_index, root] = True
+        while int(selected[batch_index].sum().item()) < requested:
+            frontier = adjacency[batch_index, selected[batch_index]].any(dim=0)
+            frontier &= available & ~selected[batch_index]
+            if not bool(frontier.any()):
+                break
+            next_node = int(
+                scores[batch_index].float().masked_fill(~frontier, -torch.inf).argmax().item()
+            )
+            selected[batch_index, next_node] = True
+    return selected
+
+
 def train_flow(
     flow: HierarchicalVQGraphFlow,
     representation,
@@ -472,6 +549,7 @@ def train_flow(
             node_target, node_eligible, edge_target, edge_eligible = change_targets(
                 source, target
             )
+            region_target = connected_region_target(node_target, edge_target)
             optimizer.zero_grad(set_to_none=True)
             with torch.no_grad(), torch.autocast(
                 device_type=device.type, dtype=torch.bfloat16, enabled=use_bf16
@@ -518,7 +596,12 @@ def train_flow(
                 endpoint_loss, parts = graph.reconstruction_loss(
                     logits, target, endpoint_node, geometry_weight=0.0
                 )
-                if flow.source_anchored:
+                if flow.connected_region:
+                    node_gate_loss, region_size_loss = connected_region_losses(
+                        decoded, region_target
+                    )
+                    edge_gate_loss = endpoint_loss * 0.0
+                elif flow.source_anchored:
                     node_gate_loss, edge_gate_loss = edit_gate_losses(
                         decoded,
                         node_target,
@@ -526,11 +609,13 @@ def train_flow(
                         edge_target,
                         edge_eligible,
                     )
+                    region_size_loss = endpoint_loss * 0.0
                 else:
                     node_gate_loss = endpoint_loss * 0.0
                     edge_gate_loss = endpoint_loss * 0.0
+                    region_size_loss = endpoint_loss * 0.0
                 structured_loss = endpoint_loss + float(args.edit_gate_loss_weight) * (
-                    node_gate_loss + edge_gate_loss
+                    node_gate_loss + edge_gate_loss + region_size_loss
                 )
 
                 wrong_constraint = flow.constraint_codebook(
@@ -553,16 +638,29 @@ def train_flow(
                     geometry_weight=0.0,
                 )
                 if flow.source_anchored:
-                    wrong_node_gate_loss, wrong_edge_gate_loss = edit_gate_losses(
-                        wrong_constraint_decoded,
-                        node_target,
-                        node_eligible,
-                        edge_target,
-                        edge_eligible,
-                    )
+                    if flow.connected_region:
+                        wrong_node_gate_loss, wrong_region_size_loss = (
+                            connected_region_losses(
+                                wrong_constraint_decoded, region_target
+                            )
+                        )
+                        wrong_edge_gate_loss = endpoint_loss * 0.0
+                    else:
+                        wrong_node_gate_loss, wrong_edge_gate_loss = edit_gate_losses(
+                            wrong_constraint_decoded,
+                            node_target,
+                            node_eligible,
+                            edge_target,
+                            edge_eligible,
+                        )
+                        wrong_region_size_loss = endpoint_loss * 0.0
                     wrong_constraint_loss = wrong_constraint_loss + float(
                         args.edit_gate_loss_weight
-                    ) * (wrong_node_gate_loss + wrong_edge_gate_loss)
+                    ) * (
+                        wrong_node_gate_loss
+                        + wrong_edge_gate_loss
+                        + wrong_region_size_loss
+                    )
                 wrong_motif = flow.motif_codebook(
                     different_indices(motif_index, flow.motif_codebook_size)
                 ).detach()
@@ -583,16 +681,27 @@ def train_flow(
                     geometry_weight=0.0,
                 )
                 if flow.source_anchored:
-                    wrong_node_gate_loss, wrong_edge_gate_loss = edit_gate_losses(
-                        wrong_motif_decoded,
-                        node_target,
-                        node_eligible,
-                        edge_target,
-                        edge_eligible,
-                    )
+                    if flow.connected_region:
+                        wrong_node_gate_loss, wrong_region_size_loss = (
+                            connected_region_losses(wrong_motif_decoded, region_target)
+                        )
+                        wrong_edge_gate_loss = endpoint_loss * 0.0
+                    else:
+                        wrong_node_gate_loss, wrong_edge_gate_loss = edit_gate_losses(
+                            wrong_motif_decoded,
+                            node_target,
+                            node_eligible,
+                            edge_target,
+                            edge_eligible,
+                        )
+                        wrong_region_size_loss = endpoint_loss * 0.0
                     wrong_motif_loss = wrong_motif_loss + float(
                         args.edit_gate_loss_weight
-                    ) * (wrong_node_gate_loss + wrong_edge_gate_loss)
+                    ) * (
+                        wrong_node_gate_loss
+                        + wrong_edge_gate_loss
+                        + wrong_region_size_loss
+                    )
                 constraint_contrastive = F.relu(
                     float(args.contrastive_margin)
                     + structured_loss
@@ -634,6 +743,7 @@ def train_flow(
             totals["motif_vq_loss"] += float(motif_vq_loss.detach())
             totals["node_gate_loss"] += float(node_gate_loss.detach())
             totals["edge_gate_loss"] += float(edge_gate_loss.detach())
+            totals["region_size_loss"] += float(region_size_loss.detach())
             totals["node_change_rate"] += float(
                 node_target[node_eligible].float().mean()
             )
@@ -744,14 +854,6 @@ def sample_from_source(
             candidate_nodes = {
                 key: logits[key].argmax(dim=-1) for key in vq.NODE_FIELDS
             }
-            node_eligible = source["node_mask"].bool() | candidate_nodes[
-                "atomic_number"
-            ].gt(0)
-            node_edit = decoded[2].gt(0) & node_eligible
-            for key in vq.NODE_FIELDS:
-                result[key] = torch.where(node_edit, candidate_nodes[key], source[key])
-            result = belief.enforce_categorical_consistency(result)
-
             nodes = source["node_mask"].shape[1]
             upper = torch.triu(
                 torch.ones(nodes, nodes, device=device, dtype=torch.bool), diagonal=1
@@ -763,13 +865,39 @@ def sample_from_source(
                     upper.unsqueeze(0), candidate, torch.zeros_like(candidate)
                 )
                 candidate_edges[key] = candidate + candidate.transpose(1, 2)
+            node_eligible = source["node_mask"].bool() | candidate_nodes[
+                "atomic_number"
+            ].gt(0)
+            if flow.connected_region:
+                adjacency = source["bond"].gt(graph.BOND_NONE) | candidate_edges[
+                    "bond"
+                ].gt(graph.BOND_NONE)
+                adjacency &= node_eligible[:, :, None] & node_eligible[:, None, :]
+                diagonal = torch.eye(nodes, device=device, dtype=torch.bool).unsqueeze(0)
+                adjacency &= ~diagonal
+                region_size = decoded[4].argmax(dim=-1)
+                node_edit = project_connected_region(
+                    decoded[2], region_size, node_eligible, adjacency
+                )
+            else:
+                node_edit = decoded[2].gt(0) & node_eligible
+            for key in vq.NODE_FIELDS:
+                result[key] = torch.where(node_edit, candidate_nodes[key], source[key])
+            result = belief.enforce_categorical_consistency(result)
+
             active = result["node_mask"].bool()
             active_pair = active[:, :, None] & active[:, None, :]
-            edge_eligible = active_pair & (
-                source["bond"].gt(graph.BOND_NONE)
-                | candidate_edges["bond"].gt(graph.BOND_NONE)
-            )
-            edge_edit_upper = decoded[3].gt(0) & edge_eligible & upper.unsqueeze(0)
+            if flow.connected_region:
+                region_pair = node_edit[:, :, None] & node_edit[:, None, :]
+                edge_edit_upper = region_pair & active_pair & upper.unsqueeze(0)
+            else:
+                edge_eligible = active_pair & (
+                    source["bond"].gt(graph.BOND_NONE)
+                    | candidate_edges["bond"].gt(graph.BOND_NONE)
+                )
+                edge_edit_upper = (
+                    decoded[3].gt(0) & edge_eligible & upper.unsqueeze(0)
+                )
             edge_edit = edge_edit_upper | edge_edit_upper.transpose(1, 2)
             for key in vq.EDGE_FIELDS:
                 result[key] = torch.where(
@@ -907,7 +1035,15 @@ def evaluate(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    protocol = SOURCE_ANCHORED_PROTOCOL if args.source_anchored else PROTOCOL
+    if args.connected_region:
+        args.source_anchored = True
+    protocol = (
+        CONNECTED_REGION_PROTOCOL
+        if args.connected_region
+        else SOURCE_ANCHORED_PROTOCOL
+        if args.source_anchored
+        else PROTOCOL
+    )
     if int(args.num_attempts) != 20:
         raise ValueError("The protocol requires exactly 20 raw attempts per condition")
     base.seed_everything(int(args.seed))
@@ -958,6 +1094,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         hidden_dim=int(args.hidden_dim),
         max_atoms=int(config["max_atoms"]),
         source_anchored=bool(args.source_anchored),
+        connected_region=bool(args.connected_region),
     ).to(device)
     history, constraint_usage, motif_usage = train_flow(
         flow, representation, train_pairs, args, device
@@ -1046,8 +1183,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         "separate_token_contrastive_reconstruction": True,
         "deterministic_category_decode_given_tokens": True,
         "source_anchored_residual_decoder": bool(args.source_anchored),
-        "learned_atom_and_bond_edit_blocks": bool(args.source_anchored),
-        "deterministic_edit_gates": bool(args.source_anchored),
+        "learned_atom_and_bond_edit_blocks": bool(
+            args.source_anchored and not args.connected_region
+        ),
+        "deterministic_edit_gates": bool(
+            args.source_anchored and not args.connected_region
+        ),
+        "connected_region_decoder": bool(args.connected_region),
+        "learned_region_size": bool(args.connected_region),
+        "latent_scored_connected_projection": bool(args.connected_region),
+        "whole_region_endpoint_subgraph": bool(args.connected_region),
+        "source_boundary_preserved": bool(args.connected_region),
         "edit_gate_loss_weight": float(args.edit_gate_loss_weight),
         "posthoc_source_copy_heuristic": False,
         "independent_atom_or_bond_sampling": False,
@@ -1060,7 +1206,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "source_target_mcs_alignment_training_only": True,
     }
     checkpoint_name = (
-        "source_anchored_hierarchical_vq_graph_flow.pt"
+        "connected_region_hierarchical_vq_graph_flow.pt"
+        if args.connected_region
+        else "source_anchored_hierarchical_vq_graph_flow.pt"
         if args.source_anchored
         else "hierarchical_vq_motif_graph_flow.pt"
     )
@@ -1080,6 +1228,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 "hidden_dim": int(args.hidden_dim),
                 "max_atoms": int(config["max_atoms"]),
                 "source_anchored": bool(args.source_anchored),
+                "connected_region": bool(args.connected_region),
             },
             "active_constraint_codes": active_constraint_codes,
             "active_motif_codes": active_motif_codes,
@@ -1101,12 +1250,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "gate": {"passed": not failures, "checks": checks, "failures": failures},
         "next_stage": (
             (
-                "expand_source_anchored_hierarchical_vq_signal"
+                "expand_connected_region_hierarchical_vq_signal"
+                if args.connected_region
+                else "expand_source_anchored_hierarchical_vq_signal"
                 if args.source_anchored
                 else "expand_hierarchical_vq_signal"
             )
             if not failures
-            else "diagnose_source_anchor_support_or_validity"
+            else "diagnose_connected_region_endpoint_validity"
         ),
     }
     (args.output_dir / "summary.json").write_text(

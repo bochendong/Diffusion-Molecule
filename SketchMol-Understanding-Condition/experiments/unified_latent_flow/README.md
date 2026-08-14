@@ -248,3 +248,27 @@ tokens.
 ```bash
 bash experiments/unified_latent_flow/submit_source_anchored_hierarchical_vq_graph_flow_pilot.sh
 ```
+
+## Stage B8: connected motif-region latent decoder
+
+B7 raised strict any@20 on the matched 2p/3p pilot but reduced validity because
+separately chosen atom and bond blocks broke chemical consistency at their
+boundaries. A train-only connectivity audit supports replacing those gates with
+one region: 17 of the 18 held-out changed subgraphs are already connected, all
+six 3-property cases are connected, and the one exception needs four connector
+nodes under a source/target-union shortest-path closure.
+
+B8 predicts one region size and latent-conditioned node scores. A deterministic
+graph decoder grows one connected region over the union of source and decoded
+endpoint adjacency, then swaps the complete endpoint node blocks and all
+internal edge blocks together. Source blocks and boundary bonds outside that
+region remain exact. The projection defines the structured decoder support; it
+does not inspect chemistry validity, properties or targets at generation time,
+and it is not a repair, selector, action plan or ranking step.
+
+The pilot is matched to B6/B7 with seed 1741, the same 1,450 train pairs, the
+same 18 held-out conditions, and exact n=20.
+
+```bash
+bash experiments/unified_latent_flow/submit_connected_region_hierarchical_vq_graph_flow_pilot.sh
+```

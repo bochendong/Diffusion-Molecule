@@ -25,6 +25,8 @@ HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_hierarchical_vq_motif_graph_flo
 HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_hierarchical_vq_motif_graph_flow_pilot.sh"
 ANCHORED_HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_source_anchored_hierarchical_vq_graph_flow_pilot.sh"
 ANCHORED_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_source_anchored_hierarchical_vq_graph_flow_pilot.sh"
+REGION_HIERARCHICAL_VQ_RUN_PATH = EXPERIMENT_DIR / "run_connected_region_hierarchical_vq_graph_flow_pilot.sh"
+REGION_HIERARCHICAL_VQ_SUBMIT_PATH = EXPERIMENT_DIR / "submit_connected_region_hierarchical_vq_graph_flow_pilot.sh"
 
 
 def test_categorical_graph_flow_has_target_blind_direct_generation_contract() -> None:
@@ -228,8 +230,9 @@ def test_source_anchored_hierarchical_decoder_is_learned_and_not_repair() -> Non
     assert "def change_targets" in source
     assert "def masked_binary_loss" in source
     assert '"source_anchored_residual_decoder": bool(args.source_anchored)' in source
-    assert '"learned_atom_and_bond_edit_blocks": bool(args.source_anchored)' in source
-    assert '"deterministic_edit_gates": bool(args.source_anchored)' in source
+    assert '"learned_atom_and_bond_edit_blocks": bool(' in source
+    assert 'args.source_anchored and not args.connected_region' in source
+    assert '"deterministic_edit_gates": bool(' in source
     assert '"posthoc_source_copy_heuristic": False' in source
     assert '"valence_projection_or_repair": False' in source
     sample_source = source[source.index("def sample_from_source") : source.index("def evaluate")]
@@ -250,6 +253,43 @@ def test_source_anchored_runner_is_matched_exact_n20_and_mig() -> None:
     assert "--source-anchored" in run_source
     assert "--num-attempts 20" in run_source
     assert 'SEED="${SUCC_ANCHORED_HIER_VQ_SEED:-1741}"' in run_source
+    assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
+    assert "00:20:00" in submit_source
+    assert "dongbochen1218@gmail.com" in submit_source
+
+
+def test_connected_region_decoder_is_structured_target_blind_generation() -> None:
+    source = HIERARCHICAL_VQ_PATH.read_text(encoding="utf-8")
+    ast.parse(source)
+    assert "def connected_region_target" in source
+    assert "def connected_region_losses" in source
+    assert "def project_connected_region" in source
+    assert '"connected_region_decoder": bool(args.connected_region)' in source
+    assert '"learned_region_size": bool(args.connected_region)' in source
+    assert '"latent_scored_connected_projection": bool(args.connected_region)' in source
+    assert '"whole_region_endpoint_subgraph": bool(args.connected_region)' in source
+    assert '"source_boundary_preserved": bool(args.connected_region)' in source
+    assert '"posthoc_source_copy_heuristic": False' in source
+    assert '"valence_projection_or_repair": False' in source
+    sample_source = source[source.index("def sample_from_source") : source.index("def evaluate")]
+    assert "target_smiles" not in sample_source
+    assert "target_example" not in sample_source
+    assert "property_oracle" not in sample_source
+    assert "categorical_sample" not in sample_source
+    assert "project_connected_region" in sample_source
+
+
+def test_connected_region_runner_is_matched_exact_n20_and_mig() -> None:
+    run_source = REGION_HIERARCHICAL_VQ_RUN_PATH.read_text(encoding="utf-8")
+    submit_source = REGION_HIERARCHICAL_VQ_SUBMIT_PATH.read_text(encoding="utf-8")
+    assert '--train-limit "${SUCC_REGION_HIER_VQ_TRAIN_LIMIT:-1500}"' in run_source
+    assert '--validation-limit "${SUCC_REGION_HIER_VQ_VALIDATION_LIMIT:-20}"' in run_source
+    assert '--property-counts "${SUCC_REGION_HIER_VQ_PROPERTY_COUNTS:-2,3}"' in run_source
+    assert '--edit-gate-loss-weight "${SUCC_REGION_HIER_VQ_REGION_WEIGHT:-0.50}"' in run_source
+    assert "--source-anchored" in run_source
+    assert "--connected-region" in run_source
+    assert "--num-attempts 20" in run_source
+    assert 'SEED="${SUCC_REGION_HIER_VQ_SEED:-1741}"' in run_source
     assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
     assert "00:20:00" in submit_source
     assert "dongbochen1218@gmail.com" in submit_source
