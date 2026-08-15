@@ -539,3 +539,34 @@ grammar or loss-weight sweep.
 ```bash
 bash experiments/unified_latent_flow/submit_manifold_aligned_continuous_transport_pilot.sh
 ```
+
+## Stage B20: absorbing discrete graph diffusion decoder
+
+B19 rejected graph-latent manifold alignment as the validity fix.  Relative to
+B18 on the same 18 development conditions, candidate validity fell from 70.6%
+to 64.7%, overall strict any@20 fell from 61.1% to 55.6%, and mean unique-valid
+rose only from 4.56 to 4.78.  A CPU repeat reached the same 55.6% strict rate
+and only 61.4% validity.  The continuous constraint signal remains useful, but
+another endpoint loss cannot make a one-shot continuous decoder chemically
+stable.
+
+B20 retains the B18 set-compositional continuous transport and replaces the
+endpoint decoder with an absorbing categorical graph diffusion process.  Its
+state space consists of complete joint atom states and complete joint bond
+states observed in the selected train pairs.  At training time a random
+diffusion level masks aligned target states; a permutation-equivariant dense
+graph denoiser predicts the clean graph.  Generation begins from a fully masked
+source-sized graph plus eight target-blind birth slots and progressively
+unmasks it in eight reverse steps.  The 20 samples arise directly from Gaussian
+transport noise and categorical sampling.  There is no validation-derived
+grammar, RDKit repair, candidate ranking, finalizer, or property-oracle access
+before the exact 20 raw attempts are frozen.
+
+The pilot uses the same train split, fresh 18-condition development split,
+exact n=20, and gates as B19.  Only if validity reaches 95%, mean unique-valid
+reaches 10, and the strict property gates remain intact does it expand to the
+formal 2p--7p experiment.
+
+```bash
+bash experiments/unified_latent_flow/submit_discrete_graph_diffusion_decoder_pilot.sh
+```
