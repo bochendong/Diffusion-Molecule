@@ -513,3 +513,29 @@ access restrictions remain unchanged.
 ```bash
 bash experiments/unified_latent_flow/submit_continuous_constraint_transport_pilot.sh
 ```
+
+## Stage B19: graph-latent manifold alignment
+
+B18 validated the continuous-composition hypothesis but rejected its endpoint
+decoder.  On the same seed-2719 development conditions, overall strict any@20
+rose from B17's 22.2% to 61.1%, 3-property strict rose from 0% to 42.9%, and
+mean unique-valid rose from 2.22 to 4.56.  Candidate validity nevertheless fell
+to 70.6%.  Invalid samples changed 6.68 nodes and 8.09 edges on average, versus
+4.48 and 4.61 for valid samples.  The continuous transport is therefore finding
+useful property directions while the endpoint field is leaving the frozen
+autoencoder's valid graph-latent manifold.
+
+B19 adds one objective and changes no model module or sampling input.  The
+generated endpoint node/edge latents are directly aligned to the frozen
+encoder's target node/edge latents, weighted on the source-target union graph.
+This makes manifold membership part of transport training rather than a
+post-hoc validity repair.  Flow matching, set-compositional unary/pair fields,
+the source-anchored motif decoder, exact n=20, data selection, seed, and strict
+gates are identical to B18.  If manifold alignment does not recover >=95%
+validity and >=10 unique-valid candidates without losing the 3-property signal,
+the next decoder must be learned discrete graph diffusion rather than another
+grammar or loss-weight sweep.
+
+```bash
+bash experiments/unified_latent_flow/submit_manifold_aligned_continuous_transport_pilot.sh
+```

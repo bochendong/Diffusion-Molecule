@@ -14,6 +14,8 @@ EXPERIMENT_DIR = (
 FLOW_PATH = EXPERIMENT_DIR / "continuous_constraint_transport.py"
 RUN_PATH = EXPERIMENT_DIR / "run_continuous_constraint_transport_pilot.sh"
 SUBMIT_PATH = EXPERIMENT_DIR / "submit_continuous_constraint_transport_pilot.sh"
+MANIFOLD_RUN_PATH = EXPERIMENT_DIR / "run_manifold_aligned_continuous_transport_pilot.sh"
+MANIFOLD_SUBMIT_PATH = EXPERIMENT_DIR / "submit_manifold_aligned_continuous_transport_pilot.sh"
 
 
 def test_continuous_transport_is_compositional_and_target_blind() -> None:
@@ -55,3 +57,24 @@ def test_continuous_transport_runner_is_bounded_exact_n20_and_lightweight() -> N
     assert "00:10:00" in submit_source
     assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source
     assert "dongbochen1218@gmail.com" in submit_source
+
+
+def test_manifold_alignment_is_a_training_objective_not_generation_repair() -> None:
+    source = FLOW_PATH.read_text(encoding="utf-8")
+    run_source = MANIFOLD_RUN_PATH.read_text(encoding="utf-8")
+    submit_source = MANIFOLD_SUBMIT_PATH.read_text(encoding="utf-8")
+    assert "MANIFOLD_PROTOCOL" in source
+    assert "base.weighted_latent_loss" in source
+    assert '"graph_latent_manifold_alignment": bool(args.manifold_alignment)' in source
+    assert '"posthoc_molecule_repair": False' in source
+    sample = source[source.index("def sample_from_source") : source.index("def evaluate")]
+    assert "manifold_loss" not in sample
+    assert "target_node" not in sample
+    assert "target_edge" not in sample
+    assert "--manifold-alignment" in run_source
+    assert '--manifold-loss-weight "${SUCC_MANIFOLD_TRANSPORT_LOSS_WEIGHT:-0.50}"' in run_source
+    assert "--num-attempts 20" in run_source
+    assert "--cpus-per-task=1" in submit_source
+    assert "--mem=4G" in submit_source
+    assert "00:10:00" in submit_source
+    assert "nvidia_h100_80gb_hbm3_1g.10gb:1" in submit_source

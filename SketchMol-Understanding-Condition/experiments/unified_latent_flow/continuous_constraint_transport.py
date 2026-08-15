@@ -40,6 +40,7 @@ unified = hierarchical.unified
 vq = hierarchical.vq
 
 PROTOCOL = "set_compositional_continuous_constraint_transport_pilot_v18"
+MANIFOLD_PROTOCOL = "manifold_aligned_continuous_constraint_transport_pilot_v19"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -67,6 +68,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--latent-variance-weight", type=float, default=0.10)
     parser.add_argument("--latent-min-std", type=float, default=0.20)
     parser.add_argument("--latent-noise-scale", type=float, default=1.0)
+    parser.add_argument("--manifold-alignment", action="store_true")
+    parser.add_argument("--manifold-loss-weight", type=float, default=0.50)
     parser.add_argument("--edit-gate-loss-weight", type=float, default=0.50)
     parser.add_argument("--delta-loss-weight", type=float, default=0.50)
     parser.add_argument("--valence-budget-loss-weight", type=float, default=0.25)
@@ -426,6 +429,19 @@ def train_flow(
                     predicted_endpoint,
                 )
                 endpoint_node, endpoint_edge = decoded[:2]
+                union_mask = torch.maximum(
+                    source["node_mask"], target["node_mask"]
+                )
+                manifold_node_loss, manifold_edge_loss = (
+                    base.weighted_latent_loss(
+                        endpoint_node,
+                        endpoint_edge,
+                        target_node,
+                        target_edge,
+                        union_mask,
+                    )
+                )
+                manifold_loss = manifold_node_loss + manifold_edge_loss
                 endpoint_loss, parts = graph.reconstruction_loss(
                     representation.decode(endpoint_node, endpoint_edge),
                     target,
@@ -481,6 +497,11 @@ def train_flow(
                     + float(args.flow_loss_weight) * flow_loss
                     + float(args.latent_usage_weight) * latent_usage
                     + float(args.latent_variance_weight) * variance_loss
+                    + (
+                        float(args.manifold_loss_weight) * manifold_loss
+                        if bool(args.manifold_alignment)
+                        else 0.0
+                    )
                 )
             loss.backward()
             nn.utils.clip_grad_norm_(flow.parameters(), float(args.grad_clip))
@@ -492,6 +513,9 @@ def train_flow(
             totals["flow_matching_loss"] += float(flow_loss.detach())
             totals["latent_usage_loss"] += float(latent_usage.detach())
             totals["latent_variance_loss"] += float(variance_loss.detach())
+            totals["manifold_node_loss"] += float(manifold_node_loss.detach())
+            totals["manifold_edge_loss"] += float(manifold_edge_loss.detach())
+            totals["manifold_loss"] += float(manifold_loss.detach())
             totals["posterior_std"] += float(latent_std.mean().detach())
             totals["node_gate_loss"] += float(auxiliary[0].detach())
             totals["region_size_loss"] += float(auxiliary[2].detach())
@@ -755,6 +779,7 @@ def evaluate(
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    protocol = MANIFOLD_PROTOCOL if bool(args.manifold_alignment) else PROTOCOL
     if int(args.num_attempts) != 20:
         raise ValueError("The protocol requires exactly 20 raw attempts per condition")
     base.seed_everything(int(args.seed))
@@ -876,7 +901,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         (pair.source_smiles, pair.target_smiles) for pair in train_pairs
     }
     manifest = {
-        "protocol": PROTOCOL,
+        "protocol": protocol,
         "seed": int(args.seed),
         "train_selection_seed": int(args.train_selection_seed),
         "validation_selection_seed": int(args.validation_selection_seed),
@@ -917,6 +942,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "vq_codebook": False,
         "posterior_train_only": True,
         "conditional_flow_matching": True,
+        "graph_latent_manifold_alignment": bool(args.manifold_alignment),
+        "graph_latent_manifold_loss_weight": (
+            float(args.manifold_loss_weight)
+            if bool(args.manifold_alignment)
+            else 0.0
+        ),
         "gaussian_base_distribution": True,
         "set_compositional_unary_property_fields": True,
         "symmetric_pairwise_property_fields": True,
@@ -938,10 +969,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         "transport_dim": int(args.transport_dim),
         "flow_steps": int(args.flow_steps),
     }
-    checkpoint_path = args.output_dir / "continuous_constraint_transport.pt"
+    checkpoint_path = args.output_dir / (
+        "manifold_aligned_continuous_transport.pt"
+        if bool(args.manifold_alignment)
+        else "continuous_constraint_transport.pt"
+    )
     torch.save(
         {
-            "stage": PROTOCOL,
+            "stage": protocol,
             "model_state": flow.state_dict(),
             "model_config": {
                 "node_dim": int(config["node_dim"]),
@@ -959,7 +994,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     base.write_candidate_rows(args.output_dir / "validation_candidates.csv", candidate_rows)
     summary = {
-        "protocol": PROTOCOL,
+        "protocol": protocol,
         "checkpoint": str(checkpoint_path),
         "manifest": manifest,
         "training": history,
@@ -972,7 +1007,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         "next_stage": (
             "scale_continuous_transport_to_unified_2p_7p"
             if not failures
-            else "change_representation_or_decoder_backbone"
+            else (
+                "change_to_discrete_diffusion_decoder"
+                if bool(args.manifold_alignment)
+                else "add_graph_latent_manifold_alignment"
+            )
         ),
     }
     (args.output_dir / "manifest.json").write_text(
