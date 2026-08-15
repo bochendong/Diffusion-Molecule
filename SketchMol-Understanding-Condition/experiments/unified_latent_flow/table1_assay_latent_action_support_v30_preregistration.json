@@ -1,0 +1,27 @@
+{
+  "b26_heldout_access": false,
+  "b29_protocol": "target_free_moledit_table1_latent_transfer_v29",
+  "diagnostic_only": true,
+  "exhaustive_train_only_vocabulary": true,
+  "fingerprint_bits": 256,
+  "frozen_fragment_protocol": "continuous_latent_fragment_attachment_kernel_pilot_v24",
+  "gates": {
+    "minimum_task_assay_support_rate_t0_15": 0.5,
+    "minimum_task_full_support_rate_t0_15": 0.25,
+    "oracle_coverage": 1.0
+  },
+  "max_variable_heavy_atoms": 30,
+  "min_core_heavy_atoms": 5,
+  "minimum_fragment_vocabulary": 3000,
+  "moledit_target_access": false,
+  "molecular_candidate_ranking": false,
+  "official_test_access": false,
+  "protocol": "target_free_table1_assay_latent_action_support_v30",
+  "shards": 8,
+  "similarity_prefilter": 0.15,
+  "status": "preregistered_before_first_run",
+  "tasks": [
+    "GSK3B:increase",
+    "DRD2:decrease+MW:decrease+SA:decrease"
+  ]
+}
