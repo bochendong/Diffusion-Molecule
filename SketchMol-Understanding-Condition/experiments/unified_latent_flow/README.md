@@ -683,3 +683,23 @@ continuous latent over attachment-site and fragment tokens.
 ```bash
 bash experiments/unified_latent_flow/submit_fragment_attachment_coverage_gate.sh
 ```
+
+The B24 coverage gate passes decisively on 1,452 selected train pairs: 91.2%
+overall coverage, 94.6% 3-property coverage, 92.4% growth-task coverage, and
+99.4% exact reconstruction among covered pairs.  The train-only vocabulary has
+3,392 target fragments and 3,655 transforms, with zero train/development source
+or pair overlap.
+
+The subsequent B24 kernel freezes the graph encoder, pools the source graph
+latent, and composes it with permutation-invariant property slots.  A learned
+head samples one MMPA attachment site from the evaluation source only.  A
+conditional flow transports one Gaussian latent to a target-fragment Morgan
+endpoint, which is quantized once to the nearest train-only fragment token and
+attached to the sampled core.  Nearest-token decoding is the categorical VQ
+decoder, not a molecular candidate pool: one latent produces one token and at
+most one raw molecule, with no retry, oracle, validity feedback, selector, or
+finalizer.  The primary pilot remains exact n=20.
+
+```bash
+bash experiments/unified_latent_flow/submit_latent_fragment_attachment_kernel_pilot.sh
+```
