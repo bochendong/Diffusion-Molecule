@@ -723,3 +723,11 @@ overall strict regression no worse than five points, and >=15 unique-valid.
 ```bash
 bash experiments/unified_latent_flow/submit_two_step_residual_fragment_rollout.sh
 ```
+
+B25 rejects the unconditional second-step hypothesis.  It preserves 100%
+validity and raises mean unique-valid slightly from 18.39 to 18.67, but lowers
+overall strict any@20 from 72.2% to 66.7% and 3-property strict from 42.9% to
+28.6%.  The matched 2-property rows reproduce B24 exactly at 90.9%.  B24 is
+therefore the frozen winner of this sequence.  Any subsequent 3-property work
+must learn a train-only residual property energy inside the first fragment
+latent; adding unconditional edit depth is not supported.
