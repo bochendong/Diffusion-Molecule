@@ -777,3 +777,31 @@ composition.  The B26 heldout is retired.  Any next model must learn a
 train-only property energy inside the first fragment latent on a separate
 fit/internal-dev split; it must not add unconditional edit depth or tune on
 these 27 conditions.
+
+## Stage B27: train-only latent property energy
+
+B27 tests that single structural hypothesis without reopening B26.  The B24
+graph encoder, site distribution, continuous fragment flow, 3,318-token
+train-only vocabulary, and one-cut RDKit grammar are frozen.  B27 reconstructs
+only the original B24 train selection, splits its covered source/task groups
+into energy fit and internal-dev, and labels the exact target fragment plus six
+nearby hard-negative fragments with normalized source-relative property and
+similarity margins.  No B26 row or official test row is read.
+
+A small differentiable energy consumes the frozen source/condition/site
+context and a continuous fragment endpoint.  Each raw attempt first follows
+the unchanged B24 flow, then takes four trust-region gradient steps in that
+same latent, quantizes once to one fragment token, and assembles at most one
+molecule.  There is no molecular candidate pool, oracle guidance, validity
+feedback, selection, retry, repair, or second edit.  Exactly 20 guided raw
+attempts are frozen before internal-dev evaluation.
+
+The kill test requires calibrated train-only energy, at least +5 points overall
+strict any@20, at least +10 points 3p strict, 95% validity, no material 2p
+regression, 12 mean unique-valid, and source Tanimoto 0.4.  Passing advances the
+frozen latent-energy mechanism to cross-task transfer; failing rejects this
+property-energy hypothesis without tuning on B26.
+
+```bash
+bash experiments/unified_latent_flow/submit_latent_property_energy_guidance.sh
+```
