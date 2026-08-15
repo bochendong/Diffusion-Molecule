@@ -837,3 +837,17 @@ B26 remains untouched in either case.
 ```bash
 bash experiments/unified_latent_flow/submit_energy_tilted_vq_fragment_sampling.sh
 ```
+
+B28 passes every preregistered gate on the matched 40-condition internal-dev
+set.  Frozen B24 nearest-token decoding gives 67.5% overall strict any@20 and
+35% 3p strict; the energy-tilted categorical latent sampler reaches 75.0% and
+50.0%, gains of 7.5 and 15 points.  It preserves 100% 2p strict and 100%
+validity, raises mean unique-valid from 18.23 to 19.73, and retains mean source
+Tanimoto 0.428.  All conditions receive exactly 20 raw attempts and B26 remains
+unread.
+
+This supports the intended hidden-space claim: a train-only property energy
+can shape the discrete fragment latent distribution directly, without
+materializing or ranking molecule candidates.  The B24 grammar, B27 energy,
+and B28 quantizer are now frozen for a small Table1 transfer check before MuMO
+or a null-source de novo branch is attempted.
