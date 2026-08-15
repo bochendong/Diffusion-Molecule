@@ -483,3 +483,33 @@ relative to that matched B16 evaluation.  Candidate budget remains exact n=20.
 ```bash
 bash experiments/unified_latent_flow/submit_node_edge_state_grammar_motif_graph_flow_pilot.sh
 ```
+
+## Stage B18: set-compositional continuous constraint transport
+
+B17 falsified the node-edge support hypothesis on the fresh development set:
+the matched B16 and B17 candidates were identical, candidate validity was
+76.4%, mean unique-valid was only 2.22/20, and 3-property strict success was
+0%.  The deeper failure is latent collapse: the validation sampler exercised
+only two constraint codes and two motif codes, so adding another chemistry mask
+cannot create missing structural modes.
+
+B18 removes both VQ codebooks.  A train-only posterior maps the aligned graph
+delta to a bounded continuous endpoint.  Conditional flow matching transports
+Gaussian noise to that endpoint through three learned components: a
+source/global-request field, a normalized set of unary property fields, and a
+normalized set of symmetric pairwise interaction fields.  At generation time
+20 independent continuous trajectories are integrated from the source and
+request alone.  The existing source-anchored motif decoder is retained so the
+experiment isolates the latent hypothesis instead of changing the latent and
+graph decoder simultaneously.
+
+The seed-2719 conditions are now explicitly treated as development data, not a
+final audit.  The kill-test gates are deliberately demanding: validity >=95%,
+mean unique-valid >=10/20, overall strict any@20 >=25%, and 3-property strict
+any@20 >=20%.  Failure redirects the project to a new representation/decoder
+backbone rather than another grammar patch.  Exact n=20 and all target/oracle
+access restrictions remain unchanged.
+
+```bash
+bash experiments/unified_latent_flow/submit_continuous_constraint_transport_pilot.sh
+```
