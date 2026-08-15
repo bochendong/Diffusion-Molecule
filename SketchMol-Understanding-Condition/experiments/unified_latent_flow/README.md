@@ -851,3 +851,29 @@ can shape the discrete fragment latent distribution directly, without
 materializing or ranking molecule candidates.  The B24 grammar, B27 energy,
 and B28 quantizer are now frozen for a small Table1 transfer check before MuMO
 or a null-source de novo branch is attempted.
+
+## Stage B33: frozen Pareto-conditioned joint latent
+
+B31 later learned a joint assay energy over site and fragment tokens, and B32
+added a separate train-only structure energy.  B32 raised strict any@20 on its
+48-condition internal pilot from 16.7% to 77.1%, but its fixed structure weight
+missed three preregistered loose-property checks.  B33 tests one structural
+explanation without retraining either head: a single conditional categorical
+latent is evaluated at four fixed structure-preference values.  Five states
+are drawn at each value, and all 20 states are frozen before any molecule is
+assembled.  There is no output pool, ranking, target access, oracle selection,
+retry, or second edit.
+
+The confirmation sources come from B24 train-only sources excluded from the
+entire 512-source B31/B32 energy fit/calibration selection.  B26, Table1 and
+official-test rows remain unread.  The gate requires 90% loose and 70% strict
+overall any@20, 85% loose and 60% strict per task, 0.60 mean source Tanimoto,
+95% validity, 12 mean unique-valid, complete oracle coverage and zero overlap.
+
+```bash
+bash experiments/unified_latent_flow/submit_pareto_conditioned_joint_latent.sh
+```
+
+Only one passing fresh-source pilot advances the frozen B33 sampler to a
+once-only Table1 subset.  A failure stops this one-cut Pareto latent line rather
+than tuning the preference schedule on the same sources.
