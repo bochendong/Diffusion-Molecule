@@ -94,10 +94,21 @@ def read_preregistration(path: Path) -> dict[str, object]:
         "official_test_access": False,
         "exact_raw_attempts_per_condition": 20,
         "development_source_limit": 160,
-        "max_jumps": 32,
+        "max_jumps": 64,
         "epochs": 6,
         "flow_steps": 8,
         "birth_capacity": 8,
+        "pretraining_support_amendment": {
+            "failed_job_id": 19865432,
+            "model_training_started": False,
+            "candidate_generation_started": False,
+            "exact_replay_rate": 1.0,
+            "topological_coverage": 1.0,
+            "horizon_coverage_at_32": 0.9328859060402684,
+            "maximum_observed_target_events": 53,
+            "revised_safety_horizon": 64,
+            "scientific_gate_changed": False,
+        },
     }
     drift = {
         key: {"expected": expected, "actual": payload.get(key)}

@@ -25,7 +25,18 @@ def test_b38_preregisters_a_single_event_process_not_a_region_patch():
     assert payload["molecular_candidate_ranking"] is False
     assert payload["oracle_selection"] is False
     assert payload["exact_raw_attempts_per_condition"] == 20
-    assert payload["max_jumps"] == 32
+    assert payload["max_jumps"] == 64
+    assert payload["pretraining_support_amendment"] == {
+        "failed_job_id": 19865432,
+        "model_training_started": False,
+        "candidate_generation_started": False,
+        "exact_replay_rate": 1.0,
+        "topological_coverage": 1.0,
+        "horizon_coverage_at_32": 0.9328859060402684,
+        "maximum_observed_target_events": 53,
+        "revised_safety_horizon": 64,
+        "scientific_gate_changed": False,
+    }
     assert len(payload["locked_inputs"]) == 8
     assert payload["implementation_sha256"] == hashlib.sha256(
         SCRIPT.read_bytes()

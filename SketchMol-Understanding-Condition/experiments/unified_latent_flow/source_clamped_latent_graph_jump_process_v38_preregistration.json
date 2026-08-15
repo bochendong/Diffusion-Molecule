@@ -12,7 +12,18 @@
   "learned_stop_event": true,
   "orderless_event_set_objective": true,
   "completion_prefix_probability": 0.2,
-  "max_jumps": 32,
+  "max_jumps": 64,
+  "pretraining_support_amendment": {
+    "failed_job_id": 19865432,
+    "model_training_started": false,
+    "candidate_generation_started": false,
+    "exact_replay_rate": 1.0,
+    "topological_coverage": 1.0,
+    "horizon_coverage_at_32": 0.9328859060402684,
+    "maximum_observed_target_events": 53,
+    "revised_safety_horizon": 64,
+    "scientific_gate_changed": false
+  },
   "minimum_event_replay_rate": 0.99,
   "minimum_horizon_coverage": 0.99,
   "hard_patch_count": false,
@@ -87,7 +98,7 @@
     "mean_node_edit_count": 37.441702127659575,
     "mean_edge_edit_count": 432.37212765957446
   },
-  "implementation_sha256": "b3135621cc3d1e2c7e2d9b1b8bc41f78af9058c52b97e7721cce972c1255bfa6",
+  "implementation_sha256": "284f3d627049121fd54807f921c60a4573e90b2f578392ef66010bae376549e7",
   "locked_inputs": {
     "b22_checkpoint_sha256": "0743c8868c482cc65ad92a8cc843baa372095ed8fd6362bc6d887d8d9908d26d",
     "b22_summary_sha256": "6af3ff29e25a2b973a1b8dc8843512ac4f7958ab63c22a89ff3a64e123bf6b04",
