@@ -570,3 +570,33 @@ formal 2p--7p experiment.
 ```bash
 bash experiments/unified_latent_flow/submit_discrete_graph_diffusion_decoder_pilot.sh
 ```
+
+## Stage B21: source-relative sparse delta diffusion
+
+B20 showed that categorical denoising alone is not enough if the decoder must
+regenerate the entire target graph.  It reached only 13.1% validity, 2.28 mean
+unique-valid candidates, 38.9% strict any@20, and 14.3% 3-property strict
+success.  Invalid candidates changed 8.88 nodes and 9.71 edges on average,
+versus 6.62 nodes and 5.74 edges for valid candidates.  Eight of the 18
+development conditions had no valid candidate.  The full-graph absorbing
+process was therefore destroying the valid source scaffold rather than
+learning a calibrated edit distribution.
+
+B21 makes the source graph an exact invariant base and diffuses only sparse
+joint edit actions.  Node tokens are `KEEP`, `DELETE`, or `WRITE` followed by
+one complete train-supported atom state; edge tokens are `KEEP`, `DELETE`, or
+`SET` followed by one complete train-supported bond state.  Typed action masks
+exclude operations that are undefined for the source state, but no valence or
+molecule repair is performed.  This is a source-relative generative state
+space, not a post-hoc filter.
+
+B20 also let the continuous posterior standard deviation collapse to 0.0116.
+B21 restores the B18 variance floor and adds a matched-latent versus rolled-
+latent denoising contrast, so the categorical decoder must use the continuous
+constraint endpoint.  The pilot otherwise retains the same 1,500 requested
+train pairs, fresh 18-condition development set, eight epochs, exact n=20, and
+strict gates.
+
+```bash
+bash experiments/unified_latent_flow/submit_source_relative_delta_diffusion_pilot.sh
+```
