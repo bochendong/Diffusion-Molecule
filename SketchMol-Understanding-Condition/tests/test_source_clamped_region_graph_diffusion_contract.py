@@ -25,6 +25,13 @@ def test_b37_preregisters_a_region_diffusion_not_a_wider_patch_grammar():
     assert payload["oracle_selection"] is False
     assert payload["exact_raw_attempts_per_condition"] == 20
     assert payload["fit_dev_source_group_overlap"] == 0
+    assert payload["train_selection_seed"] == 1741
+    assert payload["fingerprint_bits"] == 512
+    assert payload["engineering_amendment"] == {
+        "failed_job_id": 19863790,
+        "failure_signature": "KeyError: train_selection_seed before data reconstruction",
+        "scientific_configuration_changed": False,
+    }
     assert len(payload["implementation_sha256"]) == 64
     assert len(payload["locked_inputs"]) == 7
 

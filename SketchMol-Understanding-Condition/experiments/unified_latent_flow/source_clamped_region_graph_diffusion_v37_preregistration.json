@@ -17,8 +17,14 @@
   "development_split_seed": 1982,
   "diffusion_steps": 8,
   "epochs": 6,
+  "engineering_amendment": {
+    "failed_job_id": 19863790,
+    "failure_signature": "KeyError: train_selection_seed before data reconstruction",
+    "scientific_configuration_changed": false
+  },
   "exact_raw_attempts_per_condition": 20,
   "fit_dev_source_group_overlap": 0,
+  "fingerprint_bits": 512,
   "flow_loss_weight": 0.5,
   "flow_steps": 8,
   "fragment_library": false,
@@ -78,6 +84,7 @@
   "status": "preregistered_before_first_run",
   "temperature": 0.75,
   "train_limit": 1500,
+  "train_selection_seed": 1741,
   "train_only_property_oracle_for_label_construction": true,
   "trajectory_fractions": [
     0.25,
