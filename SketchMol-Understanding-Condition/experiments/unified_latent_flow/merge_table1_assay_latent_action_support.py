@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Merge the eight preregistered B30 assay-support shards."""
+"""Merge the eight preregistered B30-r1 assay-support shards."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Sequence
 
 
-PROTOCOL = "target_free_table1_assay_latent_action_support_v30"
+PROTOCOL = "target_free_table1_assay_latent_action_support_v30_r1"
 
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -29,6 +29,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     expected = int(preregistration["shards"])
     shards = []
     digests = set()
+    oracle_digests: defaultdict[str, set[str]] = defaultdict(set)
     condition_ids = set()
     for index in range(expected):
         path = args.shard_root / f"shard_{index:03d}" / "summary.json"
@@ -44,6 +45,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise ValueError(f"B30 shard accessed a target: {index}")
         if manifest.get("molecular_candidate_ranking") is not False:
             raise ValueError(f"B30 shard performed molecular ranking: {index}")
+        if manifest.get("oracle_failure_policy") != "raise":
+            raise ValueError(f"B30-r1 shard oracle failure policy drift: {index}")
+        if manifest.get("oracle_preflight_passed") is not True:
+            raise ValueError(f"B30-r1 shard oracle preflight failed: {index}")
+        pinned_oracles = dict(manifest.get("pinned_oracles", {}))
+        if set(pinned_oracles) != {"GSK3B", "DRD2"}:
+            raise ValueError(f"B30-r1 shard oracle provenance drift: {index}")
+        for prop, provenance in pinned_oracles.items():
+            oracle_digests[prop].add(str(dict(provenance).get("sha256", "")))
         support = dict(payload["support"])
         condition_id = str(support["condition_id"])
         if condition_id in condition_ids:
@@ -53,6 +63,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         shards.append(support)
     if len(digests) != 1:
         raise ValueError("B30 shard vocabulary drift")
+    expected_oracles = dict(preregistration.get("oracles", {}))
+    for prop in ("GSK3B", "DRD2"):
+        expected_digest = str(dict(expected_oracles[prop])["sha256"])
+        if oracle_digests[prop] != {expected_digest}:
+            raise ValueError(
+                f"B30-r1 {prop} oracle digest drift: {oracle_digests[prop]}"
+            )
 
     grouped: defaultdict[str, list[dict[str, object]]] = defaultdict(list)
     for row in shards:
@@ -122,6 +139,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             "shards": expected,
             "conditions": len(shards),
             "vocabulary_sha256": next(iter(digests)),
+            "oracle_sha256": {
+                prop: next(iter(digests_for_prop))
+                for prop, digests_for_prop in sorted(oracle_digests.items())
+            },
+            "oracle_failure_policy": "raise",
+            "oracle_preflight_passed": True,
+            "repair_of_protocol": preregistration["repair_of_protocol"],
             "generation_target_access": False,
             "moledit_target_access": False,
             "diagnostic_only": True,

@@ -3,9 +3,9 @@
 
 This is a diagnostic ceiling, not a generator or selector.  For one fixed B29
 GSK3B/DRD2 condition, it enumerates every source MMPA site times every frozen
-train-only B24 fragment token.  Property oracles are used only to measure
-whether the action grammar contains support; no molecule is returned as a
-selected prediction and no evaluation target is read.
+train-only B24 fragment token.  Pinned, fail-closed property oracles are used
+only to measure whether the action grammar contains support; no molecule is
+returned as a selected prediction and no evaluation target is read.
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ for path in (SCRIPT_DIR, PROJECT_DIR, UCA_DIR):
         sys.path.insert(0, str(path))
 
 import table1_energy_tilted_latent_transfer as b29  # noqa: E402
+import pinned_table1_assay_oracles as pinned_oracles  # noqa: E402
 
 
 kernel = b29.kernel
@@ -38,7 +39,7 @@ belief = b29.belief
 graph = b29.graph
 unified = b29.unified
 
-PROTOCOL = "target_free_table1_assay_latent_action_support_v30"
+PROTOCOL = "target_free_table1_assay_latent_action_support_v30_r1"
 TASK_SPECS = {
     "GSK3B:increase": (("GSK3B", 1),),
     "DRD2:decrease+MW:decrease+SA:decrease": (
@@ -55,6 +56,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--b29-summary", type=Path, required=True)
     parser.add_argument("--b29-candidates", type=Path, required=True)
     parser.add_argument("--protocol-manifest", type=Path, required=True)
+    parser.add_argument("--gsk3b-oracle", type=Path, required=True)
+    parser.add_argument("--drd2-oracle", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--shard-index", type=int, required=True)
     return parser.parse_args(argv)
@@ -64,7 +67,7 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     required = {
         "protocol": PROTOCOL,
-        "status": "preregistered_before_first_run",
+        "status": "preregistered_before_repair_run",
         "frozen_fragment_protocol": kernel.PROTOCOL,
         "b29_protocol": b29.PROTOCOL,
         "b26_heldout_access": False,
@@ -74,6 +77,9 @@ def read_preregistration(path: Path) -> dict[str, object]:
         "exhaustive_train_only_vocabulary": True,
         "molecular_candidate_ranking": False,
         "similarity_prefilter": 0.15,
+        "oracle_failure_policy": "raise",
+        "oracle_preflight_required": True,
+        "oracle_batch_size": 256,
         "shards": 8,
     }
     drift = {
@@ -82,9 +88,11 @@ def read_preregistration(path: Path) -> dict[str, object]:
         if payload.get(key) != value
     }
     if drift:
-        raise ValueError(f"B30 preregistration drift: {drift}")
+        raise ValueError(f"B30-r1 preregistration drift: {drift}")
     if payload.get("tasks") != list(TASK_SPECS):
-        raise ValueError("B30 task order drift")
+        raise ValueError("B30-r1 task order drift")
+    if set(dict(payload.get("oracles", {}))) != {"GSK3B", "DRD2"}:
+        raise ValueError("B30-r1 pinned oracle contract drift")
     return payload
 
 
@@ -170,7 +178,9 @@ def load_vocabulary(
     return vocabulary, {"checkpoint_manifest": manifest, "vocabulary_sha256": digest}
 
 
-def finite_score(smiles: str, prop: str) -> float | None:
+def finite_descriptor_score(smiles: str, prop: str) -> float | None:
+    if prop in {"GSK3B", "DRD2"}:
+        raise ValueError(f"B30-r1 refuses unpinned assay scoring for {prop}")
     value = unified.score_property(smiles, prop)
     if value is None or not math.isfinite(float(value)):
         return None
@@ -181,12 +191,21 @@ def audit_condition(
     condition: Mapping[str, str],
     vocabulary: Sequence[str],
     preregistration: Mapping[str, object],
+    assay_oracles: Mapping[str, pinned_oracles.PinnedAssayOracle],
 ) -> dict[str, object]:
     source = condition["source_smiles"]
     task = condition["task"]
     specs = TASK_SPECS[task]
     assay_prop, assay_direction = specs[0]
-    source_values = {prop: finite_score(source, prop) for prop, _direction in specs}
+    source_values = {
+        assay_prop: assay_oracles[assay_prop].score_many([source], batch_size=1)[0]
+    }
+    source_values.update(
+        {
+            prop: finite_descriptor_score(source, prop)
+            for prop, _direction in specs[1:]
+        }
+    )
     if any(value is None for value in source_values.values()):
         raise ValueError(f"B30 source oracle coverage failed: {source_values}")
     config = SimpleNamespace(
@@ -213,6 +232,7 @@ def audit_condition(
     max_assay_margin15 = -float("inf")
     max_assay_similarity = 0.0
     top_support: list[dict[str, object]] = []
+    similar_candidates: list[tuple[str, float, int, str, str]] = []
     for site_index, site in enumerate(sites):
         for token in vocabulary:
             if token == site.variable:
@@ -237,60 +257,92 @@ def audit_condition(
             similar15 += 1
             if similarity >= 0.65:
                 similar65 += 1
-            assay_value = finite_score(product, assay_prop)
-            if assay_value is None:
-                continue
-            assay_evaluated += 1
-            assay_margin = float(assay_direction) * (
-                assay_value - float(source_values[assay_prop])
-            )
-            if assay_margin <= 0.0:
-                continue
-            assay_improved15 += 1
-            if similarity >= 0.65:
-                assay_improved65 += 1
-            max_assay_margin15 = max(max_assay_margin15, assay_margin)
-            max_assay_similarity = max(max_assay_similarity, float(similarity))
-            full_success = True
-            property_margins = {assay_prop: assay_margin}
-            for prop, direction in specs[1:]:
-                value = finite_score(product, prop)
-                if value is None:
-                    full_success = False
-                    property_margins[prop] = None
-                    continue
-                margin = float(direction) * (value - float(source_values[prop]))
-                property_margins[prop] = margin
-                full_success = full_success and margin > 0.0
-            if full_success:
-                full_success15 += 1
-                if similarity >= 0.65:
-                    full_success65 += 1
-            top_support.append(
-                {
-                    "generated_smiles": product,
-                    "site_index": site_index,
-                    "source_fragment": site.variable,
-                    "target_fragment_token": token,
-                    "source_tanimoto": float(similarity),
-                    "assay_margin": assay_margin,
-                    "property_margins": property_margins,
-                    "full_property_success": full_success,
-                }
+            similar_candidates.append(
+                (product, float(similarity), site_index, site.variable, token)
             )
         print(
             json.dumps(
                 {
                     "condition_id": condition["condition_id"],
+                    "stage": "enumerate",
                     "site": site_index + 1,
                     "sites": len(sites),
                     "unique_valid": len(seen),
                     "similar15": similar15,
-                    "assay_improved15": assay_improved15,
                 },
                 sort_keys=True,
             ),
             flush=True,
+        )
+
+    assay_values = assay_oracles[assay_prop].score_many(
+        [row[0] for row in similar_candidates],
+        batch_size=int(preregistration["oracle_batch_size"]),
+    )
+    assay_evaluated = len(assay_values)
+    if assay_evaluated != similar15:
+        raise RuntimeError(
+            f"B30-r1 {assay_prop} coverage mismatch: {assay_evaluated}/{similar15}"
+        )
+    for candidate_index, (candidate, assay_value) in enumerate(
+        zip(similar_candidates, assay_values)
+    ):
+        product, similarity, site_index, source_fragment, token = candidate
+        assay_margin = float(assay_direction) * (
+            assay_value - float(source_values[assay_prop])
+        )
+        if assay_margin <= 0.0:
+            continue
+        assay_improved15 += 1
+        if similarity >= 0.65:
+            assay_improved65 += 1
+        max_assay_margin15 = max(max_assay_margin15, assay_margin)
+        max_assay_similarity = max(max_assay_similarity, float(similarity))
+        full_success = True
+        property_margins = {assay_prop: assay_margin}
+        for prop, direction in specs[1:]:
+            value = finite_descriptor_score(product, prop)
+            if value is None:
+                full_success = False
+                property_margins[prop] = None
+                continue
+            margin = float(direction) * (value - float(source_values[prop]))
+            property_margins[prop] = margin
+            full_success = full_success and margin > 0.0
+        if full_success:
+            full_success15 += 1
+            if similarity >= 0.65:
+                full_success65 += 1
+        top_support.append(
+            {
+                "generated_smiles": product,
+                "site_index": site_index,
+                "source_fragment": source_fragment,
+                "target_fragment_token": token,
+                "source_tanimoto": float(similarity),
+                "assay_margin": assay_margin,
+                "property_margins": property_margins,
+                "full_property_success": full_success,
+            }
+        )
+        if candidate_index % 4096 == 0:
+            print(
+                json.dumps(
+                    {
+                        "condition_id": condition["condition_id"],
+                        "stage": "assay",
+                        "evaluated": candidate_index + 1,
+                        "total": assay_evaluated,
+                        "assay_improved15": assay_improved15,
+                    },
+                    sort_keys=True,
+                ),
+                flush=True,
+            )
+    if assay_values and max(assay_values) - min(assay_values) <= 0.0:
+        raise ValueError(
+            f"B30-r1 {assay_prop} candidate scores are unexpectedly constant: "
+            f"{assay_values[0]} across {len(assay_values)} candidates"
         )
     top_support.sort(
         key=lambda row: (
@@ -304,6 +356,7 @@ def audit_condition(
         "condition_id": condition["condition_id"],
         "task": task,
         "source_smiles": source,
+        "source_property_values": source_values,
         "sites": len(sites),
         "fragment_vocabulary": len(vocabulary),
         "assembly_attempts": attempts,
@@ -314,6 +367,11 @@ def audit_condition(
         "similar_t0_15": similar15,
         "similar_t0_65": similar65,
         "assay_oracle_coverage": assay_evaluated / max(1, similar15),
+        "assay_score_min": min(assay_values) if assay_values else None,
+        "assay_score_max": max(assay_values) if assay_values else None,
+        "assay_score_distinct_rounded_12": len(
+            {round(value, 12) for value in assay_values}
+        ),
         "assay_improved_t0_15": assay_improved15,
         "assay_improved_t0_65": assay_improved65,
         "full_property_success_t0_15": full_success15,
@@ -339,7 +397,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     vocabulary, vocabulary_manifest = load_vocabulary(
         args.fragment_checkpoint, preregistration
     )
-    result = audit_condition(condition, vocabulary, preregistration)
+    assay_oracles, oracle_provenance = pinned_oracles.load_pinned_oracles(
+        gsk3b_path=args.gsk3b_oracle,
+        drd2_path=args.drd2_oracle,
+        specifications=dict(preregistration["oracles"]),
+    )
+    result = audit_condition(
+        condition, vocabulary, preregistration, assay_oracles
+    )
     manifest = {
         "protocol": PROTOCOL,
         "preregistration_sha256": belief.file_sha256(args.protocol_manifest),
@@ -355,6 +420,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "official_test_access": False,
         "property_oracle_generation_access": False,
         "property_oracle_support_audit_access": True,
+        "oracle_failure_policy": "raise",
+        "oracle_preflight_passed": all(
+            bool(dict(value)["preflight"]["passed"])
+            for value in oracle_provenance.values()
+        ),
+        "pinned_oracles": oracle_provenance,
         "exhaustive_train_only_vocabulary": True,
         "molecular_candidate_ranking": False,
         "selected_prediction_output": False,
