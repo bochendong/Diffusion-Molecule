@@ -50,6 +50,7 @@
   "retired_development_seed": 2719,
   "seed": 1911,
   "selection_seed": 1911,
+  "second_edit": false,
   "site_temperature": 0.8,
   "status": "preregistered_before_first_run",
   "table1_tasks": [

@@ -48,6 +48,7 @@ def test_preregistration_fixes_small_table1_subset_and_b28_sampler() -> None:
     assert manifest["distance_temperature"] == 0.03
     assert manifest["energy_weight"] == 1.25
     assert manifest["molecular_candidate_ranking"] is False
+    assert manifest["second_edit"] is False
 
 
 def test_transfer_reports_per_attempt_and_any20_as_distinct_metrics() -> None:
