@@ -877,3 +877,26 @@ bash experiments/unified_latent_flow/submit_pareto_conditioned_joint_latent.sh
 Only one passing fresh-source pilot advances the frozen B33 sampler to a
 once-only Table1 subset.  A failure stops this one-cut Pareto latent line rather
 than tuning the preference schedule on the same sources.
+
+## Stage B34: continuous Pareto latent transport
+
+B33 recovered 47/48 loose successes while retaining all 40/48 strict
+successes from B32, but its five property-only draws lowered mean source
+Tanimoto to 0.591 and missed the frozen 0.60 gate.  B34 does not change that
+gate or revisit B33's 24 fresh sources.  It returns to the source-disjoint
+B31/B32 train/internal-dev pool and learns one continuous energy over latent
+``(attachment site, fragment token)`` states.  The preference input specifies
+a source-similarity requirement interpolated from 0.15 to 0.65, so the learned
+margin is the joint property/structure feasibility of the latent state rather
+than a decision about an already decoded molecule.
+
+At generation, 20 fixed preferences between 0.10 and 1.00 each draw one state
+directly from the conditional categorical latent distribution.  All states are
+frozen before molecule assembly.  There is no molecule pool, output sorting,
+oracle selection, retry, B33-fresh access, Table1 access, B26 access, or
+official-test access.  The first job is only an internal-dev signal; a pass
+freezes the transport for one new prospective source split, not Table1.
+
+```bash
+bash experiments/unified_latent_flow/submit_continuous_pareto_latent_transport.sh
+```
