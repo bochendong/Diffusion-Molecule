@@ -1,0 +1,46 @@
+{
+  "condition_dim": 64,
+  "evaluation_target_access": false,
+  "fingerprint_bits": 256,
+  "flow_steps": 12,
+  "fresh_validation_selection_seed": 4099,
+  "frozen_commit": "b9d5f5e",
+  "frozen_model_protocol": "continuous_latent_fragment_attachment_kernel_pilot_v24",
+  "frozen_model_seed": 1761,
+  "gates": {
+    "mean_source_tanimoto": 0.4,
+    "mean_unique_valid": 12.0,
+    "minimum_conditions_per_property_count": 5,
+    "strict_any20": 0.65,
+    "three_property_strict_any20": 0.5,
+    "two_property_strict_any20": 0.8,
+    "validity": 0.95
+  },
+  "generation_seed": 1873,
+  "graph_fingerprint_bits": 512,
+  "hyperparameter_search": false,
+  "max_variable_heavy_atoms": 30,
+  "mcs_timeout": 1,
+  "min_common_fraction": 0.45,
+  "min_core_heavy_atoms": 5,
+  "minimum_conditions": 20,
+  "model_training": false,
+  "num_attempts": 20,
+  "official_test_access": false,
+  "prior_validation_limit": 20,
+  "prior_validation_selection_seeds": [
+    1742,
+    2719
+  ],
+  "property_counts": [
+    2,
+    3
+  ],
+  "protocol": "frozen_fragment_attachment_fresh_holdout_v26",
+  "repeat_after_scientific_failure": false,
+  "site_temperature": 0.8,
+  "status": "preregistered_before_first_run",
+  "train_limit": 1500,
+  "train_selection_seed": 1741,
+  "validation_limit": 30
+}

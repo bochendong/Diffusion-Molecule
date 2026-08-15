@@ -731,3 +731,32 @@ overall strict any@20 from 72.2% to 66.7% and 3-property strict from 42.9% to
 therefore the frozen winner of this sequence.  Any subsequent 3-property work
 must learn a train-only residual property energy inside the first fragment
 latent; adding unconditional edit depth is not supported.
+
+## Stage B26: once-only fresh-heldout confirmation
+
+The 18-condition development split used from B22 through B25 is now retired
+from model selection.  B26 loads the frozen B24 checkpoint without training,
+reconstructs and excludes the original B24 training selection, excludes both
+the historical seed-1742 and reused seed-2719 validation selections, and then
+selects up to 30 untouched 2-/3-property conditions with the preregistered
+seed 4099.  The committed preregistration fixes the model checkpoint protocol,
+split seeds, generation seed, exact n=20 budget, and all scientific gates
+before the first run.
+
+Generation remains target blind and direct: one source-only MMPA site, one
+continuous fragment latent, one train-only VQ token, and at most one raw
+molecule per attempt.  No training, hyperparameter search, official-test
+access, oracle selection, validity feedback, retry, or molecular ranking is
+available.  A completed scientific failure cannot be rerun or tuned against
+this heldout.  Passing requires at least 20 conditions, at least five 2p and
+five 3p conditions, 95% validity, 65% overall strict any@20, 80% 2p strict,
+50% 3p strict, 12 mean unique-valid, mean source Tanimoto 0.4, and zero split
+overlap.
+
+```bash
+bash experiments/unified_latent_flow/submit_frozen_fragment_attachment_fresh_holdout.sh
+```
+
+Only a passing B26 result advances the frozen B24 method to small cross-task
+Table1, MuMO, and de novo transfer checks.  A failure is reported as a frozen
+generalization result; B26 itself is never used for another tuning cycle.
