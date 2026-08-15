@@ -630,3 +630,33 @@ before implementing a more expensive learned local-rewrite transition kernel.
 ```bash
 bash experiments/unified_latent_flow/submit_valid_early_stop_delta_diffusion_pilot.sh
 ```
+
+## Stage B23: latent-conditioned local rewrite support
+
+B22 confirms the early-stop supervision signal: 66.8% of train pairs contain a
+strict successful intermediate before the full endpoint, and selected actions
+fall from 18.11 to 11.67 without source-copy collapse.  It raises development
+validity from 33.6% to 45.0% and 2-property strict any@20 from 63.6% to 72.7%,
+but 3-property strict any@20 falls to zero.  Five HBA+/MW+/QED- conditions have
+no valid candidates at all; two MW-/SA-/DRD2- conditions are fully valid but
+reach at most two of three properties.  This separates a generative grammar
+failure from the later need for residual multi-step editing.
+
+B23 first tests the cheaper grammar hypothesis without retraining.  It loads
+the frozen B22 checkpoint and lets the denoiser's latent-conditioned non-KEEP
+node and edge logits choose one edit center for 2-property requests and two for
+3-property requests.  Reverse diffusion is then confined to the one-hop source
+neighbourhood of those centers plus the fixed birth slots.  The region is part
+of every categorical reverse step; it is not a post-hoc molecule repair or a
+candidate filter.  Development targets, property outcomes, and RDKit validity
+remain inaccessible until exactly 20 raw action samples have been frozen.
+
+The signal gate asks for at least +10 percentage points validity over B22,
+strict any@20 no worse than -5 points, and restored 3-property strict any@20 of
+at least 14%.  Passing this gate supports a trained two-step residual latent
+local rewrite; failing it redirects the model toward a fragment-attachment
+grammar rather than further temperature or ranking patches.
+
+```bash
+bash experiments/unified_latent_flow/submit_latent_edit_center_rewrite_decode.sh
+```
