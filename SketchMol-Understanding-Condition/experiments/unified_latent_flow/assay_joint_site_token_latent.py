@@ -186,18 +186,36 @@ def pseudo_row(source: str, task: str, condition_id: str) -> dict[str, str]:
 
 
 def select_train_sources(
-    train_pairs: Sequence[object], *, limit: int, seed: int
-) -> list[object]:
+    train_pairs: Sequence[object],
+    *,
+    limit: int,
+    seed: int,
+    site_config: SimpleNamespace,
+) -> tuple[list[object], dict[str, int]]:
     by_source: dict[str, object] = {}
     for pair in train_pairs:
         by_source.setdefault(str(pair.source_smiles), pair)
+    eligible = [
+        pair
+        for pair in by_source.values()
+        if kernel.source_sites(str(pair.source_smiles), site_config)
+    ]
     ordered = sorted(
-        by_source.values(),
+        eligible,
         key=lambda pair: b27.stable_value(seed, "source", pair.source_smiles),
     )
     if len(ordered) < int(limit):
-        raise ValueError(f"B31 has only {len(ordered)} unique train sources")
-    return ordered[: int(limit)]
+        raise ValueError(
+            "B31 has only "
+            f"{len(ordered)} attachment-site-eligible unique train sources"
+        )
+    selected = ordered[: int(limit)]
+    return selected, {
+        "unique_reconstructed_sources": len(by_source),
+        "attachment_site_eligible_sources": len(eligible),
+        "sources_without_attachment_site": len(by_source) - len(eligible),
+        "selected_sources": len(selected),
+    }
 
 
 def build_conditions(
@@ -901,10 +919,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     train_pairs, reconstruction = b27.reconstruct_b24_train_pairs(args, preregistration)
-    source_pairs = select_train_sources(
+    action_config = SimpleNamespace(
+        min_core_heavy_atoms=int(preregistration["min_core_heavy_atoms"]),
+        max_variable_heavy_atoms=int(preregistration["max_variable_heavy_atoms"]),
+        fingerprint_bits=int(preregistration["fingerprint_bits"]),
+    )
+    source_pairs, source_selection = select_train_sources(
         train_pairs,
         limit=int(preregistration["train_source_limit"]),
         seed=int(preregistration["source_selection_seed"]),
+        site_config=action_config,
     )
     fit_sources, dev_sources = source_split(
         source_pairs,
@@ -924,11 +948,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     condition_latents = np.stack(
         [source_latents_unique[source_index[row.source_smiles]] for row in conditions]
     ).astype(np.float32)
-    action_config = SimpleNamespace(
-        min_core_heavy_atoms=int(preregistration["min_core_heavy_atoms"]),
-        max_variable_heavy_atoms=int(preregistration["max_variable_heavy_atoms"]),
-        fingerprint_bits=int(preregistration["fingerprint_bits"]),
-    )
     site_lists: list[list[kernel.Site]] = []
     site_contexts: list[np.ndarray] = []
     candidates: list[CandidateAction] = []
@@ -1131,6 +1150,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "b30_summary_sha256": belief.file_sha256(args.b30_summary),
         "representation_protocol": representation_summary.get("protocol"),
         "training_sources": len(source_pairs),
+        "training_source_selection": source_selection,
         "fit_sources": len(fit_sources),
         "internal_dev_sources": len(dev_sources),
         "fit_internal_dev_source_overlap": len(fit_sources & dev_sources),

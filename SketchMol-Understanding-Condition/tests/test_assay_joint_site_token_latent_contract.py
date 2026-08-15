@@ -31,6 +31,10 @@ def test_joint_latent_samples_states_without_molecule_ranking() -> None:
 def test_training_is_train_only_and_table1_is_gate_guarded() -> None:
     source = MODEL.read_text(encoding="utf-8")
     assert "reconstruct_b24_train_pairs" in source
+    assert "attachment_site_eligible_sources" in source
+    assert "sources_without_attachment_site" in source
+    assert "if kernel.source_sites(str(pair.source_smiles), site_config)" in source
+    assert '"training_source_selection": source_selection' in source
     assert '"training_labels_from_b24_train_sources_only": True' in source
     assert '"evaluation_source_training_access": False' in source
     assert "if internal_gate_passed:" in source
