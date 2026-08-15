@@ -760,3 +760,20 @@ bash experiments/unified_latent_flow/submit_frozen_fragment_attachment_fresh_hol
 Only a passing B26 result advances the frozen B24 method to small cross-task
 Table1, MuMO, and de novo transfer checks.  A failure is reported as a frozen
 generalization result; B26 itself is never used for another tuning cycle.
+
+B26 completes on 27 untouched conditions and 540 exact raw attempts.  The
+structural action generalizes: validity is 100%, mean unique-valid is 17.93,
+mean source Tanimoto is 0.428, every split overlap is zero, and all eight
+2-property conditions reach strict any@20.  The multi-property controller does
+not generalize: overall strict any@20 is 44.4% and 3-property strict is 21.1%
+(4/19), below the preregistered 65% and 50% gates.  All 13
+`MW-/SA-/DRD2-` conditions reach exactly two of three properties but none reach
+all three; the `HBA+/MW+/QED-` task reaches 4/6.
+
+This freezes a more useful conclusion than another matched-split score: the
+one-cut latent fragment grammar solves validity, diversity, similarity, and
+2-property editing, while the property-to-fragment latent lacks robust 3p
+composition.  The B26 heldout is retired.  Any next model must learn a
+train-only property energy inside the first fragment latent on a separate
+fit/internal-dev split; it must not add unconditional edit depth or tune on
+these 27 conditions.
