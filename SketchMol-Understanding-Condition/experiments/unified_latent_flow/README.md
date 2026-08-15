@@ -600,3 +600,33 @@ strict gates.
 ```bash
 bash experiments/unified_latent_flow/submit_source_relative_delta_diffusion_pilot.sh
 ```
+
+## Stage B22: train-only valid early-stop trajectory supervision
+
+B21 restored the continuous posterior variance and improved validity from
+13.1% to 33.6%, but did not make the sampled deltas small.  A direct audit of
+the aligned development targets explains why: the supervised targets change
+8.83 nodes and 10.5 edges on average, while B21 changes 8.41 nodes and 9.50
+edges.  The model is calibrated to the full endpoint.  Valid B21 candidates,
+however, change only 7.02 nodes and 6.09 edges, versus 9.12 and 11.23 for
+invalid candidates.  The useful object is therefore a valid property-success
+intermediate, not the complete paired target.
+
+B22 constructs such intermediates from train pairs only.  It orders the
+changed region by connected graph traversals, materializes 25%, 50%, 75%, and
+100% delta prefixes on the source, and chooses the smallest candidate that is
+both RDKit-valid and property-successful at similarity >=0.4.  These checks
+create training labels only.  Before model fitting, an evidence gate requires
+at least 20% of train pairs to admit a strict early stop and at least 80% of
+selected endpoints to satisfy their property request.  If the evidence gate
+fails, the run writes a complete summary and spends no training compute.
+
+Generation remains exactly B21 source-relative delta diffusion.  It does not
+call the property oracle or RDKit validity checker, does not reject a sampled
+graph, and does not rank or finalize the exact 20 raw candidates.  This pilot
+therefore tests whether changing the learned endpoint distribution is enough
+before implementing a more expensive learned local-rewrite transition kernel.
+
+```bash
+bash experiments/unified_latent_flow/submit_valid_early_stop_delta_diffusion_pilot.sh
+```
