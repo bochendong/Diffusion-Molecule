@@ -805,3 +805,35 @@ property-energy hypothesis without tuning on B26.
 ```bash
 bash experiments/unified_latent_flow/submit_latent_property_energy_guidance.sh
 ```
+
+B27 completes on 1,047 fit and 267 source-disjoint internal-dev pairs.  Its
+train-only energy is well calibrated: 1,869 complete dev labels, margin
+Spearman 0.622, strict AUC 0.904, pairwise preference accuracy 0.811, and
+top-1 strict recall 0.931.  Guided generation retains 100% validity, 18.15
+mean unique-valid, 0.448 source Tanimoto, and 100% 2p strict.  It raises overall
+strict any@20 only from 67.5% to 70.0% and 3p strict from 35% to 40%, missing
+the preregistered +5 and +10 point gates.  Only 11.1% of the 800 attempts cross
+to a different VQ token.  B27 therefore rejects post-flow Euclidean gradient
+displacement, not the learned energy itself.
+
+## Stage B28: energy-tilted VQ latent sampling
+
+B28 is a zero-training quantizer test.  The frozen B24 transported latent gives
+a distance prior over all train-only fragment codes, and the frozen B27 energy
+tilts that categorical distribution.  One token is sampled directly; no
+fragment is attached and no molecule is constructed until after the draw.
+This is a learned latent decoder distribution, not molecule candidate ranking.
+It does not sort tokens, inspect validity, call a property oracle, retry, or add
+a second edit.
+
+The single preregistered configuration uses distance temperature 0.03 and
+standardized energy weight 1.25 on the same 40-condition internal development
+kill test.  It must obtain at least +5 points overall strict and +10 points 3p
+strict over the matched frozen B24 decode while retaining 95% validity, 12
+mean unique-valid, source Tanimoto 0.4, and no material 2p regression.  Failure
+freezes the one-fragment latent line as insufficient for robust 3p control;
+B26 remains untouched in either case.
+
+```bash
+bash experiments/unified_latent_flow/submit_energy_tilted_vq_fragment_sampling.sh
+```
