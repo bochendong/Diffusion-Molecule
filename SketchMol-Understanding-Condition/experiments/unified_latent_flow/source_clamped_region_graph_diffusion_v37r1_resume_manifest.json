@@ -1,0 +1,32 @@
+{
+  "candidate_filtering": false,
+  "candidate_modification": false,
+  "candidate_ranking": false,
+  "exact_raw_attempts_per_condition": 20,
+  "expected_candidate_rows": 4700,
+  "expected_conditions": 235,
+  "failed_job_id": 19864238,
+  "failure_signature": "KeyError: target_atom_count after 4700 candidates frozen",
+  "gates": {
+    "mean_source_tanimoto": 0.6,
+    "mean_unique_valid": 10.0,
+    "strict_any20": 0.65,
+    "three_property_strict_any20": 0.5,
+    "two_property_strict_any20": 0.75,
+    "validity": 0.9
+  },
+  "locked_files": {
+    "b37_implementation_sha256": "3efb6d49ae4ee33dc8b618acf4e4a80ac443e4b17e2421444e3243860aacf33e",
+    "failed_log_sha256": "dd544f6dd0091cd77119bc0be3e1dc164edd690c590d8c58f13922d668f462e5",
+    "frozen_candidates_sha256": "d43297c82fbd9f6a621329409abffe6296fdd26b8487a06c5492eb23f0f748d7",
+    "original_preregistration_sha256": "8f280163949809dae892b8d75c82e5d9e4c77485fbf33673f5fc523a1ded2ca9",
+    "resume_implementation_sha256": "34234d7f9a083c33eb9a6610ce177fed064c45823ceaa58d11a643be0f1db4fc"
+  },
+  "model_training": false,
+  "molecular_candidate_generation": false,
+  "oracle_selection": false,
+  "post_freeze_evaluation_only": true,
+  "protocol": "frozen_candidate_evaluation_resume_v37r1",
+  "scientific_configuration_changed": false,
+  "status": "engineering_resume_preregistered_before_evaluation"
+}
