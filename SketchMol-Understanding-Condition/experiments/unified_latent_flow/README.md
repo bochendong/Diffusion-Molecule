@@ -660,3 +660,26 @@ grammar rather than further temperature or ranking patches.
 ```bash
 bash experiments/unified_latent_flow/submit_latent_edit_center_rewrite_decode.sh
 ```
+
+## Stage B24 evidence: train-only fragment-attachment coverage
+
+B23 passes its signal gate: latent edit centers raise validity from 45.0% to
+60.8%, overall strict any@20 from 44.4% to 61.1%, 3-property strict from 0% to
+42.9%, and unique-valid candidates from 5.56 to 9.56.  The remaining failures
+are asymmetric.  Growth requests (`HBA+/MW+/QED-`) have only 19% validity,
+whereas the shrink/DRD2 requests have 97.5% validity but still miss one
+property.  A universal second raw-delta pass would compound the wrong failure.
+
+B24 first runs a CPU-only evidence gate for a whole-fragment generative action.
+On the exact B22 train/development split, it fragments train pairs with one-cut
+MMPA, finds source and target variables around an identical core, and checks
+that attaching the train target variable reconstructs the paired target.  No
+development target contributes a fragment or transform.  The gate requires
+30% coverage overall, on 3-property pairs, and specifically on the growth
+task; at least 95% exact target reconstruction among covered pairs; and at
+least 100 unique target fragments.  Only a passing gate justifies training a
+continuous latent over attachment-site and fragment tokens.
+
+```bash
+bash experiments/unified_latent_flow/submit_fragment_attachment_coverage_gate.sh
+```
