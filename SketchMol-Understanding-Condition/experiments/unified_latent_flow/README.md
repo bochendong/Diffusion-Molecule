@@ -703,3 +703,23 @@ finalizer.  The primary pilot remains exact n=20.
 ```bash
 bash experiments/unified_latent_flow/submit_latent_fragment_attachment_kernel_pilot.sh
 ```
+
+B24 finishes on the matched 18-condition development split with 100% candidate
+validity, 72.2% overall strict any@20, 90.9% 2-property strict, 42.9%
+3-property strict, and 18.39 unique-valid candidates per condition.  All 360
+rows are direct one-token decodes; source-copy rate is zero.
+
+## Stage B25: target-blind residual fragment rollout
+
+B25 is a zero-training capacity test.  It keeps B24 unchanged for 2-property
+requests.  For every 3-property attempt it encodes the B24 intermediate graph
+and applies the same frozen fragment kernel once more with the original
+property slots.  The second action is unconditional on measured property or
+validity outcomes: it always occurs for 3-property requests, and failures are
+not retried.  Exactly 20 final trajectories are frozen before evaluation.  The
+signal gate requires at least +14 points 3-property strict, >=95% validity,
+overall strict regression no worse than five points, and >=15 unique-valid.
+
+```bash
+bash experiments/unified_latent_flow/submit_two_step_residual_fragment_rollout.sh
+```
