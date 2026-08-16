@@ -42,6 +42,8 @@ def test_set_closed_code_uses_atomic_rewrites_and_source_group_meta_split():
     assert '"molecular_candidate_generation": False' in source
     assert '"molecular_candidate_ranking": False' in source
     assert '"oracle_selection": False' in source
+    assert 'target["bond"]' in source
+    assert 'target["bond_type"]' not in source
 
 
 def test_set_closed_runner_is_cpu_only_and_bounded():

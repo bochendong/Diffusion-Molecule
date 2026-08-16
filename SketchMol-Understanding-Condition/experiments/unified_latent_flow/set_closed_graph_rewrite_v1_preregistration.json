@@ -24,7 +24,7 @@
     "selected_strict_rate": 0.80
   },
   "historical_validation_limit": 20,
-  "implementation_sha256": "d23002dd6e22b750560e940f4cafdb276c4e205681bfa8854ae34e353b526c39",
+  "implementation_sha256": "938b6ee50a10cce878d3a3dcd5ae651108f3a308c7347e20e8daa08137e17e84",
   "locked_inputs": {
     "b22_checkpoint_sha256": "0743c8868c482cc65ad92a8cc843baa372095ed8fd6362bc6d887d8d9908d26d",
     "b22_summary_sha256": "6af3ff29e25a2b973a1b8dc8843512ac4f7958ab63c22a89ff3a64e123bf6b04",

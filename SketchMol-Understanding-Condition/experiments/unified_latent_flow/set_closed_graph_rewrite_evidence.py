@@ -180,7 +180,7 @@ def record_tokens(
         node_tokens.extend(local_nodes.values())
         for offset, left in enumerate(component):
             for right in component[offset + 1 :]:
-                if int(target["bond_type"][0, left, right].item()) == 0:
+                if int(target["bond"][0, left, right].item()) == 0:
                     continue
                 internal_edge_tokens.append(
                     edge_token(
