@@ -163,6 +163,7 @@ def read_preregistration(path: Path) -> dict[str, object]:
         "moledit_table1_benchmark_access": False,
         "official_test_access": False,
         "development_source_limit": 160,
+        "condition_slots": 18,
     }
     drift = {
         key: {"expected": expected, "actual": payload.get(key)}
@@ -455,9 +456,22 @@ def deterministic_kmeans(
     return matrix.astype(np.float32), labels, manifest
 
 
-def pair_feature(pair: object, bits: int) -> np.ndarray:
+def pair_feature(
+    pair: object,
+    bits: int,
+    *,
+    condition_slots: int,
+    condition_dim: int,
+) -> np.ndarray:
     source = atomic.fingerprint(pair.source_smiles, int(bits))
     condition = np.asarray(pair.condition, dtype=np.float32).reshape(-1)
+    expected = int(condition_slots) * int(condition_dim)
+    if condition.size != expected:
+        raise ValueError(
+            "Compositional VQ condition-slot drift: "
+            f"expected {condition_slots}x{condition_dim}={expected}, "
+            f"found shape {np.asarray(pair.condition).shape} ({condition.size})"
+        )
     return np.concatenate([source, condition]).astype(np.float32)
 
 
@@ -517,7 +531,12 @@ def train_code_flow(
     features = torch.from_numpy(
         np.stack(
             [
-                pair_feature(pair, int(preregistration["source_fingerprint_bits"]))
+                pair_feature(
+                    pair,
+                    int(preregistration["source_fingerprint_bits"]),
+                    condition_slots=int(preregistration["condition_slots"]),
+                    condition_dim=int(preregistration["condition_dim"]),
+                )
                 for pair, _key in examples
             ]
         )
@@ -647,7 +666,12 @@ def freeze_candidates(
         condition_id = f"train_only_dev_{pair_index:04d}"
         if actions:
             features = torch.from_numpy(
-                pair_feature(pair, int(preregistration["source_fingerprint_bits"]))
+                pair_feature(
+                    pair,
+                    int(preregistration["source_fingerprint_bits"]),
+                    condition_slots=int(preregistration["condition_slots"]),
+                    condition_dim=int(preregistration["condition_dim"]),
+                )
             )[None, :].to(device)
             logits = model(
                 features,
@@ -845,8 +869,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         key: int(code) for key, code in zip(keys, transaction_codes.tolist())
     }
     input_dim = int(preregistration["source_fingerprint_bits"]) + int(
-        preregistration["condition_dim"]
-    )
+        preregistration["condition_slots"]
+    ) * int(preregistration["condition_dim"])
     model = ConditionalTransactionCodeFlow(
         input_dim=input_dim,
         hidden_dim=int(preregistration["hidden_dim"]),

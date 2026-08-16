@@ -20,6 +20,8 @@ def test_preregistration_locks_implementation_and_exact20_contract() -> None:
     digest = hashlib.sha256(IMPLEMENTATION.read_bytes()).hexdigest()
     assert payload["implementation_sha256"] == digest
     assert payload["reaction_context_radius"] == 0
+    assert payload["condition_dim"] == 64
+    assert payload["condition_slots"] == 18
     assert payload["particle_pool_size"] == 20
     assert payload["exact_raw_attempts_per_condition"] == 20
     assert payload["single_complete_transaction_per_attempt"] is True
@@ -42,6 +44,7 @@ def test_implementation_freezes_before_oracle_evaluation() -> None:
     assert "pair.target_smiles" not in source[
         source.index("def freeze_candidates(") : source.index("def write_rows(")
     ]
+    assert "Compositional VQ condition-slot drift" in source
 
 
 def test_generation_is_code_sampling_without_molecule_ranking() -> None:

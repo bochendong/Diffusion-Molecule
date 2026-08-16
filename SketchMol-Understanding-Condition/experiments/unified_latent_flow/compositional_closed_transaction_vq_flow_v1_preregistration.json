@@ -38,6 +38,7 @@
   "validation_selection_seed": 2719,
   "fingerprint_bits": 512,
   "condition_dim": 64,
+  "condition_slots": 18,
   "mcs_timeout": 1,
   "min_common_fraction": 0.45,
   "trajectory_fractions": [0.25, 0.5, 0.75, 1.0],
@@ -105,7 +106,7 @@
     "mean_source_tanimoto": 0.7137362638909922,
     "target_improvement_any20": 0.7319148936170212
   },
-  "implementation_sha256": "c6486247a115dc424e017c48583666b860aa72a8530c849d4b1ffa9467b5466f",
+  "implementation_sha256": "178ebb4a5392cfb426f9336ee152333ddec7fdaaaf7c07203ac19cf1cc701470",
   "locked_inputs": {
     "atomic_checkpoint_sha256": "2b0fac36585d19d5f92417ebb537da60ea449145d07ba75a5050fd962cbc1bfd",
     "atomic_summary_sha256": "ec18116e3d1dc88e7061f84504ca7b4b2dac303502c2b9ec7fb586aa770fa869",
