@@ -164,6 +164,9 @@ def read_preregistration(path: Path) -> dict[str, object]:
         "official_test_access": False,
         "development_source_limit": 160,
         "condition_slots": 18,
+        "primary_evaluator_semantics_match_b38": True,
+        "legacy_graph_jump_event_diagnostics_applicable": False,
+        "transaction_native_diagnostics": True,
     }
     drift = {
         key: {"expected": expected, "actual": payload.get(key)}
@@ -788,6 +791,80 @@ def write_rows(path: Path, rows: Sequence[Mapping[str, object]]) -> None:
         writer.writerows(rows)
 
 
+def evaluate_frozen_transactions(
+    frozen: Sequence[Mapping[str, object]], pairs: Sequence[object]
+) -> tuple[list[dict[str, object]], dict[str, object]]:
+    """Use the locked primary evaluator with transaction-native diagnostics.
+
+    The old B38 evaluator additionally requires graph-jump token counts.  Those
+    columns have no faithful meaning for one atomic RDKit reaction transaction,
+    so this wrapper intentionally keeps the identical validity/property/
+    similarity calculations while reporting reaction components instead of
+    inventing node/edge-token values.
+    """
+
+    unified = b43.b41.b38.unified
+    evaluated: list[dict[str, object]] = []
+    for row in frozen:
+        pair = pairs[int(row["pair_index"])]
+        smiles = str(row["generated_smiles"] or "")
+        valid = bool(smiles)
+        source_tanimoto = (
+            graph.morgan_tanimoto(pair.source_smiles, smiles) if valid else None
+        )
+        target_tanimoto = (
+            graph.morgan_tanimoto(pair.target_smiles, smiles) if valid else None
+        )
+        fraction, _, evaluated_properties, property_success = (
+            unified.instruction_success_and_distance(
+                pair.row, smiles, task_specs=base.task_specs(pair.row)
+            )
+        )
+        similarity_success = bool(
+            source_tanimoto is not None and source_tanimoto >= 0.4
+        )
+        evaluated.append(
+            {
+                **dict(row),
+                "target_smiles": pair.target_smiles,
+                "source_atom_count": int(np.asarray(pair.source.node_mask).sum()),
+                "target_atom_count": int(np.asarray(pair.target.node_mask).sum()),
+                "valid": valid,
+                "source_tanimoto": float(source_tanimoto or 0.0),
+                "target_tanimoto": float(target_tanimoto or 0.0),
+                "property_fraction": float(fraction),
+                "evaluated_properties": int(evaluated_properties),
+                "property_success": bool(property_success),
+                "source_similarity_success": similarity_success,
+                "strict_success": bool(property_success and similarity_success),
+                "source_copy_target_tanimoto": float(
+                    graph.morgan_tanimoto(pair.source_smiles, pair.target_smiles)
+                    or 0.0
+                ),
+            }
+        )
+    metrics = base.summarize_candidates(evaluated, 20)
+    for name in (
+        "latent_norm",
+        "event_count",
+        "transaction_components",
+        "affected_components",
+    ):
+        metrics[f"mean_{name}"] = float(
+            np.mean([float(row[name]) for row in evaluated])
+        )
+    metrics["outside_source_invariant_rate"] = sum(
+        bool(row["outside_source_invariant"]) for row in evaluated
+    ) / max(1, len(evaluated))
+    metrics["learned_stop_rate"] = sum(
+        bool(row["stopped_by_model"]) for row in evaluated
+    ) / max(1, len(evaluated))
+    metrics["max_horizon_hit_rate"] = sum(
+        bool(row["max_horizon_hit"]) for row in evaluated
+    ) / max(1, len(evaluated))
+    return evaluated, metrics
+
+
 def gate_result(
     metrics: Mapping[str, object],
     codebook: Mapping[str, object],
@@ -919,9 +996,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     frozen_path = args.output_dir / "frozen_train_only_dev_transactions.csv"
     write_rows(frozen_path, frozen)
     frozen_sha256 = belief.file_sha256(frozen_path)
-    evaluated, metrics = b43.b41.b38.evaluate_frozen_candidates(
-        frozen, development_pairs
-    )
+    evaluated, metrics = evaluate_frozen_transactions(frozen, development_pairs)
     evaluated_path = args.output_dir / "evaluated_train_only_dev_transactions.csv"
     write_rows(evaluated_path, evaluated)
     gate = gate_result(
@@ -955,6 +1030,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         "support_is_decoder_action_space": True,
         "only_sampled_transactions_committed": True,
         "frozen_before_target_or_property_evaluation": True,
+        "primary_evaluator_semantics_match_b38": True,
+        "legacy_graph_jump_event_diagnostics_applicable": False,
+        "transaction_native_diagnostics": True,
         "frozen_candidates_sha256": frozen_sha256,
         "molecular_candidate_ranking": False,
         "oracle_selection": False,

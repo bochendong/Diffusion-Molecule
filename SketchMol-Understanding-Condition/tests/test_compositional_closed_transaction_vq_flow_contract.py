@@ -32,6 +32,9 @@ def test_preregistration_locks_implementation_and_exact20_contract() -> None:
     assert payload["second_edit"] is False
     assert payload["generation_target_access"] is False
     assert payload["generation_property_oracle_access"] is False
+    assert payload["primary_evaluator_semantics_match_b38"] is True
+    assert payload["legacy_graph_jump_event_diagnostics_applicable"] is False
+    assert payload["transaction_native_diagnostics"] is True
 
 
 def test_implementation_freezes_before_oracle_evaluation() -> None:
@@ -39,12 +42,13 @@ def test_implementation_freezes_before_oracle_evaluation() -> None:
     freeze = source.index("frozen, development_support = freeze_candidates(")
     write = source.index("write_rows(frozen_path, frozen)", freeze)
     digest = source.index("frozen_sha256 = belief.file_sha256(frozen_path)", write)
-    evaluate = source.index("evaluate_frozen_candidates(", digest)
+    evaluate = source.index("evaluate_frozen_transactions(frozen, development_pairs)", digest)
     assert freeze < write < digest < evaluate
     assert "pair.target_smiles" not in source[
         source.index("def freeze_candidates(") : source.index("def write_rows(")
     ]
     assert "Compositional VQ condition-slot drift" in source
+    assert "legacy_graph_jump_event_diagnostics_applicable" in source
 
 
 def test_generation_is_code_sampling_without_molecule_ranking() -> None:
