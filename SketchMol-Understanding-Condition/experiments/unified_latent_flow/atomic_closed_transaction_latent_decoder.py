@@ -330,6 +330,16 @@ def fingerprint(smiles: str, bits: int) -> np.ndarray:
     return np.asarray(generator.GetFingerprintAsNumPy(mol), dtype=np.float32)
 
 
+@lru_cache(maxsize=250000)
+def molecule_atom_count(smiles: str) -> int:
+    """Return the explicit molecular-graph atom count used by the evaluator."""
+
+    from rdkit import Chem
+
+    mol = Chem.MolFromSmiles(str(smiles or ""))
+    return int(mol.GetNumAtoms()) if mol is not None else 0
+
+
 def transaction_feature(
     source_smiles: str, value: ClosedTransaction, bits: int
 ) -> np.ndarray:
@@ -565,6 +575,7 @@ def freeze_candidates(
                     "source_smiles": pair.source_smiles,
                     "particle_index": attempt - 1,
                     "generated_smiles": action.smiles,
+                    "predicted_atom_count": molecule_atom_count(action.smiles),
                     "transaction_support_size": len(actions) - 1,
                     "transaction_probability": float(
                         probabilities[attempt - 1, action_index].cpu()

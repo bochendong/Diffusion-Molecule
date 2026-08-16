@@ -45,6 +45,7 @@ def test_atomic_transaction_code_samples_actions_without_ranking_or_retry():
     assert "def set_transaction_loss" in source
     assert "def freeze_candidates" in source
     assert "torch.multinomial" in source
+    assert '"predicted_atom_count": molecule_atom_count(action.smiles)' in source
     assert "only_sampled_transactions_committed" in source
     assert '"molecular_candidate_ranking": False' in source
     assert '"oracle_selection": False' in source
