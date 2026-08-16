@@ -1,11 +1,13 @@
 {
   "protocol": "train_only_viability_preserving_interacting_particle_transport_v41",
-  "status": "amended_after_engineering_failure_before_training",
+  "status": "amended_after_two_engineering_failures_before_training",
   "engineering_amendment": {
-    "failed_job_id": 19881100,
+    "failed_job_ids": [19881100, 19894820],
     "failure_stage": "support_replay_gate",
     "fit_pairs": 957,
-    "fit_complete_stop_legal": 921,
+    "complete_stop_legal_by_attempt": [921, 930],
+    "recovered_aromatic_degree_false_rejections": 9,
+    "remaining_aromatic_endpoint_mismatches": 27,
     "training_started": false,
     "scientific_result_observed": false
   },
@@ -139,7 +141,7 @@
     "mean_event_count": 29.532978723404256,
     "mean_affected_node_count": 14.014255319148937
   },
-  "implementation_sha256": "e3ac02dc66ff73d0e91d01d82c813bcd7755d59f05655c59e3bcb580e37c1221",
+  "implementation_sha256": "82d851a0688d266189586d9a1165f8da17351c9679192b9348eeebe1f972f275",
   "locked_inputs": {
     "b22_checkpoint_sha256": "0743c8868c482cc65ad92a8cc843baa372095ed8fd6362bc6d887d8d9908d26d",
     "b22_summary_sha256": "6af3ff29e25a2b973a1b8dc8843512ac4f7958ab63c22a89ff3a64e123bf6b04",

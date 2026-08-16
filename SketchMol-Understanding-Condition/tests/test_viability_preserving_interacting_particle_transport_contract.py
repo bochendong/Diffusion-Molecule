@@ -19,13 +19,15 @@ def test_b41_preregisters_support_training_and_exact_interacting_particles():
         "train_only_viability_preserving_interacting_particle_transport_v41"
     )
     assert payload["status"] == (
-        "amended_after_engineering_failure_before_training"
+        "amended_after_two_engineering_failures_before_training"
     )
     assert payload["engineering_amendment"] == {
-        "failed_job_id": 19881100,
+        "failed_job_ids": [19881100, 19894820],
         "failure_stage": "support_replay_gate",
         "fit_pairs": 957,
-        "fit_complete_stop_legal": 921,
+        "complete_stop_legal_by_attempt": [921, 930],
+        "recovered_aromatic_degree_false_rejections": 9,
+        "remaining_aromatic_endpoint_mismatches": 27,
         "training_started": False,
         "scientific_result_observed": False,
     }
@@ -68,6 +70,8 @@ def test_b41_stop_support_uses_state_and_bond_grammar_not_aromatic_label_degree(
     assert "bond_support_ok" in terminal
     assert "atom_support_ok" in terminal
     assert "aromatic_degree" not in terminal
+    assert '"stop_aromatic_endpoints_legal"' not in terminal
+    assert '"representation_aromatic_endpoints_match"' in terminal
     assert '"passed": rate == 1.0' in source
 
 

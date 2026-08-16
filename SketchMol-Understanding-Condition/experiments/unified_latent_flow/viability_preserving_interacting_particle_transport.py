@@ -84,7 +84,7 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     required = {
         "protocol": PROTOCOL,
-        "status": "amended_after_engineering_failure_before_training",
+        "status": "amended_after_two_engineering_failures_before_training",
         "warm_start_from_frozen_b39": True,
         "support_consistent_event_finetuning": True,
         "representation_aware_aromatic_stop_rule": True,
@@ -120,10 +120,12 @@ def read_preregistration(path: Path) -> dict[str, object]:
         raise ValueError("B41 property-count contract drift")
     amendment = dict(payload.get("engineering_amendment", {}))
     if amendment != {
-        "failed_job_id": 19881100,
+        "failed_job_ids": [19881100, 19894820],
         "failure_stage": "support_replay_gate",
         "fit_pairs": 957,
-        "fit_complete_stop_legal": 921,
+        "complete_stop_legal_by_attempt": [921, 930],
+        "recovered_aromatic_degree_false_rejections": 9,
+        "remaining_aromatic_endpoint_mismatches": 27,
         "training_started": False,
         "scientific_result_observed": False,
     }:
@@ -281,12 +283,12 @@ def terminal_stop_support(
 ) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
     """Recognize terminal graphs through train-derived state and bond support.
 
-    B40 additionally required every aromatic atom to have two incident aromatic
-    *bond labels*.  That is not representation invariant: a valid train target
-    may carry an aromatic atom state while one incident ring edge is encoded as
-    a supported single/double bond.  B41 keeps valence, aromatic-endpoint, and
-    train-observed bond checks but does not confuse aromaticity with the count
-    of edges whose categorical label is ``BOND_AROMATIC``.
+    B40 additionally required atom-level aromatic flags to agree exactly with
+    aromatic edge labels and required every aromatic atom to have two incident
+    aromatic edge labels.  The failed fit-target replay proved both assumptions
+    are not invariant under the aligned graph representation.  B41 therefore
+    treats the train-observed joint atom/bond grammar as authoritative while
+    retaining terminal valence and active-graph checks.
     """
     base_legal = b38.legal_event_mask(
         field, source, node_actions, edge_actions, working
@@ -382,11 +384,11 @@ def terminal_stop_support(
     components = {
         "stop_base_legal": base_legal[:, 0],
         "stop_valence_legal": valence_ok,
-        "stop_aromatic_endpoints_legal": aromatic_endpoints_ok,
         "stop_changed_bonds_supported": bond_support_ok,
         "stop_atom_states_supported": atom_support_ok,
     }
     stop_ok = torch.stack(list(components.values()), dim=0).all(dim=0)
+    components["representation_aromatic_endpoints_match"] = aromatic_endpoints_ok
     return stop_ok, components
 
 
@@ -440,6 +442,7 @@ def support_replay_gate(
     batch_size = int(preregistration["batch_size"])
     complete_stop_legal = 0
     recovered_false_rejections = 0
+    aromatic_endpoint_mismatches = 0
     component_failures: defaultdict[str, int] = defaultdict(int)
     target_events = 0
     for start in range(0, len(pairs), batch_size):
@@ -468,6 +471,9 @@ def support_replay_gate(
         recovered_false_rejections += int(
             diagnostics["representation_false_rejection_recovered"].sum()
         )
+        aromatic_endpoint_mismatches += int(
+            (~diagnostics["representation_aromatic_endpoints_match"]).sum()
+        )
         for name, values in diagnostics.items():
             if name.startswith("stop_") and name != "stop_masked":
                 component_failures[name] += int((~values).sum())
@@ -481,6 +487,7 @@ def support_replay_gate(
         "fit_complete_stop_legal": complete_stop_legal,
         "fit_complete_stop_legal_rate": rate,
         "representation_false_rejections_recovered": recovered_false_rejections,
+        "representation_aromatic_endpoint_mismatches": aromatic_endpoint_mismatches,
         "component_failures": dict(sorted(component_failures.items())),
         "target_events": target_events,
         "passed": rate == 1.0,
