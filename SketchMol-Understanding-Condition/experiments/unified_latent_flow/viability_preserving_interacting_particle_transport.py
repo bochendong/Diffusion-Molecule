@@ -84,9 +84,10 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     required = {
         "protocol": PROTOCOL,
-        "status": "preregistered_before_first_run",
+        "status": "amended_after_engineering_failure_before_training",
         "warm_start_from_frozen_b39": True,
         "support_consistent_event_finetuning": True,
+        "representation_aware_aromatic_stop_rule": True,
         "transport_weights_frozen_during_event_finetuning": True,
         "interacting_particle_transport": True,
         "orthogonal_latent_particles": True,
@@ -117,6 +118,16 @@ def read_preregistration(path: Path) -> dict[str, object]:
         raise ValueError(f"B41 preregistration drift: {drift}")
     if payload.get("property_counts") != [2, 3]:
         raise ValueError("B41 property-count contract drift")
+    amendment = dict(payload.get("engineering_amendment", {}))
+    if amendment != {
+        "failed_job_id": 19881100,
+        "failure_stage": "support_replay_gate",
+        "fit_pairs": 957,
+        "fit_complete_stop_legal": 921,
+        "training_started": False,
+        "scientific_result_observed": False,
+    }:
+        raise ValueError("B41 engineering-amendment provenance drift")
     actual = belief.file_sha256(Path(__file__).resolve())
     if payload.get("implementation_sha256") != actual:
         raise ValueError(
@@ -259,6 +270,163 @@ def build_viable_prefix_batch(
     )
 
 
+def terminal_stop_support(
+    field: b38.JumpEventField,
+    source: Mapping[str, torch.Tensor],
+    node_actions: torch.Tensor,
+    edge_actions: torch.Tensor,
+    working: torch.Tensor,
+    support: Mapping[str, object],
+    support_tensors: Mapping[str, torch.Tensor],
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """Recognize terminal graphs through train-derived state and bond support.
+
+    B40 additionally required every aromatic atom to have two incident aromatic
+    *bond labels*.  That is not representation invariant: a valid train target
+    may carry an aromatic atom state while one incident ring edge is encoded as
+    a supported single/double bond.  B41 keeps valence, aromatic-endpoint, and
+    train-observed bond checks but does not confuse aromaticity with the count
+    of edges whose categorical label is ``BOND_AROMATIC``.
+    """
+    base_legal = b38.legal_event_mask(
+        field, source, node_actions, edge_actions, working
+    )
+    tensors = support_tensors
+    payload_nodes = tensors["payload_nodes"]
+    payload_full = tensors["payload_full_ids"]
+    payload_coarse = tensors["payload_coarse_ids"]
+    payload_caps = tensors["payload_caps"]
+    payload_bonds = tensors["payload_bonds"]
+    bond_units = tensors["bond_units"]
+    pair_left, pair_right = field.pair_left, field.pair_right
+
+    source_full, source_coarse = hierarchical.source_atom_state_ids(
+        source, support["grammar"]
+    )
+    source_caps = hierarchical.source_atom_state_valence_caps(
+        source, support["grammar"]
+    )
+    write = node_actions.ge(delta.NODE_WRITE_OFFSET + 1)
+    write_payload = (node_actions - (delta.NODE_WRITE_OFFSET + 1)).clamp(
+        0, max(0, len(payload_full) - 1)
+    )
+    current_full = torch.where(write, payload_full[write_payload], source_full)
+    current_coarse = torch.where(
+        write, payload_coarse[write_payload], source_coarse
+    )
+    current_caps = torch.where(write, payload_caps[write_payload], source_caps)
+    explicit_index = full_graph.NODE_FIELDS.index("explicit_hs")
+    current_explicit_h = torch.where(
+        write,
+        payload_nodes[write_payload, explicit_index],
+        source["explicit_hs"].long(),
+    )
+    current_active = delta.action_active_nodes(
+        source["atomic_number"].gt(0), node_actions
+    )
+
+    edge_set = edge_actions.ge(delta.EDGE_SET_OFFSET + 1)
+    edge_payload = (edge_actions - (delta.EDGE_SET_OFFSET + 1)).clamp(
+        0, max(0, len(payload_bonds) - 1)
+    )
+    committed_bonds = torch.where(
+        edge_set, payload_bonds[edge_payload], torch.zeros_like(edge_actions)
+    )
+    source_bond = source["bond"].long()
+    edge_delete = edge_actions.eq(delta.EDGE_DELETE)
+    final_bond = torch.where(
+        edge_delete, torch.zeros_like(source_bond), source_bond
+    )
+    final_bond = torch.where(edge_set, committed_bonds, final_bond)
+    active_pair = current_active[:, :, None] & current_active[:, None, :]
+    final_bond = torch.where(
+        active_pair, final_bond, torch.zeros_like(final_bond)
+    )
+
+    final_valence = bond_units[final_bond].sum(dim=2) + 2 * current_explicit_h
+    valence_ok = (
+        ((~current_active) | final_valence.le(current_caps)).all(dim=1)
+        & current_active.any(dim=1)
+    )
+    aromatic_index = full_graph.NODE_FIELDS.index("aromatic")
+    current_aromatic = torch.where(
+        write,
+        payload_nodes[write_payload, aromatic_index].bool(),
+        source["aromatic"].bool(),
+    ) & current_active
+    aromatic_bond = final_bond.eq(graph.BOND_AROMATIC)
+    aromatic_endpoints_ok = (
+        ~aromatic_bond
+        | (current_aromatic[:, :, None] & current_aromatic[:, None, :])
+    ).all(dim=(1, 2))
+
+    pair_bond = final_bond[:, pair_left, pair_right]
+    changed_context = (
+        edge_set[:, pair_left, pair_right]
+        | write[:, pair_left]
+        | write[:, pair_right]
+    )
+    changed_bond = changed_context & pair_bond.gt(graph.BOND_NONE)
+    changed_support = b40._pair_bond_support(
+        current_full[:, pair_left],
+        current_full[:, pair_right],
+        current_coarse[:, pair_left],
+        current_coarse[:, pair_right],
+        pair_bond,
+        tensors,
+    )
+    bond_support_ok = (~changed_bond | changed_support).all(dim=1)
+    atom_support_ok = (
+        (~current_active) | (current_full.ge(0) & current_caps.ge(0))
+    ).all(dim=1)
+    components = {
+        "stop_base_legal": base_legal[:, 0],
+        "stop_valence_legal": valence_ok,
+        "stop_aromatic_endpoints_legal": aromatic_endpoints_ok,
+        "stop_changed_bonds_supported": bond_support_ok,
+        "stop_atom_states_supported": atom_support_ok,
+    }
+    stop_ok = torch.stack(list(components.values()), dim=0).all(dim=0)
+    return stop_ok, components
+
+
+def viability_event_mask(
+    field: b38.JumpEventField,
+    source: Mapping[str, torch.Tensor],
+    node_actions: torch.Tensor,
+    edge_actions: torch.Tensor,
+    working: torch.Tensor,
+    support: Mapping[str, object],
+    support_tensors: Mapping[str, torch.Tensor],
+) -> tuple[torch.Tensor, dict[str, torch.Tensor]]:
+    """Use B40 transition support with a representation-aware STOP rule."""
+    legal, diagnostics = b40.constrained_event_mask(
+        field,
+        source,
+        node_actions,
+        edge_actions,
+        working,
+        support,
+        support_tensors,
+    )
+    stop_ok, components = terminal_stop_support(
+        field,
+        source,
+        node_actions,
+        edge_actions,
+        working,
+        support,
+        support_tensors,
+    )
+    b40_stop = legal[:, 0].clone()
+    legal[:, 0] |= stop_ok
+    revised = dict(diagnostics)
+    revised.update(components)
+    revised["stop_masked"] = ~legal[:, 0]
+    revised["representation_false_rejection_recovered"] = stop_ok & ~b40_stop
+    return legal, revised
+
+
 @torch.no_grad()
 def support_replay_gate(
     model: b39.LatentCardinalityGraphJumpBridge,
@@ -271,6 +439,8 @@ def support_replay_gate(
 ) -> dict[str, object]:
     batch_size = int(preregistration["batch_size"])
     complete_stop_legal = 0
+    recovered_false_rejections = 0
+    component_failures: defaultdict[str, int] = defaultdict(int)
     target_events = 0
     for start in range(0, len(pairs), batch_size):
         items = list(pairs[start : start + batch_size])
@@ -285,7 +455,7 @@ def support_replay_gate(
             int(preregistration["birth_capacity"]),
             target["node_mask"],
         )
-        legal, _ = b40.constrained_event_mask(
+        legal, diagnostics = viability_event_mask(
             model.denoiser,
             source,
             node_targets,
@@ -295,6 +465,12 @@ def support_replay_gate(
             support_tensors,
         )
         complete_stop_legal += int(legal[:, 0].sum())
+        recovered_false_rejections += int(
+            diagnostics["representation_false_rejection_recovered"].sum()
+        )
+        for name, values in diagnostics.items():
+            if name.startswith("stop_") and name != "stop_masked":
+                component_failures[name] += int((~values).sum())
         target_events += int(
             node_targets.ne(delta.NODE_KEEP).sum()
             + torch.triu(edge_targets.ne(delta.EDGE_KEEP), diagonal=1).sum()
@@ -304,6 +480,8 @@ def support_replay_gate(
         "fit_pairs": len(pairs),
         "fit_complete_stop_legal": complete_stop_legal,
         "fit_complete_stop_legal_rate": rate,
+        "representation_false_rejections_recovered": recovered_false_rejections,
+        "component_failures": dict(sorted(component_failures.items())),
         "target_events": target_events,
         "passed": rate == 1.0,
     }
@@ -415,7 +593,7 @@ def fine_tune_event_kernel(
                     endpoint,
                     remaining_mass,
                 )
-                legal, _ = b40.constrained_event_mask(
+                legal, _ = viability_event_mask(
                     model.denoiser,
                     source,
                     current_node,
@@ -675,7 +853,7 @@ def sample_from_source(
                     latent,
                     remaining_mass,
                 ).float()
-                legal, diagnostics = b40.constrained_event_mask(
+                legal, diagnostics = viability_event_mask(
                     model.denoiser,
                     source,
                     node_actions,

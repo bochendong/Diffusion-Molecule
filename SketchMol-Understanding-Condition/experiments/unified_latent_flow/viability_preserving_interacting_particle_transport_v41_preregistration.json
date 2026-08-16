@@ -1,6 +1,14 @@
 {
   "protocol": "train_only_viability_preserving_interacting_particle_transport_v41",
-  "status": "preregistered_before_first_run",
+  "status": "amended_after_engineering_failure_before_training",
+  "engineering_amendment": {
+    "failed_job_id": 19881100,
+    "failure_stage": "support_replay_gate",
+    "fit_pairs": 957,
+    "fit_complete_stop_legal": 921,
+    "training_started": false,
+    "scientific_result_observed": false
+  },
   "scientific_hypothesis": "Support-consistent event-kernel fine-tuning reduces B40 non-terminating trajectories, while posterior-scale interacting particles prevent conditional flow contraction and raise unique valid coverage without changing n, ranking candidates, or adding retries.",
   "seed": 1991,
   "development_split_seed": 1982,
@@ -10,6 +18,7 @@
   "particle_pool_size": 20,
   "warm_start_from_frozen_b39": true,
   "support_consistent_event_finetuning": true,
+  "representation_aware_aromatic_stop_rule": true,
   "transport_weights_frozen_during_event_finetuning": true,
   "interacting_particle_transport": true,
   "orthogonal_latent_particles": true,
@@ -130,7 +139,7 @@
     "mean_event_count": 29.532978723404256,
     "mean_affected_node_count": 14.014255319148937
   },
-  "implementation_sha256": "c86101b979ead2a10d49ccec9d9d79fcfa71095443300ae327d7bb574d38fcc6",
+  "implementation_sha256": "e3ac02dc66ff73d0e91d01d82c813bcd7755d59f05655c59e3bcb580e37c1221",
   "locked_inputs": {
     "b22_checkpoint_sha256": "0743c8868c482cc65ad92a8cc843baa372095ed8fd6362bc6d887d8d9908d26d",
     "b22_summary_sha256": "6af3ff29e25a2b973a1b8dc8843512ac4f7958ab63c22a89ff3a64e123bf6b04",

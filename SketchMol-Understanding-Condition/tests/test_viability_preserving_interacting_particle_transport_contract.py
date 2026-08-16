@@ -18,9 +18,20 @@ def test_b41_preregisters_support_training_and_exact_interacting_particles():
     assert payload["protocol"] == (
         "train_only_viability_preserving_interacting_particle_transport_v41"
     )
-    assert payload["status"] == "preregistered_before_first_run"
+    assert payload["status"] == (
+        "amended_after_engineering_failure_before_training"
+    )
+    assert payload["engineering_amendment"] == {
+        "failed_job_id": 19881100,
+        "failure_stage": "support_replay_gate",
+        "fit_pairs": 957,
+        "fit_complete_stop_legal": 921,
+        "training_started": False,
+        "scientific_result_observed": False,
+    }
     assert payload["warm_start_from_frozen_b39"] is True
     assert payload["support_consistent_event_finetuning"] is True
+    assert payload["representation_aware_aromatic_stop_rule"] is True
     assert payload["transport_weights_frozen_during_event_finetuning"] is True
     assert payload["interacting_particle_transport"] is True
     assert payload["particle_pool_size"] == 20
@@ -37,11 +48,27 @@ def test_b41_finetunes_only_event_kernel_under_generation_support():
     source = SCRIPT.read_text(encoding="utf-8")
     assert "model.requires_grad_(False)" in source
     assert "model.denoiser.requires_grad_(True)" in source
-    assert "b40.constrained_event_mask(" in source
+    assert "def viability_event_mask(" in source
+    assert "def terminal_stop_support(" in source
+    assert "representation_false_rejection_recovered" in source
     assert "def support_replay_gate(" in source
     assert "fit_complete_stop_legal_rate" in source
     assert "stop_margin_loss" in source
     assert "transport_velocity.parameters" not in source
+
+
+def test_b41_stop_support_uses_state_and_bond_grammar_not_aromatic_label_degree():
+    source = SCRIPT.read_text(encoding="utf-8")
+    terminal = source[
+        source.index("def terminal_stop_support(") : source.index(
+            "def viability_event_mask("
+        )
+    ]
+    assert "aromatic_endpoints_ok" in terminal
+    assert "bond_support_ok" in terminal
+    assert "atom_support_ok" in terminal
+    assert "aromatic_degree" not in terminal
+    assert '"passed": rate == 1.0' in source
 
 
 def test_b41_particle_interaction_occurs_inside_flow_without_selection():
