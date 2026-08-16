@@ -26,6 +26,7 @@ import math
 import sys
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Iterable, Mapping, Sequence
 
 import numpy as np
@@ -60,6 +61,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--representation-summary", type=Path, required=True)
     parser.add_argument("--b22-checkpoint", type=Path, required=True)
     parser.add_argument("--b22-summary", type=Path, required=True)
+    parser.add_argument("--b36-records", type=Path, required=True)
     parser.add_argument("--protocol-manifest", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     return parser.parse_args(argv)
@@ -112,10 +114,157 @@ def read_preregistration(path: Path) -> dict[str, object]:
         "representation_summary_sha256",
         "train_csv_sha256",
         "validation_csv_sha256",
+        "b36_records_sha256",
     }
     if set(dict(payload.get("locked_inputs", {}))) != expected_inputs:
         raise ValueError("Set-closed rewrite locked-input manifest is incomplete")
     return payload
+
+
+def reconstruct_locked_b36_pairs(
+    args: argparse.Namespace,
+    preregistration: Mapping[str, object],
+    checkpoint: Mapping[str, object],
+    summary: Mapping[str, object],
+) -> tuple[list[object], dict[str, object]]:
+    """Rebuild the exact B36 train lineage despite RDKit MCS timeout jitter."""
+
+    locked_sha = str(dict(preregistration["locked_inputs"])["b36_records_sha256"])
+    actual_sha = belief.file_sha256(args.b36_records)
+    if actual_sha != locked_sha:
+        raise ValueError(
+            f"Locked B36 records drift: expected {locked_sha}, found {actual_sha}"
+        )
+    locked_records = [
+        json.loads(line)
+        for line in args.b36_records.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    expected_pairs = int(preregistration["selected_full_train_pairs"])
+    if len(locked_records) != expected_pairs:
+        raise ValueError(
+            f"Locked B36 records contain {len(locked_records)} rows, "
+            f"expected {expected_pairs}"
+        )
+    locked_multiset = Counter(
+        (str(record["source_smiles"]), str(record["task"]))
+        for record in locked_records
+    )
+
+    config = dict(checkpoint["model_config"])
+    allowed_counts = set(int(value) for value in preregistration["property_counts"])
+    validation_rows = base.read_rows(args.validation_csv)
+    common = {
+        "max_atoms": int(config["max_atoms"]),
+        "fingerprint_bits": int(preregistration["fingerprint_bits"]),
+        "condition_dim": int(preregistration["condition_dim"]),
+        "allowed_counts": allowed_counts,
+        "timeout": int(preregistration["mcs_timeout"]),
+        "min_common_fraction": float(preregistration["min_common_fraction"]),
+        "limit": int(preregistration["historical_validation_limit"]),
+    }
+    excluded_pairs, _ = base.build_pairs(
+        validation_rows,
+        seed=int(preregistration["validation_exclusion_seed"]),
+        **common,
+    )
+    excluded_sources = {pair.source_smiles for pair in excluded_pairs}
+    excluded_keys = {
+        (pair.source_smiles, pair.target_smiles) for pair in excluded_pairs
+    }
+    validation_pairs, _ = base.build_pairs(
+        validation_rows,
+        seed=int(preregistration["validation_selection_seed"]),
+        forbidden_sources=excluded_sources,
+        forbidden_pairs=excluded_keys,
+        **common,
+    )
+    validation_sources = {pair.source_smiles for pair in validation_pairs}
+    validation_keys = {
+        (pair.source_smiles, pair.target_smiles) for pair in validation_pairs
+    }
+    reconstructed_pairs, filter_counts = base.build_pairs(
+        base.read_rows(args.train_csv),
+        max_atoms=int(config["max_atoms"]),
+        fingerprint_bits=int(preregistration["fingerprint_bits"]),
+        condition_dim=int(preregistration["condition_dim"]),
+        allowed_counts=allowed_counts,
+        timeout=int(preregistration["mcs_timeout"]),
+        min_common_fraction=float(preregistration["min_common_fraction"]),
+        limit=int(preregistration["train_limit"]),
+        seed=int(preregistration["train_selection_seed"]),
+        forbidden_sources=validation_sources,
+        forbidden_pairs=validation_keys,
+    )
+    remaining = Counter(locked_multiset)
+    locked_pairs = []
+    excluded_timeout_jitter = []
+    for pair in reconstructed_pairs:
+        key = (pair.source_smiles, base.task_key(pair.row))
+        if remaining[key] > 0:
+            locked_pairs.append(pair)
+            remaining[key] -= 1
+        else:
+            excluded_timeout_jitter.append(key)
+    missing = {key: count for key, count in remaining.items() if count > 0}
+    if missing:
+        raise ValueError(f"Current reconstruction is missing locked B36 pairs: {missing}")
+    if len(locked_pairs) != expected_pairs:
+        raise ValueError(
+            f"B36 lineage filter retained {len(locked_pairs)} pairs, "
+            f"expected {expected_pairs}"
+        )
+
+    for pair in locked_pairs:
+        pair.condition = patch_evidence.hierarchical.property_latent_slot_tokens(
+            pair.row, int(preregistration["condition_dim"])
+        )
+    trajectory_args = SimpleNamespace(
+        fingerprint_bits=int(preregistration["fingerprint_bits"]),
+        trajectory_fractions=",".join(
+            str(value) for value in preregistration["trajectory_fractions"]
+        ),
+        trajectory_max_orders=int(preregistration["trajectory_max_orders"]),
+    )
+    selected_pairs, trajectory = b22.select_early_stop_pairs(
+        locked_pairs, checkpoint["vocabulary"], trajectory_args
+    )
+    locked_trajectory = dict(summary["trajectory_evidence"])
+    exact_keys = ("pairs", "early_stop_selected", "strict_selected", "no_op_selected")
+    float_keys = (
+        "early_stop_coverage",
+        "selected_strict_rate",
+        "mean_full_actions",
+        "mean_selected_actions",
+    )
+    drift = {
+        key: {"expected": locked_trajectory[key], "actual": trajectory[key]}
+        for key in exact_keys
+        if trajectory[key] != locked_trajectory[key]
+    }
+    drift.update(
+        {
+            key: {"expected": locked_trajectory[key], "actual": trajectory[key]}
+            for key in float_keys
+            if not math.isclose(
+                float(trajectory[key]), float(locked_trajectory[key]), abs_tol=1e-10
+            )
+        }
+    )
+    if drift:
+        raise ValueError(f"Locked B36 trajectory reconstruction drift: {drift}")
+    return selected_pairs, {
+        "raw_reconstructed_pairs": len(reconstructed_pairs),
+        "locked_lineage_pairs": len(locked_pairs),
+        "excluded_timeout_jitter_pairs": len(excluded_timeout_jitter),
+        "excluded_timeout_jitter_keys": [
+            list(key) for key in sorted(excluded_timeout_jitter)
+        ],
+        "filter_counts": filter_counts,
+        "historical_excluded_sources": len(excluded_sources),
+        "development_excluded_sources": len(validation_sources),
+        "trajectory_evidence": trajectory,
+    }
 
 
 def stable_meta_assignment(source_smiles: str, seed: int, folds: int) -> bool:
@@ -280,7 +429,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         raise ValueError(f"Completed set-closed rewrite evidence exists: {summary_path}")
     preregistration = read_preregistration(args.protocol_manifest)
     b22_summary, checkpoint = patch_evidence.load_locked_b22(args, preregistration)
-    pairs, reconstruction = patch_evidence.reconstruct_b22_train_pairs(
+    pairs, reconstruction = reconstruct_locked_b36_pairs(
         args, preregistration, checkpoint, b22_summary
     )
 

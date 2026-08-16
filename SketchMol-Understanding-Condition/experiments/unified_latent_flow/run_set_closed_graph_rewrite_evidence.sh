@@ -13,6 +13,7 @@ OUTPUT_DIR="${SUCC_SET_CLOSED_OUTPUT_DIR:-$SHARED_PROJECT_DIR/outputs/set_closed
 DATASET_DIR="$SHARED_PROJECT_DIR/outputs/unified_smiles_generator_joint_v2/dataset"
 REPRESENTATION_DIR="$SHARED_PROJECT_DIR/outputs/graph_latent_autoencoder_v2/seed_1725"
 B22_DIR="$SHARED_PROJECT_DIR/outputs/valid_early_stop_delta_diffusion_v22/seed_1757"
+B36_RECORDS="$SHARED_PROJECT_DIR/outputs/source_anchored_graph_patch_evidence_v36/seed_1981/train_patch_records.jsonl"
 PREREGISTRATION="$SCRIPT_DIR/set_closed_graph_rewrite_v1_preregistration.json"
 
 for path in \
@@ -22,6 +23,7 @@ for path in \
   "$REPRESENTATION_DIR/summary.json" \
   "$B22_DIR/valid_early_stop_delta_diffusion.pt" \
   "$B22_DIR/summary.json" \
+  "$B36_RECORDS" \
   "$PREREGISTRATION"; do
   [[ -f "$path" ]] || { echo "ERROR: missing set-closed input: $path" >&2; exit 2; }
 done
@@ -43,5 +45,6 @@ exec "$PYTHON_BIN" "$SCRIPT_DIR/set_closed_graph_rewrite_evidence.py" \
   --representation-summary "$REPRESENTATION_DIR/summary.json" \
   --b22-checkpoint "$B22_DIR/valid_early_stop_delta_diffusion.pt" \
   --b22-summary "$B22_DIR/summary.json" \
+  --b36-records "$B36_RECORDS" \
   --protocol-manifest "$PREREGISTRATION" \
   --output-dir "$OUTPUT_DIR"

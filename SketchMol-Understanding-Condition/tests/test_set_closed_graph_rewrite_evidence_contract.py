@@ -28,13 +28,16 @@ def test_set_closed_preregistration_is_a_clean_architecture_reset():
     assert payload["future_joint_set_decoder"] is True
     assert payload["future_independent_event_decoder"] is False
     assert len(payload["implementation_sha256"]) == 64
-    assert len(payload["locked_inputs"]) == 6
+    assert len(payload["locked_inputs"]) == 7
+    assert len(payload["locked_inputs"]["b36_records_sha256"]) == 64
 
 
 def test_set_closed_code_uses_atomic_rewrites_and_source_group_meta_split():
     source = SCRIPT.read_text(encoding="utf-8")
     assert "def record_tokens" in source
     assert "def stable_meta_assignment" in source
+    assert "def reconstruct_locked_b36_pairs" in source
+    assert "excluded_timeout_jitter_pairs" in source
     assert "fit_grammar_supported" in source
     assert "atomic_valence_closed_transaction" in source
     assert "fit_meta_source_group_split" in source
@@ -51,6 +54,8 @@ def test_set_closed_runner_is_cpu_only_and_bounded():
     submit = SUBMIT.read_text(encoding="utf-8")
     assert "set_closed_graph_rewrite_v1_preregistration.json" in run
     assert "valid_early_stop_delta_diffusion_v22/seed_1757" in run
+    assert "source_anchored_graph_patch_evidence_v36/seed_1981" in run
+    assert "--b36-records" in run
     assert "--protocol-manifest" in run
     assert "--account=def-hup-ab_cpu" in submit
     assert "00:30:00" in submit
