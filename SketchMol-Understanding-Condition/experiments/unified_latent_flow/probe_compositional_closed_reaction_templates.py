@@ -281,6 +281,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     template_counts: Counter[str] = Counter()
     for index, record in enumerate(records, start=1):
         counts["requested"] += 1
+        target_smiles = canonical(str(record["target_smiles"]))
+        if not target_smiles or "." in target_smiles:
+            counts["disconnected_or_invalid_target"] += 1
+            continue
+        counts["connected_target"] += 1
         pair = aligned_pair(record, args)
         if pair is None:
             counts["alignment_failed"] += 1
@@ -295,6 +300,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             continue
         if not templates:
             counts["template_empty"] += 1
+            rows.append(
+                {
+                    "index": index - 1,
+                    "task": record.get("task"),
+                    "source_smiles": record["source_smiles"],
+                    "target_smiles": record["target_smiles"],
+                    "components": 0,
+                    "exact_replay": False,
+                    "error": "empty_component_template",
+                }
+            )
             continue
         counts["templated"] += 1
         counts["components"] += len(templates)
@@ -305,7 +321,6 @@ def main(argv: Sequence[str] | None = None) -> int:
             templates,
             max_frontier=int(args.max_frontier),
         )
-        target_smiles = canonical(str(record["target_smiles"]))
         exact = target_smiles in products
         counts["valid_replay"] += int(bool(products))
         counts["exact_replay"] += int(exact)
@@ -339,9 +354,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "protocol": "compositional_closed_reaction_template_probe_v1",
         "records_path": str(args.records),
         "requested": int(counts["requested"]),
+        "connected_target": int(counts["connected_target"]),
+        "connected_target_rate": counts["connected_target"]
+        / max(1, counts["requested"]),
         "aligned": int(counts["aligned"]),
         "templated": int(counts["templated"]),
-        "alignment_rate": counts["aligned"] / max(1, counts["requested"]),
+        "alignment_rate": counts["aligned"] / max(1, counts["connected_target"]),
         "template_rate": counts["templated"] / max(1, counts["aligned"]),
         "valid_replay_rate": counts["valid_replay"] / max(1, counts["templated"]),
         "exact_replay_rate": counts["exact_replay"] / max(1, counts["templated"]),
