@@ -256,11 +256,44 @@ def reconstruct_predecessor_pairs(
     train_indices, validation_indices = state_guidance.split_trajectory_conditions(
         trajectory, predecessor
     )
+    validation_rows = base.read_rows(args.validation_csv)
+    model_config = dict(checkpoint["model_config"])
+    historical_common = {
+        "max_atoms": int(model_config["max_atoms"]),
+        "fingerprint_bits": int(predecessor["fingerprint_bits"]),
+        "condition_dim": int(predecessor["condition_dim"]),
+        "allowed_counts": {int(value) for value in predecessor["property_counts"]},
+        "timeout": int(predecessor["mcs_timeout"]),
+        "min_common_fraction": float(predecessor["min_common_fraction"]),
+        "limit": int(predecessor["historical_validation_limit"]),
+    }
+    historical_exclusion, _ = base.build_pairs(
+        validation_rows,
+        seed=int(predecessor["validation_exclusion_seed"]),
+        **historical_common,
+    )
+    historical_exclusion_sources = {
+        pair.source_smiles for pair in historical_exclusion
+    }
+    historical_exclusion_pairs = {
+        (pair.source_smiles, pair.target_smiles) for pair in historical_exclusion
+    }
+    historical_development, _ = base.build_pairs(
+        validation_rows,
+        seed=int(predecessor["validation_selection_seed"]),
+        forbidden_sources=historical_exclusion_sources,
+        forbidden_pairs=historical_exclusion_pairs,
+        **historical_common,
+    )
+    historical_validation_sources = historical_exclusion_sources | {
+        pair.source_smiles for pair in historical_development
+    }
     vocabulary = b37.checkpoint_vocabulary(checkpoint)
     support = b40.build_support(fit, vocabulary)
-    return selected, fit, development, trajectory, train_indices, validation_indices, vocabulary, support, {
+    return selected, fit, development, trajectory, train_indices, validation_indices, vocabulary, support, historical_validation_sources, {
         "reconstruction": reconstruction,
         "split": split,
+        "historical_validation_sources": len(historical_validation_sources),
     }
 
 
@@ -375,13 +408,14 @@ def run_prepare(
         validation_indices,
         vocabulary,
         support,
+        historical_validation_sources,
         lineage,
     ) = reconstruct_predecessor_pairs(args, preregistration, predecessor)
     forbidden = {
         pair.source_smiles for pair in [*selected, *fit, *development, *trajectory]
     }
     historical = known_sources(args.known_source_csv)
-    forbidden |= historical
+    forbidden |= historical | historical_validation_sources
     fresh, fresh_selection = select_fresh_pairs(
         args, preregistration, predecessor, forbidden
     )

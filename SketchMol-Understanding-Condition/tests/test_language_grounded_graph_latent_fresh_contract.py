@@ -69,6 +69,14 @@ def test_evaluation_opens_targets_only_after_both_frozen_arms():
     assert "generation_target_path_accepted" in source
 
 
+def test_fresh_sources_exclude_both_historical_validation_splits():
+    source = IMPLEMENTATION.read_text()
+    assert 'predecessor["validation_exclusion_seed"]' in source
+    assert 'predecessor["validation_selection_seed"]' in source
+    assert "historical_validation_sources" in source
+    assert "historical | historical_validation_sources" in source
+
+
 def test_no_ranking_retry_or_oracle_selection_and_exact_n20():
     prereg = json.loads(PREREGISTRATION.read_text())
     for key in (
