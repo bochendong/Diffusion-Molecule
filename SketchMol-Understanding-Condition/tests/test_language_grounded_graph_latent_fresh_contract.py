@@ -19,8 +19,10 @@ def test_preregisters_direction_only_prospective_confirmation():
     assert prereg["direction_only_generation_conditions"] is True
     assert prereg["numeric_target_property_access_during_generation"] is False
     assert prereg["fresh_target_process_isolation"] is True
+    assert prereg["fresh_source_pool_role"] == "train_only_source_disjoint_unseen_subset"
     assert prereg["fresh_property_counts"] == [2, 3, 4, 5, 6, 7]
     assert sum(prereg["fresh_property_count_quotas"].values()) == 64
+    assert prereg["fresh_alignment_limit_per_property_count"] == 256
     assert prereg["exact_raw_attempts_per_condition"] == 20
     assert prereg["implementation_sha256"] == hashlib.sha256(
         IMPLEMENTATION.read_bytes()
@@ -75,6 +77,21 @@ def test_fresh_sources_exclude_both_historical_validation_splits():
     assert 'predecessor["validation_selection_seed"]' in source
     assert "historical_validation_sources" in source
     assert "historical | historical_validation_sources" in source
+
+
+def test_fresh_2p_to_7p_sources_come_from_source_disjoint_train_pool():
+    source = IMPLEMENTATION.read_text()
+    tree = ast.parse(source)
+    function = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "select_fresh_pairs"
+    )
+    function_source = ast.unparse(function)
+    assert "base.read_rows(args.train_csv)" in function_source
+    assert "base.read_rows(args.validation_csv)" not in function_source
+    assert "forbidden_sources=forbidden_sources" in function_source
+    assert "fresh_alignment_limit_per_property_count" in function_source
 
 
 def test_prepare_uses_b36_preregistration_for_locked_b22_loader():

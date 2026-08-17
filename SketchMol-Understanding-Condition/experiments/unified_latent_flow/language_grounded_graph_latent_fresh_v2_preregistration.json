@@ -17,6 +17,7 @@
   "direction_only_generation_conditions": true,
   "numeric_target_property_access_during_generation": false,
   "fresh_target_process_isolation": true,
+  "fresh_source_pool_role": "train_only_source_disjoint_unseen_subset",
   "fit_target_access": true,
   "model_training": true,
   "fresh_condition_count": 64,
@@ -29,6 +30,7 @@
     "6": 4,
     "7": 20
   },
+  "fresh_alignment_limit_per_property_count": 256,
   "exact_raw_attempts_per_condition": 20,
   "particle_pool_size": 20,
   "molecular_candidate_ranking": false,
@@ -86,7 +88,7 @@
     "hard_strict_delta_vs_property": 0.0,
     "llm_fit_relative_flow_reduction": 0.02
   },
-  "implementation_sha256": "c63b5f3bc458799c68e64bcdb74800524ab9035e2f3ba04af1014b5600e01e76",
+  "implementation_sha256": "812a6bc271d88a28e27d637c7312a5c9612c4f15c95e7549aeaf8fac988b181f",
   "locked_inputs": {
     "train_csv_sha256": "4925722b7e7e0de708d8dd847467da529e4ae2587d63dd2b1fc16cfcc2e73684",
     "validation_csv_sha256": "bacbb59eae6e884d330f658012b9b70dfffc0d2e2d7677066706bb61a70183db",

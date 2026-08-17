@@ -131,6 +131,7 @@ def read_preregistration(path: Path) -> dict[str, object]:
         "direction_only_generation_conditions": True,
         "numeric_target_property_access_during_generation": False,
         "fresh_target_process_isolation": True,
+        "fresh_source_pool_role": "train_only_source_disjoint_unseen_subset",
         "exact_raw_attempts_per_condition": 20,
         "molecular_candidate_ranking": False,
         "oracle_selection": False,
@@ -421,23 +422,28 @@ def select_fresh_pairs(
     predecessor: Mapping[str, object],
     forbidden_sources: set[str],
 ) -> tuple[list[object], dict[str, object]]:
-    rows = base.read_rows(args.validation_csv)
-    candidates, filter_counts = base.build_pairs(
-        rows,
-        max_atoms=int(preregistration["max_atoms"]),
-        fingerprint_bits=int(preregistration["fingerprint_bits"]),
-        condition_dim=int(preregistration["condition_dim"]),
-        allowed_counts={int(value) for value in preregistration["fresh_property_counts"]},
-        timeout=int(preregistration["mcs_timeout"]),
-        min_common_fraction=float(preregistration["min_common_fraction"]),
-        limit=len(rows),
-        seed=int(preregistration["fresh_selection_seed"]),
-        forbidden_sources=forbidden_sources,
-    )
+    rows = base.read_rows(args.train_csv)
     quotas = {int(key): int(value) for key, value in dict(preregistration["fresh_property_count_quotas"]).items()}
-    ordered = {
-        count: sorted(
-            [pair for pair in candidates if int(pair.property_count) == count],
+    ordered: dict[int, list[object]] = {}
+    filter_counts: dict[str, dict[str, int]] = {}
+    candidates: list[object] = []
+    for count in sorted(quotas):
+        count_candidates, count_filter = base.build_pairs(
+            rows,
+            max_atoms=int(preregistration["max_atoms"]),
+            fingerprint_bits=int(preregistration["fingerprint_bits"]),
+            condition_dim=int(preregistration["condition_dim"]),
+            allowed_counts={count},
+            timeout=int(preregistration["mcs_timeout"]),
+            min_common_fraction=float(preregistration["min_common_fraction"]),
+            limit=int(preregistration["fresh_alignment_limit_per_property_count"]),
+            seed=int(preregistration["fresh_selection_seed"]) + count,
+            forbidden_sources=forbidden_sources,
+        )
+        filter_counts[str(count)] = count_filter
+        candidates.extend(count_candidates)
+        ordered[count] = sorted(
+            count_candidates,
             key=lambda pair: stable_key(
                 int(preregistration["fresh_selection_seed"]),
                 count,
@@ -445,8 +451,6 @@ def select_fresh_pairs(
                 base.task_key(pair.row),
             ),
         )
-        for count in quotas
-    }
     selected: list[object] = []
     used_sources: set[str] = set()
     positions = {count: 0 for count in quotas}
@@ -485,6 +489,7 @@ def select_fresh_pairs(
     for pair in selected:
         counts[int(pair.property_count)] += 1
     return selected, {
+        "source_pool_role": str(preregistration["fresh_source_pool_role"]),
         "candidate_filter_counts": filter_counts,
         "eligible_pairs": len(candidates),
         "eligible_unique_sources": len({pair.source_smiles for pair in candidates}),
