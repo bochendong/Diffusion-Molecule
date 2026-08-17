@@ -82,6 +82,8 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--b22-summary", type=Path, required=True)
     prepare.add_argument("--representation-checkpoint", type=Path, required=True)
     prepare.add_argument("--representation-summary", type=Path, required=True)
+    prepare.add_argument("--b36-records", type=Path, required=True)
+    prepare.add_argument("--trajectory-dataset", type=Path, required=True)
     prepare.add_argument("--predecessor-manifest", type=Path, required=True)
     prepare.add_argument("--known-source-csv", action="append", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, required=True)
@@ -248,9 +250,105 @@ def reconstruct_predecessor_pairs(
     b22_summary, checkpoint = b36.load_locked_b22(
         predecessor_args, b36_preregistration
     )
-    selected, reconstruction = b36.reconstruct_b22_train_pairs(
-        predecessor_args, predecessor, checkpoint, b22_summary
+    validation_rows = base.read_rows(args.validation_csv)
+    model_config = dict(checkpoint["model_config"])
+    reconstruction_common = {
+        "max_atoms": int(model_config["max_atoms"]),
+        "fingerprint_bits": int(b36_preregistration["fingerprint_bits"]),
+        "condition_dim": int(b36_preregistration["condition_dim"]),
+        "allowed_counts": {
+            int(value) for value in b36_preregistration["property_counts"]
+        },
+        "timeout": int(b36_preregistration["mcs_timeout"]),
+        "min_common_fraction": float(b36_preregistration["min_common_fraction"]),
+        "limit": int(b36_preregistration["historical_validation_limit"]),
+    }
+    excluded_pairs, _ = base.build_pairs(
+        validation_rows,
+        seed=int(b36_preregistration["validation_exclusion_seed"]),
+        **reconstruction_common,
     )
+    excluded_sources = {pair.source_smiles for pair in excluded_pairs}
+    excluded_keys = {
+        (pair.source_smiles, pair.target_smiles) for pair in excluded_pairs
+    }
+    validation_pairs, _ = base.build_pairs(
+        validation_rows,
+        seed=int(b36_preregistration["validation_selection_seed"]),
+        forbidden_sources=excluded_sources,
+        forbidden_pairs=excluded_keys,
+        **reconstruction_common,
+    )
+    full_train_pairs, filter_counts = base.build_pairs(
+        base.read_rows(args.train_csv),
+        max_atoms=int(model_config["max_atoms"]),
+        fingerprint_bits=int(b36_preregistration["fingerprint_bits"]),
+        condition_dim=int(b36_preregistration["condition_dim"]),
+        allowed_counts={
+            int(value) for value in b36_preregistration["property_counts"]
+        },
+        timeout=int(b36_preregistration["mcs_timeout"]),
+        min_common_fraction=float(b36_preregistration["min_common_fraction"]),
+        limit=int(b36_preregistration["train_limit"]),
+        seed=int(b36_preregistration["train_selection_seed"]),
+        forbidden_sources={pair.source_smiles for pair in validation_pairs},
+        forbidden_pairs={
+            (pair.source_smiles, pair.target_smiles) for pair in validation_pairs
+        },
+    )
+    for pair in full_train_pairs:
+        pair.condition = hierarchical.property_latent_slot_tokens(
+            pair.row, int(b36_preregistration["condition_dim"])
+        )
+    trajectory_args = SimpleNamespace(
+        fingerprint_bits=int(b36_preregistration["fingerprint_bits"]),
+        trajectory_fractions=",".join(
+            str(value) for value in b36_preregistration["trajectory_fractions"]
+        ),
+        trajectory_max_orders=int(b36_preregistration["trajectory_max_orders"]),
+    )
+    reconstructed, _ = b36.b22.select_early_stop_pairs(
+        full_train_pairs, checkpoint["vocabulary"], trajectory_args
+    )
+    records = [
+        json.loads(line)
+        for line in args.b36_records.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    expected_records = int(b36_preregistration["selected_full_train_pairs"])
+    if len(records) != expected_records:
+        raise ValueError(
+            f"Locked B36 records contain {len(records)} rows, expected {expected_records}"
+        )
+
+    def record_key(value: Mapping[str, object]) -> tuple[str, str, str]:
+        return (
+            graph.canonical_smiles(str(value["source_smiles"])),
+            graph.canonical_smiles(str(value["target_smiles"])),
+            str(value["task"]),
+        )
+
+    reconstructed_by_key = {
+        (pair.source_smiles, pair.target_smiles, base.task_key(pair.row)): pair
+        for pair in reconstructed
+    }
+    locked_keys = [record_key(record) for record in records]
+    if len(set(locked_keys)) != len(locked_keys):
+        raise ValueError("Locked B36 record identities are not unique")
+    missing_locked = [key for key in locked_keys if key not in reconstructed_by_key]
+    if missing_locked:
+        raise ValueError(
+            f"Could not reconstruct {len(missing_locked)} locked B36 pair identities"
+        )
+    selected = [reconstructed_by_key[key] for key in locked_keys]
+    reconstruction = {
+        "filter_counts": filter_counts,
+        "locked_b36_records": len(locked_keys),
+        "extra_runtime_alignments_ignored": len(reconstructed_by_key) - len(locked_keys),
+        "historical_excluded_sources": len(excluded_sources),
+        "development_excluded_sources": len({pair.source_smiles for pair in validation_pairs}),
+        "trajectory_evidence": dict(b22_summary["trajectory_evidence"]),
+    }
     fit, development, split = b37.strict_source_group_split(
         selected,
         seed=int(predecessor["development_split_seed"]),
@@ -264,8 +362,20 @@ def reconstruct_predecessor_pairs(
     train_indices, validation_indices = state_guidance.split_trajectory_conditions(
         trajectory, predecessor
     )
-    validation_rows = base.read_rows(args.validation_csv)
-    model_config = dict(checkpoint["model_config"])
+    frozen_trajectory = torch.load(
+        args.trajectory_dataset, map_location="cpu", weights_only=False
+    )
+    if frozen_trajectory.get("protocol") != state_guidance.PROTOCOL:
+        raise ValueError("Locked trajectory dataset protocol drift")
+    trajectory_keys = [state_guidance.pair_key(pair) for pair in trajectory]
+    if trajectory_keys != list(frozen_trajectory["pair_keys"]):
+        raise ValueError("Direction-only trajectory pair identities drifted")
+    if train_indices != list(frozen_trajectory["critic_train_condition_indices"]):
+        raise ValueError("Direction-only trajectory training split drifted")
+    if validation_indices != list(
+        frozen_trajectory["critic_validation_condition_indices"]
+    ):
+        raise ValueError("Direction-only trajectory validation split drifted")
     historical_common = {
         "max_atoms": int(model_config["max_atoms"]),
         "fingerprint_bits": int(predecessor["fingerprint_bits"]),
@@ -404,6 +514,8 @@ def run_prepare(
             "b22_summary_sha256": args.b22_summary,
             "representation_checkpoint_sha256": args.representation_checkpoint,
             "representation_summary_sha256": args.representation_summary,
+            "b36_records_sha256": args.b36_records,
+            "trajectory_dataset_sha256": args.trajectory_dataset,
             "predecessor_manifest_sha256": args.predecessor_manifest,
             **{name: path for name, path in zip(source_names, args.known_source_csv, strict=True)},
         },

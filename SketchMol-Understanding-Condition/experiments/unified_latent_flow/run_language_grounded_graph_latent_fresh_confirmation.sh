@@ -16,6 +16,8 @@ PREPARE_DIR="$OUTPUT_ROOT/prepare"
 DATASET_DIR="$SHARED_PROJECT_DIR/outputs/unified_smiles_generator_joint_v2/dataset"
 REPRESENTATION_DIR="$SHARED_PROJECT_DIR/outputs/graph_latent_autoencoder_v2/seed_1725"
 B22_DIR="$SHARED_PROJECT_DIR/outputs/valid_early_stop_delta_diffusion_v22/seed_1757"
+B36_DIR="$SHARED_PROJECT_DIR/outputs/source_anchored_graph_patch_evidence_v36/seed_1981"
+STATE_GUIDANCE_DIR="$SHARED_PROJECT_DIR/outputs/common_llm_state_viability_guidance_v1/seed_1995/prepare"
 B41_DIR="$SHARED_PROJECT_DIR/outputs/viability_preserving_interacting_particle_transport_v41/seed_1991"
 B26_DIR="$SHARED_PROJECT_DIR/outputs/frozen_fragment_attachment_fresh_holdout_v26/seed_1873"
 B33_DIR="$SHARED_PROJECT_DIR/outputs/pareto_conditioned_joint_latent_v33/seed_1951"
@@ -30,6 +32,8 @@ for path in \
   "$REPRESENTATION_DIR/summary.json" \
   "$B22_DIR/valid_early_stop_delta_diffusion.pt" \
   "$B22_DIR/summary.json" \
+  "$B36_DIR/train_patch_records.jsonl" \
+  "$STATE_GUIDANCE_DIR/fit_only_trajectories.pt" \
   "$B41_DIR/viability_interacting_particle_transport.pt" \
   "$B26_DIR/validation_candidates.csv" \
   "$B33_DIR/fresh_internal_b33_pareto_candidates.csv" \
@@ -57,6 +61,8 @@ case "$STAGE" in
       --b22-summary "$B22_DIR/summary.json" \
       --representation-checkpoint "$REPRESENTATION_DIR/graph_latent_autoencoder.pt" \
       --representation-summary "$REPRESENTATION_DIR/summary.json" \
+      --b36-records "$B36_DIR/train_patch_records.jsonl" \
+      --trajectory-dataset "$STATE_GUIDANCE_DIR/fit_only_trajectories.pt" \
       --predecessor-manifest "$PREDECESSOR" \
       --known-source-csv "$B26_DIR/validation_candidates.csv" \
       --known-source-csv "$B33_DIR/fresh_internal_b33_pareto_candidates.csv" \

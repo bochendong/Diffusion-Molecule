@@ -86,12 +86,14 @@
     "hard_strict_delta_vs_property": 0.0,
     "llm_fit_relative_flow_reduction": 0.02
   },
-  "implementation_sha256": "ff9062b17787d296f75b29995da94bcd88b21660962ea933504dd74bace456d3",
+  "implementation_sha256": "c63b5f3bc458799c68e64bcdb74800524ab9035e2f3ba04af1014b5600e01e76",
   "locked_inputs": {
     "train_csv_sha256": "4925722b7e7e0de708d8dd847467da529e4ae2587d63dd2b1fc16cfcc2e73684",
     "validation_csv_sha256": "bacbb59eae6e884d330f658012b9b70dfffc0d2e2d7677066706bb61a70183db",
     "b22_checkpoint_sha256": "0743c8868c482cc65ad92a8cc843baa372095ed8fd6362bc6d887d8d9908d26d",
     "b22_summary_sha256": "6af3ff29e25a2b973a1b8dc8843512ac4f7958ab63c22a89ff3a64e123bf6b04",
+    "b36_records_sha256": "2edd4bf79c01a96f2ee5fde2ecbb2fb5a08ec7c11ef09bec12cfa48758f0f338",
+    "trajectory_dataset_sha256": "dade2b1069dc7eb4c98ae836907ef7c3b59f1ef45062086dd51ddde17f1a507b",
     "predecessor_manifest_sha256": "b3715f708aa5a9409862507644d002e8fad42c906d7ee7afec6dd7b8c183a495",
     "b26_candidates_sha256": "247ed422b3a3eb3c443440ecd13f26e1032b24fe9d78e57bd34173b5dbabff42",
     "b33_candidates_sha256": "cb5052180aa0a1d33120724bbf9b962473de676b1bf79e3a871fd4d38d24c684",

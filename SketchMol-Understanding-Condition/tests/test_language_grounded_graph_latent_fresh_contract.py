@@ -86,6 +86,11 @@ def test_prepare_uses_b36_preregistration_for_locked_b22_loader():
     assert 'prepare.add_argument("--representation-summary"' in source
     assert '--representation-checkpoint "$REPRESENTATION_DIR/graph_latent_autoencoder.pt"' in runner
     assert '--representation-summary "$REPRESENTATION_DIR/summary.json"' in runner
+    assert "locked_keys = [record_key(record) for record in records]" in source
+    assert "extra_runtime_alignments_ignored" in source
+    assert "Direction-only trajectory pair identities drifted" in source
+    assert '--b36-records "$B36_DIR/train_patch_records.jsonl"' in runner
+    assert '--trajectory-dataset "$STATE_GUIDANCE_DIR/fit_only_trajectories.pt"' in runner
 
 
 def test_no_ranking_retry_or_oracle_selection_and_exact_n20():
