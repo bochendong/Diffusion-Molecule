@@ -55,6 +55,8 @@ case "$STAGE" in
       --validation-csv "$DATASET_DIR/unified_joint_validation_rows.csv" \
       --b22-checkpoint "$B22_DIR/valid_early_stop_delta_diffusion.pt" \
       --b22-summary "$B22_DIR/summary.json" \
+      --representation-checkpoint "$REPRESENTATION_DIR/graph_latent_autoencoder.pt" \
+      --representation-summary "$REPRESENTATION_DIR/summary.json" \
       --predecessor-manifest "$PREDECESSOR" \
       --known-source-csv "$B26_DIR/validation_candidates.csv" \
       --known-source-csv "$B33_DIR/fresh_internal_b33_pareto_candidates.csv" \

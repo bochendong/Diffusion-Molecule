@@ -58,6 +58,7 @@ unified = state_guidance.unified
 
 PROTOCOL = "direction_only_language_grounded_graph_latent_fresh_v2"
 ARMS = ("property_memory", "common_llm_memory")
+B36_PREREGISTRATION = SCRIPT_DIR / "source_anchored_graph_patch_v36_preregistration.json"
 FORBIDDEN_GENERATION_TERMS = (
     "target_smiles",
     "target_",
@@ -79,6 +80,8 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--validation-csv", type=Path, required=True)
     prepare.add_argument("--b22-checkpoint", type=Path, required=True)
     prepare.add_argument("--b22-summary", type=Path, required=True)
+    prepare.add_argument("--representation-checkpoint", type=Path, required=True)
+    prepare.add_argument("--representation-summary", type=Path, required=True)
     prepare.add_argument("--predecessor-manifest", type=Path, required=True)
     prepare.add_argument("--known-source-csv", action="append", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, required=True)
@@ -238,8 +241,13 @@ def reconstruct_predecessor_pairs(
         validation_csv=args.validation_csv,
         b22_checkpoint=args.b22_checkpoint,
         b22_summary=args.b22_summary,
+        representation_checkpoint=args.representation_checkpoint,
+        representation_summary=args.representation_summary,
     )
-    b22_summary, checkpoint = b36.load_locked_b22(predecessor_args, predecessor)
+    b36_preregistration = b36.read_preregistration(B36_PREREGISTRATION)
+    b22_summary, checkpoint = b36.load_locked_b22(
+        predecessor_args, b36_preregistration
+    )
     selected, reconstruction = b36.reconstruct_b22_train_pairs(
         predecessor_args, predecessor, checkpoint, b22_summary
     )
@@ -394,6 +402,8 @@ def run_prepare(
             "validation_csv_sha256": args.validation_csv,
             "b22_checkpoint_sha256": args.b22_checkpoint,
             "b22_summary_sha256": args.b22_summary,
+            "representation_checkpoint_sha256": args.representation_checkpoint,
+            "representation_summary_sha256": args.representation_summary,
             "predecessor_manifest_sha256": args.predecessor_manifest,
             **{name: path for name, path in zip(source_names, args.known_source_csv, strict=True)},
         },

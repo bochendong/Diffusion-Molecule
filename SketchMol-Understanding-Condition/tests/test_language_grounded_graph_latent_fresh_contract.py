@@ -77,6 +77,17 @@ def test_fresh_sources_exclude_both_historical_validation_splits():
     assert "historical | historical_validation_sources" in source
 
 
+def test_prepare_uses_b36_preregistration_for_locked_b22_loader():
+    source = IMPLEMENTATION.read_text()
+    runner = RUNNER.read_text()
+    assert "b36.read_preregistration(B36_PREREGISTRATION)" in source
+    assert "predecessor_args, b36_preregistration" in source
+    assert 'prepare.add_argument("--representation-checkpoint"' in source
+    assert 'prepare.add_argument("--representation-summary"' in source
+    assert '--representation-checkpoint "$REPRESENTATION_DIR/graph_latent_autoencoder.pt"' in runner
+    assert '--representation-summary "$REPRESENTATION_DIR/summary.json"' in runner
+
+
 def test_no_ranking_retry_or_oracle_selection_and_exact_n20():
     prereg = json.loads(PREREGISTRATION.read_text())
     for key in (
