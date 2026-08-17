@@ -56,7 +56,7 @@ delta = state_guidance.delta
 hierarchical = state_guidance.hierarchical
 unified = state_guidance.unified
 
-PROTOCOL = "direction_only_language_grounded_graph_latent_fresh_v2"
+PROTOCOL = "direction_only_language_grounded_graph_latent_fresh_edit_v3"
 ARMS = ("property_memory", "common_llm_memory")
 B36_PREREGISTRATION = SCRIPT_DIR / "source_anchored_graph_patch_v36_preregistration.json"
 FORBIDDEN_GENERATION_TERMS = (

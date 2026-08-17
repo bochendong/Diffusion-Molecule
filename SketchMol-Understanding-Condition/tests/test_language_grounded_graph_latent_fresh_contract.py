@@ -7,20 +7,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 EXPERIMENT = ROOT / "experiments" / "unified_latent_flow"
 IMPLEMENTATION = EXPERIMENT / "language_grounded_graph_latent_fresh_confirmation.py"
-PREREGISTRATION = EXPERIMENT / "language_grounded_graph_latent_fresh_v2_preregistration.json"
+PREREGISTRATION = EXPERIMENT / "language_grounded_graph_latent_fresh_edit_v3_preregistration.json"
 RUNNER = EXPERIMENT / "run_language_grounded_graph_latent_fresh_confirmation.sh"
 SUBMITTER = EXPERIMENT / "submit_language_grounded_graph_latent_fresh_confirmation.sh"
 
 
 def test_preregisters_direction_only_prospective_confirmation():
     prereg = json.loads(PREREGISTRATION.read_text())
-    assert prereg["protocol"] == "direction_only_language_grounded_graph_latent_fresh_v2"
+    assert prereg["protocol"] == "direction_only_language_grounded_graph_latent_fresh_edit_v3"
     assert prereg["status"] == "preregistered_before_first_run"
     assert prereg["direction_only_generation_conditions"] is True
     assert prereg["numeric_target_property_access_during_generation"] is False
     assert prereg["fresh_target_process_isolation"] is True
     assert prereg["fresh_source_pool_role"] == "train_only_source_disjoint_unseen_subset"
-    assert prereg["fresh_property_counts"] == [2, 3, 4, 5, 6, 7]
+    assert prereg["fresh_property_counts"] == [2, 3]
+    assert prereg["fresh_property_count_quotas"] == {"2": 32, "3": 32}
     assert sum(prereg["fresh_property_count_quotas"].values()) == 64
     assert prereg["fresh_alignment_limit_per_property_count"] == 256
     assert prereg["exact_raw_attempts_per_condition"] == 20

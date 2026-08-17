@@ -11,7 +11,7 @@ PYTHON_BIN="${SUCC_LANG_FRESH_PYTHON:-/home/bdong/.venvs/molscribe_overlay/bin/p
 DEP_OVERLAY="${SUCC_LANG_FRESH_DEP_OVERLAY:-/scratch/bdong/venvs/uca_common_llm_overlay}"
 STAGE="${SUCC_LANG_FRESH_STAGE:?Set SUCC_LANG_FRESH_STAGE}"
 ARM="${SUCC_LANG_FRESH_ARM:-}"
-OUTPUT_ROOT="${SUCC_LANG_FRESH_OUTPUT_ROOT:-$SHARED_PROJECT_DIR/outputs/language_grounded_graph_latent_fresh_v2/seed_2011}"
+OUTPUT_ROOT="${SUCC_LANG_FRESH_OUTPUT_ROOT:-$SHARED_PROJECT_DIR/outputs/language_grounded_graph_latent_fresh_edit_v3/seed_2022}"
 PREPARE_DIR="$OUTPUT_ROOT/prepare"
 DATASET_DIR="$SHARED_PROJECT_DIR/outputs/unified_smiles_generator_joint_v2/dataset"
 REPRESENTATION_DIR="$SHARED_PROJECT_DIR/outputs/graph_latent_autoencoder_v2/seed_1725"
@@ -22,7 +22,7 @@ B41_DIR="$SHARED_PROJECT_DIR/outputs/viability_preserving_interacting_particle_t
 B26_DIR="$SHARED_PROJECT_DIR/outputs/frozen_fragment_attachment_fresh_holdout_v26/seed_1873"
 B33_DIR="$SHARED_PROJECT_DIR/outputs/pareto_conditioned_joint_latent_v33/seed_1951"
 SFT_ADAPTER_DIR="${SUCC_LANG_FRESH_SFT_ADAPTER_DIR:-$SHARED_PROJECT_DIR/outputs/unified_constraint_agent_common_llm_pilot_v1/model/seed_1703/adapter}"
-PREREGISTRATION="$SCRIPT_DIR/language_grounded_graph_latent_fresh_v2_preregistration.json"
+PREREGISTRATION="$SCRIPT_DIR/language_grounded_graph_latent_fresh_edit_v3_preregistration.json"
 PREDECESSOR="$SCRIPT_DIR/language_grounded_graph_latent_flow_v1_preregistration.json"
 
 for path in \
