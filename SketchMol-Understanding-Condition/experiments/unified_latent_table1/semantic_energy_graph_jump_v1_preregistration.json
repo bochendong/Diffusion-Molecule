@@ -1,6 +1,11 @@
 {
   "protocol": "train_only_semantic_energy_graph_jump_v1",
-  "status": "preregistered_before_first_run",
+  "status": "preregistered_before_first_successful_run_after_engineering_split_repair",
+  "engineering_repair": {
+    "failed_job": 20166964,
+    "failure": "predecessor condition-level critic split leaked 11 canonical sources across fit and probe",
+    "repair": "replace predecessor indices with a deterministic canonical-source-group split while preserving the exact 192/48 condition budget"
+  },
   "scientific_hypothesis": "A frozen Common-LLM hidden state becomes a causal molecular-edit control only when constraint-only text is aligned to graph-flow endpoints with explicit reversed, scrambled, and property-swapped hard negatives. The learned low-rank language energy must separate those controls before molecule generation and must then preserve the frozen canonical graph-jump validity contract while producing a strict any@20 semantic gap.",
   "single_mechanism_change": "constraint_only_hard_negative_semantic_energy",
   "arms": [
@@ -28,6 +33,8 @@
   "fit_probe_conditions": 240,
   "fit_conditions": 192,
   "probe_conditions": 48,
+  "fit_probe_split": "canonical_source_group_exact_condition_budget",
+  "source_group_split_seed": 2041,
   "fit_property_counts": [2],
   "exact_raw_attempts_per_condition": 20,
   "molecular_candidate_ranking": false,
@@ -101,5 +108,5 @@
     "sft_adapter_model_sha256": "2070c439f2e1ba78466e79a26862a569e3c5ce7ea5b4d2f40fdcb725e9792aad",
     "e1_manifest_sha256": "cea62410a1346e72974a25e467b1a58b35cc728be5d8edb5544094df3d79cce8"
   },
-  "implementation_sha256": "512b677e2107ed2faa400f44a048b8d698dbc81d48dfcecbd8c587df5de2e940"
+  "implementation_sha256": "ddacc4c35e85d10f70e778d7cb7df36bc6ac71bbeeba34e79870584bdf941514"
 }

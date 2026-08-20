@@ -143,7 +143,7 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = read_json(path)
     required = {
         "protocol": PROTOCOL,
-        "status": "preregistered_before_first_run",
+        "status": "preregistered_before_first_successful_run_after_engineering_split_repair",
         "arms": list(ARMS),
         "common_llm_prompt_contains_source": False,
         "explicit_semantic_hard_negatives": list(NEGATIVE_VARIANTS),
@@ -156,6 +156,7 @@ def read_preregistration(path: Path) -> dict[str, object]:
         "generation_target_access": False,
         "official_test_access": False,
         "single_seed": True,
+        "fit_probe_split": "canonical_source_group_exact_condition_budget",
     }
     drift = {
         key: {"expected": expected, "actual": payload.get(key)}
@@ -189,6 +190,71 @@ def check_locked_inputs(
     if drift:
         raise ValueError(f"Semantic-energy locked-input drift: {drift}")
     return actual
+
+
+def canonical_pair_source(pair: object) -> str:
+    source = graph.canonical_smiles(str(getattr(pair, "source_smiles", "") or ""))
+    if not source:
+        raise ValueError("Pair has no valid canonical source SMILES")
+    return source
+
+
+def source_group_split_indices(
+    pairs: Sequence[object], *, seed: int, probe_conditions: int
+) -> tuple[list[int], list[int], dict[str, object]]:
+    """Deterministically select an exact-size probe without source leakage.
+
+    The predecessor's train/validation indices are a condition-level critic
+    split and are intentionally not reused here. Source groups have variable
+    sizes, so a deterministic subset-sum selects whole groups while preserving
+    the preregistered condition budget exactly.
+    """
+    groups: dict[str, list[int]] = defaultdict(list)
+    for index, pair in enumerate(pairs):
+        groups[canonical_pair_source(pair)].append(index)
+    ordered_sources = sorted(
+        groups,
+        key=lambda source: text_sha256(f"{int(seed)}|{source}"),
+    )
+    paths: dict[int, tuple[str, ...]] = {0: ()}
+    for source in ordered_sources:
+        group_size = len(groups[source])
+        for total, chosen in sorted(list(paths.items()), reverse=True):
+            candidate = total + group_size
+            if candidate <= int(probe_conditions) and candidate not in paths:
+                paths[candidate] = (*chosen, source)
+    if int(probe_conditions) not in paths:
+        raise ValueError(
+            "Cannot construct exact source-group probe budget: "
+            f"requested={probe_conditions}, attainable={sorted(paths)}"
+        )
+    probe_sources = set(paths[int(probe_conditions)])
+    validation_indices = [
+        index
+        for index, pair in enumerate(pairs)
+        if canonical_pair_source(pair) in probe_sources
+    ]
+    train_indices = [
+        index
+        for index, pair in enumerate(pairs)
+        if canonical_pair_source(pair) not in probe_sources
+    ]
+    train_sources = {canonical_pair_source(pairs[index]) for index in train_indices}
+    validation_sources = {
+        canonical_pair_source(pairs[index]) for index in validation_indices
+    }
+    overlap = train_sources & validation_sources
+    if overlap:
+        raise ValueError(f"Source-group split leaked {len(overlap)} canonical sources")
+    if len(validation_indices) != int(probe_conditions):
+        raise ValueError("Source-group probe condition count drift")
+    return train_indices, validation_indices, {
+        "method": "canonical_source_group_exact_condition_budget",
+        "seed": int(seed),
+        "fit_sources": len(train_sources),
+        "probe_sources": len(validation_sources),
+        "source_overlap": len(overlap),
+    }
 
 
 def specs_for_row(row: Mapping[str, object]) -> list[tuple[str, int]]:
@@ -298,16 +364,27 @@ def run_prepare(
     )
     bundle = fresh.load_frozen_predecessor_bundle(args.predecessor_fit_bundle)
     pairs = list(bundle["pairs"])
-    train_indices = list(bundle["train_indices"])
-    validation_indices = list(bundle["validation_indices"])
     if len(pairs) != int(preregistration["fit_probe_conditions"]):
         raise ValueError(f"Expected {preregistration['fit_probe_conditions']} pairs, found {len(pairs)}")
+    legacy_train_indices = list(bundle["train_indices"])
+    legacy_validation_indices = list(bundle["validation_indices"])
+    legacy_train_sources = {
+        canonical_pair_source(pairs[index]) for index in legacy_train_indices
+    }
+    legacy_probe_sources = {
+        canonical_pair_source(pairs[index]) for index in legacy_validation_indices
+    }
+    train_indices, validation_indices, split_audit = source_group_split_indices(
+        pairs,
+        seed=int(preregistration["source_group_split_seed"]),
+        probe_conditions=int(preregistration["probe_conditions"]),
+    )
     if len(train_indices) != int(preregistration["fit_conditions"]):
         raise ValueError("Fit condition count drift")
     if len(validation_indices) != int(preregistration["probe_conditions"]):
         raise ValueError("Probe condition count drift")
-    train_sources = {pairs[index].source_smiles for index in train_indices}
-    probe_sources = {pairs[index].source_smiles for index in validation_indices}
+    train_sources = {canonical_pair_source(pairs[index]) for index in train_indices}
+    probe_sources = {canonical_pair_source(pairs[index]) for index in validation_indices}
     if train_sources & probe_sources:
         raise ValueError("Fit/probe source overlap")
     e1 = read_json(args.e1_manifest)
@@ -405,6 +482,13 @@ def run_prepare(
         "fit_sources": len(train_sources),
         "probe_sources": len(probe_sources),
         "fit_probe_source_overlap": len(train_sources & probe_sources),
+        "source_group_split": split_audit,
+        "replaced_predecessor_condition_split": {
+            "reason": "predecessor_critic_split_was_not_source_grouped",
+            "legacy_fit_probe_source_overlap": len(
+                legacy_train_sources & legacy_probe_sources
+            ),
+        },
         "artifacts": {
             "fit_probe_bundle_sha256": file_sha256(fit_bundle_path),
             "generation_conditions_sha256": file_sha256(generation_path),

@@ -32,7 +32,26 @@ def test_preregistration_locks_language_energy_and_exact_n20() -> None:
     assert manifest["molecular_candidate_ranking"] is False
     assert manifest["oracle_selection"] is False
     assert manifest["generation_target_access"] is False
+    assert manifest["fit_probe_split"] == "canonical_source_group_exact_condition_budget"
+    assert manifest["source_group_split_seed"] == 2041
     assert manifest["implementation_sha256"] == sha256(IMPLEMENTATION)
+
+
+def test_prepare_replaces_leaky_critic_split_with_source_group_split() -> None:
+    source = IMPLEMENTATION.read_text(encoding="utf-8")
+    helper = source.split("def source_group_split_indices", 1)[1].split(
+        "def specs_for_row", 1
+    )[0]
+    prepare = source.split("def run_prepare", 1)[1].split(
+        "def constraint_only_chat", 1
+    )[0]
+    assert "canonical_pair_source" in helper
+    assert "probe_conditions" in helper
+    assert "source_group_split_indices(" in prepare
+    prepare_lines = {line.strip() for line in prepare.splitlines()}
+    assert 'train_indices = list(bundle["train_indices"])' not in prepare_lines
+    assert 'validation_indices = list(bundle["validation_indices"])' not in prepare_lines
+    assert "legacy_fit_probe_source_overlap" in prepare
 
 
 def test_constraint_prompt_has_no_source_identity_shortcut() -> None:
