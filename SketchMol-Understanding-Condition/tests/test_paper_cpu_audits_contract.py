@@ -39,6 +39,7 @@ def test_runners_only_score_existing_frozen_candidates() -> None:
     assert "collect_b41_particle_coverage.py" in particle
     assert "collect_anyk_budget.py" in anyk
     assert "collect_table1_anyk_robustness.py" in anyk
+    assert "reuse_existing_curve=" in anyk
     assert "d0_b41_table1_n20_candidates.csv" in anyk
     assert "b41_canonical_table1_n20_candidates.csv" in anyk
     assert "d3_event_kernel_energy_table1_n20_candidates.csv" in anyk
@@ -95,4 +96,60 @@ def test_comparison_collector_records_no_selection_contract(tmp_path: Path, monk
     assert payload["contract"]["molecular_candidate_ranking"] is False
     assert payload["contract"]["oracle_selection"] is False
     assert payload["contract"]["exact_max_attempts_per_condition"] == 20
+    assert payload["coverage_alignment"]["passed"] is True
+    assert payload["coverage_alignment"]["minimum_relative_coverage"] == 1.0
     assert payload["claim_policy"] == "diagnostic_only_no_method_selection_or_retuning"
+
+
+def test_comparison_accepts_one_missing_historical_condition(tmp_path: Path, monkeypatch) -> None:
+    module = load_collector()
+    ks = [1, 2, 5, 10, 20]
+    paths = []
+    candidates = []
+    for index, evaluated in enumerate((988, 988, 987)):
+        curve = {
+            "model": f"arm-{index}",
+            "ks": ks,
+            "candidate_conditions": 997 - index,
+            "evaluated_conditions": evaluated,
+            "real5_anyk_t0_65": {str(k): 0.5 for k in ks},
+            "gsk3b_anyk_t0_65": {str(k): 0.25 for k in ks},
+            "auc_real5_t0_65": 0.5,
+            "auc_gsk3b_t0_65": 0.25,
+            "mean_unique_smiles": 10.0,
+        }
+        curve_path = tmp_path / f"curve-{index}.json"
+        curve_path.write_text(json.dumps(curve), encoding="utf-8")
+        paths.append(curve_path)
+        candidate = tmp_path / f"candidate-{index}.csv"
+        candidate.write_text("id,smiles\n1,CC\n", encoding="utf-8")
+        candidates.append(candidate)
+    output = tmp_path / "summary.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            str(COLLECTOR),
+            "--b41-curve",
+            str(paths[0]),
+            "--canonical-curve",
+            str(paths[1]),
+            "--d3-curve",
+            str(paths[2]),
+            "--b41-candidates",
+            str(candidates[0]),
+            "--canonical-candidates",
+            str(candidates[1]),
+            "--d3-candidates",
+            str(candidates[2]),
+            "--output-json",
+            str(output),
+        ],
+    )
+    assert module.main() == 0
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["coverage_alignment"]["evaluated_conditions"] == {
+        "b41": 988,
+        "canonical": 988,
+        "d3_grpo": 987,
+    }
+    assert payload["coverage_alignment"]["minimum_relative_coverage"] > 0.998

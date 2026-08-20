@@ -33,6 +33,10 @@ done
 score() {
   local name="$1"
   local candidates="$2"
+  if [[ -s "$OUTPUT_ROOT/$name/anyk_curve.json" ]]; then
+    echo "reuse_existing_curve=$OUTPUT_ROOT/$name/anyk_curve.json"
+    return 0
+  fi
   "$PYTHON_BIN" "$SCRIPT_DIR/collect_anyk_budget.py" \
     --reference "$REFERENCE" \
     --candidates "$candidates" \

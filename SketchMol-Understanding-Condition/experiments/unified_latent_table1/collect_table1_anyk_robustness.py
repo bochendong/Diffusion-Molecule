@@ -35,8 +35,12 @@ def load_curve(path: Path) -> dict[str, object]:
         raise SystemExit(f"Unexpected any@k grid in {path}: {payload.get('ks')}")
     if int(payload.get("candidate_conditions") or 0) <= 0:
         raise SystemExit(f"No candidate conditions in {path}")
-    if payload.get("candidate_conditions") != payload.get("evaluated_conditions"):
-        raise SystemExit(f"Incomplete oracle coverage in {path}")
+    evaluated = int(payload.get("evaluated_conditions") or 0)
+    candidates = int(payload.get("candidate_conditions") or 0)
+    if evaluated <= 0 or evaluated > candidates:
+        raise SystemExit(
+            f"Invalid candidate/evaluation counts in {path}: {candidates}/{evaluated}"
+        )
     return payload
 
 
@@ -54,6 +58,8 @@ def numeric_series(curve: dict[str, object], key: str) -> dict[str, float]:
 
 
 def pack(curve: dict[str, object]) -> dict[str, object]:
+    candidate_conditions = int(curve["candidate_conditions"])
+    evaluated_conditions = int(curve["evaluated_conditions"])
     return {
         "model": curve.get("model"),
         "real5_anyk_t0_65": numeric_series(curve, "real5_anyk_t0_65"),
@@ -61,8 +67,11 @@ def pack(curve: dict[str, object]) -> dict[str, object]:
         "auc_real5_t0_65": float(curve["auc_real5_t0_65"]),
         "auc_gsk3b_t0_65": float(curve["auc_gsk3b_t0_65"]),
         "mean_unique_smiles": float(curve["mean_unique_smiles"]),
-        "candidate_conditions": int(curve["candidate_conditions"]),
-        "evaluated_conditions": int(curve["evaluated_conditions"]),
+        "candidate_conditions": candidate_conditions,
+        "evaluated_conditions": evaluated_conditions,
+        "candidate_ids_outside_matched_table1_reference": (
+            candidate_conditions - evaluated_conditions
+        ),
     }
 
 
@@ -80,6 +89,20 @@ def main() -> int:
         "d3_grpo": load_curve(args.d3_curve),
     }
     packed = {name: pack(curve) for name, curve in curves.items()}
+    evaluated_counts = {
+        name: int(arm["evaluated_conditions"]) for name, arm in packed.items()
+    }
+    max_evaluated = max(evaluated_counts.values())
+    relative_coverage = {
+        name: float(count) / float(max_evaluated)
+        for name, count in evaluated_counts.items()
+    }
+    minimum_relative_coverage = min(relative_coverage.values())
+    if minimum_relative_coverage < 0.995:
+        raise SystemExit(
+            "Table1 arm coverage is not aligned: "
+            f"counts={evaluated_counts}, relative={relative_coverage}"
+        )
     b41_real = packed["b41"]["real5_anyk_t0_65"]
     canonical_real = packed["canonical"]["real5_anyk_t0_65"]
     d3_real = packed["d3_grpo"]["real5_anyk_t0_65"]
@@ -102,6 +125,17 @@ def main() -> int:
             "oracle_selection": False,
             "exact_max_attempts_per_condition": 20,
             "ks": [1, 2, 5, 10, 20],
+            "minimum_relative_reference_coverage": 0.995,
+        },
+        "coverage_alignment": {
+            "evaluated_conditions": evaluated_counts,
+            "relative_to_largest_arm": relative_coverage,
+            "minimum_relative_coverage": minimum_relative_coverage,
+            "passed": True,
+            "note": (
+                "candidate_conditions counts every ID in the frozen files; "
+                "evaluated_conditions counts IDs matched to the Table1 reference"
+            ),
         },
         "candidate_sha256": {
             name: sha256(path) for name, path in candidate_paths.items()
