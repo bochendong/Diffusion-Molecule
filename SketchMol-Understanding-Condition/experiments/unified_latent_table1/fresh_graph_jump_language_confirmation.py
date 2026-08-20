@@ -95,6 +95,7 @@ def build_parser() -> argparse.ArgumentParser:
     prepare.add_argument("--b36-records", type=Path, required=True)
     prepare.add_argument("--trajectory-dataset", type=Path, required=True)
     prepare.add_argument("--predecessor-manifest", type=Path, required=True)
+    prepare.add_argument("--predecessor-fit-bundle", type=Path, required=True)
     prepare.add_argument("--known-source", action="append", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, required=True)
 
@@ -219,6 +220,46 @@ def sources_from_path(path: Path) -> set[str]:
     return sources
 
 
+def load_frozen_predecessor_bundle(path: Path) -> dict[str, object]:
+    """Load the successful V3 fit bundle without rerunning timeout-bound MCS.
+
+    V3 was serialized while the graph modules were imported under their legacy
+    names.  The classes are identical to the current modules, so the aliases
+    only restore pickle compatibility; no data or model state is changed.
+    """
+    sys.modules.setdefault("categorical_graph_belief_base", base)
+    sys.modules.setdefault("categorical_graph_latent_ae", graph)
+    bundle = torch.load(path, map_location="cpu", weights_only=False)
+    if bundle.get("protocol") != fresh_v3.PROTOCOL:
+        raise ValueError("Frozen predecessor fit-bundle protocol drift")
+    required = {"pairs", "vocabulary", "support", "lineage"}
+    missing = sorted(required - set(bundle))
+    if missing:
+        raise ValueError(f"Frozen predecessor fit bundle missing fields: {missing}")
+    return bundle
+
+
+def locked_b36_sources(path: Path) -> set[str]:
+    sources: set[str] = set()
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        record = json.loads(line)
+        value = graph.canonical_smiles(str(record.get("source_smiles", "") or ""))
+        if value:
+            sources.add(value)
+    return sources
+
+
+def all_validation_sources(path: Path) -> set[str]:
+    sources: set[str] = set()
+    for row in base.read_rows(path):
+        value = graph.canonical_smiles(str(row.get("source_smiles", "") or ""))
+        if value:
+            sources.add(value)
+    return sources
+
+
 def select_fresh_pairs(
     args: argparse.Namespace,
     preregistration: Mapping[str, object],
@@ -295,24 +336,19 @@ def run_prepare(args: argparse.Namespace, preregistration: Mapping[str, object])
         "b36_records_sha256": args.b36_records,
         "trajectory_dataset_sha256": args.trajectory_dataset,
         "predecessor_manifest_sha256": args.predecessor_manifest,
+        "predecessor_fit_bundle_sha256": args.predecessor_fit_bundle,
     }
     fixed_paths.update({f"known_source_{index}_sha256": path for index, path in enumerate(args.known_source)})
     check_locked_inputs(preregistration, fixed_paths)
     predecessor = fresh_v3.v1.read_preregistration(args.predecessor_manifest)
-    (
-        selected,
-        fit,
-        development,
-        trajectory,
-        _train_indices,
-        _validation_indices,
-        vocabulary,
-        support,
-        historical_validation_sources,
-        lineage,
-    ) = fresh_v3.reconstruct_predecessor_pairs(args, preregistration, predecessor)
-    forbidden = {pair.source_smiles for pair in [*selected, *fit, *development, *trajectory]}
-    forbidden |= set(historical_validation_sources)
+    bundle = load_frozen_predecessor_bundle(args.predecessor_fit_bundle)
+    fit = list(bundle["pairs"])
+    vocabulary = dict(bundle["vocabulary"])
+    support = dict(bundle["support"])
+    lineage = dict(bundle["lineage"])
+    b36_sources = locked_b36_sources(args.b36_records)
+    validation_sources = all_validation_sources(args.validation_csv)
+    forbidden = set(b36_sources) | set(validation_sources)
     known_counts = {}
     for index, path in enumerate(args.known_source):
         values = sources_from_path(path)
@@ -387,6 +423,13 @@ def run_prepare(args: argparse.Namespace, preregistration: Mapping[str, object])
         "fresh_unique_sources": len(selected_sources),
         "fresh_forbidden_source_overlap": len(selected_sources & forbidden),
         "fresh_selection": selection,
+        "deterministic_predecessor_reuse": {
+            "fit_bundle_protocol": str(bundle["protocol"]),
+            "fit_pairs": len(fit),
+            "b36_record_sources": len(b36_sources),
+            "all_validation_sources": len(validation_sources),
+            "timeout_bound_mcs_reconstruction": False,
+        },
         "known_source_counts": known_counts,
         "artifacts": {
             "fit_bundle_sha256": file_sha256(fit_bundle_path),

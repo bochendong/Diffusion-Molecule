@@ -23,6 +23,7 @@ B41_DIR="$SHARED_PROJECT_DIR/outputs/viability_preserving_interacting_particle_t
 B26_DIR="$SHARED_PROJECT_DIR/outputs/frozen_fragment_attachment_fresh_holdout_v26/seed_1873"
 B33_DIR="$SHARED_PROJECT_DIR/outputs/pareto_conditioned_joint_latent_v33/seed_1951"
 V3_DIR="$SHARED_PROJECT_DIR/outputs/language_grounded_graph_latent_fresh_edit_v3/seed_2022"
+V3_PREPARE_DIR="$V3_DIR/prepare"
 D0_DIR="$SHARED_PROJECT_DIR/outputs/d0_b41_table1_n20"
 CANONICAL_DIR="$SHARED_PROJECT_DIR/outputs/b41_frontier_objective_table1_n20/canonical"
 D3_DIR="$SHARED_PROJECT_DIR/outputs/d3_event_kernel_energy_grpo_table1_n20"
@@ -44,6 +45,7 @@ for path in \
   "$B26_DIR/validation_candidates.csv" \
   "$B33_DIR/fresh_internal_b33_pareto_candidates.csv" \
   "$V3_DIR/prepare/generation_conditions.json" \
+  "$V3_PREPARE_DIR/fit_only_direction_pairs.pt" \
   "$D0_DIR/d0_b41_table1_n20_candidates.csv" \
   "$CANONICAL_DIR/b41_canonical_event_kernel.pt" \
   "$D3_DIR/d3_event_kernel_energy.pt" \
@@ -72,6 +74,7 @@ case "$STAGE" in
       --b36-records "$B36_DIR/train_patch_records.jsonl" \
       --trajectory-dataset "$STATE_GUIDANCE_DIR/fit_only_trajectories.pt" \
       --predecessor-manifest "$PREDECESSOR" \
+      --predecessor-fit-bundle "$V3_PREPARE_DIR/fit_only_direction_pairs.pt" \
       --known-source "$B26_DIR/validation_candidates.csv" \
       --known-source "$B33_DIR/fresh_internal_b33_pareto_candidates.csv" \
       --known-source "$V3_DIR/prepare/generation_conditions.json" \

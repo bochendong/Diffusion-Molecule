@@ -55,6 +55,19 @@ def test_generation_process_cannot_accept_the_sealed_target_path() -> None:
     assert "generation_conditions.json" in freeze_case
 
 
+def test_prepare_reuses_locked_predecessor_instead_of_rerunning_mcs() -> None:
+    source = IMPLEMENTATION.read_text(encoding="utf-8")
+    runner = RUNNER.read_text(encoding="utf-8")
+    manifest = json.loads(PREREGISTRATION.read_text(encoding="utf-8"))
+    assert "load_frozen_predecessor_bundle" in source
+    assert "fresh_v3.reconstruct_predecessor_pairs(" not in source
+    assert 'prepare.add_argument("--predecessor-fit-bundle"' in source
+    assert "--predecessor-fit-bundle" in runner
+    assert manifest["locked_inputs"]["predecessor_fit_bundle_sha256"] == (
+        "0336ce7419ac12ad2d52f3f5629b00910fca5f1eeea2fcc559fa4f5b9debf284"
+    )
+
+
 def test_evaluation_waits_for_both_frozen_groups() -> None:
     source = SUBMITTER.read_text(encoding="utf-8")
     assert 'SUCC_FRESH_CONFIRM_ARM_GROUP=graph' in source
