@@ -3,11 +3,25 @@
 | 字段 | 值 |
 | --- | --- |
 | **状态** | active planning |
-| **最后更新** | 2026-07-04（fair-budget de novo jobs `17162873`–`17162880`；MuMO ADMET-prior v2 `17164562`–`17164574`） |
+| **最后更新** | 2026-08-21（Common-LLM structured sparse property router v4；等待首轮单 seed 归因实验） |
 | **项目** | `SketchMol-Understanding-Condition` |
 | **目标** | 把当前结果整理成可投顶会的 benchmark 结构，并提供可直接提交到服务器的命令 |
 
 外部论文 baseline 数值目标已单独整理到 [external-paper-baselines.md](external-paper-baselines.md)。MuMO / C-MuMO evaluator 已修复为 candidate-level official-style `SR` / `Similarity` / `RI` 聚合；当前 `Sim >= 0.4` 只作为内部 source-preservation diagnostic。下一步需要重跑 direct/group-RL，并补 ADMET/generated-property oracle CSV。
+
+## 2026-08-21 ICLR 主线：语言编译到结构化 graph latent
+
+当前主张不再是“Common LLM 选择一条已有编辑线路”或“生成 prompt 后做候选排序”，而是：**Common LLM 将自然语言多性质约束编译成稀疏、可组合的性质坐标，并直接控制共享 graph-latent transport**。
+
+已有证据与缺口：
+
+- v1/v2 是负对照：语言读出没有形成可靠的性质坐标。
+- v3 学到了正确的性质方向语义，但冻结复核显示 support precision 只有 **66.7%**；问题是多激活了无关性质，而不是方向语义完全错误。
+- v4 用显式 cardinality head + deterministic exact top-k property router 解决 support 结构问题，不搜索阈值。
+- 四个预注册 arm 为 `full`、`LoRA off`、`token-slot off`、`composition supervision off`；数据、seed、probe、训练曝光数和优化步数保持一致，只移除声明的机制。
+- 四个 arm 的执行作业只负责生成完整产物并以 0 退出；独立 science-gate 作业才根据冻结阈值决定继续或停止，避免把“科学结论为负”误显示成工程失败。
+
+v4 通过门后才解锁一次单 seed、target-isolated 的 **exact n=20** 分子生成；每个 condition 只有 20 次原始尝试，候选池也是 20，不允许对更大池排序或使用 oracle 选样。统一报告三条 replay：De novo 2p–7p、MolEdit Table1、MuMO，并保留 validity、unique validity、source similarity、property success、strict success 和 anti-forgetting。若结构性 router 或任何归因消融不过门，不进入分子阶段，也不降低门槛。
 
 ## 设计原则
 
