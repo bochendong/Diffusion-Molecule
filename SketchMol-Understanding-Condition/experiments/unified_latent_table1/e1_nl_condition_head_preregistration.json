@@ -1,0 +1,67 @@
+{
+  "protocol": "e1_nl_condition_head_table1_n20",
+  "series": "E",
+  "attempt": "1",
+  "status": "preregistered_before_first_run",
+  "description": "Series E: instruction-conditioned graph jump. E1 freezes the B41 event kernel and trains only a hashed-instruction projector onto B41 property-slot tokens. Table1 n=20, no ranking, no oracle. Property-vector arm is the locked D0 B41 summary, not a resample.",
+  "hypothesis": "A text projector trained on canonical templates can drive frozen B41 on those templates, and the same projector transfers to held-out paraphrases of the same tasks.",
+  "claim_if_pass": "language interface is compatible with B41; proceed to E2 composition / E3 joint train. Not a method row yet.",
+  "not_ours": true,
+  "not_a_method_contribution": true,
+  "frozen_b41_event_kernel": true,
+  "trains_event_kernel": false,
+  "oracle_in_environment": false,
+  "molecular_candidate_ranking": false,
+  "task_router": false,
+  "exact_raw_attempts_per_condition": 20,
+  "seed": 2011,
+  "head_epochs": 40,
+  "head_batch_size": 64,
+  "head_lr": 0.001,
+  "head_hidden_dim": 256,
+  "word_hash_dim": 256,
+  "char_hash_dim": 256,
+  "char_ngram": 3,
+  "train_templates_per_pair": 2,
+  "variants": ["template", "paraphrase"],
+  "b41_reference": {
+    "gsk3b_any20_t0_65": 0.454545,
+    "real5_any20_t0_65": 0.694808,
+    "rb_any20_t0_65": 0.949495
+  },
+  "property_names": {
+    "GSK3B": "GSK3B activity",
+    "DRD2": "DRD2 binding",
+    "MW": "molecular weight",
+    "SA": "synthetic accessibility",
+    "RB": "rotatable bonds",
+    "HBA": "hydrogen-bond acceptors",
+    "LogP": "LogP",
+    "QED": "QED",
+    "TPSA": "TPSA",
+    "HBD": "hydrogen-bond donors"
+  },
+  "train_verbs": {
+    "increase": ["increase", "improve"],
+    "decrease": ["decrease", "reduce"]
+  },
+  "eval_paraphrases": {
+    "GSK3B:increase": "Make this molecule a stronger GSK3B inhibitor.",
+    "MW:increase": "Raise the molecular mass of this compound.",
+    "SA:decrease": "Make this molecule easier to synthesize.",
+    "RB:decrease": "Cut the number of freely rotating bonds.",
+    "DRD2:decrease+MW:decrease+SA:decrease": "Lower DRD2 affinity, shrink the molecule, and simplify synthesis.",
+    "HBA:decrease+SA:decrease": "Remove hydrogen-bond acceptors and make synthesis easier.",
+    "QED:increase+SA:decrease": "Improve drug-likeness while making the molecule easier to make.",
+    "HBA:decrease+LogP:increase": "Reduce acceptors and make the compound more hydrophobic.",
+    "HBA:decrease+MW:decrease": "Fewer hydrogen-bond acceptors and a smaller molecule.",
+    "HBA:increase+MW:increase+QED:decrease": "Add acceptors, increase size, and accept lower QED."
+  },
+  "gates": {
+    "gsk3b_any20_t0_65": 0.0,
+    "validity": 0.95,
+    "exact_attempts": 20,
+    "template_real5_margin": 0.02,
+    "paraphrase_real5_margin": 0.05
+  }
+}

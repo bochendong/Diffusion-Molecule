@@ -1,0 +1,32 @@
+{
+  "protocol": "joint_graph_fragment_categorical_c8_c7_scores_seed2005",
+  "series": "C",
+  "attempt": 8,
+  "description": "No new training. Keep C7's frozen graph-program logprobs and the C1 0.5/0.5 mixture, but sample with C5's seed 2005. GSK3B graph-pool strict is 0, so GSK3B any@20 is the B31 fragment lottery; C7's GSK3B drop was likely the 2007 seed, not B31. B31 stays frozen. n=20, no ranking, no family head.",
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "oracle_in_training_reward": false,
+  "task_router": false,
+  "failed_attachment_retry": false,
+  "second_edit": false,
+  "exact_raw_attempts_per_condition": 20,
+  "family_prior_graph": 0.5,
+  "family_prior_fragment": 0.5,
+  "graph_family": "frozen_c7_graph_action_policy_logprob",
+  "fragment_family": "frozen_b31_joint_site_token_energy",
+  "c5_overall_any20_t0_65": 0.6158141858141859,
+  "c5_real5_any20_t0_65": 0.6907474747474748,
+  "c5_gsk3b_any20_t0_65": 1.0,
+  "c7_real5_any20_t0_65": 0.7385252525252526,
+  "c7_drd2_any20_t0_65": 0.73,
+  "c7_gsk3b_any20_t0_65": 0.9090909090909091,
+  "seed": 2005,
+  "gates": {
+    "gsk3b_any20_t0_65": 0.95,
+    "real5_any20_t0_65": 0.70,
+    "drd2_any20_t0_65": 0.55,
+    "validity": 0.95,
+    "exact_attempts": 20
+  }
+}

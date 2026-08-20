@@ -1,0 +1,18 @@
+{
+  "protocol": "d0_b41_valid_terminal_table1_n20",
+  "series": "D",
+  "attempt": "0b",
+  "description": "Frozen B41 graph-event jump with valid-terminal STOP support. Same Table1 test rows, n=20, no ranking, no DSL. Fair latent baseline vs C5.",
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "task_router": false,
+  "second_edit": false,
+  "exact_raw_attempts_per_condition": 20,
+  "seed": 2005,
+  "gates": {
+    "gsk3b_any20_t0_65": 0.0,
+    "validity": 0.80,
+    "exact_attempts": 20
+  }
+}

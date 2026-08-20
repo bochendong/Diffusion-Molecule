@@ -1,0 +1,63 @@
+{
+  "protocol": "b41_particle_coverage_table1_n20",
+  "series": "contribution_audit",
+  "attempt": "particle_coverage",
+  "status": "preregistered_before_first_run",
+  "description": "Frozen B41 checkpoint. Inference-only ablation of particle initialization and interacting transport. No retraining, no ranking, no oracle, no retry. Full interacting transport is the existing D0 B41 row; this job samples the three stripped variants.",
+  "hypothesis": "Interacting particle transport raises any@k coverage over iid independent latents across the budget curve, not only at k=20.",
+  "claim_if_pass": "particle coverage is a method contribution: keep interacting transport in the paper mechanism",
+  "claim_if_fail": "particles are an implementation detail; do not sell interacting transport as a second contribution",
+  "not_ours_if_fail": true,
+  "frozen_b41_checkpoint": true,
+  "retrain": false,
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "task_router": false,
+  "exact_raw_attempts_per_condition": 20,
+  "seed": 2005,
+  "ks": [1, 2, 5, 10, 20],
+  "threshold": 0.65,
+  "independent_transport": "condition-flow Euler only; no repulsion; no RMS spread floor",
+  "interacting_transport": "B41 repulsion + RMS spread floor after each flow step",
+  "variants": [
+    {
+      "name": "iid_independent",
+      "init": "iid",
+      "interact": "independent",
+      "role": "ordinary independent latents"
+    },
+    {
+      "name": "ortho_independent",
+      "init": "orthogonal",
+      "interact": "independent",
+      "role": "initial coverage only"
+    },
+    {
+      "name": "iid_interacting",
+      "init": "iid",
+      "interact": "interacting",
+      "role": "interaction only"
+    }
+  ],
+  "full_reference": {
+    "name": "full_interacting",
+    "source": "outputs/d0_b41_table1_n20/",
+    "init": "orthogonal",
+    "interact": "interacting"
+  },
+  "b41_reference": {
+    "gsk3b_any20_t0_65": 0.454545,
+    "real5_any20_t0_65": 0.694808,
+    "rb_any20_t0_65": 0.949495
+  },
+  "gates": {
+    "gsk3b_any20_t0_65": 0.0,
+    "validity": 0.95,
+    "exact_attempts": 20,
+    "full_ge_iid_all_k": true,
+    "early_k_strict_wins": 2,
+    "early_ks": [1, 2, 5, 10],
+    "min_mean_real5_gain": 0.0
+  }
+}

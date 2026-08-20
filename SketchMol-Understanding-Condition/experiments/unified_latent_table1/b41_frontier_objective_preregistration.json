@@ -1,0 +1,45 @@
+{
+  "protocol": "b41_frontier_objective_table1_n20",
+  "series": "contribution_audit",
+  "attempt": "frontier_objective",
+  "status": "preregistered_before_first_run",
+  "description": "Same B39 warm start, same B41 data/steps/particles/viability. Only the event-kernel target_next label changes. Frontier is the frozen B41 D0 row. This job fine-tunes canonical-singleton and random-singleton for 2 epochs, then Table1 n=20 valid-terminal eval.",
+  "hypothesis": "Training the event kernel on the dependency-ready frontier set beats a single canonical next event and a random linear-extension next event on real-5 Acc@0.65 any@20.",
+  "claim_if_pass": "order-free edit-frontier learning is a method contribution",
+  "claim_if_fail": "frontier NLL is not a contribution; do not rename B41 as order-free edit-frontier learning",
+  "not_ours_if_fail": true,
+  "warm_start_from_frozen_b39": true,
+  "epochs": 2,
+  "seed": 1991,
+  "eval_seed": 2005,
+  "exact_raw_attempts_per_condition": 20,
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "task_router": false,
+  "architecture_frozen": true,
+  "viability_frozen": true,
+  "particles_frozen": true,
+  "label_modes": ["canonical", "random_singleton"],
+  "frontier_reference": {
+    "name": "frontier",
+    "source": "outputs/d0_b41_table1_n20/",
+    "label": "ready-set all ones (B41 orderless_jump_loss)"
+  },
+  "canonical_rule": "among dependency-ready gold events, keep the smallest event-layout index",
+  "random_singleton_rule": "among dependency-ready gold events, keep one uniform draw; prefix sampling stays B41 random linear extension",
+  "second_seed_if_pass": 1993,
+  "b41_reference": {
+    "gsk3b_any20_t0_65": 0.454545,
+    "real5_any20_t0_65": 0.694808,
+    "rb_any20_t0_65": 0.949495
+  },
+  "gates": {
+    "gsk3b_any20_t0_65": 0.0,
+    "validity": 0.95,
+    "exact_attempts": 20,
+    "real5_margin": 0.0,
+    "tasks_not_worse": 4,
+    "task_slack": 0.02
+  }
+}

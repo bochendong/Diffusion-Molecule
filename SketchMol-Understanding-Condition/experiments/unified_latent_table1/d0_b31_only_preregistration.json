@@ -1,0 +1,23 @@
+{
+  "protocol": "d0_b31_only_table1_n20",
+  "series": "D",
+  "attempt": "0a",
+  "description": "Frozen B31 joint (site, token) energy only. Same Table1 test rows, n=20, no graph family, no ranking. Fair latent baseline vs C5 mixture.",
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "task_router": false,
+  "failed_attachment_retry": false,
+  "second_edit": false,
+  "exact_raw_attempts_per_condition": 20,
+  "family_prior_graph": 0.0,
+  "family_prior_fragment": 1.0,
+  "graph_family": "unused",
+  "fragment_family": "frozen_b31_joint_site_token_energy",
+  "seed": 2005,
+  "gates": {
+    "gsk3b_any20_t0_65": 0.0,
+    "validity": 0.95,
+    "exact_attempts": 20
+  }
+}

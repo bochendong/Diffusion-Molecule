@@ -1,0 +1,25 @@
+{
+  "protocol": "d1_b31_energy_on_b41_table1_n20",
+  "series": "D",
+  "attempt": "1",
+  "description": "Frozen B41 graph-event jump with valid-terminal STOP. B31 joint (site, token) energy samples a fragment goal per attempt; MCS projects that goal onto the B41 event grid as a logit bias. Emitted SMILES come only from B41 STOP. No DSL family mixer, no ranking, no second edit.",
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "task_router": false,
+  "second_edit": false,
+  "family_mixer": false,
+  "exact_raw_attempts_per_condition": 20,
+  "seed": 2005,
+  "b31_goal_seed_offset": 1000000,
+  "energy_weight": 2.0,
+  "fragment_family": "frozen_b31_joint_site_token_energy",
+  "graph_process": "frozen_b41_valid_terminal",
+  "gates": {
+    "gsk3b_any20_t0_65": 0.6,
+    "rb_any20_t0_65": 0.7,
+    "real5_any20_t0_65": 0.7,
+    "validity": 0.95,
+    "exact_attempts": 20
+  }
+}

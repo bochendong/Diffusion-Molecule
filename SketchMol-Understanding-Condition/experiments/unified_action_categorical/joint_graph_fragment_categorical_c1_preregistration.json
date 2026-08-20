@@ -1,0 +1,42 @@
+{
+  "protocol": "joint_graph_fragment_categorical_c1",
+  "series": "C",
+  "attempt": 1,
+  "description": "One n=20 categorical over GraphEditDSL atom/bond programs and B31 one-cut fragment replacements. Families are mixed with a frozen equal prior. Instruction does not route the family. Molecules are materialized after the 20 draws. No ranking, retry, or oracle selection.",
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "task_router": false,
+  "failed_attachment_retry": false,
+  "second_edit": false,
+  "exact_raw_attempts_per_condition": 20,
+  "family_prior_graph": 0.5,
+  "family_prior_fragment": 0.5,
+  "graph_family": {
+    "source": "frozen_umtp_graph_action_policy_logprob",
+    "checkpoint": "outputs/umtp_graph_action_protected_pilot_v1/seed_7/action_policy/umtp_graph_action_policy.pt",
+    "candidate_pool": "outputs/umtp_graph_action_full_eval_v1/seed_7/eval/action/table1/candidate_pool/graph_action_candidates.csv",
+    "score_field": "graph_action_policy_logprob",
+    "ignored_fields": [
+      "generation_rank",
+      "candidate_rank",
+      "unified_finalizer_score",
+      "table1_strict_success",
+      "table1_instruction_success"
+    ]
+  },
+  "fragment_family": {
+    "source": "frozen_b31_joint_site_token_energy",
+    "checkpoint": "outputs/assay_joint_site_token_latent_v31/seed_1931/assay_joint_site_token_energy.pt",
+    "energy_weight": 2.0,
+    "site_temperature": 0.8,
+    "flow_steps": 12,
+    "energy_chunk_size": 256,
+    "energy_scale_floor": 0.1
+  },
+  "seed": 2001,
+  "gates": {
+    "gsk3b_any20_t0_65": 0.1,
+    "validity": 0.95,
+    "exact_attempts": 20
+  }
+}

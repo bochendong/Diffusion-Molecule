@@ -1,0 +1,43 @@
+{
+  "protocol": "d4_oracle_spatial_mask_table1_n20",
+  "series": "D",
+  "attempt": "4a",
+  "status": "preregistered_before_first_run",
+  "description": "Diagnostic, not a method. Frozen B41 + valid-terminal STOP. Hard keep/edit mask from MCS-aligned source-target labels. Planner does not predict WRITE/DELETE/SET or birth. Random control matches per-graph atom and source-source bond edit counts. π is not a target molecule.",
+  "hypothesis": "B41's bottleneck is not knowing where not to edit, rather than inability to execute edits. Oracle localization headroom exists if oracle_hard beats frozen B41 and matched random on GSK3B Acc@0.65 and real5.",
+  "not_ours": true,
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "oracle_property_in_loop": false,
+  "oracle_edit_region_from_aligned_target": true,
+  "oracle_target_molecule_as_output": false,
+  "task_router": false,
+  "second_edit": false,
+  "family_mixer": false,
+  "mcs_inference_glue": false,
+  "predict_delta_or_operation": false,
+  "predict_birth_mask": false,
+  "soft_event_bias": false,
+  "learned_planner": false,
+  "exact_raw_attempts_per_condition": 20,
+  "seed": 2005,
+  "mask_mode": "hard",
+  "variants": ["oracle_hard", "random_matched"],
+  "birth_policy": "keep_b41_quota_forbid_keep_atom_to_birth_edges",
+  "label_rule": "atom_edit if node action != KEEP or any incident edge action != KEEP; bond_edit if source-source edge action != KEEP",
+  "alignment_failure_policy": "no_extra_mask",
+  "b41_reference": {
+    "source": "outputs/d0_b41_table1_n20/summary.json",
+    "gsk3b_any20_t0_65": 0.454545,
+    "real5_any20_t0_65": 0.694808,
+    "rb_any20_t0_65": 0.949495
+  },
+  "gates": {
+    "gsk3b_any20_t0_65": 0.0,
+    "validity": 0.95,
+    "exact_attempts": 20,
+    "oracle_beats_b41_gsk3b": 0.05,
+    "oracle_beats_random_gsk3b": 0.0
+  }
+}

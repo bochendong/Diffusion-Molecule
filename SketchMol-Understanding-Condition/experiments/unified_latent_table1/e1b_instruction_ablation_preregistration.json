@@ -1,0 +1,39 @@
+{
+  "protocol": "e1b_instruction_ablation_table1_n20",
+  "series": "E",
+  "attempt": "1b",
+  "status": "preregistered_before_first_run",
+  "description": "Frozen B41 and frozen E1 hashed projector. Two instruction ablations on Table1 n=20 with the same sampling seed as E1. keyword = property names only. scrambled = letter-shuffle inside tokens so bag-of-words keywords are destroyed. Property-vector and E1 template arms are locked summaries, not resampled.",
+  "hypothesis": "The E1 GSK3B jump is a keyword or weak-condition artifact, not sentence understanding.",
+  "claim_if_keyword_only": "hashed projector is a property-name lookup; do not call it language",
+  "claim_if_artifact": "any destroyed instruction still lifts GSK3B; condition-slot artifact, stop language story",
+  "claim_if_sentence": "destroying keywords drops GSK3B toward B41; sentences/paraphrases were doing work",
+  "not_ours": true,
+  "not_a_method_contribution": true,
+  "frozen_b41_event_kernel": true,
+  "frozen_e1_head": true,
+  "trains_event_kernel": false,
+  "oracle_in_environment": false,
+  "molecular_candidate_ranking": false,
+  "task_router": false,
+  "exact_raw_attempts_per_condition": 20,
+  "seed": 2011,
+  "variants": ["keyword", "scrambled"],
+  "e1_template_reference": {
+    "gsk3b_any20_t0_65": 0.727273,
+    "real5_any20_t0_65": 0.755010,
+    "rb_any20_t0_65": 0.969697
+  },
+  "b41_reference": {
+    "gsk3b_any20_t0_65": 0.454545,
+    "real5_any20_t0_65": 0.694808,
+    "rb_any20_t0_65": 0.949495
+  },
+  "gates": {
+    "gsk3b_any20_t0_65": 0.0,
+    "validity": 0.95,
+    "exact_attempts": 20,
+    "near_template_gsk_margin": 0.08,
+    "near_b41_gsk_margin": 0.08
+  }
+}

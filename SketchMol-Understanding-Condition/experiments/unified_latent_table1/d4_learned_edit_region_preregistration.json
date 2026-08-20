@@ -1,0 +1,52 @@
+{
+  "protocol": "d4_learned_edit_region_table1_n20",
+  "series": "D",
+  "attempt": "4b",
+  "status": "preregistered_before_first_run",
+  "description": "Frozen B41. Learn a property-conditioned feasible edit region (x,p)→P(EDIT) on source atoms/bonds. Hard mask only. Not a planner: B41 still chooses WRITE/DELETE/SET. Birth quota unchanged. Paired-target masks are diagnostic, not optimal regions.",
+  "hypothesis": "A learned feasible region beats per-molecule matched-count random and position-shuffled learned on real5, without RB collapsing.",
+  "claim_if_pass": "learn where editing should remain possible",
+  "not_ours": true,
+  "oracle_target_molecule_as_output": false,
+  "paired_target_mask_is_not_optimal": true,
+  "predict_delta_or_operation": false,
+  "predict_birth_mask": false,
+  "soft_event_bias": false,
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "task_router": false,
+  "exact_raw_attempts_per_condition": 20,
+  "seed": 2005,
+  "min_source_tanimoto": 0.65,
+  "property_counts": [1, 2, 3],
+  "train_pair_limit": 1500,
+  "gsk3b_upsample": 2,
+  "hard_threshold": 0.5,
+  "head_hidden_dim": 128,
+  "head_epochs": 12,
+  "head_batch_size": 8,
+  "head_lr": 0.001,
+  "variants": ["learned_hard", "random_matched", "shuffled_learned"],
+  "random_matched": "per-molecule: same source-atom edit count and same source-source bond edit count as that molecule's learned hard mask. Not a dataset-average rate.",
+  "shuffled_learned": "one random permutation of source atoms; bond mask conjugated by the same permutation. Preserves edit-subgraph shape and counts, not chemical location.",
+  "b41_reference": {
+    "gsk3b_any20_t0_65": 0.454545,
+    "real5_any20_t0_65": 0.694808,
+    "rb_any20_t0_65": 0.949495
+  },
+  "d4a_reference": {
+    "oracle_hard_gsk3b": 0.89899,
+    "random_gsk3b": 0.858586,
+    "oracle_hard_rb": 0.959596,
+    "random_rb": 0.373737,
+    "oracle_hard_real5": 0.817717,
+    "random_real5": 0.590465
+  },
+  "gates": {
+    "gsk3b_any20_t0_65": 0.0,
+    "validity": 0.95,
+    "exact_attempts": 20,
+    "rb_not_collapsed": 0.70
+  }
+}

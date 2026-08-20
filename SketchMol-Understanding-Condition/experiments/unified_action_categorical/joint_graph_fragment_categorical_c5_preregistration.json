@@ -1,0 +1,33 @@
+{
+  "protocol": "joint_graph_fragment_categorical_c5_graph_grpo",
+  "series": "C",
+  "attempt": 5,
+  "description": "Same C1 0.5/0.5 mixture. Only the GraphEditDSL program scorer is updated by group-relative RL on Table1 validation. The enumerated test action pool is held fixed and only log-probabilities are rescored. B31 stays frozen. No ranking, no family head, no second edit.",
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "oracle_in_training_reward": true,
+  "task_router": false,
+  "failed_attachment_retry": false,
+  "second_edit": false,
+  "exact_raw_attempts_per_condition": 20,
+  "family_prior_graph": 0.5,
+  "family_prior_fragment": 0.5,
+  "graph_family": "grpo_rescored_umtp_graph_action_policy_logprob",
+  "fragment_family": "frozen_b31_joint_site_token_energy",
+  "grpo_group_size": 8,
+  "grpo_epochs": 1,
+  "grpo_clip_eps": 0.2,
+  "entropy_coef": 0.01,
+  "lr": 1e-5,
+  "trainable_scope": "source_action",
+  "old_vocab_size": 47,
+  "c1_overall_any20_t0_65": 0.5741702741702742,
+  "seed": 2005,
+  "gates": {
+    "gsk3b_any20_t0_65": 0.9,
+    "overall_any20_t0_65": 0.59,
+    "validity": 0.95,
+    "exact_attempts": 20
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "protocol": "d2_source_ball_latent_flow_table1_n20",
+  "series": "D",
+  "attempt": "2",
+  "description": "Frozen graph autoencoder. Short rectified flow in node/edge latent, trained only on MCS-aligned pairs with source-target Tanimoto >= 0.65. Same atom canvas (no size-adaptive births). Decode once. Table1 n=20, no ranking, no DSL, no fragment family.",
+  "molecular_candidate_ranking": false,
+  "oracle_selection": false,
+  "oracle_in_environment": false,
+  "task_router": false,
+  "second_edit": false,
+  "family_mixer": false,
+  "size_adaptive": false,
+  "exact_raw_attempts_per_condition": 20,
+  "flow_steps": 6,
+  "source_noise": 0.05,
+  "min_source_tanimoto": 0.65,
+  "epochs": 4,
+  "batch_size": 8,
+  "train_limit": 1500,
+  "property_counts": [1, 2, 3],
+  "seed": 2005,
+  "gates": {
+    "gsk3b_any20_t0_65": 0.0,
+    "validity": 0.80,
+    "exact_attempts": 20
+  }
+}
