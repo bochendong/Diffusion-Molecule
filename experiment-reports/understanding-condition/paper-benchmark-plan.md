@@ -23,6 +23,10 @@
 
 v4 通过门后才解锁一次单 seed、target-isolated 的 **exact n=20** 分子生成；每个 condition 只有 20 次原始尝试，候选池也是 20，不允许对更大池排序或使用 oracle 选样。统一报告三条 replay：De novo 2p–7p、MolEdit Table1、MuMO，并保留 validity、unique validity、source similarity、property success、strict success 和 anti-forgetting。若结构性 router 或任何归因消融不过门，不进入分子阶段，也不降低门槛。
 
+**v4 冻结结果（jobs `20184973` / `20184974`）**：四个执行 arm 全部完成；science gate 按预注册门槛停止。两性质 graph replay 的 support precision/recall/exact support 均从旧 repair 的 66.7% precision 修复为 **100%**，方向 **100%**，language token / flow ratio 分别约 **0** / **0.233**。LoRA-off 与 composition-off 产生强负对照。但未见 3–7p 组合的 exact support / cardinality 均为 **78.75%**，低于 85% / 90% 门槛；token-slot-off 在两性质 exact support 上仍为 100%，所以原预注册 token-slot support delta 为 0。该结果不事后改门，也不解锁分子实验。
+
+**v5 结构升级（等待首轮）**：删除独立的 categorical 0–7 cardinality head。每个命名性质槽输出 inclusion energy，所有 inclusion probabilities 的总质量直接作为可微集合大小；推理时对该质量取整并做 exact top-k。训练加入 cardinality mass conservation 与 active/inactive energy separation，不搜索阈值。v4 的旧 graph probe 只作回归检查；新的主 science gate 使用 160 个与 v4 fit 和 v4 probe 在 signed signature 及无方向 property-set 两种口径下都零重叠的 3–7p 组合，并继续运行 LoRA/token-slot/composition 三项等曝光消融。只有这套 fresh gate 通过，才解锁 exact-n=20 三 benchmark replay。
+
 ## 设计原则
 
 主文必须明确区分两类能力：
