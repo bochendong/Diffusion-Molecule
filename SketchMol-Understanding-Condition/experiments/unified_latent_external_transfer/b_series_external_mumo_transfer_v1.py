@@ -404,12 +404,14 @@ def prepare(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
         raise ValueError("balanced dev condition count drift")
 
     generation_rows = [generation_condition(raw) for raw in selected]
-    forbidden_tokens = ("target", "properties", "oracle", "external_source_")
     leaked = sorted(
         key
         for row in generation_rows
         for key in row
-        if any(token in key.lower() for token in forbidden_tokens)
+        if key.lower() == "target_smiles"
+        or key.lower().startswith("external_target_")
+        or key.lower().startswith("external_source_")
+        or "oracle" in key.lower()
     )
     if leaked:
         raise ValueError(f"generation condition leakage: {leaked}")

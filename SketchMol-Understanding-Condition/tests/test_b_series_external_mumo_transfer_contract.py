@@ -47,6 +47,24 @@ def test_adapter_features_are_canonical_signed_set_features():
     assert active.sum() == 4.0
 
 
+def test_generation_metadata_keeps_request_but_not_source_or_target_labels():
+    module = load_runner()
+    row = module.generation_condition(
+        {
+            "_uca_task_id": "BHMQ",
+            "_uca_pair_digest": "deadbeef",
+            "_uca_source_group": "BHMQ:CC",
+            "source_smiles": "CC",
+            "target_smiles": "CCC",
+            "properties": {"bbbp": {"source": 0.1, "target": 0.9}},
+        }
+    )
+    assert row["external_task_properties"] == "bbbp,hia,mutagenicity,qed"
+    assert "target_smiles" not in row
+    assert not any(key.startswith("external_source_") for key in row)
+    assert not any(key.startswith("external_target_") for key in row)
+
+
 def test_proxy_condition_is_three_native_numeric_constraints():
     module = load_runner()
     native = {prop: float(index + 1) for index, prop in enumerate(module.NATIVE_PROPERTIES)}
