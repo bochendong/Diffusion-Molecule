@@ -1,0 +1,106 @@
+import importlib.util
+import json
+from pathlib import Path
+
+import numpy as np
+
+
+ROOT = Path(__file__).resolve().parents[1]
+EXPERIMENT = ROOT / "experiments" / "unified_latent_external_transfer"
+RUNNER = EXPERIMENT / "property_aligned_valid_terminal_mumo_v2.py"
+PREREG = EXPERIMENT / "property_aligned_valid_terminal_mumo_v2_preregistration.json"
+
+
+def load_runner():
+    spec = importlib.util.spec_from_file_location("property_aligned_b", RUNNER)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_preregistration_locks_direct_signed_set_and_exact_n20():
+    payload = json.loads(PREREG.read_text())
+    assert payload["condition_count"] == 75
+    assert payload["conditions_per_ood_task"] == 15
+    assert payload["numeric_adapter"] is False
+    assert payload["signed_property_set_direct_conditioning"] is True
+    assert payload["condition_router_training"] is True
+    assert payload["transport_training"] is True
+    assert payload["event_kernel_training"] is True
+    assert payload["candidate_pool_size"] == 20
+    assert payload["exact_raw_attempts_per_condition"] == 20
+    assert payload["molecular_candidate_ranking"] is False
+    assert payload["oracle_selection"] is False
+    assert payload["retry_or_resampling"] is False
+    assert payload["generation_target_access"] is False
+    assert payload["generation_property_oracle_access"] is False
+    assert payload["support_audit_probe_target_access"] is False
+    assert payload["official_test_access"] is False
+
+
+def test_signed_property_tokens_are_explicit_and_masked():
+    module = load_runner()
+    tokens = module.signed_property_tokens("BDMQ", 64)
+    assert tokens.shape == (7, 64)
+    assert np.count_nonzero(tokens[0]) == 0
+    active = set(module.prior.task_spec("BDMQ").properties)
+    for index, prop in enumerate(module.PROPERTIES):
+        if prop in active:
+            assert tokens[index + 1, index] == 1.0
+            assert tokens[index + 1, 6] == module.SIGNS[prop]
+            assert tokens[index + 1, 7] == 1.0
+        else:
+            assert np.count_nonzero(tokens[index + 1]) == 0
+    assert tokens[1 + module.PROPERTIES.index("mutagenicity"), 6] == -1.0
+
+
+def test_probe_selection_is_source_only_and_globally_unique(monkeypatch):
+    module = load_runner()
+    monkeypatch.setattr(module, "_canonical", lambda value: str(value or ""))
+    rows = []
+    for task in module.OOD_TASKS:
+        for index in range(4):
+            rows.append(
+                {
+                    "_uca_task_id": task,
+                    "source_smiles": "C" * (index + 1) + "N" + task[0],
+                    "target_smiles": "target-is-not-used-for-selection",
+                }
+            )
+    # Use distinct valid canonical sources in the actual selector contract test.
+    rows = []
+    atoms = ["CCN", "CCO", "CCC", "CCF", "CCCl", "CCBr", "CCS"]
+    for task_index, task in enumerate(module.OOD_TASKS):
+        for index, source in enumerate(atoms):
+            rows.append(
+                {
+                    "_uca_task_id": task,
+                    "source_smiles": source + ("C" * task_index),
+                    "target_smiles": "CC",
+                }
+            )
+    selected = module._select_probe(rows, set(), per_task=1, seed=9)
+    assert len(selected) == len(module.OOD_TASKS)
+    assert len({module._canonical(row["source_smiles"]) for row in selected}) == len(selected)
+
+
+def test_trainfreeze_generation_path_never_receives_sealed_targets():
+    source = RUNNER.read_text()
+    assert "--generation-conditions" in source
+    assert "sealed_probe_targets" in source
+    trainfreeze = source[source.index("def trainfreeze"): source.index("def gate")]
+    assert "sealed_probe_targets" not in trainfreeze
+    assert '"generation_target_access": False' in trainfreeze
+    assert "A scientific STOP is a valid completed experiment" in source
+
+
+def test_slurm_dag_separates_oracle_and_science_gate():
+    submit = (EXPERIMENT / "submit_property_aligned_valid_terminal_mumo_v2.sh").read_text()
+    assert "afterok:$prepare_id" in submit
+    assert "afterok:$train_id" in submit
+    assert "afterok:$oracle_id" in submit
+    assert "nvidia_h100_80gb_hbm3_2g.20gb:1" in submit
+    run = (EXPERIMENT / "run_property_aligned_valid_terminal_mumo_v2.sh").read_text()
+    assert "run_external_multiproperty_generated_oracle_pipeline.sh" in run
+    assert 'case "$STAGE" in' in run
