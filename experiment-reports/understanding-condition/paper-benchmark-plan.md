@@ -580,3 +580,17 @@ bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/subm
 2. ~~Table1 里真正来自生成模型本体的增益有多少，selection gain 有多少？~~ → fair **28.6%**；table-success rerank **n=256** **28.9%**（≈ fair）；**n=2048** **79.4%**（+50.8pp，复现 v3 attack）；**n=20** **8.5%**（pool 不足）。
 3. ~~我们能不能在外部 multi-property IND/OOD benchmark 上站住脚？~~ → MuMO **ADMET-prior v1 top-40 SR 54.3%**（+6.0pp vs baseline **48.3%**）；v2 `admet_hybrid` **12.5%** 失败；C-MuMO **1.4%**；IND-hard **DPQ +4.5pp**。
 4. ~~De novo fair-budget 能否对齐 SketchMol@40？~~ → 2p-7p @40 **68.1%**（低 p 强、7p 仍差 ref）；OOD @40 **48.1%**（弱）；@256 仍作 scaling 线。
+### Common-LLM mass-conserving router -> molecule bridge v6
+
+V5 passed its fresh 3--7-property representation gate and all three frozen
+attribution ablations.  V6 is the first end-to-end molecular gate: the frozen
+V5 language router is converted through the train-only property-token basis and
+injected into the same frozen B41 graph-jump used by the numeric control.
+Generation, target evaluation, and the scientific decision are separate jobs.
+All arms use exactly 20 raw attempts, no larger pool, no ranking, no retry, and
+no property oracle during generation.  This 48-condition internal bridge must
+pass before the required De novo 2p--7p / Table1 benchmark / MuMO replays.
+
+```bash
+bash SketchMol-Understanding-Condition/experiments/unified_latent_table1/submit_mass_conserving_router_table1_bridge_v6.sh
+```
