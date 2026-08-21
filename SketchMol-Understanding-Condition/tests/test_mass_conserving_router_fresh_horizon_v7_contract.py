@@ -58,6 +58,16 @@ def test_v7_e1_manifest_digest_matches_the_frozen_v6_lineage():
     assert payload["locked_inputs"]["e1_manifest_sha256"] == sha256(e1)
 
 
+def test_v7_v5_lora_digest_matches_the_frozen_v6_lineage():
+    payload = json.loads(PREREG.read_text())
+    v6_prereg = json.loads(
+        (EXP / "mass_conserving_router_table1_bridge_v6_preregistration.json").read_text()
+    )
+    assert payload["locked_inputs"]["v5_lora_adapter_model_sha256"] == (
+        v6_prereg["locked_inputs"]["v5_lora_adapter_model_sha256"]
+    )
+
+
 def test_v7_freeze_process_cannot_accept_targets_or_oracles():
     text = IMPLEMENTATION.read_text()
     freeze_block = text.split('freeze = stages.add_parser("freeze")', 1)[1].split(
@@ -88,6 +98,8 @@ def test_v7_execution_and_science_gate_are_separate_jobs():
     assert "uca-v7-fresh-scigate" in text
     assert 'dependency="afterok:$evaluate_job"' in text
     assert "scientific_stop_is_a_complete_gate_artifact_not_a_failed_job" in text
+    assert 'RESUME_AFTER_PREPARE="${SUCC_V7_RESUME_AFTER_PREPARE:-0}"' in text
+    assert 'test -s "$OUTPUT_ROOT/prepare/summary.json"' in text
 
 
 def test_v7_science_stop_exits_zero_and_forbids_same_fresh_retuning():
