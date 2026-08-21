@@ -108,11 +108,22 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = read_json(path)
     required = {
         "protocol": PROTOCOL,
-        "status": "preregistered_before_first_run",
+        "status": "amended_before_any_candidate_generation_after_source_availability_audit",
         "arms": list(ARMS),
         "training": False,
-        "fresh_condition_count": 48,
-        "fresh_property_count_quotas": {"2": 24, "3": 24},
+        "fresh_condition_count": 40,
+        "fresh_property_count_quotas": {"2": 20, "3": 20},
+        "protocol_amendment": {
+            "reason": (
+                "The locked exclusions and alignment filters exposed only 20 eligible "
+                "unique 2p sources at the deterministic 20000-row scan limit."
+            ),
+            "observed_before_amendment": "prepare-stage source availability only",
+            "candidate_generation_started": False,
+            "property_oracle_accessed": False,
+            "scientific_metrics_accessed": False,
+            "amended_at": "2026-08-21",
+        },
         "exact_raw_attempts_per_condition": 20,
         "candidate_pool_before_selection": 20,
         "generation_target_access": False,

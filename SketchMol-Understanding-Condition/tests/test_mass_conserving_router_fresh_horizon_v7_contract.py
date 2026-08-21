@@ -18,8 +18,22 @@ def sha256(path: Path) -> str:
 
 def test_v7_preregistered_fresh_exact_n20_contract():
     payload = json.loads(PREREG.read_text())
-    assert payload["fresh_condition_count"] == 48
-    assert payload["fresh_property_count_quotas"] == {"2": 24, "3": 24}
+    assert payload["status"] == (
+        "amended_before_any_candidate_generation_after_source_availability_audit"
+    )
+    assert payload["fresh_condition_count"] == 40
+    assert payload["fresh_property_count_quotas"] == {"2": 20, "3": 20}
+    assert payload["protocol_amendment"] == {
+        "reason": (
+            "The locked exclusions and alignment filters exposed only 20 eligible unique "
+            "2p sources at the deterministic 20000-row scan limit."
+        ),
+        "observed_before_amendment": "prepare-stage source availability only",
+        "candidate_generation_started": False,
+        "property_oracle_accessed": False,
+        "scientific_metrics_accessed": False,
+        "amended_at": "2026-08-21",
+    }
     assert payload["exact_raw_attempts_per_condition"] == 20
     assert payload["candidate_pool_before_selection"] == 20
     assert payload["generation_target_access"] is False

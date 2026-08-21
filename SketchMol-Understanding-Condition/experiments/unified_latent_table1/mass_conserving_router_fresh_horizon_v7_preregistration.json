@@ -1,6 +1,6 @@
 {
   "protocol": "fresh_horizon_closed_mass_conserving_router_v7",
-  "status": "preregistered_before_first_run",
+  "status": "amended_before_any_candidate_generation_after_source_availability_audit",
   "scientific_hypothesis": "On entirely new source-disjoint 2p/3p conditions, the frozen V5 Common-LLM property router will retain the V6 semantic advantage when the frozen B41 finite-horizon process is closed by a last-materializable-state terminal transition, while candidate validity reaches at least 95 percent without target access, property-oracle access, ranking, retry, or post-hoc graph repair.",
   "single_mechanism_change": "finite_horizon_last_materializable_terminal_closure",
   "arms": [
@@ -9,10 +9,18 @@
     "language_reversed"
   ],
   "training": false,
-  "fresh_condition_count": 48,
+  "fresh_condition_count": 40,
   "fresh_property_count_quotas": {
-    "2": 24,
-    "3": 24
+    "2": 20,
+    "3": 20
+  },
+  "protocol_amendment": {
+    "reason": "The locked exclusions and alignment filters exposed only 20 eligible unique 2p sources at the deterministic 20000-row scan limit.",
+    "observed_before_amendment": "prepare-stage source availability only",
+    "candidate_generation_started": false,
+    "property_oracle_accessed": false,
+    "scientific_metrics_accessed": false,
+    "amended_at": "2026-08-21"
   },
   "fresh_selection_seed": 2091,
   "instruction_seed": 2092,
@@ -69,7 +77,7 @@
     "strict_delta_vs_reversed": 0.1
   },
   "horizon_closure_sha256": "8b5d8498becf493b6ebf4356664d14eb26330edb01935dcc1815622ee2ac5073",
-  "implementation_sha256": "25e3a747e02fa49f1b8dd00522d1bd87a18eff25c9faa13575989923ac412a58",
+  "implementation_sha256": "122fcd96536ff930c4e2e1d0e6e39b959ec4752e59d1a7715e6afd2b6886622a",
   "locked_inputs": {
     "train_csv_sha256": "4925722b7e7e0de708d8dd847467da529e4ae2587d63dd2b1fc16cfcc2e73684",
     "validation_csv_sha256": "bacbb59eae6e884d330f658012b9b70dfffc0d2e2d7677066706bb61a70183db",
