@@ -75,7 +75,7 @@
     "validation_csv_sha256": "bacbb59eae6e884d330f658012b9b70dfffc0d2e2d7677066706bb61a70183db",
     "b36_records_sha256": "2edd4bf79c01a96f2ee5fde2ecbb2fb5a08ec7c11ef09bec12cfa48758f0f338",
     "predecessor_fit_bundle_sha256": "0336ce7419ac12ad2d52f3f5629b00910fca5f1eeea2fcc559fa4f5b9debf284",
-    "e1_manifest_sha256": "cea62410a1346e72974a25e467b1a58b35cc728beeba34e79870584bdf941514",
+    "e1_manifest_sha256": "cea62410a1346e72974a25e467b1a58b35cc728be5d8edb5544094df3d79cce8",
     "v6_basis_bundle_sha256": "d8d1483547221704774a40f9591e520e2648c0f9e9e69c228c16fe63017269b2",
     "v6_gate_sha256": "c78380c10eef31652475fa3a4b535b57c02afa8b9a3cb4a7ddbeebb86eb29e2b",
     "known_source_0_sha256": "247ed422b3a3eb3c443440ecd13f26e1032b24fe9d78e57bd34173b5dbabff42",

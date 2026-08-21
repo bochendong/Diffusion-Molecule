@@ -37,6 +37,12 @@ def test_v7_implementation_and_horizon_are_digest_locked():
     assert payload["horizon_closure_sha256"] == sha256(HORIZON)
 
 
+def test_v7_e1_manifest_digest_matches_the_frozen_v6_lineage():
+    payload = json.loads(PREREG.read_text())
+    e1 = EXP / "e1_nl_condition_head_preregistration.json"
+    assert payload["locked_inputs"]["e1_manifest_sha256"] == sha256(e1)
+
+
 def test_v7_freeze_process_cannot_accept_targets_or_oracles():
     text = IMPLEMENTATION.read_text()
     freeze_block = text.split('freeze = stages.add_parser("freeze")', 1)[1].split(
