@@ -17,7 +17,7 @@
   "fresh_selection_seed": 2091,
   "instruction_seed": 2092,
   "generation_seed": 2093,
-  "fresh_alignment_limit_per_property_count": 5000,
+  "fresh_alignment_limit_per_property_count": 20000,
   "exact_raw_attempts_per_condition": 20,
   "candidate_pool_before_selection": 20,
   "generation_target_access": false,

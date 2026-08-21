@@ -29,6 +29,7 @@ def test_v7_preregistered_fresh_exact_n20_contract():
     assert payload["retry_or_resampling"] is False
     assert payload["posthoc_molecule_repair"] is False
     assert payload["repeat_v6_conditions"] is False
+    assert payload["fresh_alignment_limit_per_property_count"] == 20000
 
 
 def test_v7_implementation_and_horizon_are_digest_locked():
