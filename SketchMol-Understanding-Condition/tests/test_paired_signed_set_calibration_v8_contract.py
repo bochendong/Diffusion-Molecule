@@ -104,3 +104,13 @@ def test_v8_gate_reads_the_evaluation_stage_summary():
     gate_block = source.split("def run_gate", 1)[1].split("def main", 1)[0]
     assert '/ "evaluation"' in gate_block
     assert '/ "summary.json"' in gate_block
+
+
+def test_v8_gate_repair_is_disclosed_as_engineering_only():
+    payload = json.loads(PREREG.read_text())
+    amendment = payload["execution_amendment"]
+    assert payload["scientific_configuration_frozen_before_first_run"] is True
+    assert amendment["status"] == "post_evaluation_engineering_only"
+    assert amendment["scientific_thresholds_changed"] is False
+    assert amendment["candidate_artifacts_changed"] is False
+    assert amendment["reevaluation_performed"] is False

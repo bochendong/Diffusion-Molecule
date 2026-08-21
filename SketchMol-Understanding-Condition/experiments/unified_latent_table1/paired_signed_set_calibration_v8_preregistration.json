@@ -3,6 +3,16 @@
   "status": "preregistered_before_first_run",
   "scientific_hypothesis": "Under paired common random numbers, projecting the frozen Common-LLM signed property set onto a canonical signed vertex or a monotone square-root sharpening will close the residual strict-success gap to numeric control while preserving a causal advantage over direction-reversed language.",
   "task_role": "train_only_development_calibration_not_fresh_confirmation",
+  "scientific_configuration_frozen_before_first_run": true,
+  "execution_amendment": {
+    "status": "post_evaluation_engineering_only",
+    "candidate_generation_and_evaluation_completed_before_amendment": true,
+    "original_candidate_implementation_sha256": "42bae23ef23a795d90ccda58ca3a45eac882045c77dc03ef98838bb30f60c1eb",
+    "scope": "gate_summary_path_replicate_to_evaluation_subdirectory",
+    "scientific_thresholds_changed": false,
+    "candidate_artifacts_changed": false,
+    "reevaluation_performed": false
+  },
   "single_mechanism_change": "deterministic_signed_set_amplitude_projection",
   "arms": [
     "numeric_canonical",
@@ -73,7 +83,7 @@
   },
   "horizon_closure_sha256": "8b5d8498becf493b6ebf4356664d14eb26330edb01935dcc1815622ee2ac5073",
   "v6_implementation_sha256": "2b470b4501741ca2b2c12a7b0363e75bb618d7520f3a3fac7133b57d8f4bc8e1",
-  "implementation_sha256": "427f90d3c12c51ab660f769c2e1b97e7f1822a82ec5dc20f78940d8fd6f36336",
+  "implementation_sha256": "cd64e59d0492f1e3b86b3e6609e2ffc30c0d288d8bccb3fa0bdf52eb4af02408",
   "locked_inputs": {
     "v6_prepare_summary_sha256": "592c8f2f1f99172070b2b6bf773ae40e00805d466563be53785d6060870b6486",
     "v6_basis_bundle_sha256": "d8d1483547221704774a40f9591e520e2648c0f9e9e69c228c16fe63017269b2",

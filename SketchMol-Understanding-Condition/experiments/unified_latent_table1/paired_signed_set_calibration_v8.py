@@ -117,6 +117,7 @@ def read_preregistration(path: Path) -> dict[str, object]:
         "protocol": PROTOCOL,
         "status": "preregistered_before_first_run",
         "task_role": "train_only_development_calibration_not_fresh_confirmation",
+        "scientific_configuration_frozen_before_first_run": True,
         "arms": list(ARMS),
         "calibration_arms": list(CALIBRATION_ARMS),
         "training": False,
@@ -703,6 +704,7 @@ def run_gate(args: argparse.Namespace, preregistration: Mapping[str, object]) ->
         "metrics": metrics,
         "replicate_metrics": replicate_metrics,
         "effects": effects,
+        "execution_amendment": dict(preregistration["execution_amendment"]),
         "contract": {
             "scientific_stop_exits_zero": True,
             "portal_engineering_state_independent_of_science_decision": True,
