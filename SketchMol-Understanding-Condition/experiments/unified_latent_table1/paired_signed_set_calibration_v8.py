@@ -598,7 +598,12 @@ def run_gate(args: argparse.Namespace, preregistration: Mapping[str, object]) ->
         raise ValueError(f"Completed V8 science gate exists: {summary_path}")
     evaluations = []
     for replicate_index, seed in enumerate(preregistration["replicate_seeds"]):
-        path = args.evaluation_root / f"replicate_{replicate_index}" / "summary.json"
+        path = (
+            args.evaluation_root
+            / f"replicate_{replicate_index}"
+            / "evaluation"
+            / "summary.json"
+        )
         payload = read_json(path)
         if (
             payload.get("protocol") != PROTOCOL

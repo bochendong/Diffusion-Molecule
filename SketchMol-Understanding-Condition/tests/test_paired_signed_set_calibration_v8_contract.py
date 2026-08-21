@@ -97,3 +97,10 @@ def test_v8_slurm_is_bounded_parallel_and_science_stop_is_complete():
     gate_block = source.split("def run_gate", 1)[1].split("def main", 1)[0]
     assert '"scientific_stop_exits_zero": True' in gate_block
     assert "return 0" in gate_block
+
+
+def test_v8_gate_reads_the_evaluation_stage_summary():
+    source = IMPLEMENTATION.read_text()
+    gate_block = source.split("def run_gate", 1)[1].split("def main", 1)[0]
+    assert '/ "evaluation"' in gate_block
+    assert '/ "summary.json"' in gate_block

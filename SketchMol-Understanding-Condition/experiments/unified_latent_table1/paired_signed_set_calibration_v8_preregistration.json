@@ -73,7 +73,7 @@
   },
   "horizon_closure_sha256": "8b5d8498becf493b6ebf4356664d14eb26330edb01935dcc1815622ee2ac5073",
   "v6_implementation_sha256": "2b470b4501741ca2b2c12a7b0363e75bb618d7520f3a3fac7133b57d8f4bc8e1",
-  "implementation_sha256": "42bae23ef23a795d90ccda58ca3a45eac882045c77dc03ef98838bb30f60c1eb",
+  "implementation_sha256": "427f90d3c12c51ab660f769c2e1b97e7f1822a82ec5dc20f78940d8fd6f36336",
   "locked_inputs": {
     "v6_prepare_summary_sha256": "592c8f2f1f99172070b2b6bf773ae40e00805d466563be53785d6060870b6486",
     "v6_basis_bundle_sha256": "d8d1483547221704774a40f9591e520e2648c0f9e9e69c228c16fe63017269b2",
