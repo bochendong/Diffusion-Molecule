@@ -21,8 +21,12 @@ def test_v9_preregistration_locks_candidate_level_semantic_intervention() -> Non
     payload = json.loads(PREREGISTRATION.read_text(encoding="utf-8"))
     assert payload["protocol"] == "prospective_semantic_intervention_fresh_v9"
     assert payload["implementation_sha256"] == sha256(IMPLEMENTATION)
-    assert payload["fresh_condition_count"] == 24
-    assert payload["fresh_property_count_quotas"] == {"2": 12, "3": 12}
+    assert payload["fresh_condition_count"] == 20
+    assert payload["fresh_property_count_quotas"] == {"3": 20}
+    assert payload["protocol_amendment"]["failed_prepare_job"] == 20229890
+    assert payload["protocol_amendment"]["candidate_generation_started"] is False
+    assert payload["protocol_amendment"]["property_oracle_accessed"] is False
+    assert payload["protocol_amendment"]["science_gates_changed"] is False
     assert payload["replicate_seeds"] == [2131, 2132, 2133]
     assert payload["exact_raw_attempts_per_condition"] == 20
     assert payload["candidate_pool_before_selection"] == 20
@@ -71,7 +75,7 @@ def test_v9_runner_and_submitter_preserve_pairing_and_exact_n20() -> None:
     assert 'dependency="afterok:$prepare_job"' in submitter
     assert 'dependency="afterok:$freeze_job"' in submitter
     assert 'dependency="afterok:$evaluate_job"' in submitter
-    assert "3_replicates_x_6_arms_x_24_fresh_conditions_x_exact_20" in submitter
+    assert "3_replicates_x_6_arms_x_20_fresh_3p_conditions_x_exact_20" in submitter
     assert "candidate_property_success_candidate_strict_success_property_fraction" in submitter
     assert runner.count("--known-source") == 7
     assert "mass_conserving_router_fresh_horizon_v7" in runner

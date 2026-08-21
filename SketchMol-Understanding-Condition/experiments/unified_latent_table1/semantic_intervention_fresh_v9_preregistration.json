@@ -1,6 +1,6 @@
 {
   "protocol": "prospective_semantic_intervention_fresh_v9",
-  "status": "preregistered_before_source_selection_and_candidate_generation",
+  "status": "amended_after_source_availability_only_before_candidate_generation",
   "scientific_hypothesis": "On entirely new source-disjoint compositional edit conditions, a frozen Common-LLM sparse property router will recover the candidate-level graph-latent behavior of a privileged explicit numeric condition while semantic reversal and removal of LoRA, token slots, or composition supervision will causally reduce property success without purchasing the effect through lower validity or source similarity.",
   "primary_claim": "natural_language_recovers_explicit_constraint_transport_and_semantic_interventions_causally_shift_the_molecular_output_distribution",
   "arms": [
@@ -13,8 +13,18 @@
   ],
   "training": false,
   "single_frozen_method": true,
-  "fresh_condition_count": 24,
-  "fresh_property_count_quotas": {"2": 12, "3": 12},
+  "fresh_condition_count": 20,
+  "fresh_property_count_quotas": {"3": 20},
+  "protocol_amendment": {
+    "trigger": "strict_source_disjoint_2p_quota_unavailable",
+    "observed_eligible_history": {"v7_2p": 21, "v7_3p": 43, "v7_used_2p": 20, "v7_used_3p": 20},
+    "failed_prepare_job": 20229890,
+    "candidate_generation_started": false,
+    "property_oracle_accessed": false,
+    "scientific_metrics_accessed": false,
+    "change": "replace_12x2p_plus_12x3p_with_20x3p",
+    "science_gates_changed": false
+  },
   "fresh_alignment_limit_per_property_count": 100000,
   "fresh_selection_seed": 2127,
   "instruction_seed": 2128,
@@ -73,7 +83,7 @@
     "positive_replicates": 2
   },
   "horizon_closure_sha256": "8b5d8498becf493b6ebf4356664d14eb26330edb01935dcc1815622ee2ac5073",
-  "implementation_sha256": "c1e3fe3258c2ba0a14ee28d0acb56ac472d01e188f794d19d1a8840e178b1fe6",
+  "implementation_sha256": "c56bd365c2097d40421ac696c310d320efd73ab45454193c260d688d1b814118",
   "locked_inputs": {
     "train_csv_sha256": "4925722b7e7e0de708d8dd847467da529e4ae2587d63dd2b1fc16cfcc2e73684",
     "validation_csv_sha256": "bacbb59eae6e884d330f658012b9b70dfffc0d2e2d7677066706bb61a70183db",

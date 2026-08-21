@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prospective molecular test of language-to-graph semantic interventions.
 
-V9 selects source-disjoint train-only 2p/3p edit conditions, freezes exactly
+V9 selects source-disjoint train-only compositional edit conditions, freezes exactly
 twenty paired particles per condition and arm without target/oracle access, and
 evaluates the frozen particles in a separate process.  Candidate-level success
 is primary because any@20 was saturated in V8.  The explicit numeric condition
@@ -136,11 +136,21 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = read_json(path)
     required = {
         "protocol": PROTOCOL,
-        "status": "preregistered_before_source_selection_and_candidate_generation",
+        "status": "amended_after_source_availability_only_before_candidate_generation",
         "arms": list(ARMS),
         "training": False,
-        "fresh_condition_count": 24,
-        "fresh_property_count_quotas": {"2": 12, "3": 12},
+        "fresh_condition_count": 20,
+        "fresh_property_count_quotas": {"3": 20},
+        "protocol_amendment": {
+            "trigger": "strict_source_disjoint_2p_quota_unavailable",
+            "observed_eligible_history": {"v7_2p": 21, "v7_3p": 43, "v7_used_2p": 20, "v7_used_3p": 20},
+            "failed_prepare_job": 20229890,
+            "candidate_generation_started": False,
+            "property_oracle_accessed": False,
+            "scientific_metrics_accessed": False,
+            "change": "replace_12x2p_plus_12x3p_with_20x3p",
+            "science_gates_changed": False,
+        },
         "paired_common_random_numbers": True,
         "exact_raw_attempts_per_condition": 20,
         "candidate_pool_before_selection": 20,
@@ -774,7 +784,7 @@ def augment_metrics(
     output["candidate_strict_success"] = float(np.mean([bool(row["strict_success"]) for row in rows]))
     output["mean_property_fraction"] = float(np.mean([float(row["property_fraction"]) for row in rows]))
     output["by_property_count"] = {}
-    for count in (2, 3):
+    for count in sorted({int(row["property_count"]) for row in rows}):
         subset = [row for row in rows if int(row["property_count"]) == count]
         conditions = condition_metrics(subset)
         output["by_property_count"][str(count)] = {
