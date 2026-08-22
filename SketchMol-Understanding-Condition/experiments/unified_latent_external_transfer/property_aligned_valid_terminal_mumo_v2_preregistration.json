@@ -1,6 +1,20 @@
 {
   "protocol": "property_aligned_valid_terminal_mumo_v2",
-  "status": "preregistered_before_support_audit_or_probe_target_access",
+  "status": "amended_after_engineering_failure_before_training_or_candidate_generation",
+  "engineering_amendment": {
+    "failed_job_id": 20254004,
+    "failure_stage": "train_only_support_audit_event_encoding",
+    "failure_signature": "Graph contains a node state outside train-only vocabulary",
+    "model_training_started": false,
+    "candidate_generation_started": false,
+    "probe_target_written_to_sealed_artifact_by_prepare": true,
+    "probe_target_used_for_selection": false,
+    "probe_target_used_for_support_audit": false,
+    "probe_target_available_to_training_or_generation_process": false,
+    "property_oracle_accessed": false,
+    "scientific_metric_observed": false,
+    "repair": "append MuMO-train-only graph states while preserving every B22 action index; transplant shared B41 action parameters and train newly initialized rows"
+  },
   "scientific_hypothesis": "Rebuilding valid-terminal graph-event support on MuMO train pairs and directly conditioning the B transport on an explicit six-element signed property set will convert the B-series internal structural competence into prospective MuMO OOD property support without a numeric adapter, candidate ranking, retries, target access, or oracle selection.",
   "interpretation_boundary": "This is a single-seed train-heldout prospective route gate, not an official test result. The probe is selected source-only from MuMO train-fit rows before its paired targets are sealed; all original V8 dev sources and every source opened by B external transfer v1 are excluded.",
   "seed": 2211,
@@ -14,6 +28,7 @@
   "condition_count": 75,
   "calibration_sources_per_task": 15,
   "warm_start_b41": true,
+  "train_only_graph_state_vocabulary_expansion": true,
   "numeric_adapter": false,
   "signed_property_set_direct_conditioning": true,
   "mumo_train_graph_event_support": true,
@@ -108,7 +123,7 @@
       "validity": 1.0
     }
   },
-  "implementation_sha256": "dcb99d452f02b2b1721791c016c674b895c965c9e548f1a4ab7eccbe445fde79",
+  "implementation_sha256": "85be4c07b4e9df7e6fe4e5d1c38d27804e464f65cf46d121e2723c91588c6052",
   "locked_inputs": {
     "mumo_v8_manifest_sha256": "850fd7b5b34e23925a007cbdc12217a2ed234be9fd8b24aa3ca405f8b8a0a0e0",
     "mumo_v8_shards_aggregate_sha256": "f8d3cdee7fc7de79f6dd98cceb8e26a06041960f1ccfd33f4ef3a993d9d58cd3",

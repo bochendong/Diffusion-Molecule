@@ -91,8 +91,9 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     required = {
         "protocol": PROTOCOL,
-        "status": "preregistered_before_support_audit_or_probe_target_access",
+        "status": "amended_after_engineering_failure_before_training_or_candidate_generation",
         "warm_start_b41": True,
+        "train_only_graph_state_vocabulary_expansion": True,
         "numeric_adapter": False,
         "signed_property_set_direct_conditioning": True,
         "mumo_train_graph_event_support": True,
@@ -335,18 +336,115 @@ def _event_signatures(pairs: Sequence[object], vocabulary: Mapping[str, object])
     return signatures, counts
 
 
+def _expanded_vocabulary(
+    old_vocabulary: Mapping[str, object], fit_pairs: Sequence[object]
+) -> dict[str, object]:
+    """Append MuMO-train-only states while preserving every B22 action index."""
+
+    import hashlib
+    import json as json_module
+    import discrete_graph_diffusion_decoder as full_graph
+
+    observed = full_graph.build_joint_state_vocabulary(fit_pairs)
+    old_nodes = [tuple(map(int, row)) for row in np.asarray(old_vocabulary["node_states"])]
+    old_edges = [tuple(map(int, row)) for row in np.asarray(old_vocabulary["edge_states"])]
+    observed_nodes = {
+        tuple(map(int, row)) for row in np.asarray(observed["node_states"])
+    }
+    observed_edges = {
+        tuple(map(int, row)) for row in np.asarray(observed["edge_states"])
+    }
+    nodes = [*old_nodes, *sorted(observed_nodes - set(old_nodes))]
+    edges = [*old_edges, *sorted(observed_edges - set(old_edges))]
+    if nodes[: len(old_nodes)] != old_nodes or edges[: len(old_edges)] != old_edges:
+        raise AssertionError("B22 action indices were not preserved during vocabulary expansion")
+    payload = json_module.dumps(
+        {"node_states": nodes, "edge_states": edges}, separators=(",", ":")
+    ).encode("utf-8")
+    return {
+        "node_states": np.asarray(nodes, dtype=np.int64),
+        "edge_states": np.asarray(edges, dtype=np.int64),
+        "blank_node_id": int(old_vocabulary["blank_node_id"]),
+        "blank_edge_id": int(old_vocabulary["blank_edge_id"]),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "old_node_state_count": len(old_nodes),
+        "old_edge_state_count": len(old_edges),
+        "added_node_state_count": len(nodes) - len(old_nodes),
+        "added_edge_state_count": len(edges) - len(old_edges),
+    }
+
+
+def _load_expanded_b41_state(
+    model: object,
+    old_state: Mapping[str, object],
+    old_vocabulary: Mapping[str, object],
+    vocabulary: Mapping[str, object],
+) -> dict[str, object]:
+    """Transplant B41 weights; new train-only actions keep fresh initialization."""
+
+    current = model.state_dict()
+    expanded_keys: dict[str, dict[str, object]] = {}
+    for key, target in current.items():
+        if key not in old_state:
+            raise ValueError(f"B41 warm-start is missing parameter {key}")
+        source = old_state[key]
+        if tuple(source.shape) == tuple(target.shape):
+            current[key] = source
+            continue
+        if (
+            key
+            not in {
+                "denoiser.node_embedding.weight",
+                "denoiser.edge_embedding.weight",
+                "denoiser.node_write_head.1.weight",
+                "denoiser.node_write_head.1.bias",
+                "denoiser.edge_set_head.weight",
+                "denoiser.edge_set_head.bias",
+            }
+            or source.ndim != target.ndim
+            or tuple(source.shape[1:]) != tuple(target.shape[1:])
+            or source.shape[0] >= target.shape[0]
+        ):
+            raise ValueError(
+                f"unexpected B41 expansion shape for {key}: {tuple(source.shape)} -> {tuple(target.shape)}"
+            )
+        transplanted = target.clone()
+        transplanted[: source.shape[0]] = source
+        current[key] = transplanted
+        expanded_keys[key] = {
+            "old_rows": int(source.shape[0]),
+            "new_rows": int(target.shape[0]),
+        }
+    model.load_state_dict(current, strict=True)
+    expected_node_additions = int(vocabulary["added_node_state_count"])
+    expected_edge_additions = int(vocabulary["added_edge_state_count"])
+    if expected_node_additions and "denoiser.node_embedding.weight" not in expanded_keys:
+        raise ValueError("node vocabulary expanded without expanding the node action field")
+    if expected_edge_additions and "denoiser.edge_embedding.weight" not in expanded_keys:
+        raise ValueError("edge vocabulary expanded without expanding the edge action field")
+    return {
+        "old_node_state_count": len(old_vocabulary["node_states"]),
+        "new_node_state_count": len(vocabulary["node_states"]),
+        "old_edge_state_count": len(old_vocabulary["edge_states"]),
+        "new_edge_state_count": len(vocabulary["edge_states"]),
+        "expanded_parameters": expanded_keys,
+        "old_action_indices_preserved": True,
+    }
+
+
 def _support_audit(
     fit_pairs: Sequence[object],
     calibration_pairs: Sequence[object],
     b22_checkpoint: Path,
     prereg: Mapping[str, object],
-) -> dict[str, object]:
+) -> tuple[dict[str, object], dict[str, object]]:
     import torch
     import eval_d0_b41_table1 as d0
 
     b41, b40, b39, delta = d0.b41, d0.b40, d0.b39, d0.delta
     checkpoint = torch.load(b22_checkpoint, map_location="cpu", weights_only=False)
-    vocabulary = d0.b37.checkpoint_vocabulary(checkpoint)
+    old_vocabulary = d0.b37.checkpoint_vocabulary(checkpoint)
+    vocabulary = _expanded_vocabulary(old_vocabulary, fit_pairs)
     support = b40.build_support(fit_pairs, vocabulary)
     support_tensors = b40._device_support(support, torch.device("cpu"))
     node_actions, edge_actions = delta.action_space_sizes(vocabulary)
@@ -391,7 +489,7 @@ def _support_audit(
         >= float(prereg["support_gates"]["calibration_horizon_coverage"]),
         "terminal_support_replay": bool(replay["passed"]),
     }
-    return {
+    audit = {
         "fit_event_instances": len(fit_signatures),
         "calibration_event_instances": len(calibration_signatures),
         "unique_fit_event_signatures": len(fit_set),
@@ -403,6 +501,15 @@ def _support_audit(
         "failures": [name for name, passed in checks.items() if not passed],
         "passed": all(checks.values()),
     }
+    audit["vocabulary"] = {
+        "sha256": vocabulary["sha256"],
+        "node_state_count": len(vocabulary["node_states"]),
+        "edge_state_count": len(vocabulary["edge_states"]),
+        "added_node_state_count": vocabulary["added_node_state_count"],
+        "added_edge_state_count": vocabulary["added_edge_state_count"],
+        "old_action_indices_preserved": True,
+    }
+    return audit, vocabulary
 
 
 def prepare(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
@@ -466,7 +573,24 @@ def prepare(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
     ]
     prior.write_jsonl(args.output_dir / "generation_conditions.jsonl", generation)
     prior.write_jsonl(args.output_dir / "sealed_probe_targets.jsonl", sealed)
-    audit = _support_audit(fit_pairs, calibration_pairs, args.b22_checkpoint, prereg)
+    audit, vocabulary = _support_audit(
+        fit_pairs, calibration_pairs, args.b22_checkpoint, prereg
+    )
+    vocabulary_path = args.output_dir / "expanded_vocabulary.json"
+    prior.write_json(
+        vocabulary_path,
+        {
+            "node_states": np.asarray(vocabulary["node_states"]).tolist(),
+            "edge_states": np.asarray(vocabulary["edge_states"]).tolist(),
+            "blank_node_id": int(vocabulary["blank_node_id"]),
+            "blank_edge_id": int(vocabulary["blank_edge_id"]),
+            "sha256": vocabulary["sha256"],
+            "old_node_state_count": vocabulary["old_node_state_count"],
+            "old_edge_state_count": vocabulary["old_edge_state_count"],
+            "added_node_state_count": vocabulary["added_node_state_count"],
+            "added_edge_state_count": vocabulary["added_edge_state_count"],
+        },
+    )
     source_overlap = len(
         {pair.source_smiles for pair in fit_pairs}
         & {pair.source_smiles for pair in calibration_pairs}
@@ -495,6 +619,7 @@ def prepare(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
         "support_audit": audit,
         "fit_pairs_sha256": prior.sha256_file(args.output_dir / "fit_pairs.pkl"),
         "calibration_pairs_sha256": prior.sha256_file(args.output_dir / "calibration_pairs.pkl"),
+        "expanded_vocabulary_sha256": prior.sha256_file(vocabulary_path),
         "generation_conditions_sha256": prior.sha256_file(args.output_dir / "generation_conditions.jsonl"),
         "sealed_probe_targets_sha256": prior.sha256_file(args.output_dir / "sealed_probe_targets.jsonl"),
     }
@@ -574,7 +699,10 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
     representation, representation_config, _summary = base.load_representation(
         args.representation_checkpoint, args.representation_summary, device
     )
-    vocabulary = d0.b37.checkpoint_vocabulary(b22_checkpoint)
+    old_vocabulary = d0.b37.checkpoint_vocabulary(b22_checkpoint)
+    vocabulary = _expanded_vocabulary(old_vocabulary, fit_pairs)
+    if vocabulary["sha256"] != prepare_summary["support_audit"]["vocabulary"]["sha256"]:
+        raise ValueError("expanded train-only vocabulary drift")
     support = b40.build_support(fit_pairs, vocabulary)
     support_tensors = b40._device_support(support, device)
     node_actions, edge_actions = d0.delta.action_space_sizes(vocabulary)
@@ -592,7 +720,12 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
         message_layers=int(prereg["message_layers"]),
     ).to(device)
     b41_checkpoint = torch.load(args.b41_checkpoint, map_location="cpu", weights_only=False)
-    model.load_state_dict(dict(b41_checkpoint["model_state"]), strict=True)
+    warm_start = _load_expanded_b41_state(
+        model,
+        dict(b41_checkpoint["model_state"]),
+        old_vocabulary,
+        vocabulary,
+    )
     training_config = {**dict(b41_prereg), **dict(prereg)}
     history = b39.train_model(
         model, representation, fit_pairs, vocabulary, training_config, device
@@ -693,6 +826,8 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
         "training": history,
         "event_finetuning": event_history,
         "calibration_support_replay": replay,
+        "train_only_vocabulary": prepare_summary["support_audit"]["vocabulary"],
+        "warm_start_transplant": warm_start,
         "candidate_rows": len(rows),
         "attempts_per_condition": int(prereg["exact_raw_attempts_per_condition"]),
         "checkpoint_sha256": prior.sha256_file(checkpoint_path),

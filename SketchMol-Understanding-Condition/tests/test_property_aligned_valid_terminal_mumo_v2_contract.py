@@ -25,6 +25,7 @@ def test_preregistration_locks_direct_signed_set_and_exact_n20():
     assert payload["conditions_per_ood_task"] == 15
     assert payload["numeric_adapter"] is False
     assert payload["signed_property_set_direct_conditioning"] is True
+    assert payload["train_only_graph_state_vocabulary_expansion"] is True
     assert payload["condition_router_training"] is True
     assert payload["transport_training"] is True
     assert payload["event_kernel_training"] is True
@@ -37,6 +38,10 @@ def test_preregistration_locks_direct_signed_set_and_exact_n20():
     assert payload["generation_property_oracle_access"] is False
     assert payload["support_audit_probe_target_access"] is False
     assert payload["official_test_access"] is False
+    assert payload["engineering_amendment"]["failed_job_id"] == 20254004
+    assert payload["engineering_amendment"]["model_training_started"] is False
+    assert payload["engineering_amendment"]["probe_target_used_for_support_audit"] is False
+    assert payload["engineering_amendment"]["probe_target_available_to_training_or_generation_process"] is False
 
 
 def test_signed_property_tokens_are_explicit_and_masked():
@@ -93,6 +98,31 @@ def test_trainfreeze_generation_path_never_receives_sealed_targets():
     assert "sealed_probe_targets" not in trainfreeze
     assert '"generation_target_access": False' in trainfreeze
     assert "A scientific STOP is a valid completed experiment" in source
+
+
+def test_vocabulary_expansion_preserves_old_action_prefix(monkeypatch):
+    module = load_runner()
+
+    class FakeFullGraph:
+        @staticmethod
+        def build_joint_state_vocabulary(_pairs):
+            return {
+                "node_states": np.asarray([[0, 3], [6, 0], [8, 0]]),
+                "edge_states": np.asarray([[0, 0], [1, 0], [2, 0]]),
+            }
+
+    monkeypatch.setitem(__import__("sys").modules, "discrete_graph_diffusion_decoder", FakeFullGraph)
+    old = {
+        "node_states": np.asarray([[0, 3], [6, 0]]),
+        "edge_states": np.asarray([[0, 0], [1, 0]]),
+        "blank_node_id": 0,
+        "blank_edge_id": 0,
+    }
+    expanded = module._expanded_vocabulary(old, [object()])
+    np.testing.assert_array_equal(expanded["node_states"][:2], old["node_states"])
+    np.testing.assert_array_equal(expanded["edge_states"][:2], old["edge_states"])
+    assert expanded["added_node_state_count"] == 1
+    assert expanded["added_edge_state_count"] == 1
 
 
 def test_slurm_dag_separates_oracle_and_science_gate():
