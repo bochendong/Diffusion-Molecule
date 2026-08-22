@@ -9,11 +9,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "experiments" / "p1_property_program_group_rl" / "evaluate_p1_sampling_scaling.py"
+VALIDATOR_SCRIPT = ROOT / "experiments" / "p1_property_program_group_rl" / "validate_p1_recovered_checkpoint.py"
 SPEC = importlib.util.spec_from_file_location("p1_sampling", SCRIPT)
 assert SPEC and SPEC.loader
 p1 = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = p1
 SPEC.loader.exec_module(p1)
+VALIDATOR_SPEC = importlib.util.spec_from_file_location("p1_validator", VALIDATOR_SCRIPT)
+assert VALIDATOR_SPEC and VALIDATOR_SPEC.loader
+validator = importlib.util.module_from_spec(VALIDATOR_SPEC)
+sys.modules[VALIDATOR_SPEC.name] = validator
+VALIDATOR_SPEC.loader.exec_module(validator)
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -45,6 +51,28 @@ def test_pass_at_k_estimator_boundaries() -> None:
     assert p1.estimated_pass_at_k(256, 256, 20) == 1.0
     assert p1.estimated_pass_at_k(4, 1, 4) == 1.0
     assert 0.0 < p1.estimated_pass_at_k(256, 4, 8) < 1.0
+
+
+def test_recovered_checkpoint_guard_rejects_metric_drift() -> None:
+    expected = dict(validator.EXPECTED["two_p_to_seven_p"])
+    payload = {
+        "args": {
+            "seed": 7,
+            "epochs": 1,
+            "rollouts_per_prompt": 16,
+            "condition_mixing_mode": "append_property_program",
+            "advantage_mode": "group_zscore",
+            "reference_kl_weight": 0.05,
+            "sft_weight": 1.0,
+        },
+        "history": [{"epoch": 1, **expected}],
+    }
+    passed = validator.validate_payload(payload, "two_p_to_seven_p")
+    assert passed["status"] == "pass"
+    payload["history"][0]["eval_mean_reward"] = 0.5
+    failed = validator.validate_payload(payload, "two_p_to_seven_p")
+    assert failed["status"] == "fail"
+    assert any("eval_mean_reward" in item for item in failed["failures"])
 
 
 def test_p1_end_to_end_uses_raw_first_candidate_and_emits_gate(tmp_path: Path) -> None:

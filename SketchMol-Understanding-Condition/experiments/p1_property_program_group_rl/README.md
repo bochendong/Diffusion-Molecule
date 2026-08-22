@@ -58,3 +58,8 @@ backward compatibility. P1 excludes that file from every reported metric.
 GPU jobs default to the Nibi `def-hup-ab_gpu` account; the CPU finalizer uses
 `def-hup-ab`. Override them separately with `SUCC_P1_GPU_ACCOUNT` and
 `SUCC_P1_CPU_ACCOUNT` when needed.
+
+If a historical Group-RL checkpoint has to be reconstructed from its frozen
+SFT parent, `validate_p1_recovered_checkpoint.py` compares its arguments and
+one-epoch training history with source jobs `16583941` and `16742519`. The
+Group-RL candidate job stops before inference if this provenance guard fails.

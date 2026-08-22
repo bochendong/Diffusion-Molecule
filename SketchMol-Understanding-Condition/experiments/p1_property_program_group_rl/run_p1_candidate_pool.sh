@@ -28,6 +28,7 @@ fi
 
 case "$VARIANT" in
   two_p_to_seven_p_sft)
+    RECOVERY_BENCHMARK=""
     BASE_DIR="$PROJECT_DIR/outputs/direct_smiles_denovo_2p7p_v2_mixed_condition"
     CHECKPOINT="$BASE_DIR/direct_smiles_model/direct_smiles_generator.pt"
     EVAL_CSV="$BASE_DIR/denovo_2p7p_eval_rows.csv"
@@ -39,6 +40,7 @@ case "$VARIANT" in
     REPETITION_PENALTY="1.15"
     ;;
   two_p_to_seven_p_group_rl)
+    RECOVERY_BENCHMARK="two_p_to_seven_p"
     BASE_DIR="$PROJECT_DIR/outputs/direct_smiles_denovo_2p7p_v2_mixed_condition"
     CHECKPOINT="$PROJECT_DIR/outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/direct_smiles_model_group_rl/direct_smiles_generator_rl.pt"
     EVAL_CSV="$BASE_DIR/denovo_2p7p_eval_rows.csv"
@@ -50,6 +52,7 @@ case "$VARIANT" in
     REPETITION_PENALTY="1.15"
     ;;
   ood_sft)
+    RECOVERY_BENCHMARK=""
     BASE_DIR="$PROJECT_DIR/outputs/direct_smiles_denovo_ood_v2_mixed_condition"
     CHECKPOINT="$BASE_DIR/direct_smiles_model/direct_smiles_generator.pt"
     EVAL_CSV="$BASE_DIR/denovo_ood_eval_rows.csv"
@@ -61,6 +64,7 @@ case "$VARIANT" in
     REPETITION_PENALTY="1.20"
     ;;
   ood_group_rl)
+    RECOVERY_BENCHMARK="ood"
     BASE_DIR="$PROJECT_DIR/outputs/direct_smiles_denovo_ood_v2_mixed_condition"
     CHECKPOINT="$PROJECT_DIR/outputs/direct_smiles_denovo_ood_v2_group_rl_v1/direct_smiles_model_group_rl/direct_smiles_generator_rl.pt"
     EVAL_CSV="$BASE_DIR/denovo_ood_eval_rows.csv"
@@ -104,6 +108,13 @@ echo "  output=$CANDIDATE_CSV"
 echo "  num_samples=$NUM_SAMPLES"
 echo "  decoding=temperature:$TEMPERATURE top_k:$TOP_K top_p:$TOP_P repetition_penalty:$REPETITION_PENALTY"
 echo "  note=diagnostic selected CSV is property-reranked and excluded from P1 metrics"
+
+if [[ -n "$RECOVERY_BENCHMARK" ]]; then
+  "$PYTHON_BIN" "$SCRIPT_DIR/validate_p1_recovered_checkpoint.py" \
+    --checkpoint "$CHECKPOINT" \
+    --benchmark "$RECOVERY_BENCHMARK" \
+    --output-json "$OUTPUT_DIR/recovered_checkpoint_validation.json"
+fi
 
 "$PYTHON_BIN" "$PROJECT_DIR/scripts/train_direct_smiles_generator.py" \
   --eval-only \
