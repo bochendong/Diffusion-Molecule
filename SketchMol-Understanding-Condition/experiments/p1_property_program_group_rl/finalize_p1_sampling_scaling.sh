@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Finalize the four frozen D4 candidate pools into paired scaling tables.
+# Finalize the four frozen P1 candidate pools into paired scaling tables.
 
 set -euo pipefail
 
@@ -15,11 +15,11 @@ if command -v module >/dev/null 2>&1; then
 fi
 
 PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
-OUTPUT_ROOT="${SUCC_D4_OUTPUT_ROOT:-$PROJECT_DIR/outputs/d4_property_program_group_rl_seed7}"
+OUTPUT_ROOT="${SUCC_P1_OUTPUT_ROOT:-$PROJECT_DIR/outputs/p1_property_program_group_rl_seed7}"
 TWO_P_BASE="$PROJECT_DIR/outputs/direct_smiles_denovo_2p7p_v2_mixed_condition"
 OOD_BASE="$PROJECT_DIR/outputs/direct_smiles_denovo_ood_v2_mixed_condition"
 
-"$PYTHON_BIN" "$SCRIPT_DIR/evaluate_d4_sampling_scaling.py" \
+"$PYTHON_BIN" "$SCRIPT_DIR/evaluate_p1_sampling_scaling.py" \
   --two-p-seven-p-eval-csv "$TWO_P_BASE/denovo_2p7p_eval_rows.csv" \
   --ood-eval-csv "$OOD_BASE/denovo_ood_eval_rows.csv" \
   --two-p-seven-p-sft-candidates "$OUTPUT_ROOT/two_p_to_seven_p_sft/raw_candidates_n256.csv" \
@@ -28,9 +28,9 @@ OOD_BASE="$PROJECT_DIR/outputs/direct_smiles_denovo_ood_v2_mixed_condition"
   --ood-group-rl-candidates "$OUTPUT_ROOT/ood_group_rl/raw_candidates_n256.csv" \
   --output-dir "$OUTPUT_ROOT/final" \
   --budgets "1,4,8,20,32,64,128,256" \
-  --bootstrap-resamples "${SUCC_D4_BOOTSTRAP_RESAMPLES:-5000}" \
+  --bootstrap-resamples "${SUCC_P1_BOOTSTRAP_RESAMPLES:-5000}" \
   --seed 20260822 \
-  --protocol "$SCRIPT_DIR/d4_property_program_group_rl_preregistration.json"
+  --protocol "$SCRIPT_DIR/p1_property_program_group_rl_preregistration.json"
 
-echo "D4 final report=$OUTPUT_ROOT/final/d4_report.md"
-echo "D4 gate=$OUTPUT_ROOT/final/d4_gate.json"
+echo "P1 final report=$OUTPUT_ROOT/final/p1_report.md"
+echo "P1 gate=$OUTPUT_ROOT/final/p1_gate.json"

@@ -1,6 +1,6 @@
-# D4: Direct SMILES Property Programs + Group-RL
+# P1: Direct SMILES Property Programs + Group-RL
 
-D4 is the numbered, GraphEditDSL-independent paper direction for testing
+P1 is the numbered, GraphEditDSL-independent paper direction for testing
 compositional molecular objective extrapolation. It reuses the frozen Direct
 SMILES v2 SFT and Group-RL checkpoints; the first gate performs no new training.
 
@@ -27,30 +27,30 @@ property count and OOD by `forward_extreme`, `rare_combo`, and
 `reverse_stimulation`, with paired condition-bootstrap confidence intervals.
 
 The complete machine-readable contract is
-`d4_property_program_group_rl_preregistration.json`.
+`p1_property_program_group_rl_preregistration.json`.
 
 ## Nibi run
 
 After pulling the synchronized commit on Nibi:
 
 ```bash
-bash SketchMol-Understanding-Condition/experiments/d4_property_program_group_rl/submit_d4_sampling_scaling.sh
+bash SketchMol-Understanding-Condition/experiments/p1_property_program_group_rl/submit_p1_sampling_scaling.sh
 ```
 
 This submits four independent GPU jobs and one `afterok` CPU finalizer. The
 default output root is:
 
 ```text
-SketchMol-Understanding-Condition/outputs/d4_property_program_group_rl_seed7/
+SketchMol-Understanding-Condition/outputs/p1_property_program_group_rl_seed7/
 ```
 
 Primary artifacts:
 
-- `final/d4_report.md`
-- `final/d4_gate.json`
-- `final/d4_scaling_summary.csv`
-- `final/d4_paired_deltas.csv`
-- `final/d4_condition_metrics.csv`
+- `final/p1_report.md`
+- `final/p1_gate.json`
+- `final/p1_scaling_summary.csv`
+- `final/p1_paired_deltas.csv`
+- `final/p1_condition_metrics.csv`
 
 The generator also writes `diagnostic_property_reranked_selected.csv` for
-backward compatibility. D4 excludes that file from every reported metric.
+backward compatibility. P1 excludes that file from every reported metric.

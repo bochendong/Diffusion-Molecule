@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Evaluate D4 Direct-SMILES SFT vs Group-RL sampling/complexity scaling."""
+"""Evaluate P1 Direct-SMILES SFT vs Group-RL sampling/complexity scaling."""
 
 from __future__ import annotations
 
@@ -334,7 +334,7 @@ def render_report(
         for row in deltas
     }
     lines = [
-        "# D4 Direct SMILES + Property Program + Group-RL: Single-seed gate",
+        "# P1 Direct SMILES + Property Program + Group-RL: Single-seed gate",
         "",
         f"Verdict: **{gate['verdict']}**.",
         "",
@@ -411,7 +411,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     budgets = parse_budgets(args.budgets)
     max_budget = budgets[-1]
     if max_budget != 256:
-        raise ValueError("D4 preregistration requires a maximum candidate budget of 256")
+        raise ValueError("P1 preregistration requires a maximum candidate budget of 256")
     eval_sets = {
         "two_p_to_seven_p": read_rows(args.two_p_seven_p_eval_csv),
         "ood": read_rows(args.ood_eval_csv),
@@ -445,15 +445,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     gate = gate_result(deltas)
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    write_csv(args.output_dir / "d4_condition_metrics.csv", condition_rows)
-    write_csv(args.output_dir / "d4_scaling_summary.csv", summary)
-    write_csv(args.output_dir / "d4_paired_deltas.csv", deltas)
-    (args.output_dir / "d4_gate.json").write_text(json.dumps(gate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    write_csv(args.output_dir / "p1_condition_metrics.csv", condition_rows)
+    write_csv(args.output_dir / "p1_scaling_summary.csv", summary)
+    write_csv(args.output_dir / "p1_paired_deltas.csv", deltas)
+    (args.output_dir / "p1_gate.json").write_text(json.dumps(gate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     report = render_report(summary, deltas, gate)
-    (args.output_dir / "d4_report.md").write_text(report, encoding="utf-8")
+    (args.output_dir / "p1_report.md").write_text(report, encoding="utf-8")
     if args.protocol is not None:
         protocol = json.loads(args.protocol.read_text(encoding="utf-8"))
-        (args.output_dir / "d4_protocol_snapshot.json").write_text(
+        (args.output_dir / "p1_protocol_snapshot.json").write_text(
             json.dumps(protocol, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
     print(report)

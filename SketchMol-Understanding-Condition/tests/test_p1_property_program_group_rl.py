@@ -8,12 +8,12 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "experiments" / "d4_property_program_group_rl" / "evaluate_d4_sampling_scaling.py"
-SPEC = importlib.util.spec_from_file_location("d4_sampling", SCRIPT)
+SCRIPT = ROOT / "experiments" / "p1_property_program_group_rl" / "evaluate_p1_sampling_scaling.py"
+SPEC = importlib.util.spec_from_file_location("p1_sampling", SCRIPT)
 assert SPEC and SPEC.loader
-d4 = importlib.util.module_from_spec(SPEC)
-sys.modules[SPEC.name] = d4
-SPEC.loader.exec_module(d4)
+p1 = importlib.util.module_from_spec(SPEC)
+sys.modules[SPEC.name] = p1
+SPEC.loader.exec_module(p1)
 
 
 def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
@@ -41,13 +41,13 @@ def candidate_rows(condition_ids: list[str], successes: dict[str, set[int]]) -> 
 
 
 def test_pass_at_k_estimator_boundaries() -> None:
-    assert d4.estimated_pass_at_k(256, 0, 20) == 0.0
-    assert d4.estimated_pass_at_k(256, 256, 20) == 1.0
-    assert d4.estimated_pass_at_k(4, 1, 4) == 1.0
-    assert 0.0 < d4.estimated_pass_at_k(256, 4, 8) < 1.0
+    assert p1.estimated_pass_at_k(256, 0, 20) == 0.0
+    assert p1.estimated_pass_at_k(256, 256, 20) == 1.0
+    assert p1.estimated_pass_at_k(4, 1, 4) == 1.0
+    assert 0.0 < p1.estimated_pass_at_k(256, 4, 8) < 1.0
 
 
-def test_d4_end_to_end_uses_raw_first_candidate_and_emits_gate(tmp_path: Path) -> None:
+def test_p1_end_to_end_uses_raw_first_candidate_and_emits_gate(tmp_path: Path) -> None:
     two_p_ids = ["2p", "3p", "4p", "5p", "6p", "7p"]
     ood_ids = ["extreme", "rare", "reverse"]
     two_p_eval = [
@@ -78,7 +78,7 @@ def test_d4_end_to_end_uses_raw_first_candidate_and_emits_gate(tmp_path: Path) -
     write_csv(paths["ood_rl"], candidate_rows(ood_ids, rl_ood))
 
     output_dir = tmp_path / "out"
-    rc = d4.main(
+    rc = p1.main(
         [
             "--two-p-seven-p-eval-csv",
             str(tmp_path / "two_p_eval.csv"),
@@ -99,8 +99,8 @@ def test_d4_end_to_end_uses_raw_first_candidate_and_emits_gate(tmp_path: Path) -
         ]
     )
     assert rc == 0
-    gate = json.loads((output_dir / "d4_gate.json").read_text(encoding="utf-8"))
+    gate = json.loads((output_dir / "p1_gate.json").read_text(encoding="utf-8"))
     assert gate["verdict"] in {"strong_single_seed_signal", "promising_single_seed_signal"}
-    report = (output_dir / "d4_report.md").read_text(encoding="utf-8")
+    report = (output_dir / "p1_report.md").read_text(encoding="utf-8")
     assert "`k=1` is the first raw draw" in report
     assert "property-reranked selected molecule is diagnostic-only" in report

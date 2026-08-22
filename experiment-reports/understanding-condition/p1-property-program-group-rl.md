@@ -1,10 +1,10 @@
-# D4 Direct SMILES Property Programs + Group-RL
+# P1 Direct SMILES Property Programs + Group-RL
 
 ## Status
 
 **Preregistered single-seed gate; no new training.**
 
-D4 is the numbered paper direction for the strongest existing non-GraphEdit
+P1 is the numbered paper direction for the strongest existing non-GraphEdit
 signal: compositional property programs with direct SMILES generation and
 group-relative RL. It is deliberately separated from the source-editing and
 GraphEditDSL lines.
@@ -24,7 +24,7 @@ The frozen v2 report currently records:
 Those results are not yet sufficient for a paper claim because the historical
 headline is based on property-aware best-of-k selection.
 
-## D4 first gate
+## P1 first gate
 
 The first experiment reuses the existing SFT and Group-RL checkpoints and
 generates four paired raw candidate pools:
@@ -53,6 +53,6 @@ one-shot; one-shot is exactly raw candidate index 0.
   appears only near k=256.
 
 Implementation and the machine-readable preregistration live in
-`SketchMol-Understanding-Condition/experiments/d4_property_program_group_rl/`.
+`SketchMol-Understanding-Condition/experiments/p1_property_program_group_rl/`.
 The Nibi finalizer will write the first result to
-`SketchMol-Understanding-Condition/outputs/d4_property_program_group_rl_seed7/final/d4_report.md`.
+`SketchMol-Understanding-Condition/outputs/p1_property_program_group_rl_seed7/final/p1_report.md`.
