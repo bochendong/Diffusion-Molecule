@@ -48,7 +48,7 @@ def test_preregistration_locks_direct_signed_set_and_exact_n20():
     assert payload["engineering_amendment"]["probe_target_available_to_training_or_generation_process"] is False
     assert payload["graph_slot_amendment"]["failed_job_id"] == 20280538
     assert payload["graph_slot_amendment"]["optimizer_step_completed"] is False
-    assert payload["terminal_dead_end_amendment"]["failed_job_id"] == 20283293
+    assert payload["terminal_dead_end_amendment"]["failed_job_ids"] == [20283293, 20284243]
     assert payload["terminal_dead_end_amendment"]["candidate_artifact_written"] is False
 
 
@@ -157,18 +157,32 @@ def test_dead_end_support_counts_raw_failure_without_retry():
     torch = pytest.importorskip("torch")
 
     class FakeExactSupport:
+        vocabulary = {"node_states": []}
+
         def __call__(self, *_args, **_kwargs):
-            legal = torch.tensor([[False, False], [True, False]])
-            return legal, {"stop_masked": torch.tensor([True, False])}
+            raise RuntimeError("B40 dynamic support reached a dead end: [0]")
 
         @staticmethod
         def manifest():
             return {"state_checks": 2}
 
-    support = module._AbsorbingFailedAttemptSupport(FakeExactSupport())
-    legal, diagnostics = support(None)
-    assert legal.tolist() == [[True, False], [True, False]]
-    assert diagnostics["absorbing_failed_attempt"].tolist() == [True, False]
+    support = module._AbsorbingFailedAttemptSupport(
+        FakeExactSupport(),
+        lambda *_args: torch.tensor([[True, True]]),
+        lambda *_args: torch.tensor([False]),
+    )
+    source = {"atomic_number": torch.ones((1, 2), dtype=torch.long)}
+    legal, diagnostics = support(
+        None,
+        source,
+        torch.zeros((1, 2), dtype=torch.long),
+        torch.zeros((1, 2, 2), dtype=torch.long),
+        torch.ones((1, 2), dtype=torch.bool),
+        {},
+        {},
+    )
+    assert legal.tolist() == [[True, False]]
+    assert diagnostics["absorbing_failed_attempt"].tolist() == [True]
     assert support.manifest()["dead_end_absorptions"] == 1
     assert support.manifest()["dead_end_policy"] == "count_as_raw_failed_attempt_without_retry"
 

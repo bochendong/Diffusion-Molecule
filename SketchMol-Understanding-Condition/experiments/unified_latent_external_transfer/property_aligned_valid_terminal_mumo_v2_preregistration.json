@@ -1,6 +1,6 @@
 {
   "protocol": "property_aligned_valid_terminal_mumo_v2",
-  "status": "amended_after_post_training_generation_failure_before_candidate_artifact_or_oracle",
+  "status": "amended_after_repeated_dead_end_exception_before_candidate_artifact_or_oracle",
   "engineering_amendment": {
     "failed_job_id": 20254004,
     "failure_stage": "train_only_support_audit_event_encoding",
@@ -29,7 +29,7 @@
     "repair": "lock max_atoms to the representation checkpoint, materialize every fit/calibration graph with 64 slots, and reject any checkpoint/pair/protocol slot mismatch in prepare and trainfreeze"
   },
   "terminal_dead_end_amendment": {
-    "failed_job_id": 20283293,
+    "failed_job_ids": [20283293, 20284243],
     "failure_stage": "post_training_first_condition_candidate_generation",
     "failure_signature": "CUDA probability tensor contains inf, nan or element below zero",
     "main_training_epochs_completed": 2,
@@ -39,7 +39,8 @@
     "property_oracle_accessed": false,
     "scientific_metric_observed": false,
     "root_cause": "exact molecule STOP was masked in a non-materializable partial graph that also had no legal outgoing supported event, producing an all-false categorical support row",
-    "repair": "absorb the dead-end trajectory as the same raw invalid attempt; do not retry, resample, repair, replace, or select candidates"
+    "repeated_failure_detail": "B40 raises before returning its all-false row, so the first wrapper could not observe the dead end",
+    "repair": "evaluate the affected batch row-wise; recover exact STOP only when the graph is materializable, otherwise absorb the trajectory as the same raw invalid attempt; do not retry, resample, repair, replace, or select candidates"
   },
   "scientific_hypothesis": "Rebuilding valid-terminal graph-event support on MuMO train pairs and directly conditioning the B transport on an explicit six-element signed property set will convert the B-series internal structural competence into prospective MuMO OOD property support without a numeric adapter, candidate ranking, retries, target access, or oracle selection.",
   "interpretation_boundary": "This is a single-seed train-heldout prospective route gate, not an official test result. The probe is selected source-only from MuMO train-fit rows before its paired targets are sealed; all original V8 dev sources and every source opened by B external transfer v1 are excluded.",
@@ -151,12 +152,14 @@
       "validity": 1.0
     }
   },
-  "implementation_sha256": "9a327a66497162f3708b510d34bf029707468abd0b98a97aed58570c2f3bae49",
+  "implementation_sha256": "7c7c42f5d24caf666bb015b63bc35529e52e55d5cfd525cf4d62d03a64248ada",
   "locked_inputs": {
     "mumo_v8_manifest_sha256": "850fd7b5b34e23925a007cbdc12217a2ed234be9fd8b24aa3ca405f8b8a0a0e0",
     "mumo_v8_shards_aggregate_sha256": "f8d3cdee7fc7de79f6dd98cceb8e26a06041960f1ccfd33f4ef3a993d9d58cd3",
     "previous_opened_conditions_sha256": "2dfe55de7b1359f77ccfd41d8fc9e93367c937e4c5cc0b17b27724a25155bcde",
     "representation_checkpoint_sha256": "32bd1d9c27976ea978397c448bf7e558862709e88b1fb306dfa15d0d5e830b9b",
+    "recovered_training_checkpoint_sha256": "613036e28941ffd767506ee0c1bbfb31745fe90de313470009e948eaaa1da48e",
+    "recovered_training_log_sha256": "63c044b51c978d09db6b6187179d83a84f45dc8748e4ab51885e7c091e1c8e2e",
     "b22_checkpoint_sha256": "0743c8868c482cc65ad92a8cc843baa372095ed8fd6362bc6d887d8d9908d26d",
     "b41_checkpoint_sha256": "2953abe4987ac169c125abf696104d88fd02f52043d3b0e737c70f752c7e40f0",
     "b41_summary_sha256": "a7af1e4e8a39e43b88f7c6af1d29ed3d056aeb8895ca1eae2a7f4951c733d469",

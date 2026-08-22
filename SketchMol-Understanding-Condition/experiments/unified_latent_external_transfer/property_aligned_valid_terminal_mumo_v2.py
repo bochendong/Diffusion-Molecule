@@ -69,6 +69,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     train.add_argument("--generation-conditions", type=Path, required=True)
     train.add_argument("--output-dir", type=Path, required=True)
     train.add_argument("--device", default="auto")
+    train.add_argument("--resume-trained-checkpoint", type=Path)
+    train.add_argument("--resume-training-log", type=Path)
+    train.add_argument("--condition-limit", type=int, default=0)
     for argument in (
         "train_csv", "validation_csv", "representation_checkpoint",
         "representation_summary", "b22_checkpoint", "b22_summary",
@@ -92,7 +95,7 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     required = {
         "protocol": PROTOCOL,
-        "status": "amended_after_post_training_generation_failure_before_candidate_artifact_or_oracle",
+        "status": "amended_after_repeated_dead_end_exception_before_candidate_artifact_or_oracle",
         "warm_start_b41": True,
         "train_only_graph_state_vocabulary_expansion": True,
         "graph_slot_contract": "representation_checkpoint_equals_pair_tensor_slots",
@@ -412,28 +415,162 @@ class _AbsorbingFailedAttemptSupport:
     or replaced.
     """
 
-    def __init__(self, exact_support: object) -> None:
+    def __init__(
+        self,
+        exact_support: object,
+        base_legal_fn: object,
+        materializable_fn: object,
+    ) -> None:
         self.exact_support = exact_support
-        self.dead_end_absorptions = 0
+        self.base_legal_fn = base_legal_fn
+        self.materializable_fn = materializable_fn
+        self.failed_dead_end_absorptions = 0
+        self.materializable_dead_end_recoveries = 0
 
-    def __call__(self, *args, **kwargs):
-        legal, diagnostics = self.exact_support(*args, **kwargs)
-        dead_end = ~legal.any(dim=1)
-        if bool(dead_end.any()):
-            legal = legal.clone()
-            legal[dead_end, 0] = True
-            self.dead_end_absorptions += int(dead_end.sum().detach().cpu())
-        revised = dict(diagnostics)
-        revised["absorbing_failed_attempt"] = dead_end
-        revised["stop_masked"] = ~legal[:, 0]
-        return legal, revised
+    @staticmethod
+    def _slice_source(source: Mapping[str, object], index: int, batch: int):
+        import torch
+
+        return {
+            key: value[index : index + 1]
+            if isinstance(value, torch.Tensor)
+            and value.ndim > 0
+            and value.shape[0] == batch
+            else value
+            for key, value in source.items()
+        }
+
+    def __call__(
+        self,
+        field,
+        source,
+        node_actions,
+        edge_actions,
+        working,
+        support,
+        support_tensors,
+    ):
+        import torch
+
+        try:
+            return self.exact_support(
+                field,
+                source,
+                node_actions,
+                edge_actions,
+                working,
+                support,
+                support_tensors,
+            )
+        except RuntimeError as error:
+            if "dynamic support reached a dead end" not in str(error):
+                raise
+
+        # B40 raises for the whole batch before the exact terminal rule can
+        # recover a materializable STOP.  Re-evaluate rows independently so a
+        # single dead trajectory cannot discard valid peers.
+        batch = int(node_actions.shape[0])
+        legal_rows = []
+        base_counts = []
+        constrained_counts = []
+        stop_masked = []
+        failed = []
+        recovered = []
+        for index in range(batch):
+            source_row = self._slice_source(source, index, batch)
+            node_row = node_actions[index : index + 1]
+            edge_row = edge_actions[index : index + 1]
+            working_row = working[index : index + 1]
+            try:
+                legal, diagnostics = self.exact_support(
+                    field,
+                    source_row,
+                    node_row,
+                    edge_row,
+                    working_row,
+                    support,
+                    support_tensors,
+                )
+                legal_rows.append(legal)
+                base_counts.append(diagnostics["base_legal"])
+                constrained_counts.append(diagnostics["constrained_legal"])
+                stop_masked.append(diagnostics["stop_masked"])
+                failed.append(False)
+                recovered.append(False)
+                continue
+            except RuntimeError as error:
+                if "dynamic support reached a dead end" not in str(error):
+                    raise
+
+            base_legal = self.base_legal_fn(
+                field, source_row, node_row, edge_row, working_row
+            )
+            materializable = self.materializable_fn(
+                source_row,
+                node_row,
+                edge_row,
+                self.exact_support.vocabulary,
+            )
+            is_materializable = bool(materializable[0])
+            absorbing = torch.zeros_like(base_legal)
+            absorbing[:, 0] = True
+            legal_rows.append(absorbing)
+            base_counts.append(base_legal.sum(dim=1))
+            constrained_counts.append(
+                torch.ones(1, dtype=torch.long, device=node_actions.device)
+                if is_materializable
+                else torch.zeros(1, dtype=torch.long, device=node_actions.device)
+            )
+            stop_masked.append(
+                torch.tensor([not is_materializable], device=node_actions.device)
+            )
+            failed.append(not is_materializable)
+            recovered.append(is_materializable)
+            if is_materializable:
+                self.materializable_dead_end_recoveries += 1
+            else:
+                self.failed_dead_end_absorptions += 1
+        return torch.cat(legal_rows, dim=0), {
+            "base_legal": torch.cat(base_counts),
+            "constrained_legal": torch.cat(constrained_counts),
+            "stop_masked": torch.cat(stop_masked),
+            "absorbing_failed_attempt": torch.tensor(
+                failed, dtype=torch.bool, device=node_actions.device
+            ),
+            "materializable_dead_end_recovered": torch.tensor(
+                recovered, dtype=torch.bool, device=node_actions.device
+            ),
+        }
 
     def manifest(self) -> dict[str, object]:
         return {
             **dict(self.exact_support.manifest()),
-            "dead_end_absorptions": self.dead_end_absorptions,
+            "dead_end_absorptions": self.failed_dead_end_absorptions,
+            "failed_dead_end_absorptions": self.failed_dead_end_absorptions,
+            "materializable_dead_end_recoveries": self.materializable_dead_end_recoveries,
             "dead_end_policy": "count_as_raw_failed_attempt_without_retry",
         }
+
+
+def _training_histories_from_log(path: Path) -> tuple[list[dict], list[dict]]:
+    main_history: list[dict] = []
+    event_history: list[dict] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("{"):
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if "cardinality_nll" in row:
+            main_history.append(row)
+        elif "stop_margin_loss" in row and "incomplete_prefix_rate" in row:
+            event_history.append(row)
+    if len(main_history) != 2 or len(event_history) != 1:
+        raise ValueError(
+            "recovered training log must contain two main epochs and one event epoch"
+        )
+    return main_history, event_history
 
 
 def _load_expanded_b41_state(
@@ -770,6 +907,8 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
     with args.calibration_pairs.open("rb") as handle:
         calibration_pairs = pickle.load(handle)
     conditions = prior.read_jsonl(args.generation_conditions)
+    if int(args.condition_limit) > 0:
+        conditions = conditions[: int(args.condition_limit)]
     b41, b40, b39, base, graph = d0.b41, d0.b40, d0.b39, d0.base, d0.graph
     b41_prereg = b41.read_preregistration(args.b41_protocol_manifest)
     namespace = _b41_namespace(args)
@@ -822,9 +961,50 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
         vocabulary,
     )
     training_config = {**dict(b41_prereg), **dict(prereg)}
-    history = b39.train_model(
-        model, representation, fit_pairs, vocabulary, training_config, device
-    )
+    recovered_training = args.resume_trained_checkpoint is not None
+    if recovered_training:
+        if args.resume_training_log is None:
+            raise ValueError("resume training log is required with a trained checkpoint")
+        for name, path in {
+            "recovered_training_checkpoint_sha256": args.resume_trained_checkpoint,
+            "recovered_training_log_sha256": args.resume_training_log,
+        }.items():
+            actual = prior.sha256_file(path)
+            if actual != locks[name]:
+                raise ValueError(f"recovered training artifact drift for {name}: {actual}")
+        recovered_checkpoint = torch.load(
+            args.resume_trained_checkpoint, map_location="cpu", weights_only=False
+        )
+        if recovered_checkpoint.get("protocol") != PROTOCOL:
+            raise ValueError("recovered training checkpoint protocol drift")
+        if recovered_checkpoint.get("fit_pairs_sha256") != prepare_summary["fit_pairs_sha256"]:
+            raise ValueError("recovered training checkpoint fit-pair drift")
+        model.load_state_dict(recovered_checkpoint["model_state"], strict=True)
+        if not all(
+            bool(torch.isfinite(parameter).all()) for parameter in model.parameters()
+        ):
+            raise FloatingPointError("recovered training checkpoint contains non-finite parameters")
+        history, event_history = _training_histories_from_log(args.resume_training_log)
+    else:
+        if args.resume_training_log is not None:
+            raise ValueError("resume training log provided without a trained checkpoint")
+        history = b39.train_model(
+            model, representation, fit_pairs, vocabulary, training_config, device
+        )
+        event_config = {
+            **training_config,
+            "epochs": int(prereg["event_finetune_epochs"]),
+        }
+        event_history = b41.fine_tune_event_kernel(
+            model,
+            representation,
+            fit_pairs,
+            vocabulary,
+            support,
+            support_tensors,
+            event_config,
+            device,
+        )
     replay = b41.support_replay_gate(
         model,
         calibration_pairs,
@@ -832,17 +1012,6 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
         support,
         support_tensors,
         training_config,
-        device,
-    )
-    event_config = {**training_config, "epochs": int(prereg["event_finetune_epochs"])}
-    event_history = b41.fine_tune_event_kernel(
-        model,
-        representation,
-        fit_pairs,
-        vocabulary,
-        support,
-        support_tensors,
-        event_config,
         device,
     )
     checkpoint_path = args.output_dir / "property_aligned_valid_terminal_mumo.pt"
@@ -854,11 +1023,16 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
             "signed_property_tokens": True,
             "warm_start_b41_sha256": locks["b41_checkpoint_sha256"],
             "fit_pairs_sha256": prepare_summary["fit_pairs_sha256"],
+            "training": history,
+            "event_finetuning": event_history,
+            "recovered_training": recovered_training,
         },
         checkpoint_path,
     )
     exact_support = _AbsorbingFailedAttemptSupport(
-        d0.valid_terminal.ExactMoleculeStopSupport(vocabulary)
+        d0.valid_terminal.ExactMoleculeStopSupport(vocabulary),
+        b41.b38.legal_event_mask,
+        d0.valid_terminal.materializable_terminal_states,
     )
     original_support = b41.viability_event_mask
     rows: list[dict[str, object]] = []
@@ -908,7 +1082,7 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
                 print(json.dumps({"stage": "frozen_generation", "done": index + 1, "total": len(conditions)}, sort_keys=True), flush=True)
     finally:
         b41.viability_event_mask = original_support
-    expected = int(prereg["condition_count"]) * int(prereg["exact_raw_attempts_per_condition"])
+    expected = len(conditions) * int(prereg["exact_raw_attempts_per_condition"])
     if len(rows) != expected:
         raise ValueError(f"candidate row drift: {len(rows)} != {expected}")
     candidates_path = args.output_dir / "frozen_candidates.csv"
@@ -926,6 +1100,10 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
         "train_only_vocabulary": prepare_summary["support_audit"]["vocabulary"],
         "warm_start_transplant": warm_start,
         "candidate_rows": len(rows),
+        "condition_count": len(conditions),
+        "condition_limit": int(args.condition_limit),
+        "execution_smoke": int(args.condition_limit) > 0,
+        "recovered_training": recovered_training,
         "attempts_per_condition": int(prereg["exact_raw_attempts_per_condition"]),
         "checkpoint_sha256": prior.sha256_file(checkpoint_path),
         "candidates_sha256": prior.sha256_file(candidates_path),

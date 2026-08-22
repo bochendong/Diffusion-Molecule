@@ -37,7 +37,7 @@ B41_DIR="$PROJECT_DIR/outputs/viability_preserving_interacting_particle_transpor
 VALID_TERMINAL_DIR="$PROJECT_DIR/outputs/valid_terminal_molecule_latent_jump_v1/seed_1991"
 PREREG="$SCRIPT_DIR/property_aligned_valid_terminal_mumo_v2_preregistration.json"
 RUNNER="$SCRIPT_DIR/property_aligned_valid_terminal_mumo_v2.py"
-PREPARE_DIR="$RUN_ROOT/prepare"
+PREPARE_DIR="${SUCC_B_MUMO_V2_PREPARE_DIR:-$RUN_ROOT/prepare}"
 FREEZE_DIR="$RUN_ROOT/trainfreeze"
 ORACLE_DIR="$RUN_ROOT/oracle"
 EVAL_DIR="$RUN_ROOT/evaluation"
@@ -85,6 +85,14 @@ case "$STAGE" in
       --workers "${SLURM_CPUS_PER_TASK:-1}"
     ;;
   trainfreeze)
+    RESUME_ARGS=()
+    if [[ -n "${SUCC_B_MUMO_V2_RESUME_CHECKPOINT:-}" ]]; then
+      RESUME_ARGS+=(--resume-trained-checkpoint "$SUCC_B_MUMO_V2_RESUME_CHECKPOINT")
+      RESUME_ARGS+=(--resume-training-log "${SUCC_B_MUMO_V2_RESUME_LOG:?resume log required}")
+    fi
+    if [[ "${SUCC_B_MUMO_V2_CONDITION_LIMIT:-0}" != "0" ]]; then
+      RESUME_ARGS+=(--condition-limit "$SUCC_B_MUMO_V2_CONDITION_LIMIT")
+    fi
     "$PYTHON_BIN" "$RUNNER" trainfreeze \
       --preregistration "$PREREG" \
       --prepare-summary "$PREPARE_DIR/prepare_summary.json" \
@@ -93,6 +101,7 @@ case "$STAGE" in
       --generation-conditions "$PREPARE_DIR/generation_conditions.jsonl" \
       --output-dir "$FREEZE_DIR" \
       --device auto \
+      "${RESUME_ARGS[@]}" \
       "${COMMON_B_ARGS[@]}"
     ;;
   oracle)
