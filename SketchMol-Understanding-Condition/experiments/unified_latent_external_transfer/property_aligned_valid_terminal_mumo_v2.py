@@ -57,6 +57,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     prepare = sub.choices["prepare"]
     prepare.add_argument("--data-dir", type=Path, required=True)
     prepare.add_argument("--previous-conditions", type=Path, required=True)
+    prepare.add_argument("--representation-checkpoint", type=Path, required=True)
     prepare.add_argument("--b22-checkpoint", type=Path, required=True)
     prepare.add_argument("--output-dir", type=Path, required=True)
     prepare.add_argument("--workers", type=int, default=1)
@@ -91,9 +92,10 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     required = {
         "protocol": PROTOCOL,
-        "status": "amended_after_engineering_failure_before_training_or_candidate_generation",
+        "status": "amended_after_engineering_failures_before_optimization_or_candidate_generation",
         "warm_start_b41": True,
         "train_only_graph_state_vocabulary_expansion": True,
+        "graph_slot_contract": "representation_checkpoint_equals_pair_tensor_slots",
         "numeric_adapter": False,
         "signed_property_set_direct_conditioning": True,
         "mumo_train_graph_event_support": True,
@@ -374,6 +376,31 @@ def _expanded_vocabulary(
     }
 
 
+def _representation_max_atoms(checkpoint_path: Path) -> int:
+    """Read the graph-slot count from the locked representation checkpoint."""
+
+    import torch
+
+    checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    model_config = checkpoint.get("model_config")
+    if not isinstance(model_config, Mapping) or "max_atoms" not in model_config:
+        raise ValueError("representation checkpoint is missing model_config.max_atoms")
+    return int(model_config["max_atoms"])
+
+
+def _pair_slot_counts(pairs: Sequence[object]) -> set[int]:
+    """Return every padded node-axis size present in materialized edit pairs."""
+
+    counts: set[int] = set()
+    for pair in pairs:
+        for example in (pair.source, pair.target):
+            node_slots = len(example.atomic_number)
+            counts.add(int(node_slots))
+            if tuple(example.bond.shape) != (node_slots, node_slots):
+                raise ValueError("materialized graph has inconsistent node and edge axes")
+    return counts
+
+
 def _load_expanded_b41_state(
     model: object,
     old_state: Mapping[str, object],
@@ -476,6 +503,9 @@ def _support_audit(
     covered = sum(signature in fit_set for signature in calibration_signatures)
     coverage = covered / max(1, len(calibration_signatures))
     fit_task_counts = Counter(pair.task for pair in fit_pairs)
+    fit_slot_counts = _pair_slot_counts(fit_pairs)
+    calibration_slot_counts = _pair_slot_counts(calibration_pairs)
+    expected_slot_counts = {int(prereg["max_atoms"])}
     checks = {
         "fit_pairs": len(fit_pairs) >= int(prereg["support_gates"]["fit_pairs"]),
         "calibration_pairs": len(calibration_pairs) >= int(prereg["support_gates"]["calibration_pairs"]),
@@ -488,6 +518,8 @@ def _support_audit(
         "calibration_horizon_coverage": float(np.mean(np.asarray(calibration_counts) <= int(prereg["max_jumps"])))
         >= float(prereg["support_gates"]["calibration_horizon_coverage"]),
         "terminal_support_replay": bool(replay["passed"]),
+        "fit_graph_slot_contract": fit_slot_counts == expected_slot_counts,
+        "calibration_graph_slot_contract": calibration_slot_counts == expected_slot_counts,
     }
     audit = {
         "fit_event_instances": len(fit_signatures),
@@ -497,6 +529,9 @@ def _support_audit(
         "max_fit_target_events": max(fit_counts, default=0),
         "max_calibration_target_events": max(calibration_counts, default=0),
         "terminal_support_replay": replay,
+        "fit_graph_slot_counts": sorted(fit_slot_counts),
+        "calibration_graph_slot_counts": sorted(calibration_slot_counts),
+        "expected_graph_slot_count": int(prereg["max_atoms"]),
         "checks": checks,
         "failures": [name for name, passed in checks.items() if not passed],
         "passed": all(checks.values()),
@@ -525,6 +560,15 @@ def prepare(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
     b22_digest = prior.sha256_file(args.b22_checkpoint)
     if b22_digest != locked["b22_checkpoint_sha256"]:
         raise ValueError(f"B22 checkpoint drift: {b22_digest}")
+    representation_digest = prior.sha256_file(args.representation_checkpoint)
+    if representation_digest != locked["representation_checkpoint_sha256"]:
+        raise ValueError(f"representation checkpoint drift: {representation_digest}")
+    representation_max_atoms = _representation_max_atoms(args.representation_checkpoint)
+    if representation_max_atoms != int(prereg["max_atoms"]):
+        raise ValueError(
+            "graph-slot contract drift: "
+            f"representation={representation_max_atoms}, protocol={prereg['max_atoms']}"
+        )
     dev_sources = {
         _canonical(row.get("source_smiles"))
         for row in rows
@@ -617,6 +661,8 @@ def prepare(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
         "generation_property_oracle_access": False,
         "support_audit_used_probe_targets": False,
         "support_audit": audit,
+        "representation_checkpoint_sha256": representation_digest,
+        "representation_max_atoms": representation_max_atoms,
         "fit_pairs_sha256": prior.sha256_file(args.output_dir / "fit_pairs.pkl"),
         "calibration_pairs_sha256": prior.sha256_file(args.output_dir / "calibration_pairs.pkl"),
         "expanded_vocabulary_sha256": prior.sha256_file(vocabulary_path),
@@ -699,6 +745,20 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
     representation, representation_config, _summary = base.load_representation(
         args.representation_checkpoint, args.representation_summary, device
     )
+    representation_max_atoms = int(representation_config["max_atoms"])
+    expected_max_atoms = int(prereg["max_atoms"])
+    fit_slot_counts = _pair_slot_counts(fit_pairs)
+    calibration_slot_counts = _pair_slot_counts(calibration_pairs)
+    if (
+        representation_max_atoms != expected_max_atoms
+        or fit_slot_counts != {expected_max_atoms}
+        or calibration_slot_counts != {expected_max_atoms}
+    ):
+        raise ValueError(
+            "graph-slot contract drift before training: "
+            f"representation={representation_max_atoms}, fit={sorted(fit_slot_counts)}, "
+            f"calibration={sorted(calibration_slot_counts)}, protocol={expected_max_atoms}"
+        )
     old_vocabulary = d0.b37.checkpoint_vocabulary(b22_checkpoint)
     vocabulary = _expanded_vocabulary(old_vocabulary, fit_pairs)
     if vocabulary["sha256"] != prepare_summary["support_audit"]["vocabulary"]["sha256"]:

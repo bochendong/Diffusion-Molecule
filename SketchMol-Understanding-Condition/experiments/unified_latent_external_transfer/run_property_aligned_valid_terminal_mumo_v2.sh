@@ -22,7 +22,7 @@ PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 ADMET_PYTHON_BIN="${SUCC_ADMET_PYTHON_BIN:-/home/bdong/.venvs/admet_ai/bin/python}"
 SHARED_REPO_DIR="${SUCC_SHARED_REPO_DIR:-/scratch/bdong/projects/Diffusion-Molecule}"
 PROJECT_DIR="$SHARED_REPO_DIR/SketchMol-Understanding-Condition"
-RUN_ROOT="${SUCC_B_MUMO_V2_ROOT:-$PROJECT_DIR/outputs/property_aligned_valid_terminal_mumo_v2_vocab_expanded/seed_2211}"
+RUN_ROOT="${SUCC_B_MUMO_V2_ROOT:-$PROJECT_DIR/outputs/property_aligned_valid_terminal_mumo_v2_vocab_expanded_max64/seed_2211}"
 DATA_DIR="$PROJECT_DIR/outputs/unified_constraint_agent_mumo_parallel_evidence_v8/seed_1711/data"
 PREVIOUS_ROOT="$PROJECT_DIR/outputs/b_series_external_mumo_transfer_v1/seed_2191"
 JOINT_DATASET="$PROJECT_DIR/outputs/unified_smiles_generator_joint_v2/dataset"
@@ -79,6 +79,7 @@ case "$STAGE" in
       --preregistration "$PREREG" \
       --data-dir "$DATA_DIR" \
       --previous-conditions "$PREVIOUS_ROOT/prepare/generation_conditions.jsonl" \
+      --representation-checkpoint "$REPRESENTATION_DIR/graph_latent_autoencoder.pt" \
       --b22-checkpoint "$B22_DIR/valid_early_stop_delta_diffusion.pt" \
       --output-dir "$PREPARE_DIR" \
       --workers "${SLURM_CPUS_PER_TASK:-1}"

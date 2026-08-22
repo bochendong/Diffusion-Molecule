@@ -26,6 +26,8 @@ def test_preregistration_locks_direct_signed_set_and_exact_n20():
     assert payload["numeric_adapter"] is False
     assert payload["signed_property_set_direct_conditioning"] is True
     assert payload["train_only_graph_state_vocabulary_expansion"] is True
+    assert payload["graph_slot_contract"] == "representation_checkpoint_equals_pair_tensor_slots"
+    assert payload["max_atoms"] == 64
     assert payload["condition_router_training"] is True
     assert payload["transport_training"] is True
     assert payload["event_kernel_training"] is True
@@ -42,6 +44,8 @@ def test_preregistration_locks_direct_signed_set_and_exact_n20():
     assert payload["engineering_amendment"]["model_training_started"] is False
     assert payload["engineering_amendment"]["probe_target_used_for_support_audit"] is False
     assert payload["engineering_amendment"]["probe_target_available_to_training_or_generation_process"] is False
+    assert payload["graph_slot_amendment"]["failed_job_id"] == 20280538
+    assert payload["graph_slot_amendment"]["optimizer_step_completed"] is False
 
 
 def test_signed_property_tokens_are_explicit_and_masked():
@@ -125,6 +129,25 @@ def test_vocabulary_expansion_preserves_old_action_prefix(monkeypatch):
     assert expanded["added_edge_state_count"] == 1
 
 
+def test_pair_slot_contract_rejects_inconsistent_edge_axes():
+    module = load_runner()
+
+    class Example:
+        atomic_number = np.zeros(64)
+        bond = np.zeros((64, 63))
+
+    class Pair:
+        source = Example()
+        target = Example()
+
+    try:
+        module._pair_slot_counts([Pair()])
+    except ValueError as error:
+        assert "inconsistent node and edge axes" in str(error)
+    else:
+        raise AssertionError("inconsistent graph axes must fail before training")
+
+
 def test_slurm_dag_separates_oracle_and_science_gate():
     submit = (EXPERIMENT / "submit_property_aligned_valid_terminal_mumo_v2.sh").read_text()
     assert "afterok:$prepare_id" in submit
@@ -133,4 +156,6 @@ def test_slurm_dag_separates_oracle_and_science_gate():
     assert "nvidia_h100_80gb_hbm3_2g.20gb:1" in submit
     run = (EXPERIMENT / "run_property_aligned_valid_terminal_mumo_v2.sh").read_text()
     assert "run_external_multiproperty_generated_oracle_pipeline.sh" in run
+    assert '--representation-checkpoint "$REPRESENTATION_DIR/graph_latent_autoencoder.pt"' in run
+    assert "property_aligned_valid_terminal_mumo_v2_vocab_expanded_max64" in run
     assert 'case "$STAGE" in' in run
