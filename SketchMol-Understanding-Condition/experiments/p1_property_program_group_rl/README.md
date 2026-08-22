@@ -68,3 +68,10 @@ For infrastructure-interrupted jobs, the evaluator accepts
 `--allow-condition-intersection` to produce a clearly prefixed `interim_*`
 verdict from conditions that have all 256 raw candidates in both models. This
 diagnostic never replaces the preregistered full-coverage final gate.
+
+When scheduling latency is the bottleneck, run
+`submit_p1_fast_hard_gate.sh`. It freezes 128 conditions each from 6p and 7p,
+generates only the first 20 raw candidates, and reports k=1/4/8/20. Its
+one-hour GPU walltime is designed for backfill and answers the missing
+hard-complexity kill question quickly; it is explicitly not the final n=256
+P1 result.
