@@ -54,3 +54,7 @@ Primary artifacts:
 
 The generator also writes `diagnostic_property_reranked_selected.csv` for
 backward compatibility. P1 excludes that file from every reported metric.
+
+GPU jobs default to the Nibi `def-hup-ab_gpu` account; the CPU finalizer uses
+`def-hup-ab`. Override them separately with `SUCC_P1_GPU_ACCOUNT` and
+`SUCC_P1_CPU_ACCOUNT` when needed.

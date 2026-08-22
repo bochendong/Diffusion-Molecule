@@ -10,7 +10,8 @@ cd "$REPO_DIR"
 
 command -v sbatch >/dev/null 2>&1 || { echo "ERROR: sbatch not found; run this launcher on Nibi" >&2; exit 2; }
 
-ACCOUNT="${SUCC_P1_ACCOUNT:-def-hup-ab}"
+GPU_ACCOUNT="${SUCC_P1_GPU_ACCOUNT:-${SUCC_P1_ACCOUNT:-def-hup-ab_gpu}}"
+CPU_ACCOUNT="${SUCC_P1_CPU_ACCOUNT:-def-hup-ab}"
 MAIL_USER="${SUCC_P1_MAIL_USER:-dongbochen1218@gmail.com}"
 LOG_DIR="${SUCC_P1_LOG_DIR:-$PROJECT_DIR/logs/p1_property_program_group_rl}"
 mkdir -p "$LOG_DIR"
@@ -33,7 +34,7 @@ for variant in "${VARIANTS[@]}"; do
   fi
   sbatch_args=(
     --parsable
-    --account="$ACCOUNT"
+    --account="$GPU_ACCOUNT"
     --job-name="p1-$short_name"
     --time="$time_limit"
     --mem="${SUCC_P1_MEM:-24G}"
@@ -63,7 +64,7 @@ done
 dependency="$(IFS=:; echo "${job_ids[*]}")"
 final_job="$(sbatch \
   --parsable \
-  --account="$ACCOUNT" \
+  --account="$CPU_ACCOUNT" \
   --job-name="p1-finalize" \
   --time="${SUCC_P1_FINALIZE_TIME:-01:30:00}" \
   --mem="${SUCC_P1_FINALIZE_MEM:-16G}" \
