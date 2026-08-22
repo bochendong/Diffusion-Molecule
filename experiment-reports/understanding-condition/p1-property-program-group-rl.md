@@ -83,6 +83,13 @@ available primary confidence checks exclude zero. This is evidence against the
 "k=256 only" failure mode, but not yet evidence for compositional-complexity
 extrapolation.
 
+The one-shot picture is mixed and should not be hidden: Group-RL improves the
+2p/3p paired prefix from 12.64% to 14.70%, but decreases OOD one-shot from
+2.38% to 1.64%; the OOD advantage appears from k=4 onward. Across the full
+n=256 pools, 2p/3p validity rises from 30.02% to 34.93%, whereas OOD validity
+falls from 8.90% to 8.34%. Thus the current OOD gain is a low-budget sampling
+gain, not a uniformly better first draw or validity result.
+
 The infrastructure reruns are:
 
 - `20300381` — 2p-7p SFT;
