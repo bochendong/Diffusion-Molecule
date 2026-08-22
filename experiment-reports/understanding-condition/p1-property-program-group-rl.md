@@ -56,3 +56,39 @@ Implementation and the machine-readable preregistration live in
 `SketchMol-Understanding-Condition/experiments/p1_property_program_group_rl/`.
 The Nibi finalizer will write the first result to
 `SketchMol-Understanding-Condition/outputs/p1_property_program_group_rl_seed7/final/p1_report.md`.
+
+## Interim result after Nibi node failures (2026-08-22)
+
+Three of the four generation jobs ended in Nibi `NODE_FAIL`, after writing only
+complete n=256 condition groups. Before resubmission could overwrite those
+files, they were frozen under
+`outputs/p1_property_program_group_rl_seed7/interim_nodefail_snapshot/` and
+evaluated on the paired SFT/Group-RL intersections.
+
+Coverage is 1,408 / 6,000 conditions for 2p-7p and 672 / 1,000 for OOD. The
+2p-7p prefix contains only 2p and 3p conditions, so it cannot test the
+preregistered 6p/7p claim and must not be treated as the final gate.
+
+| benchmark | budget | SFT raw | Group-RL raw | delta raw | SFT empirical pass@k | Group-RL empirical pass@k | delta pass@k |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 2p-7p paired prefix | 8 | 13.04% | **16.37%** | **+3.33pp** [2.46, 4.22] | 54.40% | **63.99%** | **+9.59pp** [6.68, 12.50] |
+| 2p-7p paired prefix | 20 | 12.94% | **16.36%** | **+3.42pp** [2.87, 3.99] | 75.43% | **83.17%** | **+7.74pp** [5.54, 10.01] |
+| OOD paired prefix | 8 | 1.43% | **2.12%** | **+0.69pp** [0.20, 1.19] | 10.57% | **15.48%** | **+4.91pp** [1.49, 8.33] |
+| OOD paired prefix | 20 | 1.50% | **1.93%** | **+0.43pp** [0.12, 0.74] | 23.07% | **30.95%** | **+7.89pp** [3.57, 12.20] |
+
+The interim verdict is `interim_mixed_or_negative` solely because the missing
+6p/7p strata make eight preregistered hard-complexity checks unavailable. All
+available overall 2p-7p and OOD point checks at k=8/20 pass, and all three
+available primary confidence checks exclude zero. This is evidence against the
+"k=256 only" failure mode, but not yet evidence for compositional-complexity
+extrapolation.
+
+The infrastructure reruns are:
+
+- `20300381` — 2p-7p SFT;
+- `20300408` — 2p-7p Group-RL;
+- `20300462` — OOD Group-RL;
+- `20300595` — dependent finalizer.
+
+At the time of this update all four are pending because the requested GPU node
+is unavailable. The completed OOD SFT pool from job `20285887` is retained.
