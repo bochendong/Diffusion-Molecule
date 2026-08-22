@@ -41,6 +41,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--bootstrap-resamples", type=int, default=5000)
     parser.add_argument("--seed", type=int, default=20260822)
     parser.add_argument("--protocol", type=Path, default=None)
+    parser.add_argument(
+        "--allow-condition-intersection",
+        action="store_true",
+        help="Evaluate only conditions complete in both models. Marks every output as interim.",
+    )
     return parser.parse_args(argv)
 
 
@@ -277,25 +282,29 @@ def gate_result(deltas: Sequence[Mapping[str, object]]) -> dict[str, object]:
     checks: dict[str, bool] = {}
     for budget in (8, 20):
         for benchmark in ("two_p_to_seven_p", "ood"):
-            row = indexed[(benchmark, "overall", "all", budget)]
+            row = indexed.get((benchmark, "overall", "all", budget))
             for metric in ("raw_success_fraction", "empirical_prefix_pass_at_k"):
-                checks[f"{benchmark}_k{budget}_{metric}_positive"] = float(row[f"delta_{metric}"]) > 0.0
+                checks[f"{benchmark}_k{budget}_{metric}_positive"] = bool(
+                    row is not None and float(row[f"delta_{metric}"]) > 0.0
+                )
         for count in ("6", "7"):
-            row = indexed[("two_p_to_seven_p", "property_count", count, budget)]
+            row = indexed.get(("two_p_to_seven_p", "property_count", count, budget))
             for metric in ("raw_success_fraction", "empirical_prefix_pass_at_k"):
-                checks[f"hard_{count}p_k{budget}_{metric}_positive"] = float(row[f"delta_{metric}"]) > 0.0
+                checks[f"hard_{count}p_k{budget}_{metric}_positive"] = bool(
+                    row is not None and float(row[f"delta_{metric}"]) > 0.0
+                )
 
     point_gate = all(checks.values())
     ci_checks = {}
     for budget in (8, 20):
-        row = indexed[("two_p_to_seven_p", "overall", "all", budget)]
-        ci_checks[f"two_p_to_seven_p_k{budget}_raw_ci_positive"] = float(
-            row["delta_raw_success_fraction_ci95_low"]
-        ) > 0.0
-    row_k8 = indexed[("two_p_to_seven_p", "overall", "all", 8)]
-    ci_checks["two_p_to_seven_p_k8_pass_ci_positive"] = float(
-        row_k8["delta_empirical_prefix_pass_at_k_ci95_low"]
-    ) > 0.0
+        row = indexed.get(("two_p_to_seven_p", "overall", "all", budget))
+        ci_checks[f"two_p_to_seven_p_k{budget}_raw_ci_positive"] = bool(
+            row is not None and float(row["delta_raw_success_fraction_ci95_low"]) > 0.0
+        )
+    row_k8 = indexed.get(("two_p_to_seven_p", "overall", "all", 8))
+    ci_checks["two_p_to_seven_p_k8_pass_ci_positive"] = bool(
+        row_k8 is not None and float(row_k8["delta_empirical_prefix_pass_at_k_ci95_low"]) > 0.0
+    )
 
     if point_gate and all(ci_checks.values()):
         verdict = "strong_single_seed_signal"
@@ -304,9 +313,12 @@ def gate_result(deltas: Sequence[Mapping[str, object]]) -> dict[str, object]:
     else:
         low_budget_positive = any(checks.values())
         high_budget_rows = [
-            indexed[(benchmark, "overall", "all", 256)] for benchmark in ("two_p_to_seven_p", "ood")
+            indexed.get((benchmark, "overall", "all", 256)) for benchmark in ("two_p_to_seven_p", "ood")
         ]
-        high_budget_wins = all(float(row["delta_empirical_prefix_pass_at_k"]) > 0.0 for row in high_budget_rows)
+        high_budget_wins = all(
+            row is not None and float(row["delta_empirical_prefix_pass_at_k"]) > 0.0
+            for row in high_budget_rows
+        )
         verdict = "sampling_heavy_only" if high_budget_wins and not low_budget_positive else "mixed_or_negative"
     return {"verdict": verdict, "point_checks": checks, "confidence_checks": ci_checks}
 
@@ -338,13 +350,26 @@ def render_report(
         "",
         f"Verdict: **{gate['verdict']}**.",
         "",
-        "All metrics use raw candidates in seeded generation order. `k=1` is the first raw draw. The generator's property-reranked selected molecule is diagnostic-only and is never reported as one-shot. `empirical prefix pass@k` is any strict success among the first k draws; `estimated pass@k` is computed from all n=256 raw outcomes.",
-        "",
-        "## Overall sampling scaling",
-        "",
-        "| benchmark | model | k | raw success | empirical pass@k | estimated pass@k | validity | unique valid / k |",
-        "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
+    coverage = dict(gate.get("coverage") or {})
+    for benchmark in ("two_p_to_seven_p", "ood"):
+        item = dict(coverage.get(benchmark) or {})
+        if item:
+            lines.append(
+                f"Coverage `{benchmark}`: {int(item['paired_intersection_conditions']):,} / "
+                f"{int(item['full_conditions']):,} paired conditions."
+            )
+    lines.extend(
+        [
+            "",
+            "All metrics use raw candidates in seeded generation order. `k=1` is the first raw draw. The generator's property-reranked selected molecule is diagnostic-only and is never reported as one-shot. `empirical prefix pass@k` is any strict success among the first k draws; `estimated pass@k` is computed from all n=256 raw outcomes.",
+            "",
+            "## Overall sampling scaling",
+            "",
+            "| benchmark | model | k | raw success | empirical pass@k | estimated pass@k | validity | unique valid / k |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
     for benchmark in ("two_p_to_seven_p", "ood"):
         for model in MODELS:
             for budget in DEFAULT_BUDGETS:
@@ -422,6 +447,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         ("ood", "sft"): args.ood_sft_candidates,
         ("ood", "group_rl"): args.ood_group_rl_candidates,
     }
+    candidate_groups = {
+        key: load_candidate_groups(path, required_count=max_budget) for key, path in candidate_paths.items()
+    }
+    coverage: dict[str, dict[str, int]] = {}
+    if args.allow_condition_intersection:
+        for benchmark in eval_sets:
+            original_eval = eval_sets[benchmark]
+            eval_keys = {condition_key(row) for row in original_eval}
+            common = set(eval_keys)
+            model_counts = {}
+            for model in MODELS:
+                groups = candidate_groups[(benchmark, model)]
+                model_counts[f"{model}_complete_conditions"] = len(groups)
+                common &= set(groups)
+            eval_sets[benchmark] = [row for row in original_eval if condition_key(row) in common]
+            for model in MODELS:
+                groups = candidate_groups[(benchmark, model)]
+                candidate_groups[(benchmark, model)] = {key: groups[key] for key in common}
+            coverage[benchmark] = {
+                "full_conditions": len(original_eval),
+                "paired_intersection_conditions": len(common),
+                **model_counts,
+            }
+            if not common:
+                raise RuntimeError(f"{benchmark}: no complete paired conditions for interim evaluation")
     condition_rows: list[dict[str, object]] = []
     for (benchmark, model), path in candidate_paths.items():
         condition_rows.extend(
@@ -429,7 +479,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 benchmark,
                 model,
                 eval_sets[benchmark],
-                load_candidate_groups(path, required_count=max_budget),
+                candidate_groups[(benchmark, model)],
                 budgets,
             )
         )
@@ -444,6 +494,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         seed=args.seed,
     )
     gate = gate_result(deltas)
+    gate["coverage"] = coverage or {
+        benchmark: {
+            "full_conditions": len(rows),
+            "paired_intersection_conditions": len(rows),
+            "sft_complete_conditions": len(rows),
+            "group_rl_complete_conditions": len(rows),
+        }
+        for benchmark, rows in eval_sets.items()
+    }
+    gate["interim"] = bool(args.allow_condition_intersection)
+    if args.allow_condition_intersection:
+        gate["verdict"] = f"interim_{gate['verdict']}"
     args.output_dir.mkdir(parents=True, exist_ok=True)
     write_csv(args.output_dir / "p1_condition_metrics.csv", condition_rows)
     write_csv(args.output_dir / "p1_scaling_summary.csv", summary)

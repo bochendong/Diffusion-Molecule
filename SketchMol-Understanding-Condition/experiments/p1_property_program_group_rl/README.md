@@ -63,3 +63,8 @@ If a historical Group-RL checkpoint has to be reconstructed from its frozen
 SFT parent, `validate_p1_recovered_checkpoint.py` compares its arguments and
 one-epoch training history with source jobs `16583941` and `16742519`. The
 Group-RL candidate job stops before inference if this provenance guard fails.
+
+For infrastructure-interrupted jobs, the evaluator accepts
+`--allow-condition-intersection` to produce a clearly prefixed `interim_*`
+verdict from conditions that have all 256 raw candidates in both models. This
+diagnostic never replaces the preregistered full-coverage final gate.
