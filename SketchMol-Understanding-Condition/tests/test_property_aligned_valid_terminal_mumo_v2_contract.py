@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,6 +28,7 @@ def test_preregistration_locks_direct_signed_set_and_exact_n20():
     assert payload["signed_property_set_direct_conditioning"] is True
     assert payload["train_only_graph_state_vocabulary_expansion"] is True
     assert payload["graph_slot_contract"] == "representation_checkpoint_equals_pair_tensor_slots"
+    assert payload["terminal_dead_end_policy"] == "count_as_raw_failed_attempt_without_retry"
     assert payload["max_atoms"] == 64
     assert payload["condition_router_training"] is True
     assert payload["transport_training"] is True
@@ -46,6 +48,8 @@ def test_preregistration_locks_direct_signed_set_and_exact_n20():
     assert payload["engineering_amendment"]["probe_target_available_to_training_or_generation_process"] is False
     assert payload["graph_slot_amendment"]["failed_job_id"] == 20280538
     assert payload["graph_slot_amendment"]["optimizer_step_completed"] is False
+    assert payload["terminal_dead_end_amendment"]["failed_job_id"] == 20283293
+    assert payload["terminal_dead_end_amendment"]["candidate_artifact_written"] is False
 
 
 def test_signed_property_tokens_are_explicit_and_masked():
@@ -148,6 +152,27 @@ def test_pair_slot_contract_rejects_inconsistent_edge_axes():
         raise AssertionError("inconsistent graph axes must fail before training")
 
 
+def test_dead_end_support_counts_raw_failure_without_retry():
+    module = load_runner()
+    torch = pytest.importorskip("torch")
+
+    class FakeExactSupport:
+        def __call__(self, *_args, **_kwargs):
+            legal = torch.tensor([[False, False], [True, False]])
+            return legal, {"stop_masked": torch.tensor([True, False])}
+
+        @staticmethod
+        def manifest():
+            return {"state_checks": 2}
+
+    support = module._AbsorbingFailedAttemptSupport(FakeExactSupport())
+    legal, diagnostics = support(None)
+    assert legal.tolist() == [[True, False], [True, False]]
+    assert diagnostics["absorbing_failed_attempt"].tolist() == [True, False]
+    assert support.manifest()["dead_end_absorptions"] == 1
+    assert support.manifest()["dead_end_policy"] == "count_as_raw_failed_attempt_without_retry"
+
+
 def test_slurm_dag_separates_oracle_and_science_gate():
     submit = (EXPERIMENT / "submit_property_aligned_valid_terminal_mumo_v2.sh").read_text()
     assert "afterok:$prepare_id" in submit
@@ -157,5 +182,5 @@ def test_slurm_dag_separates_oracle_and_science_gate():
     run = (EXPERIMENT / "run_property_aligned_valid_terminal_mumo_v2.sh").read_text()
     assert "run_external_multiproperty_generated_oracle_pipeline.sh" in run
     assert '--representation-checkpoint "$REPRESENTATION_DIR/graph_latent_autoencoder.pt"' in run
-    assert "property_aligned_valid_terminal_mumo_v2_vocab_expanded_max64" in run
+    assert "property_aligned_valid_terminal_mumo_v2_deadend_safe" in run
     assert 'case "$STAGE" in' in run

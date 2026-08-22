@@ -92,10 +92,11 @@ def read_preregistration(path: Path) -> dict[str, object]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     required = {
         "protocol": PROTOCOL,
-        "status": "amended_after_engineering_failures_before_optimization_or_candidate_generation",
+        "status": "amended_after_post_training_generation_failure_before_candidate_artifact_or_oracle",
         "warm_start_b41": True,
         "train_only_graph_state_vocabulary_expansion": True,
         "graph_slot_contract": "representation_checkpoint_equals_pair_tensor_slots",
+        "terminal_dead_end_policy": "count_as_raw_failed_attempt_without_retry",
         "numeric_adapter": False,
         "signed_property_set_direct_conditioning": True,
         "mumo_train_graph_event_support": True,
@@ -399,6 +400,40 @@ def _pair_slot_counts(pairs: Sequence[object]) -> set[int]:
             if tuple(example.bond.shape) != (node_slots, node_slots):
                 raise ValueError("materialized graph has inconsistent node and edge axes")
     return counts
+
+
+class _AbsorbingFailedAttemptSupport:
+    """Make support dead ends numerically total without repairing the molecule.
+
+    Exact STOP remains available only for materializable graph states.  If a
+    non-materializable partial state has no legal outgoing event, the sampling
+    machinery receives an absorbing STOP solely so that the raw attempt can be
+    recorded as invalid.  The trajectory is not retried, resampled, repaired,
+    or replaced.
+    """
+
+    def __init__(self, exact_support: object) -> None:
+        self.exact_support = exact_support
+        self.dead_end_absorptions = 0
+
+    def __call__(self, *args, **kwargs):
+        legal, diagnostics = self.exact_support(*args, **kwargs)
+        dead_end = ~legal.any(dim=1)
+        if bool(dead_end.any()):
+            legal = legal.clone()
+            legal[dead_end, 0] = True
+            self.dead_end_absorptions += int(dead_end.sum().detach().cpu())
+        revised = dict(diagnostics)
+        revised["absorbing_failed_attempt"] = dead_end
+        revised["stop_masked"] = ~legal[:, 0]
+        return legal, revised
+
+    def manifest(self) -> dict[str, object]:
+        return {
+            **dict(self.exact_support.manifest()),
+            "dead_end_absorptions": self.dead_end_absorptions,
+            "dead_end_policy": "count_as_raw_failed_attempt_without_retry",
+        }
 
 
 def _load_expanded_b41_state(
@@ -822,7 +857,9 @@ def trainfreeze(args: argparse.Namespace, prereg: Mapping[str, object]) -> int:
         },
         checkpoint_path,
     )
-    exact_support = d0.valid_terminal.ExactMoleculeStopSupport(vocabulary)
+    exact_support = _AbsorbingFailedAttemptSupport(
+        d0.valid_terminal.ExactMoleculeStopSupport(vocabulary)
+    )
     original_support = b41.viability_event_mask
     rows: list[dict[str, object]] = []
     try:

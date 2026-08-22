@@ -1,6 +1,6 @@
 {
   "protocol": "property_aligned_valid_terminal_mumo_v2",
-  "status": "amended_after_engineering_failures_before_optimization_or_candidate_generation",
+  "status": "amended_after_post_training_generation_failure_before_candidate_artifact_or_oracle",
   "engineering_amendment": {
     "failed_job_id": 20254004,
     "failure_stage": "train_only_support_audit_event_encoding",
@@ -28,6 +28,19 @@
     "root_cause": "MuMO pairs were materialized with 48 graph slots while the locked representation and B41 event layout use 64 slots",
     "repair": "lock max_atoms to the representation checkpoint, materialize every fit/calibration graph with 64 slots, and reject any checkpoint/pair/protocol slot mismatch in prepare and trainfreeze"
   },
+  "terminal_dead_end_amendment": {
+    "failed_job_id": 20283293,
+    "failure_stage": "post_training_first_condition_candidate_generation",
+    "failure_signature": "CUDA probability tensor contains inf, nan or element below zero",
+    "main_training_epochs_completed": 2,
+    "event_finetune_epochs_completed": 1,
+    "checkpoint_written": true,
+    "candidate_artifact_written": false,
+    "property_oracle_accessed": false,
+    "scientific_metric_observed": false,
+    "root_cause": "exact molecule STOP was masked in a non-materializable partial graph that also had no legal outgoing supported event, producing an all-false categorical support row",
+    "repair": "absorb the dead-end trajectory as the same raw invalid attempt; do not retry, resample, repair, replace, or select candidates"
+  },
   "scientific_hypothesis": "Rebuilding valid-terminal graph-event support on MuMO train pairs and directly conditioning the B transport on an explicit six-element signed property set will convert the B-series internal structural competence into prospective MuMO OOD property support without a numeric adapter, candidate ranking, retries, target access, or oracle selection.",
   "interpretation_boundary": "This is a single-seed train-heldout prospective route gate, not an official test result. The probe is selected source-only from MuMO train-fit rows before its paired targets are sealed; all original V8 dev sources and every source opened by B external transfer v1 are excluded.",
   "seed": 2211,
@@ -43,6 +56,7 @@
   "warm_start_b41": true,
   "train_only_graph_state_vocabulary_expansion": true,
   "graph_slot_contract": "representation_checkpoint_equals_pair_tensor_slots",
+  "terminal_dead_end_policy": "count_as_raw_failed_attempt_without_retry",
   "numeric_adapter": false,
   "signed_property_set_direct_conditioning": true,
   "mumo_train_graph_event_support": true,
@@ -137,7 +151,7 @@
       "validity": 1.0
     }
   },
-  "implementation_sha256": "0c48f36fe9ba3d6d16698f1af721ae6d0007bacf05ef5381859ac8e2c454822b",
+  "implementation_sha256": "9a327a66497162f3708b510d34bf029707468abd0b98a97aed58570c2f3bae49",
   "locked_inputs": {
     "mumo_v8_manifest_sha256": "850fd7b5b34e23925a007cbdc12217a2ed234be9fd8b24aa3ca405f8b8a0a0e0",
     "mumo_v8_shards_aggregate_sha256": "f8d3cdee7fc7de79f6dd98cceb8e26a06041960f1ccfd33f4ef3a993d9d58cd3",
