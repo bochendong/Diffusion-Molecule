@@ -1,0 +1,85 @@
+{
+  "direction": "D4",
+  "title": "Direct SMILES Property Programs with Group-Relative RL",
+  "status": "preregistered_single_seed_gate",
+  "seed": 7,
+  "hypothesis": "Property-program conditioning plus group-relative RL improves compositional molecular generation at low candidate budgets, with the largest gains on 6-7-property and OOD objectives.",
+  "training": {
+    "new_training_allowed": false,
+    "sft_checkpoint": "existing_v2_mixed_condition",
+    "group_rl_checkpoint": "existing_v1_group_relative_rl"
+  },
+  "benchmarks": {
+    "two_p_to_seven_p": {
+      "candidate_count": 256,
+      "decoding": {
+        "temperature": 0.85,
+        "top_k": 40,
+        "top_p": 0.95,
+        "repetition_penalty": 1.15
+      }
+    },
+    "ood": {
+      "candidate_count": 256,
+      "decoding": {
+        "temperature": 0.7,
+        "top_k": 24,
+        "top_p": 0.9,
+        "repetition_penalty": 1.2
+      }
+    }
+  },
+  "candidate_budgets": [
+    1,
+    4,
+    8,
+    20,
+    32,
+    64,
+    128,
+    256
+  ],
+  "metrics": [
+    "raw_candidate_strict_success_fraction",
+    "empirical_prefix_pass_at_k",
+    "estimated_pass_at_k_from_n256",
+    "validity_fraction",
+    "unique_valid_fraction"
+  ],
+  "strata": {
+    "two_p_to_seven_p": [
+      "property_count_2",
+      "property_count_3",
+      "property_count_4",
+      "property_count_5",
+      "property_count_6",
+      "property_count_7"
+    ],
+    "ood": [
+      "forward_extreme",
+      "rare_combo",
+      "reverse_stimulation"
+    ]
+  },
+  "reporting_contract": {
+    "candidate_order": "raw_seeded_sampling_order",
+    "selected_one_is_one_shot": false,
+    "property_reranked_prediction_used_for_metrics": false,
+    "paired_sft_group_rl_conditions_required": true,
+    "confidence_interval": "paired_condition_bootstrap_95pct"
+  },
+  "primary_gate": {
+    "budgets": [
+      8,
+      20
+    ],
+    "requirements": [
+      "group_rl_minus_sft_raw_success_positive_on_two_p_to_seven_p_overall",
+      "group_rl_minus_sft_empirical_pass_at_k_positive_on_two_p_to_seven_p_overall",
+      "group_rl_minus_sft_raw_success_positive_on_property_counts_6_and_7",
+      "group_rl_minus_sft_empirical_pass_at_k_positive_on_property_counts_6_and_7",
+      "group_rl_minus_sft_raw_success_positive_on_ood_overall",
+      "group_rl_minus_sft_empirical_pass_at_k_positive_on_ood_overall"
+    ]
+  }
+}
