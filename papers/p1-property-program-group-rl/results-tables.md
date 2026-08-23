@@ -59,14 +59,25 @@ verifier and must never be described as one-shot.
 | GeLLM3O-Mistral | reported | 90.2 | 15.2 | 35.4 |
 | GeLLM3O-Llama | reported | 90.1 | 14.5 | 40.4 |
 | MolEditRL | reported | 96.6 | **45.0** | **72.7** |
-| MolProgram Group-RL | first candidate | 23.4 | 0.0 | 3.9 |
-| MolProgram SFT | assisted @20 | 96.4 | 0.0 | 17.9 |
-| MolProgram Group-RL | assisted @20 | 97.2 | 0.0 | 19.0 |
+| MolProgram--P4 | full matched evaluation pending | -- | -- | -- |
 
-On the matched seed, Group-RL only improves the assisted relaxed-threshold
-score by 1.1 points over SFT. Both checkpoints remain at zero for the official
-strict 0.65 threshold and far below MolEditRL. Editing currently supports the
-unified-interface claim, not the competitive-performance claim.
+The completed P4 run is a smaller 20-input-per-task pilot and therefore cannot
+populate the full external comparison. Its honest candidate-level diagnostic
+is:
+
+| pilot variant | inputs/task | candidates/input | validity | Acc_all(0.65) | Acc_all(0.15) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Protected base | 20 | 20 | **36.8** | 0.0 | **11.8** |
+| P4 SFT | 20 | 20 | 32.0 | 0.0 | 7.8 |
+| P4 Group-RL | 20 | 20 | 32.5 | 0.0 | 7.5 |
+
+P4 is a negative result. Neither distillation stage recovers any strict
+0.65-threshold success, and both reduce candidate-level validity and relaxed
+accuracy relative to the protected base checkpoint. The any@20 Group-RL
+diagnostic reaches 96.5% validity and 48.0% relaxed accuracy, but it is an
+any-hit event and must not be inserted into the candidate-level external
+table. Teacher coverage is 77%, and both trained checkpoints keep the de novo
+path bit-identical.
 
 ## Main external comparison: MuMOInstruct
 

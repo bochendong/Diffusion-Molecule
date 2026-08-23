@@ -64,10 +64,17 @@ driven by a large 7p regression. We therefore retain group 16 and report group
 The complete ten-task comparison is reported in
 Table~\ref{tab:moledit-full} rather than compressed into a macro-average.
 This exposes task-level failures under the matched 20-candidate, candidate-wise
-protocol. Raw@1 and pass@$k$ remain separate budget diagnostics. The older
-direct-SMILES editing checkpoint reached zero strict
-$\operatorname{Acc}_{\mathrm{all}}(.65)$ and therefore remains a diagnostic,
-not the result assigned to the preregistered P4 rows.
+protocol. Raw@1 and pass@$k$ remain separate budget diagnostics. The completed
+P4 distillation pilot also reaches zero strict
+$\operatorname{Acc}_{\mathrm{all}}(.65)$ across its 20 inputs per task. Its
+candidate-level mean validity is 32.5\% and its relaxed-threshold
+$\operatorname{Acc}_{\mathrm{all}}(.15)$ is 7.5\%, below the frozen base
+checkpoint's 36.8\% and 11.8\%, respectively. Teacher coverage reaches 77\%,
+and the checkpoint audit confirms that both SFT and Group-RL leave the de novo
+path bit-identical; the failure is therefore localized to the attempted
+source-conditioned editing transfer. Because the pilot uses a smaller
+evaluation set than the published comparison, these values do not populate
+Table~\ref{tab:moledit-full}.
 
 \subsection{MuMO source-fidelity diagnostic}
 \label{sec:appendix-mumo}

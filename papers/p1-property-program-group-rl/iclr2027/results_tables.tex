@@ -20,9 +20,14 @@ and overall/valid accuracy at two source-similarity thresholds. Following the be
 contract, every method generates 20 molecules per input and accuracy is
 computed candidate-wise over the complete unranked pool. Raw@1 and pass@$k$
 are budget diagnostics and are reported separately rather than mixed into the
-external comparison. The P4 cells remain blank until the frozen single-seed
-evaluation completes. We omit FCD because it is outside the present evaluation
-contract.
+external comparison. The completed P4 run does not pass its promotion gate:
+on its 20-input-per-task pilot, the final Group-RL student obtains zero
+$\operatorname{Acc}_{\mathrm{all}}(.65)$, 32.5\% mean validity, and 7.5\% mean
+$\operatorname{Acc}_{\mathrm{all}}(.15)$. Because this pilot is smaller than
+the published benchmark evaluation, it is reported in the appendix and does
+not populate the P4 row. Distillation preserves the source-free de novo path
+but does not make direct SMILES decoding a competitive source-preserving
+editor. We omit FCD because it is outside the present evaluation contract.
 
 \input{moledit_table1.tex}
 
