@@ -37,13 +37,17 @@ score by 1.1 points over SFT. Both checkpoints remain at zero for the official
 strict 0.65 threshold and far below MolEditRL. Editing currently supports the
 unified-interface claim, not the competitive-performance claim.
 
-## Pending external comparison: MuMOInstruct
+## External diagnostic: MuMOInstruct
 
-The table must use the official 20-candidate `SR`, `Similarity(success)`, and
-`RI(success)` metrics. Reported GeLLM3O targets are 76.8% IND SR and 90.8% OOD
-SR. Do not fill the MolProgram row with internal `Sim>=0.4` or proxy success.
-The same-oracle MolProgram evaluation is running as jobs `20329830 -> 20329832
--> 20329833`.
+The completed official 20-candidate evaluation gives MolProgram Group-RL
+50.4% property SR: 32.3% on IND tasks and 68.8% on OOD tasks. This is not a
+competitive source-editing result. Mean Tanimoto similarity among successful
+outputs is only 0.098, and no input passes the additional source-similarity
+diagnostic at 0.4. The result supports property control but shows that direct
+decoding usually reaches the target by generating a different molecule rather
+than preserving the source. Reported GeLLM3O targets remain 76.8% IND SR and
+90.8% OOD SR; these values should only enter a table with the corresponding
+official similarity and RI definitions.
 
 ## Internal de novo and OOD evidence
 

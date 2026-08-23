@@ -1,20 +1,128 @@
-\section{External Benchmark Snapshot}
-\label{sec:external-results-snapshot}
+\section{Results}
+\label{sec:results}
 
-Table~\ref{tab:sketchmol-fair40} is the currently completed external
-comparison.  Both methods receive forty generation attempts per condition;
-the score is the fraction of conditions for which at least one generated
-molecule satisfies all active properties.  MolProgram is competitive for
-low-order programs, but its average is lower because the gap grows for five-
-to seven-property programs.  We therefore do not claim state of the art from
-this table.
+We organize the results around three questions: whether group-relative
+post-training improves direct generation at practical candidate budgets,
+whether the improvement persists as property programs become more
+compositional, and where the present formulation fails when extended from
+de novo generation to source-conditioned editing. Unless stated otherwise,
+all MolProgram results use one frozen evaluation seed. Candidates are kept in
+generation order: $k=1$ is the first raw draw, and Pass@$k$ measures whether
+at least one of the first $k$ draws is a valid strict solution. No
+property-reranked output is reported as one-shot generation.
+
+\subsection{Group-relative post-training improves low-budget generation}
+\label{sec:results-budget}
+
+Table~\ref{tab:budget-scaling} compares SFT and Group-RL on 6,000
+two-to-seven-property programs and 1,000 out-of-distribution (OOD) programs.
+The central result is that the Group-RL gain is already present at small
+budgets rather than appearing only under best-of-256 search. On the 2p--7p
+benchmark, Group-RL increases first-draw strict success from 7.02\% to 8.93\%
+and Pass@8 from 35.37\% to 41.72\%. At $k=20$, it improves both the raw strict
+fraction (7.30\% to 9.41\%) and the probability of solving a program at least
+once (54.88\% to 62.52\%).
+
+The OOD result is more nuanced. SFT is slightly better on the first draw
+(3.50\% versus 3.20\%), so Group-RL does not uniformly improve one-shot
+generation. Once a small candidate group is available, however, Group-RL
+overtakes SFT: Pass@8 rises from 19.70\% to 23.60\%, and Pass@20 from 35.20\%
+to 41.70\%. Thus the post-training improvement is best understood as shifting
+probability mass toward useful regions of the conditional distribution, while
+leaving enough variance that its OOD benefit is clearer over small groups than
+on a single draw.
+
+\begin{table}[t]
+  \centering
+  \caption{Budget-transparent direct generation. ``Raw strict'' is the
+  candidate-level strict-success fraction among the first $k$ draws; Pass@$k$
+  is the condition-level probability of observing at least one strict
+  solution. Values are percentages.}
+  \label{tab:budget-scaling}
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{llrrrr}
+    \toprule
+    Evaluation & Method & $k$ & Raw strict & Pass@$k$ & Raw validity \\
+    \midrule
+    2p--7p & SFT      & 1  & 7.02 & 7.02 & 29.20 \\
+    2p--7p & Group-RL & 1  & \textbf{8.93} & \textbf{8.93} & \textbf{33.53} \\
+    2p--7p & SFT      & 8  & 7.26 & 35.37 & 28.85 \\
+    2p--7p & Group-RL & 8  & \textbf{9.28} & \textbf{41.72} & \textbf{33.86} \\
+    2p--7p & SFT      & 20 & 7.30 & 54.88 & 29.04 \\
+    2p--7p & Group-RL & 20 & \textbf{9.41} & \textbf{62.52} & \textbf{34.25} \\
+    \midrule
+    OOD & SFT      & 1  & \textbf{3.50} & \textbf{3.50} & \textbf{12.50} \\
+    OOD & Group-RL & 1  & 3.20 & 3.20 & 12.10 \\
+    OOD & SFT      & 8  & 3.20 & 19.70 & \textbf{11.92} \\
+    OOD & Group-RL & 8  & \textbf{3.78} & \textbf{23.60} & 11.63 \\
+    OOD & SFT      & 20 & 3.14 & 35.20 & 11.51 \\
+    OOD & Group-RL & 20 & \textbf{3.79} & \textbf{41.70} & \textbf{11.60} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{The gain persists as programs become more compositional}
+\label{sec:results-complexity}
+
+Table~\ref{tab:complexity-scaling} resolves Pass@8 and Pass@20 by the number
+of active properties. Absolute success decreases monotonically with program
+length for both models, confirming that the benchmark exposes a genuine
+compositional difficulty axis. Nevertheless, Group-RL improves every property
+count at both budgets. At $k=20$, the gains are 4.9 points for 6p and 8.4
+points for 7p programs; the largest increase occurs at 5p (11.8 points).
+The result therefore cannot be explained only by easier two-property
+conditions dominating the aggregate.
+
+The improvement is not simply a consequence of using a larger rollout group.
+On the fixed 6p/7p subset, increasing the training group from 16 to 64 raises
+raw validity but reduces Pass@20 from 50.78\% to 45.31\%, driven by a 7p drop
+from 50.78\% to 39.84\%. We retain the group-16 policy and treat the group-64
+run as a negative ablation: useful group-relative learning depends on the
+training distribution and regularization, not only on the number of sampled
+rollouts.
+
+\begin{table}[t]
+  \centering
+  \caption{Compositional scaling on the 2p--7p benchmark. Each cell reports
+  the percentage of programs solved by the indicated candidate budget.}
+  \label{tab:complexity-scaling}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{crrrrrr}
+    \toprule
+    & \multicolumn{2}{c}{Pass@8} & & \multicolumn{2}{c}{Pass@20} & \\
+    \cmidrule{2-3}\cmidrule{5-6}
+    Properties & SFT & Group-RL & $\Delta$ & SFT & Group-RL & $\Delta$ \\
+    \midrule
+    2 & 58.6 & \textbf{68.1} & +9.5 & 78.6 & \textbf{85.6} & +7.0 \\
+    3 & 45.4 & \textbf{52.6} & +7.2 & 66.0 & \textbf{73.7} & +7.7 \\
+    4 & 35.7 & \textbf{42.9} & +7.2 & 60.3 & \textbf{66.3} & +6.0 \\
+    5 & 30.2 & \textbf{36.1} & +5.9 & 48.7 & \textbf{60.5} & +11.8 \\
+    6 & 23.1 & \textbf{27.1} & +4.0 & 42.6 & \textbf{47.5} & +4.9 \\
+    7 & 19.2 & \textbf{23.5} & +4.3 & 33.1 & \textbf{41.5} & +8.4 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Matched-budget comparison with an image-based generator}
+\label{sec:results-external-denovo}
+
+We next compare with the reported SketchMol result under a matched budget of
+40 candidates per condition. Table~\ref{tab:sketchmol-fair40} shows a clear
+regime split. MolProgram is stronger on low-order programs, improving 2p by
+11.3 points and 3p by 6.4 points, and is within 0.9 points at 4p. SketchMol is
+stronger from 5p onward and leads the overall average by 5.0 points. This is
+not a state-of-the-art result; rather, it localizes the remaining gap to the
+high-order regime that motivates property-count curricula and verifier-based
+post-training. Importantly, MolProgram produces SMILES directly and does not
+retrieve or materialize molecules from an external candidate library.
 
 \begin{table}[t]
   \centering
   \caption{Strict success (\%) on the SketchMol-style multi-property de novo
-  benchmark with a matched 40-candidate budget.  SketchMol numbers are the
-  reported external reference.  MolProgram uses direct SMILES generation with
-  Group-RL post-training.}
+  benchmark with a matched 40-candidate budget. SketchMol values are the
+  reported external reference \citep{wang2025sketchmol}.}
   \label{tab:sketchmol-fair40}
   \small
   \setlength{\tabcolsep}{4.5pt}
@@ -28,39 +136,110 @@ this table.
   \end{tabular}
 \end{table}
 
-Table~\ref{tab:moledit-table1} gives the source-conditioned editing result
-under the MolEdit-Instruct Table~1 metric.  The direct row evaluates the first
-generated candidate.  The 20-candidate rows use a property-aware selector and
-are explicitly marked assisted; they must not be presented as one-shot
-generation.  Group-RL yields a small matched-seed improvement over SFT at the
-relaxed similarity threshold, but neither checkpoint succeeds at the strict
-0.65 threshold.  Editing presently supports a shared interface, not a
-competitive external-result claim.
+\subsection{Raw validity, rather than uniqueness, limits sample efficiency}
+\label{sec:results-validity}
+
+The budget curves expose a limitation hidden by selected-molecule validity.
+On 2p--7p, only 29.2\% of raw SFT draws and 33.5\% of raw Group-RL draws are
+valid at $k=1$; on OOD, raw validity is approximately 12\% for both models.
+Nearly every valid draw is unique, so the failure is not conventional mode
+collapse. Instead, most samples are nonempty strings that RDKit cannot parse.
+Group-RL improves in-distribution validity by about five points, but it does
+not repair OOD syntax. Consequently, high best-of-many validity should not be
+interpreted as a high probability of producing a valid molecule in one
+attempt.
+
+\begin{table}[t]
+  \centering
+  \caption{Frozen validation slots for syntax-safe decoding. Pending P2 rows
+  remain blank until the paired run completes; they are not backfilled with
+  selected-molecule validity.}
+  \label{tab:validity-repair}
+  \scriptsize
+  \setlength{\tabcolsep}{3.5pt}
+  \begin{tabular}{llrrr}
+    \toprule
+    Evaluation & Decoder & Raw validity@1 & Raw strict@1 & Pass@8 \\
+    \midrule
+    2p--7p & legacy Group-RL & 33.53 & 8.93 & 41.72 \\
+    2p--7p & syntax-safe Group-RL & -- & -- & -- \\
+    OOD & legacy Group-RL & 12.10 & 3.20 & 23.60 \\
+    OOD & syntax-safe Group-RL & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Source-conditioned editing reveals the boundary of direct decoding}
+\label{sec:results-editing}
+
+We finally test whether the same direct decoder can serve as a molecular
+editor. Table~\ref{tab:moledit-table1} gives the matched MolEdit-Instruct
+result. Direct Group-RL produces a valid first candidate only 23.4\% of the
+time and obtains zero accuracy at the strict 0.65 similarity threshold. A
+20-candidate property-aware selector improves relaxed accuracy to 19.0\%, but
+remains far below the reported MolEditRL result and is explicitly an assisted,
+not one-shot, protocol. Group-relative post-training alone therefore does not
+turn a de novo SMILES decoder into a source-preserving editor.
 
 \begin{table}[t]
   \centering
   \caption{MolEdit-Instruct Table~1 aggregate editing accuracy (\%).
-  $\operatorname{Acc}_{\mathrm{all}}(t)$ requires every requested property
-  direction and source Tanimoto similarity at least $t$.  ``Assisted'' selects
+  $\operatorname{Acc}_{\mathrm{all}}(t)$ requires all requested property
+  directions and source Tanimoto similarity at least $t$. ``Assisted'' selects
   one output with a property verifier from 20 generated candidates.}
   \label{tab:moledit-table1}
-  \small
-  \setlength{\tabcolsep}{4.5pt}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
   \begin{tabular}{llrrr}
     \toprule
     Method & Inference protocol & Validity & $\operatorname{Acc}_{\mathrm{all}}(.65)$ & $\operatorname{Acc}_{\mathrm{all}}(.15)$ \\
     \midrule
     MolEditRL & reported external result & -- & \textbf{45.0} & \textbf{72.7} \\
-    MolProgram (Group-RL) & first candidate & 23.4 & 0.0 & 3.9 \\
-    MolProgram (SFT) & assisted, 20 candidates & 96.4 & 0.0 & 17.9 \\
-    MolProgram (Group-RL) & assisted, 20 candidates & 97.2 & 0.0 & 19.0 \\
+    MolProgram (Group-RL) & first raw candidate & 23.4 & 0.0 & 3.9 \\
+    MolProgram (SFT) & assisted, $k=20$ & 96.4 & 0.0 & 17.9 \\
+    MolProgram (Group-RL) & assisted, $k=20$ & 97.2 & 0.0 & 19.0 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-The remaining main external comparison is MuMOInstruct, evaluated with the
-official 20-candidate success rate (SR), similarity of successful edits, and
-relative improvement (RI).  The reported GeLLM3O targets are 76.8\% SR for
-in-distribution tasks and 90.8\% for out-of-distribution tasks.  We leave the
-MolProgram cells out of the manuscript until the same-oracle evaluation is
-complete rather than mixing these metrics with an internal similarity proxy.
+This failure is architectural rather than a reward-weight issue. A
+source-similarity reward applied to direct SMILES Group-RL previously left
+the fraction above the similarity threshold at zero. In contrast, replacing
+free-form editing with executable GraphEditDSL actions changes reachability.
+On a 200-example paired validation set, the protected action policy raises raw
+$k=1$ validity from 31.0\% to 100\% and
+$\operatorname{Acc}_{\mathrm{all}}(.65)$ from 0\% to 20.0\%, without reducing
+held-out de novo strict success. At $k=8$, an explicitly assisted finalizer
+reaches 43.5\% strict accuracy. These validation results support a shared
+property-program interface, but we reserve a full external editing claim until
+the source-consistency gate and frozen test evaluation are complete.
+
+The same distinction appears on MuMOInstruct. Under the official
+20-candidate oracle, direct Group-RL attains 50.4\% property success, including
+32.3\% on in-distribution tasks and 68.8\% on OOD tasks. However, the mean
+source similarity of successful outputs is only 0.098 and no input satisfies
+the additional $0.4$ source-similarity diagnostic. The model can find molecules
+with the requested properties, but it does so largely by generating a new
+molecule rather than editing the source. This separates two capabilities that
+an aggregate property score can conflate: compositional property control and
+source-preserving transformation.
+
+\begin{table}[t]
+  \centering
+  \caption{Frozen validation slots for source-consistent editing. The pending
+  rows use executable GraphEditDSL candidates and source-only consistency
+  ranking; target molecules and output property oracles do not enter raw
+  selection.}
+  \label{tab:edit-repair}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{lrrr}
+    \toprule
+    Edit policy & Validity@1 & $\operatorname{Acc}_{\mathrm{all}}(.65)$ & $\operatorname{Acc}_{\mathrm{all}}(.15)$ \\
+    \midrule
+    Protected action policy & 100.0 & 20.0 & 20.0 \\
+    Source-consistent action policy & -- & -- & -- \\
+    Strong source-consistent action policy & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
