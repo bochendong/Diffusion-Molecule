@@ -224,6 +224,57 @@ def build_validity_audit(summary: Sequence[Mapping[str, object]]) -> list[dict[s
     return out
 
 
+def build_paper_table(
+    summary: Sequence[Mapping[str, object]],
+    deltas: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    """Join absolute SFT/Group-RL metrics and paired uncertainty in one table."""
+    summary_index = {
+        (
+            str(row["benchmark"]),
+            str(row["model"]),
+            str(row["group_type"]),
+            str(row["group"]),
+            int(row["candidate_budget"]),
+        ): row
+        for row in summary
+    }
+    out: list[dict[str, object]] = []
+    for delta in deltas:
+        benchmark = str(delta["benchmark"])
+        group_type = str(delta["group_type"])
+        group = str(delta["group"])
+        budget = int(delta["candidate_budget"])
+        sft = summary_index[(benchmark, "sft", group_type, group, budget)]
+        group_rl = summary_index[(benchmark, "group_rl", group_type, group, budget)]
+        out.append(
+            {
+                "benchmark": benchmark,
+                "group_type": group_type,
+                "group": group,
+                "candidate_budget": budget,
+                "paired_conditions": delta["paired_conditions"],
+                "sft_raw_success": sft["raw_success_fraction"],
+                "group_rl_raw_success": group_rl["raw_success_fraction"],
+                "delta_raw_success": delta["delta_raw_success_fraction"],
+                "delta_raw_ci95_low": delta["delta_raw_success_fraction_ci95_low"],
+                "delta_raw_ci95_high": delta["delta_raw_success_fraction_ci95_high"],
+                "sft_empirical_pass_at_k": sft["empirical_prefix_pass_at_k"],
+                "group_rl_empirical_pass_at_k": group_rl["empirical_prefix_pass_at_k"],
+                "delta_empirical_pass_at_k": delta["delta_empirical_prefix_pass_at_k"],
+                "delta_pass_ci95_low": delta["delta_empirical_prefix_pass_at_k_ci95_low"],
+                "delta_pass_ci95_high": delta["delta_empirical_prefix_pass_at_k_ci95_high"],
+                "sft_raw_candidate_validity": sft["validity_fraction"],
+                "group_rl_raw_candidate_validity": group_rl["validity_fraction"],
+                "sft_selected_validity_at_k": sft["selected_validity_at_k"],
+                "group_rl_selected_validity_at_k": group_rl["selected_validity_at_k"],
+                "sft_unique_valid_fraction": sft["unique_valid_fraction"],
+                "group_rl_unique_valid_fraction": group_rl["unique_valid_fraction"],
+            }
+        )
+    return out
+
+
 def summarize_condition_table(
     condition_rows: Sequence[Mapping[str, object]],
     eval_lookup: Mapping[tuple[str, str], Mapping[str, str]],
@@ -565,6 +616,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         resamples=args.bootstrap_resamples,
         seed=args.seed,
     )
+    paper_table = build_paper_table(summary, deltas)
     gate = gate_result(deltas)
     gate["coverage"] = coverage or {
         benchmark: {
@@ -583,6 +635,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     write_csv(args.output_dir / "p1_scaling_summary.csv", summary)
     write_csv(args.output_dir / "p1_paired_deltas.csv", deltas)
     write_csv(args.output_dir / "p1_validity_audit.csv", validity_audit)
+    write_csv(args.output_dir / "p1_paper_main_table.csv", paper_table)
     (args.output_dir / "p1_gate.json").write_text(json.dumps(gate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     report = render_report(summary, deltas, gate)
     (args.output_dir / "p1_report.md").write_text(report, encoding="utf-8")

@@ -52,6 +52,7 @@ Primary artifacts:
 - `final/p1_paired_deltas.csv`
 - `final/p1_condition_metrics.csv`
 - `final/p1_validity_audit.csv`
+- `final/p1_paper_main_table.csv`
 
 `p1_validity_audit.csv` separates two quantities that older benchmark tables
 often collapse into the word `validity`: raw candidate-level RDKit validity,
@@ -59,6 +60,10 @@ and selected validity@k (the fraction of conditions with at least one valid
 candidate in the first k draws). Historical best-of-k validity is comparable
 to the latter, not to raw candidate validity. The audit also separates empty
 decodes from nonempty strings that fail RDKit parsing.
+
+`p1_paper_main_table.csv` joins the absolute SFT and Group-RL values with the
+paired deltas and confidence intervals, so paper tables and plots do not need
+to reconstruct joins from separate files.
 
 The generator also writes `diagnostic_property_reranked_selected.csv` for
 backward compatibility. P1 excludes that file from every reported metric.

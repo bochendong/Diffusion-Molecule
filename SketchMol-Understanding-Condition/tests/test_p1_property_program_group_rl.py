@@ -148,3 +148,14 @@ def test_p1_end_to_end_uses_raw_first_candidate_and_emits_gate(tmp_path: Path) -
     assert float(row["raw_candidate_validity"]) == pytest.approx(0.9)
     assert float(row["selected_validity_at_k"]) == 1.0
     assert float(row["empty_raw_fraction"]) == pytest.approx(0.1)
+    paper_rows = list(csv.DictReader((output_dir / "p1_paper_main_table.csv").open(encoding="utf-8")))
+    paper_row = next(
+        item
+        for item in paper_rows
+        if item["benchmark"] == "two_p_to_seven_p"
+        and item["group_type"] == "overall"
+        and item["candidate_budget"] == "20"
+    )
+    assert float(paper_row["sft_empirical_pass_at_k"]) == 0.0
+    assert float(paper_row["group_rl_empirical_pass_at_k"]) == 1.0
+    assert float(paper_row["delta_empirical_pass_at_k"]) == 1.0
