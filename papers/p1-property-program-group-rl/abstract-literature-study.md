@@ -39,11 +39,8 @@ Results.
 ## P1 positioning implied by the comparison
 
 P1 should not be presented as another generic conditional SMILES model or as
-LLM fine-tuning. Its larger idea is to recast multi-property molecular design
-as program execution: an LLM represents open-ended semantic intent, an
-explicit program represents exact numerical requirements, and verifier-based
-Group-RL improves their realization as SMILES. Candidate-budget scaling then
-acts as the evidence that this is learned conditional control rather than only
-best-of-many search. Exact limitations belong in the main text; the abstract
-should state the supported positive finding and leave room for the broader
-program-execution perspective.
+LLM fine-tuning. Its differentiating question is whether group-relative
+post-training changes the probability of satisfying a variable-length property
+program at a modest sampling budget. The abstract should therefore lead with
+the confounding between compositional complexity and candidate budget, then
+present property programs and Group-RL as the response.

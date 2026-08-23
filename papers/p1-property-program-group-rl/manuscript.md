@@ -1,4 +1,4 @@
-# From Instructions to Molecules: LLM-Grounded Property Programs with Group-Relative Reinforcement Learning
+# Compositional Property Programs for Direct Molecular Generation with Group-Relative Reinforcement Learning
 
 **Anonymous authors**
 
@@ -49,14 +49,13 @@ as image generation with molecular-expert feedback [@wang2025sketchmol]; and
 STGG+ masks arbitrary property subsets in a spanning-tree generator and adds
 self-criticism [@jolicoeurmartineau2024stggplus]. Molecular language models
 such as GeLLM3O and GeLLM4O-C instead express multi-property objectives as
-instructions [@dey2025gellm3o; @dey2025controllable]. LLMs offer a natural
-interface for open-ended design intent, but text alone is an imprecise carrier
-of numerical targets, tolerances, and directions. Conversely, fixed numerical
-condition vectors provide precision but not a general instruction interface.
-This motivates a hybrid question: can frozen LLM representations and explicit
-numerical programs jointly support high-order molecular control, and can
-verifier-based post-training improve that control as objectives become more
-compositional?
+instructions [@dey2025gellm3o; @dey2025controllable]. Together, these methods
+show substantial progress in multi-conditional generation. Yet their
+representations, task definitions, property oracles, and candidate-selection
+budgets differ, making it hard to isolate a basic learning question: as the
+number and novelty of constraints grow, does a training method improve the
+generator itself, or does success mainly come from drawing and screening more
+candidates?
 
 This distinction matters because molecular generation commonly evaluates a
 selected output from a candidate pool. If a condition receives hundreds of
@@ -69,21 +68,19 @@ small candidate set contains a solution without making the most likely first
 sample better. Candidate budget should therefore be treated as an explicit
 evaluation axis, alongside property count and distribution shift.
 
-We answer this question with *LLM-grounded property programs*. A frozen
-Qwen2.5-VL-7B-Instruct encoder converts the natural-language design request
-into semantic condition features [@bai2025qwen25vl]. A parallel,
-variable-length numerical program identifies the active properties and
-encodes their targets, tolerances, and directions. A compact autoregressive
-Transformer attends to both representations and directly generates SMILES.
-Supervised fine-tuning uses a property-count curriculum to emphasize
-higher-order programs. We then apply Group-RL, a group-relative policy update
-with deterministic molecular-property feedback, an auxiliary SFT objective,
-and a frozen-reference regularizer. This division of labor is deliberate: the
-LLM supplies the instruction interface, the numerical program supplies exact
-control, and Group-RL aligns the SMILES policy with a chemical verifier. The
-7B encoder remains frozen; molecular generation and RL post-training occur in
-the compact decoder. All evaluated candidates come directly from this policy,
-without retrieval or inference-time property reranking.
+We study this issue with *property programs*: variable-length numerical
+specifications that identify the active properties and encode their targets,
+tolerances, and directions. The program is combined with frozen instruction
+features and passed to a compact autoregressive Transformer that directly
+generates SMILES. Supervised fine-tuning uses a property-count curriculum to
+emphasize higher-order programs. We then apply Group-RL, a group-relative
+policy update with deterministic molecular-property feedback, an auxiliary
+SFT objective, and a frozen-reference regularizer. The molecular generator is
+the compact decoder; Qwen2.5-VL-7B-Instruct is used only as a frozen condition
+encoder and is never updated by either SFT or Group-RL
+[@bai2025qwen25vl]. All evaluated candidates come directly from the policy,
+without retrieval from an external molecule collection or inference-time
+property reranking.
 
 Our central evaluation preserves the seeded generation order and measures
 prefixes of the same candidate pool at k in {1, 4, 8, 20, 32, 64, 128, 256}.
@@ -107,9 +104,9 @@ sampling budget.
 
 This paper makes four contributions:
 
-1. We introduce LLM-grounded property programs, combining semantic instruction
-   features with explicit variable-length numerical specifications of target
-   values, tolerances, directions, active properties, and program length.
+1. We formulate direct molecular generation using variable-length numerical
+   property programs that represent target values, tolerances, directions,
+   active properties, and program length.
 2. We combine a property-count curriculum with group-relative reinforcement
    learning driven by programmatically verifiable molecular-property rewards.
 3. We introduce a budget-transparent evaluation that jointly reports raw
