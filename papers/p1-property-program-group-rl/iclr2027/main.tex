@@ -16,27 +16,30 @@ with Group-Relative Reinforcement Learning}
 \maketitle
 
 \begin{abstract}
-Large language models are turning molecular design into instruction following,
-but precise multi-property design asks more than following a flat prompt:
-objectives must be composed, quantified, and jointly satisfied as complexity
-grows. We propose to view this task as program execution and introduce
-\emph{LLM-grounded property programs} for direct de novo molecular generation.
-An LLM maps natural-language design intent into semantic condition features,
-while a structured numerical program specifies a variable number of property
-targets, tolerances, and directions. A compact autoregressive policy translates
-their joint representation into SMILES and is trained with a property-count
-curriculum. We then apply group-relative reinforcement learning with
-programmatically verifiable molecular-property rewards, allowing chemical
-feedback to supervise program execution without a learned critic. This
-separation of semantic intent, exact specification, and chemical realization
-supports high-order, reversed, extreme, and rare property combinations without
-retrieval or a molecular materializer. To distinguish conditional control from
-best-of-many search, we evaluate the same candidate stream across sampling
-budgets. Experiments show gains over supervised training on difficult
-high-order and out-of-distribution programs, already visible at modest
-candidate budgets. These results suggest that property programs can move
-molecular language models from prompt-conditioned generation toward executing
-increasingly compositional design intent.
+Designing molecules that jointly satisfy multiple physicochemical properties
+is a central challenge in drug discovery and materials design. Existing
+conditional generators typically express molecular objectives as flat
+condition vectors or instructions, leaving their behavior under increasingly
+complex and out-of-distribution property combinations poorly understood. Here,
+we introduce \emph{Compositional Property Programs}, a direct molecular
+generation framework that represents each design request as a variable-length
+program of property targets, tolerances, and directions. The framework
+combines LLM-derived instruction features with explicit numerical program
+tokens and translates their joint representation into SMILES using a compact
+autoregressive decoder. A property-count curriculum emphasizes high-order
+programs during supervised training, while group-relative reinforcement
+learning uses programmatically verifiable molecular-property feedback to
+improve joint constraint satisfaction. All molecules are generated directly
+by the model, without retrieval from an external molecular library, a molecular
+materializer, or inference-time property reranking. By varying both program
+complexity and candidate budget, we evaluate generation from low-order
+objectives to difficult high-order, reversed, extreme, and rare property
+combinations. Extensive experiments demonstrate that group-relative
+post-training improves high-order and out-of-distribution control over
+supervised fine-tuning, with gains already visible at modest sampling budgets.
+These results establish property programs as a unified interface for scaling
+direct molecular generation toward increasingly compositional design
+objectives.
 \end{abstract}
 
 \section{Introduction}
