@@ -1,0 +1,120 @@
+# Compositional Property Programs for Direct Molecular Generation with Group-Relative Reinforcement Learning
+
+**Anonymous authors**
+
+> Draft status: ICLR 2027 abstract and Introduction only. All results are
+> preliminary, use the frozen single-seed P1 candidate pools, and must be
+> regenerated from the final machine-readable tables before submission.
+
+## Abstract
+
+Multi-property molecular generation is difficult to assess because two axes
+are often confounded: compositional complexity and sampling budget. A model
+may appear to satisfy a high-order property specification because it assigns
+more probability to successful molecules, or simply because evaluation
+selects one success from hundreds of candidates. We formulate molecular
+objectives as variable-length *property programs* and study whether
+group-relative reinforcement learning (Group-RL) improves the candidate
+efficiency of a direct SMILES generator as program complexity increases. The
+model combines frozen instruction features with deterministic numerical
+property-program tokens and a compact autoregressive decoder. We train it
+with a property-count curriculum, then apply Group-RL using verifiable
+molecular-property rewards. Candidates are generated without retrieval, a
+molecular library, a materializer, or inference-time property reranking. On a
+preliminary single-seed gate of 256 six- and seven-property conditions,
+Group-RL raises strict success among the first 20 candidates from 3.63% to
+4.75% and empirical pass@20 from 37.1% to 50.8%. Across 1,000
+out-of-distribution conditions, pass@20 rises from 35.2% to 41.7%, while
+one-shot success changes from 3.5% to 3.2%. Thus, the observed gain is not
+uniform first-sample improvement; it is an increased probability that a small
+candidate set contains a solution. By reporting raw success, pass@k, validity,
+and uniqueness over the full budget curve, we make best-of-many search an
+explicit part of compositional molecular generation rather than a hidden
+evaluation advantage.
+
+## 1. Introduction
+
+Inverse molecular design asks a model to generate chemically valid molecules
+that satisfy a desired property profile. Real design profiles are inherently
+compositional: a candidate may need to meet simultaneous constraints on
+molecular weight, lipophilicity, drug-likeness, polarity, hydrogen bonding,
+flexibility, and synthetic accessibility. The difficulty is not captured by
+performance on each objective in isolation. Constraints can interact, and a
+generator that handles one or two familiar objectives may fail when more
+properties are combined, when directions are reversed, when targets become
+extreme, or when a rarely observed combination is requested.
+
+Recent work has expanded controllable molecular generation across several
+representations. Graph DiT conditions graph diffusion on numerical and
+categorical attributes [@liu2024graphdit]; SketchMol frames molecular design
+as image generation with molecular-expert feedback [@wang2025sketchmol]; and
+STGG+ masks arbitrary property subsets in a spanning-tree generator and adds
+self-criticism [@jolicoeurmartineau2024stggplus]. Molecular language models
+such as GeLLM3O and GeLLM4O-C instead express multi-property objectives as
+instructions [@dey2025gellm3o; @dey2025controllable]. Together, these methods
+show substantial progress in multi-conditional generation. Yet their
+representations, task definitions, property oracles, and candidate-selection
+budgets differ, making it hard to isolate a basic learning question: as the
+number and novelty of constraints grow, does a training method improve the
+generator itself, or does success mainly come from drawing and screening more
+candidates?
+
+This distinction matters because molecular generation commonly evaluates a
+selected output from a candidate pool. If a condition receives hundreds of
+draws, the best candidate can be successful even when almost all raw samples
+are invalid or miss at least one constraint. A selected-1 score after
+property-aware reranking is therefore not a one-shot generation result.
+Conversely, evaluating only the first draw can hide a useful change in the
+distribution: a method may substantially increase the probability that a
+small candidate set contains a solution without making the most likely first
+sample better. Candidate budget should therefore be treated as an explicit
+evaluation axis, alongside property count and distribution shift.
+
+We study this issue with *property programs*: variable-length numerical
+specifications that identify the active properties and encode their targets,
+tolerances, and directions. The program is combined with frozen instruction
+features and passed to a compact autoregressive Transformer that directly
+generates SMILES. Supervised fine-tuning uses a property-count curriculum to
+emphasize higher-order programs. We then apply Group-RL, a group-relative
+policy update with deterministic molecular-property feedback, an auxiliary
+SFT objective, and a frozen-reference regularizer. The molecular generator is
+the compact decoder; Qwen2.5-VL-7B-Instruct is used only as a frozen condition
+encoder and is never updated by either SFT or Group-RL
+[@bai2025qwen25vl]. All evaluated candidates come directly from the policy,
+without retrieval from an external molecule collection or inference-time
+property reranking.
+
+Our central evaluation preserves the seeded generation order and measures
+prefixes of the same candidate pool at k in {1, 4, 8, 20, 32, 64, 128, 256}.
+We distinguish raw strict success---the fraction of individual candidates
+satisfying every active constraint---from empirical pass@k---the fraction of
+conditions with at least one success among the first k draws. We also separate
+raw candidate validity from selected validity@k and report unique-valid yield.
+This protocol prevents a large sampling budget or a property-aware selector
+from being mislabeled as one-shot controllability.
+
+Preliminary single-seed results reveal a useful but bounded effect. On a hard
+gate of 256 six- and seven-property conditions, Group-RL improves raw strict
+success at k=20 from 3.63% to 4.75% and empirical pass@20 from 37.1% to 50.8%.
+On 1,000 out-of-distribution conditions spanning extreme, reversed, and rare
+property combinations, pass@20 improves from 35.2% to 41.7%. However, OOD
+one-shot success changes from 3.5% to 3.2%. The result is therefore not a claim
+of uniform distributional dominance. Rather, Group-RL makes a modest candidate
+budget more likely to contain a strict solution, and its benefit becomes
+visible only when performance is examined jointly over composition and
+sampling budget.
+
+This paper makes four contributions:
+
+1. We formulate direct molecular generation using variable-length numerical
+   property programs that represent target values, tolerances, directions,
+   active properties, and program length.
+2. We combine a property-count curriculum with group-relative reinforcement
+   learning driven by programmatically verifiable molecular-property rewards.
+3. We introduce a budget-transparent evaluation that jointly reports raw
+   success, empirical pass@k, raw and selected validity, and unique-valid yield
+   over property count and OOD complexity.
+4. We provide single-seed evidence that Group-RL improves success within small
+   candidate sets for hard six/seven-property and OOD programs, while exposing
+   the important boundary that OOD one-shot success does not improve.
+
