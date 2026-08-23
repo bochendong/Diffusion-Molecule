@@ -61,40 +61,12 @@ driven by a large 7p regression. We therefore retain group 16 and report group
 \subsection{MolEdit-Instruct comparison}
 \label{sec:appendix-moledit}
 
-Table~\ref{tab:moledit-horizontal} places MolProgram alongside seven published
-MolEdit-Instruct baselines. External values are ten-task macro-averages
-recomputed from Table~1 of \citet{zhuang2025moleditrl}. The comparison exposes
-the boundary of direct decoding: MolProgram's first raw candidate is much less
-valid and less source-preserving than every specialized editing model. A
-property-aware 20-candidate selector improves relaxed accuracy but remains
-assisted inference and does not repair the strict 0.65 threshold.
-
-\begin{table}[h]
-  \centering
-  \caption{MolEdit-Instruct ten-task macro-average (\%).
-  $\operatorname{Acc}_{\mathrm{all}}(t)$ requires both the requested property
-  directions and source Tanimoto similarity of at least $t$.}
-  \label{tab:moledit-horizontal}
-  \scriptsize
-  \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{llrrr}
-    \toprule
-    Method & Protocol & Validity & $\operatorname{Acc}_{\mathrm{all}}(.65)$ & $\operatorname{Acc}_{\mathrm{all}}(.15)$ \\
-    \midrule
-    BioT5 & reported & \textbf{100.0} & 0.0 & 29.2 \\
-    MolGen & reported & \textbf{100.0} & 3.3 & 22.2 \\
-    REINVENT4 & reported & 64.1 & 12.5 & 25.0 \\
-    DrugAssist & reported & 97.9 & 34.9 & 41.1 \\
-    GeLLM3O$_{\mathrm{Mistral}}$ & reported & 90.2 & 15.2 & 35.4 \\
-    GeLLM3O$_{\mathrm{Llama}}$ & reported & 90.1 & 14.5 & 40.4 \\
-    MolEditRL & reported & 96.6 & \textbf{45.0} & \textbf{72.7} \\
-    \midrule
-    MolProgram (Group-RL) & first raw candidate & 23.4 & 0.0 & 3.9 \\
-    MolProgram (SFT) & assisted, $k=20$ & 96.4 & 0.0 & 17.9 \\
-    MolProgram (Group-RL) & assisted, $k=20$ & 97.2 & 0.0 & 19.0 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+The complete ten-task comparison is reported in
+Table~\ref{tab:moledit-full} rather than compressed into a macro-average.
+This exposes task-level failures and keeps Raw@1 separate from Any@20. The
+older direct-SMILES editing checkpoint reached zero strict
+$\operatorname{Acc}_{\mathrm{all}}(.65)$ and therefore remains a diagnostic,
+not the result assigned to the preregistered P4 rows.
 
 \subsection{MuMO source-fidelity diagnostic}
 \label{sec:appendix-mumo}

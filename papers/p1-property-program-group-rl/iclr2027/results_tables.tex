@@ -13,7 +13,16 @@ property-reranked candidate as one-shot generation.
 \subsection{Comparison with prior methods}
 \label{sec:results-prior}
 
-We first evaluate zero-source generation under the SketchMol multi-property
+We first align source-conditioned editing with the complete MolEdit-Instruct
+comparison rather than reporting only a macro-average. Table~\ref{tab:moledit-full}
+retains all ten tasks and all six published metrics. To make the sampling
+contract visible, MolProgram reserves separate rows for the first raw
+generation and honest Any@20 evaluation. The P4 cells remain blank until the
+frozen single-seed evaluation completes.
+
+\input{moledit_table1.tex}
+
+We then evaluate zero-source generation under the SketchMol multi-property
 protocol. For each of 1,000 held-out property vectors at each complexity level,
 a method receives 40 generation attempts and succeeds if at least one valid
 molecule satisfies every active property within the benchmark tolerance.
