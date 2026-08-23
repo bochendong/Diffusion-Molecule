@@ -389,9 +389,14 @@ def make_summary_row(
     missing_counter = Counter()
     evaluated_fraction = []
     for item in candidate_rows:
-        missing_counter.update(parse_list(item.get("external_missing_generated_oracle_properties")))
+        # Invalid generations have no molecule to score, so their absent
+        # properties are generation failures rather than missing oracle
+        # coverage.  Counting them here incorrectly marks an otherwise fully
+        # covered best-of-k input as a lower-bound result.
+        if truthy(item.get("external_valid")):
+            missing_counter.update(parse_list(item.get("external_missing_generated_oracle_properties")))
         value = parse_float(item.get("external_evaluated_property_fraction"))
-        if value is not None:
+        if value is not None and truthy(item.get("external_valid")):
             evaluated_fraction.append(value)
     missing_props = ",".join(sorted(missing_counter))
     success_similarities = [
