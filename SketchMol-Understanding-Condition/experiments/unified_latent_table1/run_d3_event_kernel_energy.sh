@@ -5,8 +5,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-C_DIR="$(cd "$SCRIPT_DIR/../unified_action_categorical" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
+C_DIR="$PROJECT_DIR/experiments/unified_action_categorical"
 REPO_DIR="$(cd "$PROJECT_DIR/.." && pwd)"
 LATENT_DIR="$PROJECT_DIR/experiments/unified_latent_flow"
 cd "$REPO_DIR"
