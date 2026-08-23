@@ -27,15 +27,16 @@ program of property targets, tolerances, and directions. The framework
 combines LLM-derived instruction features with explicit numerical program
 tokens and translates their joint representation into SMILES using a compact
 autoregressive decoder. A property-count curriculum emphasizes high-order
-programs during supervised training, while group-relative reinforcement
-learning uses programmatically verifiable molecular-property feedback to
-improve joint constraint satisfaction. All molecules are generated directly
-by the model, without retrieval from an external molecular library, a molecular
+programs during supervised training. We then apply a Group Relative Policy
+Optimization (GRPO)-style post-training objective that learns from groups of
+sampled molecules and programmatically verifiable property feedback to improve
+joint constraint satisfaction. All molecules are generated directly by the
+model, without retrieval from an external molecular library, a molecular
 materializer, or inference-time property reranking. By varying both program
 complexity and candidate budget, we evaluate generation from low-order
 objectives to difficult high-order, reversed, extreme, and rare property
-combinations. Extensive experiments demonstrate that group-relative
-post-training improves high-order and out-of-distribution control over
+combinations. Extensive experiments demonstrate that GRPO-style post-training
+improves high-order and out-of-distribution control over
 supervised fine-tuning, with gains already visible at modest sampling budgets.
 These results establish property programs as a unified interface for scaling
 direct molecular generation toward increasingly compositional design
