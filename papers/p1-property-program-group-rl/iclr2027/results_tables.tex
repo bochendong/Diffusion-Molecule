@@ -15,10 +15,14 @@ property-reranked candidate as one-shot generation.
 
 We first align source-conditioned editing with the complete MolEdit-Instruct
 comparison rather than reporting only a macro-average. Table~\ref{tab:moledit-full}
-retains all ten tasks and all six published metrics. To make the sampling
-contract visible, MolProgram reserves separate rows for the first raw
-generation and honest Any@20 evaluation. The P4 cells remain blank until the
-frozen single-seed evaluation completes.
+retains all ten tasks and the five metrics used in our comparison: validity
+and overall/valid accuracy at two source-similarity thresholds. Following the benchmark
+contract, every method generates 20 molecules per input and accuracy is
+computed candidate-wise over the complete unranked pool. Raw@1 and pass@$k$
+are budget diagnostics and are reported separately rather than mixed into the
+external comparison. The P4 cells remain blank until the frozen single-seed
+evaluation completes. We omit FCD because it is outside the present evaluation
+contract.
 
 \input{moledit_table1.tex}
 

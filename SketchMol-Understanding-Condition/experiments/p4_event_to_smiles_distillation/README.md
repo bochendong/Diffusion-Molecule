@@ -10,10 +10,12 @@ path remains tensor-for-tensor identical to the frozen base checkpoint. D3
 targets are serialized with a source-aligned atom order when that increases
 token overlap without changing the canonical molecule.
 
-The single-seed pilot reports honest raw@1 and any@8/20 Table1 accuracy. The
-primary gate is raw `Acc_all(0.65) >= 35%`; `45%` matches the reported MolEditRL
-aggregate. Any@20 must reach 70%, validity must stay at least 95%, and the
-checkpoint audit must prove the de-novo path is unchanged.
+The single-seed pilot reports two deliberately separate views. The matched
+MolEdit Table 1 result uses all 20 raw candidates per input and computes
+candidate-level validity and accuracy. Raw@1 and any@8/20 are retained only as
+sampling-budget diagnostics. The pilot gate remains diagnostic: raw
+`Acc_all(0.65) >= 35%`, any@20 at least 70%, validity at least 95%, and a
+checkpoint audit proving that the de-novo path is unchanged.
 
 Run on Nibi:
 

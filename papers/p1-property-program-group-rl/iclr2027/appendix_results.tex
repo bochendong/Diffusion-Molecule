@@ -63,8 +63,9 @@ driven by a large 7p regression. We therefore retain group 16 and report group
 
 The complete ten-task comparison is reported in
 Table~\ref{tab:moledit-full} rather than compressed into a macro-average.
-This exposes task-level failures and keeps Raw@1 separate from Any@20. The
-older direct-SMILES editing checkpoint reached zero strict
+This exposes task-level failures under the matched 20-candidate, candidate-wise
+protocol. Raw@1 and pass@$k$ remain separate budget diagnostics. The older
+direct-SMILES editing checkpoint reached zero strict
 $\operatorname{Acc}_{\mathrm{all}}(.65)$ and therefore remains a diagnostic,
 not the result assigned to the preregistered P4 rows.
 

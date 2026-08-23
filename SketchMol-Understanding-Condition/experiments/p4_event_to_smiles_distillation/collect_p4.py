@@ -31,6 +31,7 @@ def main() -> int:
     sft_audit = json.loads(args.sft_audit.read_text(encoding="utf-8"))
     grpo_audit = json.loads(args.grpo_audit.read_text(encoding="utf-8"))
     records = []
+    candidate_records = []
     for variant in ("base", "sft", "grpo"):
         for budget in (1, 8, 20):
             path = args.output_root / "eval" / variant / f"any{budget}" / "moledit_table_summary.json"
@@ -44,6 +45,18 @@ def main() -> int:
                     "metrics_json": str(path),
                 }
             )
+        candidate_path = args.output_root / "eval" / variant / "candidate20" / "moledit_table_summary.json"
+        candidate_records.append(
+            {
+                "variant": variant,
+                "candidates_per_input": 20,
+                "aggregation": "candidate-level",
+                "acc_all_0_65": mean_metric(candidate_path, "Acc_all(0.65)"),
+                "acc_all_0_15": mean_metric(candidate_path, "Acc_all(0.15)"),
+                "validity": mean_metric(candidate_path, "Validity"),
+                "metrics_json": str(candidate_path),
+            }
+        )
     by_key = {(row["variant"], row["budget"]): row for row in records}
     final = by_key[("grpo", 20)]
     raw = by_key[("grpo", 1)]
@@ -65,6 +78,7 @@ def main() -> int:
         "checks": checks,
         "teacher": teacher,
         "records": records,
+        "candidate_level_n20": candidate_records,
         "sft_audit": sft_audit,
         "grpo_audit": grpo_audit,
     }
@@ -83,6 +97,22 @@ def main() -> int:
     for row in records:
         lines.append(
             f"| {row['variant']} | {row['budget']} | {row['validity']:.1%} | "
+            f"{row['acc_all_0_65']:.1%} | {row['acc_all_0_15']:.1%} |"
+        )
+    lines.extend(
+        [
+            "",
+            "## Matched MolEdit Table 1 protocol",
+            "",
+            "All values below are candidate-level means over the complete unranked pool of 20 generations per input.",
+            "",
+            "| Variant | n | Validity | Acc@0.65 | Acc@0.15 |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for row in candidate_records:
+        lines.append(
+            f"| {row['variant']} | {row['candidates_per_input']} | {row['validity']:.1%} | "
             f"{row['acc_all_0_65']:.1%} | {row['acc_all_0_15']:.1%} |"
         )
     lines.extend(
