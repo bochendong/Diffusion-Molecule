@@ -1,0 +1,37 @@
+{
+  "protocol": "p5_source_anchored_molprogram_v1",
+  "seed": 7,
+  "claim": "A single direct-SMILES MolProgram decoder can preserve a source molecule through token-level copying while learning property-directed edits.",
+  "training": {
+    "teacher_targets": "P4 train-only D3 strict winners; no validation rows",
+    "sft_epochs": 4,
+    "grpo_epochs": 1,
+    "trainable_scope": "source_only"
+  },
+  "inference": {
+    "single_policy": true,
+    "direct_smiles": true,
+    "router": false,
+    "graph_action_executor": false,
+    "materializer": false,
+    "external_molecule_library": false,
+    "property_reranking": false,
+    "source_copy_candidate_injection": false
+  },
+  "evaluation": {
+    "held_out_conditions": 200,
+    "candidate_budgets": [1, 8, 20],
+    "report_candidate_level_n20": true,
+    "report_unique_fraction": true
+  },
+  "gates": {
+    "minimum_raw_acc_0_65": 0.10,
+    "strong_raw_acc_0_65": 0.20,
+    "minimum_any20_acc_0_65": 0.35,
+    "strong_any20_acc_0_65": 0.55,
+    "minimum_any20_validity": 0.95,
+    "minimum_candidate_validity": 0.80,
+    "require_de_novo_path_bit_identical": true
+  }
+}
+

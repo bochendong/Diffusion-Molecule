@@ -633,6 +633,91 @@ def test_source_aware_decoder_preserves_de_novo_warmstart_and_reads_source() -> 
     assert not torch.allclose(edit_a_logits, edit_b_logits)
 
 
+def test_source_copy_decoder_preserves_de_novo_and_points_to_source_tokens() -> None:
+    base_config = {
+        "vocab_size": 11,
+        "condition_dim": 4,
+        "d_model": 8,
+        "num_layers": 1,
+        "num_heads": 2,
+        "dim_feedforward": 16,
+        "dropout": 0.0,
+        "pad_id": 0,
+        "max_length": 16,
+    }
+    base = unified.ConditionedSmilesDecoder(**base_config).eval()
+    pointer = unified.ConditionedSmilesDecoder(
+        **base_config,
+        source_aware=True,
+        source_encoder_layers=1,
+        source_copy_aware=True,
+        source_adapter_layers=2,
+        source_adapter_bottleneck=4,
+    ).eval()
+    incompatible = pointer.load_state_dict(base.state_dict(), strict=False)
+    assert not incompatible.unexpected_keys
+
+    denovo_condition = torch.tensor([[[0.25, 0.1, 0.0, 0.0], [1.0, 0.2, 1.0, 0.0]]])
+    condition_mask = torch.ones((1, 2), dtype=torch.bool)
+    decoder_ids = torch.tensor([[1, 4, 5]])
+    source_ids = torch.zeros((1, 2), dtype=torch.long)
+    assert torch.equal(
+        base(denovo_condition, decoder_ids, condition_mask=condition_mask),
+        pointer(
+            denovo_condition,
+            decoder_ids,
+            condition_mask=condition_mask,
+            source_token_ids=source_ids,
+        ),
+    )
+
+    with torch.no_grad():
+        pointer.output.weight.zero_()
+        pointer.output.bias.zero_()
+        pointer.source_output.weight.zero_()
+        pointer.source_copy_query.weight.zero_()
+        pointer.source_copy_key.weight.zero_()
+        pointer.source_copy_gate.weight.zero_()
+        pointer.source_copy_gate.bias.fill_(-12.0)
+    edit_condition = torch.tensor(
+        [[[0.25, 0.1, 0.0, 0.0], [2.0, 0.1, 1.0, 0.0], [2.0, 0.9, 0.0, 1.0]]]
+    )
+    edit_source_ids = torch.tensor([[0, 4, 5]])
+    logits = pointer(
+        edit_condition,
+        decoder_ids,
+        condition_mask=torch.ones((1, 3), dtype=torch.bool),
+        source_token_ids=edit_source_ids,
+    )
+    assert logits[0, -1, 4] > logits[0, -1, 6]
+    assert logits[0, -1, 5] > logits[0, -1, 6]
+
+
+def test_source_only_scope_includes_pointer_and_adapters_but_not_shared_decoder() -> None:
+    model = unified.ConditionedSmilesDecoder(
+        vocab_size=11,
+        condition_dim=4,
+        d_model=8,
+        num_layers=1,
+        num_heads=2,
+        dim_feedforward=16,
+        dropout=0.0,
+        pad_id=0,
+        max_length=16,
+        source_aware=True,
+        source_encoder_layers=1,
+        source_copy_aware=True,
+        source_adapter_layers=1,
+        source_adapter_bottleneck=4,
+    )
+    summary = unified.configure_trainable_scope(model, "source_only")
+    trainable = set(summary["trainable_parameter_names"])
+    assert "source_copy_gate.weight" in trainable
+    assert "source_adapters.0.up.weight" in trainable
+    assert not any(name.startswith("decoder.") for name in trainable)
+    assert not any(name.startswith("output.") for name in trainable)
+
+
 def test_adaptive_distill_weight_is_a_bounded_dual_update() -> None:
     increased = unified.update_adaptive_distill_weight(
         0.3,

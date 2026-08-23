@@ -292,6 +292,22 @@ def add_model_args(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--source-encoder-layers", type=int, default=2)
     parser.add_argument("--source-residual-scale", type=float, default=1.0)
+    parser.add_argument(
+        "--source-copy-aware",
+        action="store_true",
+        help=(
+            "Mix the shared vocabulary distribution with a token-level pointer distribution over "
+            "the source SMILES. The pointer is source-gated and is exactly inactive for de novo rows."
+        ),
+    )
+    parser.add_argument("--source-adapter-layers", type=int, default=2)
+    parser.add_argument("--source-adapter-bottleneck", type=int, default=64)
+    parser.add_argument(
+        "--source-copy-initial-vocab-bias",
+        type=float,
+        default=2.0,
+        help="Initial logit bias for the shared-vocabulary side of the pointer-generator gate.",
+    )
 
 
 def add_sampling_args(parser: argparse.ArgumentParser) -> None:
@@ -408,18 +424,28 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
     if checkpoint:
         vocab = SmilesVocabulary.from_dict(checkpoint["vocab"])
         config = dict(checkpoint["model_config"])
-        requested_source_aware = bool(args.source_aware)
+        requested_source_aware = bool(args.source_aware or args.source_copy_aware)
         checkpoint_source_aware = bool(config.get("source_aware", False))
-        if requested_source_aware and not checkpoint_source_aware:
+        requested_source_copy = bool(args.source_copy_aware)
+        checkpoint_source_copy = bool(config.get("source_copy_aware", False))
+        architecture_upgrade = (requested_source_aware and not checkpoint_source_aware) or (
+            requested_source_copy and not checkpoint_source_copy
+        )
+        if architecture_upgrade:
             if not bool(args.allow_architecture_warmstart):
                 raise ValueError(
-                    "--source-aware with a legacy checkpoint requires --allow-architecture-warmstart"
+                    "Adding source-aware or source-copy modules to a checkpoint requires "
+                    "--allow-architecture-warmstart"
                 )
             config.update(
                 {
                     "source_aware": True,
                     "source_encoder_layers": int(args.source_encoder_layers),
                     "source_residual_scale": float(args.source_residual_scale),
+                    "source_copy_aware": requested_source_copy,
+                    "source_adapter_layers": int(args.source_adapter_layers),
+                    "source_adapter_bottleneck": int(args.source_adapter_bottleneck),
+                    "source_copy_initial_vocab_bias": float(args.source_copy_initial_vocab_bias),
                 }
             )
     else:
@@ -438,9 +464,13 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
             "dropout": float(args.dropout),
             "pad_id": vocab.pad_id,
             "max_length": int(args.max_smiles_length) + 8,
-            "source_aware": bool(args.source_aware),
+            "source_aware": bool(args.source_aware or args.source_copy_aware),
             "source_encoder_layers": int(args.source_encoder_layers),
             "source_residual_scale": float(args.source_residual_scale),
+            "source_copy_aware": bool(args.source_copy_aware),
+            "source_adapter_layers": int(args.source_adapter_layers),
+            "source_adapter_bottleneck": int(args.source_adapter_bottleneck),
+            "source_copy_initial_vocab_bias": float(args.source_copy_initial_vocab_bias),
         }
 
     model = ConditionedSmilesDecoder(**config).to(device)
@@ -588,6 +618,9 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         "source_aware": bool(config.get("source_aware", False)),
         "source_encoder_layers": int(config.get("source_encoder_layers", 0)),
         "source_residual_scale": float(config.get("source_residual_scale", 0.0)),
+        "source_copy_aware": bool(config.get("source_copy_aware", False)),
+        "source_adapter_layers": int(config.get("source_adapter_layers", 0)),
+        "source_adapter_bottleneck": int(config.get("source_adapter_bottleneck", 0)),
         "trainable_scope": trainable_scope,
         "task_mode_counts": task_mode_counts(train_dataset),
         "training_group_counts": training_group_counts(train_dataset),
@@ -881,6 +914,10 @@ SOURCE_ONLY_PREFIXES = (
     "null_source",
     "source_gate.",
     "source_output.",
+    "source_adapters.",
+    "source_copy_query.",
+    "source_copy_key.",
+    "source_copy_gate.",
 )
 
 
@@ -1073,6 +1110,32 @@ class PositionalEncoding(nn.Module):
         return values + self.pe[:, : values.shape[1]].to(dtype=values.dtype, device=values.device)
 
 
+class SourceGatedAdapter(nn.Module):
+    """Small edit-only residual block; the null-source path is an exact identity."""
+
+    def __init__(self, d_model: int, bottleneck: int) -> None:
+        super().__init__()
+        hidden = max(1, int(bottleneck))
+        self.norm = nn.LayerNorm(d_model)
+        self.down = nn.Linear(d_model * 2, hidden)
+        self.up = nn.Linear(hidden, d_model)
+        self.gate = nn.Linear(d_model * 2, d_model)
+        nn.init.zeros_(self.up.weight)
+        nn.init.zeros_(self.up.bias)
+
+    def forward(
+        self,
+        decoded: torch.Tensor,
+        source_summary: torch.Tensor,
+        source_present: torch.Tensor,
+    ) -> torch.Tensor:
+        expanded_source = source_summary[:, None, :].expand(-1, decoded.shape[1], -1)
+        joined = torch.cat([self.norm(decoded), expanded_source], dim=-1)
+        delta = self.up(F.gelu(self.down(joined)))
+        gate = torch.sigmoid(self.gate(joined))
+        return decoded + source_present[:, None, None].to(decoded.dtype) * gate * delta
+
+
 class ConditionedSmilesDecoder(nn.Module):
     def __init__(
         self,
@@ -1089,10 +1152,17 @@ class ConditionedSmilesDecoder(nn.Module):
         source_aware: bool = False,
         source_encoder_layers: int = 2,
         source_residual_scale: float = 1.0,
+        source_copy_aware: bool = False,
+        source_adapter_layers: int = 0,
+        source_adapter_bottleneck: int = 64,
+        source_copy_initial_vocab_bias: float = 2.0,
     ) -> None:
         super().__init__()
         self.pad_id = int(pad_id)
         self.source_aware = bool(source_aware)
+        self.source_copy_aware = bool(source_copy_aware)
+        if self.source_copy_aware and not self.source_aware:
+            raise ValueError("source_copy_aware requires source_aware")
         self.source_residual_scale = float(source_residual_scale)
         self.condition_proj = nn.Sequential(
             nn.LayerNorm(condition_dim),
@@ -1125,6 +1195,15 @@ class ConditionedSmilesDecoder(nn.Module):
             self.null_source = nn.Parameter(torch.zeros(1, 1, d_model))
             self.source_gate = nn.Linear(d_model * 2, d_model)
             self.source_output = nn.Linear(d_model, vocab_size, bias=False)
+            self.source_adapters = nn.ModuleList(
+                SourceGatedAdapter(d_model, source_adapter_bottleneck)
+                for _ in range(max(0, int(source_adapter_layers)))
+            )
+            if self.source_copy_aware:
+                self.source_copy_query = nn.Linear(d_model, d_model, bias=False)
+                self.source_copy_key = nn.Linear(d_model, d_model, bias=False)
+                self.source_copy_gate = nn.Linear(d_model * 2, 1)
+                nn.init.constant_(self.source_copy_gate.bias, float(source_copy_initial_vocab_bias))
             nn.init.normal_(self.source_type, std=0.02)
             nn.init.normal_(self.null_source, std=0.02)
             nn.init.zeros_(self.source_output.weight)
@@ -1147,8 +1226,9 @@ class ConditionedSmilesDecoder(nn.Module):
         decoder_input_ids: torch.Tensor,
         *,
         condition_mask: torch.Tensor | None = None,
+        source_token_ids: torch.Tensor | None = None,
     ) -> torch.Tensor:
-        memory, memory_padding, source_summary, source_present = self.encode_condition_memory(
+        memory, memory_padding, source_summary, source_present, source_memory, source_valid = self.encode_condition_memory(
             condition_tokens,
             condition_mask=condition_mask,
         )
@@ -1166,6 +1246,9 @@ class ConditionedSmilesDecoder(nn.Module):
             tgt_key_padding_mask=target_padding,
             memory_key_padding_mask=memory_padding,
         )
+        if self.source_aware and source_summary is not None and source_present is not None:
+            for adapter in self.source_adapters:
+                decoded = adapter(decoded, source_summary, source_present)
         logits = self.output(decoded)
         if self.source_aware and source_summary is not None and source_present is not None:
             expanded_source = source_summary[:, None, :].expand(-1, decoded.shape[1], -1)
@@ -1176,6 +1259,31 @@ class ConditionedSmilesDecoder(nn.Module):
                 * source_present[:, None, None].to(dtype=logits.dtype)
                 * source_delta
             )
+        if self.source_copy_aware and source_present is not None and bool(source_present.any()):
+            if source_token_ids is None:
+                raise ValueError("source_copy_aware edit rows require source_token_ids")
+            if source_memory is None or source_valid is None:
+                raise RuntimeError("source-copy memory was not constructed")
+            if source_token_ids.shape != source_valid.shape:
+                raise ValueError(
+                    f"source_token_ids shape {tuple(source_token_ids.shape)} does not match "
+                    f"source memory {tuple(source_valid.shape)}"
+                )
+            query = self.source_copy_query(decoded)
+            key = self.source_copy_key(source_memory)
+            attention_logits = torch.einsum("btd,bsd->bts", query, key) / math.sqrt(max(query.shape[-1], 1))
+            attention_logits = attention_logits.masked_fill(~source_valid[:, None, :], -torch.inf)
+            copy_attention = torch.softmax(attention_logits, dim=-1)
+            copy_attention = torch.nan_to_num(copy_attention, nan=0.0, posinf=0.0, neginf=0.0)
+            copy_probs = logits.new_zeros(logits.shape)
+            copy_index = source_token_ids[:, None, :].expand(-1, decoded.shape[1], -1)
+            copy_probs.scatter_add_(dim=-1, index=copy_index, src=copy_attention)
+            expanded_source = source_summary[:, None, :].expand(-1, decoded.shape[1], -1)
+            vocab_gate = torch.sigmoid(self.source_copy_gate(torch.cat([decoded, expanded_source], dim=-1)))
+            base_probs = torch.softmax(logits, dim=-1)
+            mixed_probs = vocab_gate * base_probs + (1.0 - vocab_gate) * copy_probs
+            mixed_logits = mixed_probs.clamp_min(torch.finfo(mixed_probs.dtype).tiny).log()
+            logits = torch.where(source_present[:, None, None], mixed_logits, logits)
         return logits
 
     def encode_condition_memory(
@@ -1183,7 +1291,14 @@ class ConditionedSmilesDecoder(nn.Module):
         condition_tokens: torch.Tensor,
         *,
         condition_mask: torch.Tensor | None,
-    ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor | None, torch.Tensor | None]:
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+    ]:
         valid = (
             torch.ones(condition_tokens.shape[:2], dtype=torch.bool, device=condition_tokens.device)
             if condition_mask is None
@@ -1191,7 +1306,7 @@ class ConditionedSmilesDecoder(nn.Module):
         )
         base_memory = self.condition_proj(condition_tokens)
         if not self.source_aware:
-            return base_memory, ~valid, None, None
+            return base_memory, ~valid, None, None, None, None
 
         # Source token features are emitted by source_token_feature with an exact
         # leading marker of 2.0. Goal/VLM/property tokens stay in the other stream.
@@ -1220,7 +1335,7 @@ class ConditionedSmilesDecoder(nn.Module):
         # exactly the legacy goal-conditioned path after a compatible warm-start.
         memory = torch.cat([base_memory, source_memory], dim=1)
         memory_valid = torch.cat([goal_valid, source_valid], dim=1)
-        return memory, ~memory_valid, source_summary, source_present
+        return memory, ~memory_valid, source_summary, source_present, source_memory, source_valid
 
     @torch.no_grad()
     def generate(
@@ -1231,6 +1346,7 @@ class ConditionedSmilesDecoder(nn.Module):
         eos_id: int,
         max_new_tokens: int,
         condition_mask: torch.Tensor | None = None,
+        source_token_ids: torch.Tensor | None = None,
         temperature: float = 1.0,
         top_k: int = 0,
         top_p: float = 1.0,
@@ -1247,7 +1363,12 @@ class ConditionedSmilesDecoder(nn.Module):
         blocked_ids = {int(bos_id), self.pad_id}
         blocked_ids.update(int(value) for value in (blocked_token_ids or ()))
         for step in range(max(1, int(max_new_tokens))):
-            logits = self(condition_tokens, generated, condition_mask=condition_mask)[:, -1, :]
+            logits = self(
+                condition_tokens,
+                generated,
+                condition_mask=condition_mask,
+                source_token_ids=source_token_ids,
+            )[:, -1, :]
             logits[:, list(blocked_ids)] = -torch.inf
             if smiles_token_text is not None:
                 apply_smiles_grammar_mask_(
@@ -1294,6 +1415,7 @@ class ConditionedSmilesDecoder(nn.Module):
         eos_id: int,
         max_new_tokens: int,
         condition_mask: torch.Tensor | None = None,
+        source_token_ids: torch.Tensor | None = None,
         beam_size: int = 20,
         expand_size: int = 64,
         length_penalty: float = 0.8,
@@ -1319,7 +1441,12 @@ class ConditionedSmilesDecoder(nn.Module):
                     finished.append((sequence, score, True))
                     continue
                 seq_tensor = torch.tensor([sequence], dtype=torch.long, device=device)
-                logits = self(condition_tokens, seq_tensor, condition_mask=condition_mask)[:, -1, :]
+                logits = self(
+                    condition_tokens,
+                    seq_tensor,
+                    condition_mask=condition_mask,
+                    source_token_ids=source_token_ids,
+                )[:, -1, :]
                 logits[:, list(blocked_ids)] = -torch.inf
                 if smiles_token_text is not None:
                     apply_smiles_grammar_mask_(
@@ -1523,10 +1650,17 @@ def build_dataset(
             max_source_tokens=max_source_tokens,
             condition_layout=condition_layout,
         )
+        source_token_ids = source_token_ids_for_condition(
+            row,
+            vocab,
+            condition,
+            max_source_tokens=max_source_tokens,
+        )
         dataset.append(
             {
                 "row": dict(row),
                 "condition": condition.astype(np.float32),
+                "source_token_ids": source_token_ids,
                 "decoder_input_ids": np.asarray(decoder_input, dtype=np.int64),
                 "target_ids": np.asarray(target_ids, dtype=np.int64),
                 "task_mode": task_mode_for_row(row),
@@ -1668,6 +1802,27 @@ def source_smiles_condition_tokens(
     source_length = max(len(tokens), 1)
     rows = [source_token_feature(token, idx, source_length, condition_dim) for idx, token in enumerate(tokens)]
     return np.stack(rows, axis=0).astype(np.float32)
+
+
+def source_token_ids_for_condition(
+    row: Mapping[str, str],
+    vocab: SmilesVocabulary,
+    condition: np.ndarray,
+    *,
+    max_source_tokens: int,
+) -> np.ndarray:
+    """Align source SMILES vocabulary ids with the marked source-memory slots."""
+    source_smiles = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
+    tokens = tokenize_smiles(source_smiles)[: max(1, int(max_source_tokens))] if source_smiles else []
+    aligned = np.full(int(condition.shape[0]), int(vocab.pad_id), dtype=np.int64)
+    if not tokens:
+        return aligned
+    source_positions = np.flatnonzero(np.isclose(condition[:, 0], 2.0, atol=1e-6))
+    token_ids = vocab.encode(tokens)
+    count = min(len(source_positions), len(token_ids))
+    if count:
+        aligned[source_positions[:count]] = np.asarray(token_ids[:count], dtype=np.int64)
+    return aligned
 
 
 def source_token_feature(token: str, index: int, source_length: int, condition_dim: int) -> np.ndarray:
@@ -1879,6 +2034,7 @@ def collate_batch(rows: list[dict[str, object]], pad_id: int) -> dict[str, torch
     max_len = max(len(row["decoder_input_ids"]) for row in rows)
     condition = np.zeros((len(rows), max_condition, condition_dim), dtype=np.float32)
     condition_mask = np.zeros((len(rows), max_condition), dtype=bool)
+    source_token_ids = np.full((len(rows), max_condition), int(pad_id), dtype=np.int64)
     decoder_input = np.full((len(rows), max_len), int(pad_id), dtype=np.int64)
     target = np.full((len(rows), max_len), int(pad_id), dtype=np.int64)
     task_is_denovo = np.zeros(len(rows), dtype=bool)
@@ -1888,12 +2044,15 @@ def collate_batch(rows: list[dict[str, object]], pad_id: int) -> dict[str, torch
         seq_out = np.asarray(row["target_ids"], dtype=np.int64)
         condition[idx, : cond.shape[0], :] = cond
         condition_mask[idx, : cond.shape[0]] = True
+        source_ids = np.asarray(row.get("source_token_ids", np.full(cond.shape[0], pad_id)), dtype=np.int64)
+        source_token_ids[idx, : source_ids.shape[0]] = source_ids
         decoder_input[idx, : seq_in.shape[0]] = seq_in
         target[idx, : seq_out.shape[0]] = seq_out
         task_is_denovo[idx] = str(row.get("task_mode", "")) == DE_NOVO_MODE
     return {
         "condition": torch.from_numpy(condition),
         "condition_mask": torch.from_numpy(condition_mask),
+        "source_token_ids": torch.from_numpy(source_token_ids),
         "decoder_input_ids": torch.from_numpy(decoder_input),
         "target_ids": torch.from_numpy(target),
         "task_is_denovo": torch.from_numpy(task_is_denovo),
@@ -2074,6 +2233,7 @@ def train_epoch(
             batch["condition"],
             batch["decoder_input_ids"],
             condition_mask=batch["condition_mask"],
+            source_token_ids=batch["source_token_ids"],
         )
         sft_loss = F.cross_entropy(
             logits.reshape(-1, logits.shape[-1]),
@@ -2129,6 +2289,7 @@ def evaluate_loss(
             batch["condition"],
             batch["decoder_input_ids"],
             condition_mask=batch["condition_mask"],
+            source_token_ids=batch["source_token_ids"],
         )
         loss = F.cross_entropy(
             logits.reshape(-1, logits.shape[-1]),
@@ -2231,6 +2392,7 @@ def train_epoch_group_rl(
                     model,
                     expanded["condition"],
                     expanded["condition_mask"],
+                    expanded["source_token_ids"],
                     generated.to(device),
                     eos_id=vocab.eos_id,
                     reduction=sequence_logprob_reduction,
@@ -2264,6 +2426,7 @@ def train_epoch_group_rl(
                 model,
                 expanded["condition"],
                 expanded["condition_mask"],
+                expanded["source_token_ids"],
                 generated.to(device),
                 eos_id=vocab.eos_id,
                 reduction=sequence_logprob_reduction,
@@ -2282,13 +2445,19 @@ def train_epoch_group_rl(
                         reference_model,
                         expanded["condition"],
                         expanded["condition_mask"],
+                        expanded["source_token_ids"],
                         generated.to(device),
                         eos_id=vocab.eos_id,
                         reduction=sequence_logprob_reduction,
                     )
                 reference_loss = float(reference_kl_weight) * (seq_logprob - ref_logprob).pow(2).mean()
 
-            logits = model(batch["condition"], batch["decoder_input_ids"], condition_mask=batch["condition_mask"])
+            logits = model(
+                batch["condition"],
+                batch["decoder_input_ids"],
+                condition_mask=batch["condition_mask"],
+                source_token_ids=batch["source_token_ids"],
+            )
             sft_loss = F.cross_entropy(
                 logits.reshape(-1, logits.shape[-1]),
                 batch["target_ids"].reshape(-1),
@@ -2453,6 +2622,7 @@ def sample_group_rollouts(
             eos_id=eos_id,
             max_new_tokens=max_new_tokens,
             condition_mask=expanded["condition_mask"],
+            source_token_ids=expanded["source_token_ids"],
             temperature=temperature,
             top_k=top_k,
             top_p=top_p,
@@ -2480,7 +2650,7 @@ def sample_group_rollouts(
 
 def repeat_generation_batch(batch: Mapping[str, torch.Tensor], *, repeats: int) -> dict[str, torch.Tensor]:
     out = {}
-    for key in ("condition", "condition_mask"):
+    for key in ("condition", "condition_mask", "source_token_ids"):
         out[key] = batch[key].repeat_interleave(max(1, int(repeats)), dim=0)
     return out
 
@@ -2489,6 +2659,7 @@ def sequence_logprobs(
     model: ConditionedSmilesDecoder,
     condition: torch.Tensor,
     condition_mask: torch.Tensor,
+    source_token_ids: torch.Tensor,
     generated: torch.Tensor,
     *,
     eos_id: int,
@@ -2497,7 +2668,12 @@ def sequence_logprobs(
     generated = generated.to(condition.device)
     decoder_input = generated[:, :-1]
     target_ids = generated[:, 1:]
-    logits = model(condition, decoder_input, condition_mask=condition_mask)
+    logits = model(
+        condition,
+        decoder_input,
+        condition_mask=condition_mask,
+        source_token_ids=source_token_ids,
+    )
     log_probs = F.log_softmax(logits, dim=-1)
     token_log_probs = log_probs.gather(dim=-1, index=target_ids.unsqueeze(-1)).squeeze(-1)
     eos_hits = target_ids.eq(int(eos_id)).cumsum(dim=1)
@@ -2894,6 +3070,12 @@ def sample_candidates_for_row(
         max_source_tokens=int(args.max_source_tokens),
         condition_layout=str(args.condition_layout),
     )
+    source_token_ids = source_token_ids_for_condition(
+        row,
+        vocab,
+        condition,
+        max_source_tokens=int(args.max_source_tokens),
+    )
     total = max(1, int(args.num_samples))
     batch_size = max(1, min(int(args.parallel_samples), int(args.max_parallel_sequences), total))
     seen: dict[str, Candidate] = {}
@@ -2911,12 +3093,14 @@ def sample_candidates_for_row(
             current = min(batch_size, total - start)
             condition_batch = np.repeat(condition[None, :, :], current, axis=0)
             condition_mask = np.ones(condition_batch.shape[:2], dtype=bool)
+            source_ids_batch = np.repeat(source_token_ids[None, :], current, axis=0)
             generated = model.generate(
                 torch.from_numpy(condition_batch).to(device),
                 bos_id=vocab.bos_id,
                 eos_id=vocab.eos_id,
                 max_new_tokens=int(args.max_new_tokens),
                 condition_mask=torch.from_numpy(condition_mask).to(device),
+                source_token_ids=torch.from_numpy(source_ids_batch).to(device),
                 temperature=float(args.temperature),
                 top_k=int(args.top_k),
                 top_p=float(args.top_p),
@@ -2937,12 +3121,14 @@ def sample_candidates_for_row(
     if decoding_mode in {"beam", "sample_beam"}:
         condition_batch = condition[None, :, :]
         condition_mask = np.ones(condition_batch.shape[:2], dtype=bool)
+        source_ids_batch = source_token_ids[None, :]
         generated = model.beam_search(
             torch.from_numpy(condition_batch).to(device),
             bos_id=vocab.bos_id,
             eos_id=vocab.eos_id,
             max_new_tokens=int(args.max_new_tokens),
             condition_mask=torch.from_numpy(condition_mask).to(device),
+            source_token_ids=torch.from_numpy(source_ids_batch).to(device),
             beam_size=int(args.beam_size),
             expand_size=int(args.beam_expand_size),
             length_penalty=float(args.beam_length_penalty),
