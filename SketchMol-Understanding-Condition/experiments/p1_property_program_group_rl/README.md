@@ -89,3 +89,20 @@ one-hour GPU walltime is designed for backfill and answers the missing
 hard-complexity kill question quickly; it is explicitly not the final n=256
 P1 result. Re-running its CPU finalizer is sufficient to add the validity audit
 to an already completed fast candidate pool; no GPU regeneration is required.
+
+## Source consistency and validity pilot
+
+`submit_p1_source_consistency_validity_pilot.sh` tests a unified correction for
+the two current failure modes on validation data only.  It treats a molecular
+edit as a frame-to-frame transition: the property program specifies what may
+change, while source fingerprint similarity, Bemis--Murcko scaffold retention,
+and local graph-edit magnitude measure what should remain consistent.  These
+signals rerank executable GraphEditDSL actions without reading target
+molecules or output property oracles.  The same protected common decoder is
+evaluated on de novo rows with grammar-constrained SMILES decoding,
+`no_repeat_ngram_size=0`, and a reduced repetition penalty.
+
+The single-seed gate requires both an edit improvement at raw `n=1` and at
+least a 10-point de novo raw-validity gain without losing more than two points
+of strict success.  Only a passing validation configuration is eligible for a
+frozen full-test run.

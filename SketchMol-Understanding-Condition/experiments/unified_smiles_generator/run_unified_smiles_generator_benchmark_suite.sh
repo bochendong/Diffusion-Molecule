@@ -36,6 +36,9 @@ MAX_CANDIDATES="${SUCC_UNIFIED_MAX_CANDIDATES:-0}"
 TEMPERATURE="${SUCC_UNIFIED_TEMPERATURE:-0.7}"
 TOP_K="${SUCC_UNIFIED_TOP_K:-24}"
 TOP_P="${SUCC_UNIFIED_TOP_P:-0.9}"
+REPETITION_PENALTY="${SUCC_UNIFIED_REPETITION_PENALTY:-1.15}"
+NO_REPEAT_NGRAM_SIZE="${SUCC_UNIFIED_NO_REPEAT_NGRAM_SIZE:-6}"
+MIN_NEW_TOKENS="${SUCC_UNIFIED_MIN_NEW_TOKENS:-6}"
 SEED="${SUCC_UNIFIED_SEED:-7}"
 DEVICE="${SUCC_DEVICE:-${SUCC_UNIFIED_DEVICE:-auto}}"
 
@@ -100,6 +103,9 @@ if [[ "$RUN_SAMPLE" == "1" ]]; then
     --temperature "$TEMPERATURE"
     --top-k "$TOP_K"
     --top-p "$TOP_P"
+    --repetition-penalty "$REPETITION_PENALTY"
+    --no-repeat-ngram-size "$NO_REPEAT_NGRAM_SIZE"
+    --min-new-tokens "$MIN_NEW_TOKENS"
     --seed "$SEED"
     --device "$DEVICE"
   )
@@ -126,6 +132,7 @@ if [[ "$RUN_SAMPLE" == "1" ]]; then
   echo "  eval_csv=$EVAL_CSV"
   echo "  prediction_csv=$PREDICTION_CSV"
   echo "  candidate_csv=$CANDIDATE_CSV"
+  echo "  grammar=${SUCC_UNIFIED_SMILES_GRAMMAR_CONSTRAINT:-0} repetition_penalty=$REPETITION_PENALTY no_repeat_ngram=$NO_REPEAT_NGRAM_SIZE"
   "$PYTHON_BIN" "${sample_args[@]}"
 fi
 

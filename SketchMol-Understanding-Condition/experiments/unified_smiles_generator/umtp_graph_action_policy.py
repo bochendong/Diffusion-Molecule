@@ -40,13 +40,15 @@ import unified_smiles_generator as unified  # noqa: E402
 
 
 try:
-    from rdkit import RDLogger
+    from rdkit import Chem, RDLogger
+    from rdkit.Chem.Scaffolds import MurckoScaffold
 
     # Invalid local edits are an expected part of grammar enumeration and are
     # filtered by the executor. Keep pilot logs focused on progress/metrics.
     RDLogger.DisableLog("rdApp.*")
 except ImportError:
-    pass
+    Chem = None
+    MurckoScaffold = None
 
 
 EDIT_TOKEN = "<EDIT>"
@@ -148,6 +150,24 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     rank.add_argument("--top-candidates", type=int, default=64)
     rank.add_argument("--score-batch-size", type=int, default=256)
     rank.add_argument("--source-similarity-threshold", type=float, default=0.65)
+    rank.add_argument(
+        "--consistency-fingerprint-weight",
+        type=float,
+        default=0.0,
+        help="Source-only global consistency bonus applied to source/candidate Tanimoto similarity.",
+    )
+    rank.add_argument(
+        "--consistency-scaffold-weight",
+        type=float,
+        default=0.0,
+        help="Source-only structural consistency bonus when the Bemis-Murcko scaffold is preserved.",
+    )
+    rank.add_argument(
+        "--consistency-edit-magnitude-weight",
+        type=float,
+        default=0.0,
+        help="Penalty on local graph displacement; does not inspect target properties or target molecules.",
+    )
     rank.add_argument(
         "--compact-output",
         action="store_true",
@@ -965,6 +985,70 @@ def checkpoint_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def murcko_scaffold(smiles: str) -> str:
+    """Return a canonical Bemis-Murcko scaffold without consulting a target molecule."""
+    if Chem is None or MurckoScaffold is None:
+        return ""
+    molecule = Chem.MolFromSmiles(str(smiles or ""))
+    if molecule is None:
+        return ""
+    try:
+        return str(MurckoScaffold.MurckoScaffoldSmiles(mol=molecule) or "")
+    except Exception:
+        return ""
+
+
+def action_edit_magnitude(action: graph.GraphEditAction) -> float:
+    """Approximate frame-to-frame displacement induced by one executable action."""
+    if action.op == "change_bond_order":
+        return 0.5
+    if action.op in {"add_atom", "replace_atom", "delete_terminal_atom"}:
+        return 1.0
+    fragment = str(action.fragment or "").strip()
+    if fragment and Chem is not None:
+        molecule = Chem.MolFromSmiles(fragment)
+        if molecule is not None:
+            atoms = float(max(1, molecule.GetNumAtoms()))
+            return atoms + (1.0 if action.op == "substitute_terminal" else 0.0)
+    return 1.0
+
+
+def source_consistency_components(
+    source_smiles: str,
+    candidate_smiles: str,
+    action: graph.GraphEditAction,
+) -> dict[str, float]:
+    """Video-inspired source/candidate consistency at global, scaffold, and local scales."""
+    similarity = unified.morgan_tanimoto(source_smiles, candidate_smiles)
+    if not math.isfinite(similarity):
+        similarity = 0.0
+    source_scaffold = murcko_scaffold(source_smiles)
+    candidate_scaffold = murcko_scaffold(candidate_smiles)
+    scaffold_consistent = float(bool(source_scaffold and source_scaffold == candidate_scaffold))
+    return {
+        "fingerprint": max(0.0, min(1.0, float(similarity))),
+        "scaffold": scaffold_consistent,
+        "edit_magnitude": action_edit_magnitude(action),
+    }
+
+
+def consistency_augmented_policy_score(
+    policy_score: float,
+    components: Mapping[str, float],
+    *,
+    fingerprint_weight: float,
+    scaffold_weight: float,
+    edit_magnitude_weight: float,
+) -> float:
+    """Combine learned edit likelihood with source-only frame consistency."""
+    return (
+        float(policy_score)
+        + float(fingerprint_weight) * float(components["fingerprint"])
+        + float(scaffold_weight) * float(components["scaffold"])
+        - float(edit_magnitude_weight) * math.log1p(float(components["edit_magnitude"]))
+    )
+
+
 def rank_command(args: argparse.Namespace) -> int:
     device = unified.resolve_device(str(args.device))
     checkpoint = unified.load_checkpoint(args.checkpoint)
@@ -1008,18 +1092,34 @@ def rank_command(args: argparse.Namespace) -> int:
             batch_size=int(args.score_batch_size),
             device=device,
         )
-        ranked = sorted(zip(candidates, scores), key=lambda item: item[1], reverse=True)
+        source = str(row.get("source_smiles", "") or row.get("molecule_smiles", "")).strip()
+        scored_candidates = []
+        for candidate, policy_score in zip(candidates, scores):
+            action, smiles, _program = candidate
+            consistency = source_consistency_components(source, smiles, action)
+            rank_score = consistency_augmented_policy_score(
+                policy_score,
+                consistency,
+                fingerprint_weight=float(args.consistency_fingerprint_weight),
+                scaffold_weight=float(args.consistency_scaffold_weight),
+                edit_magnitude_weight=float(args.consistency_edit_magnitude_weight),
+            )
+            scored_candidates.append((candidate, float(policy_score), consistency, rank_score))
+        ranked = sorted(scored_candidates, key=lambda item: item[3], reverse=True)
         top = ranked[: max(1, int(args.top_candidates))]
         pool_id = f"graph-action:{fingerprint}:{row_id(row)}"
         pool_hash = hashlib.sha256(
-            "\n".join(smiles for ((_action, smiles, _program), _score) in ranked).encode("utf-8")
+            "\n".join(smiles for ((_action, smiles, _program), _policy, _consistency, _rank) in ranked).encode("utf-8")
         ).hexdigest()
         target = str(row.get("target_smiles", "") or "")
         best_target_similarity = max(
-            (unified.morgan_tanimoto(target, smiles) for ((_action, smiles, _program), _score) in ranked),
+            (
+                unified.morgan_tanimoto(target, smiles)
+                for ((_action, smiles, _program), _policy, _consistency, _rank) in ranked
+            ),
             default=math.nan,
         )
-        for rank, ((action, smiles, program), score) in enumerate(top, start=1):
+        for rank, ((action, smiles, program), policy_score, consistency, rank_score) in enumerate(top, start=1):
             if bool(args.compact_output):
                 candidate_row = {
                     key: row[key]
@@ -1038,7 +1138,11 @@ def rank_command(args: argparse.Namespace) -> int:
                     "candidate_pool_hash": pool_hash,
                     "graph_action_program_tokens_json": json.dumps(program),
                     "graph_action_json": json.dumps(asdict(action), sort_keys=True),
-                    "graph_action_policy_logprob": format_float(score),
+                    "graph_action_policy_logprob": format_float(policy_score),
+                    "graph_action_consistency_rank_score": format_float(rank_score),
+                    "graph_action_consistency_fingerprint": format_float(consistency["fingerprint"]),
+                    "graph_action_consistency_scaffold": format_float(consistency["scaffold"]),
+                    "graph_action_edit_magnitude": format_float(consistency["edit_magnitude"]),
                     "graph_action_candidate_count": len(ranked),
                 }
             )
@@ -1057,9 +1161,11 @@ def rank_command(args: argparse.Namespace) -> int:
                 "written_candidates": len(top),
                 "best_target_similarity": best_target_similarity,
                 "raw_source_similarity": unified.morgan_tanimoto(
-                    str(row.get("source_smiles", "") or ""),
+                    source,
                     top[0][0][1],
                 ),
+                "raw_scaffold_consistency": top[0][2]["scaffold"],
+                "raw_edit_magnitude": top[0][2]["edit_magnitude"],
             }
         )
         if (index + 1) % 20 == 0 or index + 1 == len(rows):
@@ -1068,6 +1174,10 @@ def rank_command(args: argparse.Namespace) -> int:
     counts = [int(row["candidate_count"]) for row in row_summaries]
     target_sims = [float(row["best_target_similarity"]) for row in row_summaries if "best_target_similarity" in row]
     source_sims = [float(row["raw_source_similarity"]) for row in row_summaries if "raw_source_similarity" in row]
+    scaffold_consistency = [
+        float(row["raw_scaffold_consistency"]) for row in row_summaries if "raw_scaffold_consistency" in row
+    ]
+    edit_magnitudes = [float(row["raw_edit_magnitude"]) for row in row_summaries if "raw_edit_magnitude" in row]
     summary = {
         "protocol": "umtp_graph_action_ranking",
         "checkpoint": str(args.checkpoint),
@@ -1080,6 +1190,14 @@ def rank_command(args: argparse.Namespace) -> int:
         "mean_oracle_target_similarity": mean(target_sims) if target_sims else math.nan,
         "oracle_target_similarity_at_0_65": sum(value >= 0.65 for value in target_sims) / max(len(target_sims), 1),
         "raw_source_similarity_at_0_65": sum(value >= 0.65 for value in source_sims) / max(len(source_sims), 1),
+        "mean_raw_source_similarity": mean(source_sims) if source_sims else math.nan,
+        "raw_scaffold_consistency_rate": mean(scaffold_consistency) if scaffold_consistency else math.nan,
+        "mean_raw_edit_magnitude": mean(edit_magnitudes) if edit_magnitudes else math.nan,
+        "consistency_weights": {
+            "fingerprint": float(args.consistency_fingerprint_weight),
+            "scaffold": float(args.consistency_scaffold_weight),
+            "edit_magnitude": float(args.consistency_edit_magnitude_weight),
+        },
         "candidate_output_csv": str(args.candidate_output_csv),
     }
     args.summary_json.parent.mkdir(parents=True, exist_ok=True)
