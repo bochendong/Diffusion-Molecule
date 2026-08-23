@@ -70,19 +70,17 @@ unified-interface claim, not the competitive-performance claim.
 
 ## Main external comparison: MuMOInstruct
 
-All rows use the official 20-candidate SR definition. External values are
-means re-aggregated from GeLLM3O Tables 3 and 4.
+Do not use a two-column IND/OOD macro-average as the main MuMO table. The main
+paper now reproduces the full task-wise structure of GeLLM3O Tables 3 and 4:
+five IND tasks and five OOD tasks, each with SR, Sim(success), and RI(success),
+and method-family separators for general-purpose LLMs, chemistry foundation
+models, task-specific systems, and generalist LLMs. The LaTeX source is
+`iclr2027/mumo_tables.tex`.
 
-| method | adaptation | IND SR | OOD SR |
-| --- | --- | ---: | ---: |
-| Mistral-7B | 5-shot | 28.4 | 42.2 |
-| GPT-4o | 1-shot | 13.5 | 18.2 |
-| Claude-3.5 | 5-shot | 38.3 | 50.4 |
-| LlaSMol-Mistral | chemistry foundation model | 39.8 | 55.2 |
-| Prompt-MolOpt | task-specific non-LLM | 16.3 | -- |
-| GeLLM3O-P(6)-Mistral | MuMO instruction tuning | **76.1** | 88.7 |
-| GeLLM3O-P(6)-Llama | MuMO instruction tuning | 72.2 | **90.8** |
-| MolProgram Group-RL | direct molecular policy | 32.3 | 68.8 |
+The MolProgram--P4 row remains blank until the frozen official evaluator
+exports all 30 task/metric cells at n=20. The older 32.3 IND / 68.8 OOD
+property-SR aggregate must not be reverse-engineered into task-wise cells or
+presented without its low source-similarity diagnostic.
 
 ## Appendix diagnostic: MuMO source fidelity
 

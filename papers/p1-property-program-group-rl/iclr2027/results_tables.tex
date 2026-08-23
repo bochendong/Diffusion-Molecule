@@ -73,41 +73,20 @@ but does not yet establish an overall state-of-the-art result.
   \end{tabular}
 \end{table*}
 
-We next test whether the same direct molecular policy transfers to the
-source-conditioned MuMOInstruct benchmark. Table~\ref{tab:mumo-horizontal}
-re-aggregates the published per-task results under MuMO's official
-20-candidate success-rate (SR) definition \citep{dey2025gellm3o}. MolProgram
-outperforms the general-purpose and chemistry-foundation baselines on OOD SR,
-but remains below the MuMO-specialized GeLLM3O models. Its 32.3\% IND SR also
-trails Claude-3.5 and LlaSMol. This table is evidence of compositional property
-transfer, not competitive source-preserving editing: successful MolProgram
-outputs have low source similarity, which we report separately in
+We next use MuMOInstruct to expose source-conditioned composition at the task
+level. Tables~\ref{tab:mumo-ind-full} and~\ref{tab:mumo-ood-full} retain the
+benchmark's five IND and five OOD task families and report success rate (SR),
+source similarity among successes (Sim), and relative improvement among
+successes (RI), rather than collapsing each split to one average
+\citep{dey2025gellm3o}. This layout separates general-purpose LLMs,
+chemistry-foundation models, task-specific systems, and generalist
+instruction-tuned models. The frozen P4 row remains blank until all three
+official metrics are exported for every task under the same 20-candidate
+contract. Aggregate property success without the corresponding source
+fidelity is retained only as a diagnostic in
 Appendix~\ref{sec:appendix-mumo}.
 
-\begin{table}[t]
-  \centering
-  \caption{MuMOInstruct success rate (SR, \%) with 20 candidates per input.
-  External values are means re-aggregated from the five IND and five OOD tasks
-  reported by \citet{dey2025gellm3o}. A dash denotes an inapplicable protocol.}
-  \label{tab:mumo-horizontal}
-  \small
-  \setlength{\tabcolsep}{5pt}
-  \begin{tabular}{llrr}
-    \toprule
-    Method & Adaptation & IND SR & OOD SR \\
-    \midrule
-    Mistral-7B & 5-shot & 28.4 & 42.2 \\
-    GPT-4o & 1-shot & 13.5 & 18.2 \\
-    Claude-3.5 & 5-shot & 38.3 & 50.4 \\
-    LlaSMol$_{\mathrm{Mistral}}$ & chemistry foundation model & 39.8 & 55.2 \\
-    Prompt-MolOpt & task-specific non-LLM & 16.3 & -- \\
-    GeLLM3O-P(6)$_{\mathrm{Mistral}}$ & MuMO instruction tuning & \textbf{76.1} & 88.7 \\
-    GeLLM3O-P(6)$_{\mathrm{Llama}}$ & MuMO instruction tuning & 72.2 & \textbf{90.8} \\
-    \midrule
-    MolProgram (Group-RL) & direct molecular policy & 32.3 & 68.8 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+\input{mumo_tables.tex}
 
 \subsection{Group-relative post-training improves practical-budget generation}
 \label{sec:results-budget}

@@ -1,0 +1,111 @@
+\begin{table*}[t]
+  \centering
+  \caption{MuMOInstruct performance on in-distribution (IND) tasks with 20
+  candidates per input. External values are transcribed from Table~3 of
+  \citet{dey2025gellm3o}. SR is success rate (\%); Sim and RI are benchmark
+  similarity and relative-improvement metrics over successful cases. Dashes
+  denote an inapplicable task or a pending matched evaluation. Bold marks the
+  best completed value for each task and metric.}
+  \label{tab:mumo-ind-full}
+  \setlength{\tabcolsep}{1.6pt}
+  \renewcommand{\arraystretch}{0.86}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{lrrrrrrrrrrrrrrr}
+    \toprule
+    & \multicolumn{3}{c}{BDP} & \multicolumn{3}{c}{BDQ}
+    & \multicolumn{3}{c}{BPQ} & \multicolumn{3}{c}{DPQ}
+    & \multicolumn{3}{c}{BDPQ} \\
+    \cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+    \cmidrule(lr){11-13}\cmidrule(lr){14-16}
+    Model & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$
+    & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$
+    & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$
+    & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$
+    & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$ \\
+    \midrule
+    \multicolumn{16}{c}{\textit{General-purpose LLMs}} \\
+    Mistral (0-shot) & 6.60 & \textbf{.81} & .68 & 3.00 & \textbf{.76} & .53 & 15.80 & .73 & .51 & 2.20 & \textbf{.65} & .41 & 3.20 & .77 & .87 \\
+    Llama (0-shot) & 22.00 & .73 & .74 & 2.20 & .64 & .53 & 28.40 & .64 & .72 & 2.60 & .62 & .32 & 5.20 & \textbf{.80} & .62 \\
+    Claude-3.5 (0-shot) & 19.60 & .66 & 1.05 & 13.00 & .62 & 1.14 & 56.00 & .62 & .86 & 11.00 & .54 & .51 & 8.00 & .60 & 1.34 \\
+    GPT-4o (0-shot) & 7.80 & .69 & .90 & 2.00 & .69 & .62 & 36.40 & .73 & .42 & 2.80 & .57 & .50 & 1.80 & .71 & .39 \\
+    Mistral (5-shot) & 35.20 & .64 & 2.10 & 17.00 & .60 & 2.32 & 68.60 & .63 & .79 & 10.40 & .54 & 1.10 & 11.00 & .69 & .96 \\
+    Llama (5-shot) & 35.40 & .57 & 2.71 & 16.60 & .43 & \textbf{5.70} & 34.60 & .70 & .64 & 8.20 & .44 & 3.02 & 9.60 & .54 & 3.45 \\
+    Claude-3.5 (5-shot) & 35.40 & .50 & 2.43 & 29.40 & .43 & 3.80 & 76.80 & .53 & 1.24 & 29.20 & .37 & 2.87 & 20.80 & .35 & 3.53 \\
+    GPT-4o (1-shot) & 9.40 & .69 & .79 & 7.60 & .66 & .61 & 40.00 & \textbf{.75} & .41 & 7.00 & .62 & .44 & 3.40 & .70 & .61 \\
+    \midrule
+    \multicolumn{16}{c}{\textit{Foundation LLMs for chemistry}} \\
+    ChemLLM & .20 & .17 & 1.20 & 1.00 & .55 & .82 & 4.80 & .29 & .96 & .60 & .28 & .42 & .00 & n/a & n/a \\
+    LlaSMol$_{\mathrm{Mistral}}$ & 43.60 & .62 & 1.09 & 31.40 & .66 & .93 & 86.00 & .58 & .84 & 24.00 & .57 & .61 & 14.00 & .62 & 1.03 \\
+    \midrule
+    \multicolumn{16}{c}{\textit{Task-specific non-LLM}} \\
+    Prompt-MolOpt & 12.20 & .12 & \textbf{7.46} & 23.20 & .10 & 5.40 & 15.80 & .10 & 1.50 & 23.60 & .10 & \textbf{5.46} & 6.60 & .11 & \textbf{5.36} \\
+    \midrule
+    \multicolumn{16}{c}{\textit{Task-specific LLMs}} \\
+    GeLLM$^3$O-3$_{\mathrm{Mistral}}$ & 84.80 & .47 & 4.30 & 87.00 & .47 & 5.61 & 93.00 & .46 & 1.49 & 62.80 & .37 & 3.87 & -- & -- & -- \\
+    GeLLM$^3$O-3$_{\mathrm{Llama}}$ & \textbf{86.80} & .48 & 4.38 & \textbf{90.00} & .46 & 5.66 & 94.00 & .50 & 1.38 & 60.60 & .44 & 3.76 & -- & -- & -- \\
+    GeLLM$^3$O-4$_{\mathrm{Mistral}}$ & 71.60 & .49 & 3.27 & 57.40 & .55 & 2.56 & 90.20 & .46 & 1.41 & 54.00 & .44 & 3.02 & 30.00 & .48 & 3.44 \\
+    GeLLM$^3$O-4$_{\mathrm{Llama}}$ & 53.60 & .63 & 1.94 & 48.60 & .59 & 1.29 & 93.40 & .59 & 1.12 & 39.60 & .57 & 1.32 & 28.00 & .66 & 1.02 \\
+    \midrule
+    \multicolumn{16}{c}{\textit{Generalist LLMs}} \\
+    GeLLM$^3$O-P(3)$_{\mathrm{Mistral}}$ & 75.60 & .56 & 3.31 & 79.40 & .53 & 4.52 & 93.20 & .55 & 1.23 & 57.20 & .50 & 2.22 & -- & -- & -- \\
+    GeLLM$^3$O-P(3)$_{\mathrm{Llama}}$ & 77.40 & .51 & 3.16 & 76.40 & .57 & 4.41 & 95.40 & .50 & 1.46 & 63.40 & .49 & 2.46 & -- & -- & -- \\
+    GeLLM$^3$O-P(4)$_{\mathrm{Mistral}}$ & 81.40 & .55 & 3.95 & 82.60 & .56 & 5.24 & 96.20 & .52 & 1.52 & \textbf{66.60} & .53 & 2.41 & \textbf{57.40} & .52 & 3.04 \\
+    GeLLM$^3$O-P(4)$_{\mathrm{Llama}}$ & 80.40 & .54 & 3.60 & 81.40 & .56 & 4.81 & 93.80 & .47 & 1.64 & 61.40 & .50 & 2.02 & 49.80 & .48 & 3.26 \\
+    GeLLM$^3$O-P(6)$_{\mathrm{Mistral}}$ & 83.00 & .57 & 3.60 & 85.80 & .59 & 4.78 & \textbf{96.80} & .53 & 1.48 & 60.80 & .54 & 2.16 & 54.00 & .54 & 3.09 \\
+    GeLLM$^3$O-P(6)$_{\mathrm{Llama}}$ & 77.00 & .53 & 3.73 & 79.60 & .56 & 5.05 & 95.00 & .47 & \textbf{1.66} & 57.00 & .49 & 2.50 & 52.20 & .49 & 3.48 \\
+    \midrule
+    \multicolumn{16}{c}{\textit{Ours}} \\
+    MolProgram--P4 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}}
+\end{table*}
+
+\begin{table*}[t]
+  \centering
+  \caption{MuMOInstruct performance on out-of-distribution (OOD) tasks with
+  20 candidates per input. External values are transcribed from Table~4 of
+  \citet{dey2025gellm3o}; notation follows
+  Table~\ref{tab:mumo-ind-full}.}
+  \label{tab:mumo-ood-full}
+  \setlength{\tabcolsep}{1.6pt}
+  \renewcommand{\arraystretch}{0.90}
+  \resizebox{\textwidth}{!}{%
+  \begin{tabular}{lrrrrrrrrrrrrrrr}
+    \toprule
+    & \multicolumn{3}{c}{MPQ} & \multicolumn{3}{c}{BDMQ}
+    & \multicolumn{3}{c}{BHMQ} & \multicolumn{3}{c}{BMPQ}
+    & \multicolumn{3}{c}{HMPQ} \\
+    \cmidrule(lr){2-4}\cmidrule(lr){5-7}\cmidrule(lr){8-10}
+    \cmidrule(lr){11-13}\cmidrule(lr){14-16}
+    Model & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$
+    & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$
+    & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$
+    & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$
+    & SR$\uparrow$ & Sim$\uparrow$ & RI$\uparrow$ \\
+    \midrule
+    \multicolumn{16}{c}{\textit{General-purpose LLMs}} \\
+    Mistral (0-shot) & 11.20 & .57 & .48 & 1.20 & .68 & .37 & 12.71 & .73 & 1.90 & 12.57 & .61 & .54 & 21.88 & \textbf{.72} & .72 \\
+    Llama (0-shot) & 25.80 & .44 & .61 & 1.20 & \textbf{.76} & .30 & 11.02 & .74 & .68 & 16.75 & .51 & .57 & 15.62 & .47 & .60 \\
+    Claude-3.5 (0-shot) & 17.40 & .49 & .52 & 15.00 & .57 & .87 & 38.98 & .51 & 2.35 & 44.50 & .55 & .85 & 38.54 & .54 & 1.01 \\
+    GPT-4o (0-shot) & 19.40 & \textbf{.61} & .35 & 1.60 & .67 & .18 & 17.80 & .66 & .65 & 25.13 & .67 & .35 & 20.83 & .67 & .37 \\
+    Mistral (5-shot) & 59.60 & .54 & .57 & 20.40 & .59 & 1.65 & 34.75 & .70 & 1.31 & 49.21 & .62 & .73 & 46.88 & .66 & .91 \\
+    Llama (5-shot) & 34.80 & .57 & .53 & 16.80 & .39 & 3.22 & 36.44 & .67 & 1.13 & 31.94 & .66 & .60 & 33.33 & .68 & .61 \\
+    Claude-3.5 (5-shot) & 50.60 & .49 & .71 & 30.40 & .49 & 2.32 & 52.54 & .48 & 2.52 & 52.36 & .46 & 1.08 & 65.62 & .48 & 1.32 \\
+    GPT-4o (1-shot) & 21.40 & .60 & .48 & 6.20 & .70 & .75 & 14.41 & \textbf{.75} & .67 & 24.08 & \textbf{.68} & .45 & 25.00 & .70 & .54 \\
+    \midrule
+    \multicolumn{16}{c}{\textit{Foundation LLMs for chemistry}} \\
+    ChemLLM & 6.20 & .31 & .61 & .00 & n/a & n/a & 1.69 & .53 & .74 & 5.24 & .24 & .72 & 3.12 & .58 & .51 \\
+    LlaSMol$_{\mathrm{Mistral}}$ & 76.40 & .55 & .53 & 28.20 & .66 & .52 & 53.39 & .62 & 1.14 & 64.92 & .58 & .57 & 53.12 & .62 & .70 \\
+    \midrule
+    \multicolumn{16}{c}{\textit{Generalist LLMs}} \\
+    GeLLM$^3$O-P(6)$_{\mathrm{Mistral}}$ & \textbf{95.20} & .53 & .85 & \textbf{79.00} & .56 & 3.10 & 86.44 & .54 & 2.58 & 91.10 & .53 & 1.06 & 91.67 & .55 & 1.42 \\
+    GeLLM$^3$O-P(6)$_{\mathrm{Llama}}$ & 93.60 & .48 & \textbf{.91} & 74.20 & .55 & \textbf{3.25} & \textbf{93.22} & .49 & \textbf{3.57} & \textbf{95.29} & .49 & \textbf{1.20} & \textbf{97.92} & .46 & \textbf{1.76} \\
+    \midrule
+    \multicolumn{16}{c}{\textit{Ours}} \\
+    MolProgram--P4 & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}}
+  \vspace{2pt}
+  \parbox{\textwidth}{\scriptsize Task codes follow MuMOInstruct:
+  B=BBBP, D=DRD2, H=HIA, M=mutagenicity, P=penalized LogP, and Q=QED.}
+\end{table*}
