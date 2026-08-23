@@ -157,6 +157,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     train.add_argument("--lr", type=float, default=3e-4)
     train.add_argument("--weight-decay", type=float, default=1e-4)
     train.add_argument("--grad-clip", type=float, default=1.0)
+    train.add_argument(
+        "--trainable-scope",
+        choices=("all", "source_only"),
+        default="all",
+        help="source_only freezes the complete source-free de-novo path and trains only source-conditioned modules.",
+    )
     train.add_argument("--limit", type=int, default=0)
     train.add_argument("--eval-limit", type=int, default=0)
     train.add_argument("--resume-checkpoint", type=Path, default=None)
@@ -217,6 +223,12 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     group_rl.add_argument("--lr", type=float, default=1e-6)
     group_rl.add_argument("--weight-decay", type=float, default=1e-4)
     group_rl.add_argument("--grad-clip", type=float, default=1.0)
+    group_rl.add_argument(
+        "--trainable-scope",
+        choices=("all", "source_only"),
+        default="all",
+        help="source_only freezes the complete source-free de-novo path during group-relative RL.",
+    )
     group_rl.add_argument("--limit", type=int, default=0)
     group_rl.add_argument("--eval-limit", type=int, default=0)
     group_rl.add_argument("--seed", type=int, default=7)
@@ -439,6 +451,7 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         )
         if bool(args.allow_architecture_warmstart) and incompatible.unexpected_keys:
             raise ValueError(f"Unexpected warm-start parameters: {incompatible.unexpected_keys}")
+    trainable_scope = configure_trainable_scope(model, str(args.trainable_scope))
 
     teacher_model = build_distillation_teacher(
         args.teacher_checkpoint,
@@ -471,7 +484,11 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
     if not train_dataset:
         raise ValueError("No trainable rows found. Rows need target_smiles.")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
+    optimizer = torch.optim.AdamW(
+        [parameter for parameter in model.parameters() if parameter.requires_grad],
+        lr=float(args.lr),
+        weight_decay=float(args.weight_decay),
+    )
     warm_start = (
         bool(getattr(args, "reset_training_state", False))
         or bool(getattr(args, "allow_architecture_warmstart", False))
@@ -571,6 +588,7 @@ def train_command(args: argparse.Namespace, device: torch.device) -> int:
         "source_aware": bool(config.get("source_aware", False)),
         "source_encoder_layers": int(config.get("source_encoder_layers", 0)),
         "source_residual_scale": float(config.get("source_residual_scale", 0.0)),
+        "trainable_scope": trainable_scope,
         "task_mode_counts": task_mode_counts(train_dataset),
         "training_group_counts": training_group_counts(train_dataset),
         "vocab_size": len(vocab.token_to_id),
@@ -603,6 +621,7 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
 
     model = ConditionedSmilesDecoder(**config).to(device)
     model.load_state_dict(checkpoint["model_state"])
+    trainable_scope = configure_trainable_scope(model, str(args.trainable_scope))
     reference_model = None
     if float(args.reference_kl_weight) > 0:
         reference_model = ConditionedSmilesDecoder(**config).to(device)
@@ -632,7 +651,11 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
     if not train_dataset:
         raise ValueError("No trainable rows found. Rows need target_smiles.")
 
-    optimizer = torch.optim.AdamW(model.parameters(), lr=float(args.lr), weight_decay=float(args.weight_decay))
+    optimizer = torch.optim.AdamW(
+        [parameter for parameter in model.parameters() if parameter.requires_grad],
+        lr=float(args.lr),
+        weight_decay=float(args.weight_decay),
+    )
     history: list[dict[str, object]] = []
     for epoch in range(1, int(args.epochs) + 1):
         record = train_epoch_group_rl(
@@ -755,6 +778,7 @@ def group_rl_command(args: argparse.Namespace, device: torch.device) -> int:
         "reward_softmin_temperature": float(args.reward_softmin_temperature),
         "smiles_grammar_constraint": bool(args.smiles_grammar_constraint),
         "reward_source_similarity_threshold": effective_reward_source_similarity_threshold(args),
+        "trainable_scope": trainable_scope,
         "history": history,
         "prediction_summary": prediction_summary,
     }
@@ -848,6 +872,42 @@ def build_distillation_teacher(
     for parameter in teacher.parameters():
         parameter.requires_grad_(False)
     return teacher
+
+
+SOURCE_ONLY_PREFIXES = (
+    "source_condition_proj.",
+    "source_encoder.",
+    "source_type",
+    "null_source",
+    "source_gate.",
+    "source_output.",
+)
+
+
+def configure_trainable_scope(model: ConditionedSmilesDecoder, scope: str) -> dict[str, object]:
+    normalized = str(scope or "all")
+    if normalized == "all":
+        for parameter in model.parameters():
+            parameter.requires_grad_(True)
+    elif normalized == "source_only":
+        if not bool(model.source_aware):
+            raise ValueError("source_only training requires a source-aware checkpoint")
+        for name, parameter in model.named_parameters():
+            parameter.requires_grad_(name.startswith(SOURCE_ONLY_PREFIXES))
+    else:
+        raise ValueError(f"Unsupported trainable scope: {scope}")
+    trainable_names = [name for name, parameter in model.named_parameters() if parameter.requires_grad]
+    trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
+    total = sum(parameter.numel() for parameter in model.parameters())
+    if trainable <= 0:
+        raise ValueError(f"Trainable scope {normalized} selected no parameters")
+    return {
+        "scope": normalized,
+        "trainable_parameters": int(trainable),
+        "frozen_parameters": int(total - trainable),
+        "trainable_prefixes": list(SOURCE_ONLY_PREFIXES) if normalized == "source_only" else ["*"],
+        "trainable_parameter_names": trainable_names,
+    }
 
 
 class FeatureStore:

@@ -1,0 +1,34 @@
+{
+  "protocol": "p4_event_to_smiles_distillation_single_seed_v1",
+  "series": "P",
+  "attempt": 4,
+  "seed": 7,
+  "teacher": "frozen D3 event kernel plus GRPO",
+  "teacher_train_only": true,
+  "teacher_inference_dependency": false,
+  "student": "one source-aware direct-SMILES MolProgram checkpoint",
+  "trainable_scope": "source_only",
+  "molecular_candidate_ranking": false,
+  "property_reranking": false,
+  "candidate_budgets": [1, 8, 20],
+  "inference": {
+    "single_policy": true,
+    "teacher_present": false,
+    "task_router": false,
+    "external_materializer": false,
+    "molecular_candidate_ranking": false
+  },
+  "evaluation": {
+    "candidate_budgets": [1, 8, 20],
+    "candidate_order": "raw_generation_order",
+    "primary_metric": "Acc_all(0.65)"
+  },
+  "gates": {
+    "min_teacher_strict_coverage": 0.45,
+    "minimum_raw_acc_0_65": 0.35,
+    "strong_raw_acc_0_65": 0.45,
+    "minimum_any20_acc_0_65": 0.70,
+    "minimum_validity": 0.95,
+    "de_novo_path_bit_identical": true
+  }
+}
