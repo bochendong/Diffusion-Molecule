@@ -1,0 +1,66 @@
+\section{External Benchmark Snapshot}
+\label{sec:external-results-snapshot}
+
+Table~\ref{tab:sketchmol-fair40} is the currently completed external
+comparison.  Both methods receive forty generation attempts per condition;
+the score is the fraction of conditions for which at least one generated
+molecule satisfies all active properties.  MolProgram is competitive for
+low-order programs, but its average is lower because the gap grows for five-
+to seven-property programs.  We therefore do not claim state of the art from
+this table.
+
+\begin{table}[t]
+  \centering
+  \caption{Strict success (\%) on the SketchMol-style multi-property de novo
+  benchmark with a matched 40-candidate budget.  SketchMol numbers are the
+  reported external reference.  MolProgram uses direct SMILES generation with
+  Group-RL post-training.}
+  \label{tab:sketchmol-fair40}
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{lrrrrrrr}
+    \toprule
+    Method & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
+    \midrule
+    SketchMol & \textbf{73.1} & 80.4 & 76.8 & \textbf{73.6} & \textbf{71.6} & \textbf{67.8} & \textbf{68.5} \\
+    MolProgram (Group-RL) & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Table~\ref{tab:moledit-table1} gives the source-conditioned editing result
+under the MolEdit-Instruct Table~1 metric.  The direct row evaluates the first
+generated candidate.  The 20-candidate rows use a property-aware selector and
+are explicitly marked assisted; they must not be presented as one-shot
+generation.  Group-RL yields a small matched-seed improvement over SFT at the
+relaxed similarity threshold, but neither checkpoint succeeds at the strict
+0.65 threshold.  Editing presently supports a shared interface, not a
+competitive external-result claim.
+
+\begin{table}[t]
+  \centering
+  \caption{MolEdit-Instruct Table~1 aggregate editing accuracy (\%).
+  $\operatorname{Acc}_{\mathrm{all}}(t)$ requires every requested property
+  direction and source Tanimoto similarity at least $t$.  ``Assisted'' selects
+  one output with a property verifier from 20 generated candidates.}
+  \label{tab:moledit-table1}
+  \small
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{llrrr}
+    \toprule
+    Method & Inference protocol & Validity & $\operatorname{Acc}_{\mathrm{all}}(.65)$ & $\operatorname{Acc}_{\mathrm{all}}(.15)$ \\
+    \midrule
+    MolEditRL & reported external result & -- & \textbf{45.0} & \textbf{72.7} \\
+    MolProgram (Group-RL) & first candidate & 23.4 & 0.0 & 3.9 \\
+    MolProgram (SFT) & assisted, 20 candidates & 96.4 & 0.0 & 17.9 \\
+    MolProgram (Group-RL) & assisted, 20 candidates & 97.2 & 0.0 & 19.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The remaining main external comparison is MuMOInstruct, evaluated with the
+official 20-candidate success rate (SR), similarity of successful edits, and
+relative improvement (RI).  The reported GeLLM3O targets are 76.8\% SR for
+in-distribution tasks and 90.8\% for out-of-distribution tasks.  We leave the
+MolProgram cells out of the manuscript until the same-oracle evaluation is
+complete rather than mixing these metrics with an internal similarity proxy.

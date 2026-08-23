@@ -1,11 +1,56 @@
 # MolProgram result tables
 
-Draft status: single-seed, ordered-prefix results. Values are percentages. A
-candidate budget of `k=1` is the first raw generation, not a property-reranked
-selection. `Pass@k` is the empirical fraction of conditions with at least one
-strict success among the first `k` generations.
+Draft status: single-seed results. The paper must lead with externally aligned
+benchmarks below. SFT-vs-Group-RL and budget-scaling tables are method evidence
+and ablations, not external SOTA comparisons.
 
-## Main de novo and OOD table
+## Main external comparison: de novo generation
+
+This is the currently completed cross-paper table. Both rows use a 40-candidate
+budget. Values are strict success percentages.
+
+| method | average | 2p | 3p | 4p | 5p | 6p | 7p |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SketchMol (reported reference) | **73.1** | 80.4 | 76.8 | **73.6** | **71.6** | **67.8** | **68.5** |
+| MolProgram Group-RL @40 | 68.1 | **91.7** | **83.2** | 72.7 | 63.6 | 51.0 | 46.5 |
+
+The honest reading is mixed: MolProgram wins on 2p and 3p, is 0.9 points lower
+on 4p, and loses increasingly badly on 5p--7p. Its average is 5.0 points below
+SketchMol. This table supports compositional-scaling analysis, but not an
+overall state-of-the-art claim.
+
+## Main external comparison: source-conditioned editing
+
+MolEditRL uses the official Table1 aggregate. `first candidate` is honest
+one-shot generation. `assisted @20` selects one output using a property-aware
+verifier and must never be described as one-shot.
+
+| method | protocol | validity | Acc_all(0.65) | Acc_all(0.15) |
+| --- | --- | ---: | ---: | ---: |
+| MolEditRL (reported) | external paper | -- | **45.0** | **72.7** |
+| MolProgram Group-RL | first candidate | 23.4 | 0.0 | 3.9 |
+| MolProgram SFT | assisted @20 | 96.4 | 0.0 | 17.9 |
+| MolProgram Group-RL | assisted @20 | 97.2 | 0.0 | 19.0 |
+
+On the matched seed, Group-RL only improves the assisted relaxed-threshold
+score by 1.1 points over SFT. Both checkpoints remain at zero for the official
+strict 0.65 threshold and far below MolEditRL. Editing currently supports the
+unified-interface claim, not the competitive-performance claim.
+
+## Pending external comparison: MuMOInstruct
+
+The table must use the official 20-candidate `SR`, `Similarity(success)`, and
+`RI(success)` metrics. Reported GeLLM3O targets are 76.8% IND SR and 90.8% OOD
+SR. Do not fill the MolProgram row with internal `Sim>=0.4` or proxy success.
+The same-oracle MolProgram evaluation is running as jobs `20329830 -> 20329832
+-> 20329833`.
+
+## Internal de novo and OOD evidence
+
+Values are percentages. A candidate budget of `k=1` is the first raw
+generation, not a property-reranked selection. `Pass@k` is the empirical
+fraction of conditions with at least one strict success among the first `k`
+generations.
 
 | evaluation | method | k | raw strict success | pass@k | raw validity |
 | --- | --- | ---: | ---: | ---: | ---: |
@@ -30,7 +75,7 @@ The Group-RL advantage is therefore already visible at `k=4/8/20`; it is not
 a `k=256`-only result. The honest exception is OOD `k=1`, where SFT remains
 better on the first draw.
 
-## Source-conditioned editing table
+## Internal source-conditioned editing scaling
 
 Success requires every requested edit direction and source Tanimoto at least
 0.15. Candidate prefixes follow generation order and do not use property-aware
@@ -39,20 +84,17 @@ reranking.
 | method | k | raw validity | unique valid | raw strict success | pass@k |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | SFT | 1 | 22.20 | 22.20 | **4.00** | **4.00** |
-| Group-RL | 1 | **22.60** | **22.60** | 3.80 | 3.80 |
+| Group-RL | 1 | **23.40** | **23.40** | 3.90 | 3.90 |
 | SFT | 4 | 21.35 | 21.35 | 2.95 | 11.20 |
-| Group-RL | 4 | **23.97** | **23.97** | **3.35** | **12.80** |
+| Group-RL | 4 | **23.33** | **23.33** | **3.30** | **12.30** |
 | SFT | 8 | 21.25 | 21.25 | 2.76 | 19.00 |
-| Group-RL | 8 | **24.16** | **24.16** | **3.46** | **23.10** |
+| Group-RL | 8 | **24.16** | **24.16** | **3.29** | **21.70** |
 | SFT | 20 | 20.34 | 20.34 | 2.54 | 34.70 |
-| Group-RL | 20 | **24.12** | **24.12** | **3.26** | **42.10** |
+| Group-RL | 20 | **23.97** | **23.97** | **3.06** | **40.30** |
 
-This editing block is provisional: SFT uses evaluation seed 7, whereas the
-reused Group-RL pool was generated with the historical evaluation seed 23. A
-matched seed-7 Group-RL pool is being generated before this table is frozen.
-The strict Tanimoto-0.65 column is zero for both methods and is omitted here;
-editing currently supports the broad unified-method claim, but not a strong
-high-similarity editing claim.
+Both candidate pools now use evaluation seed 7. The strict Tanimoto-0.65
+column is zero for both methods and is omitted here; editing currently supports
+the broad unified-method claim, but not a strong high-similarity editing claim.
 
 ## Hard-program rollout ablation
 
@@ -76,6 +118,6 @@ negative ablation; the current G16 checkpoint stays in the main table.
 ## Evidence paths
 
 - De novo and OOD: `outputs/p1_property_program_group_rl_seed7/final/p1_report.md`
-- Editing: `outputs/p1_property_program_group_rl_seed7/edit_sampling_scaling/edit_sampling_paper_table.md`
+- Matched-seed editing: `outputs/p1_property_program_group_rl_seed7/edit_sampling_scaling_seed7_matched/edit_sampling_paper_table.md`
 - G64 vs SFT: `outputs/p1_hard_grpo_g64_seed7/final_vs_sft/report.md`
 - G64 vs G16: `outputs/p1_hard_grpo_g64_seed7/final_vs_g16/report.md`

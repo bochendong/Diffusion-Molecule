@@ -4,6 +4,7 @@
 \usepackage{microtype}
 \usepackage{hyperref}
 \usepackage{url}
+\usepackage{booktabs}
 
 \title{Compositional Property Programs for Direct Molecular Generation\\
 with Group-Relative Reinforcement Learning}
@@ -152,6 +153,10 @@ formalizes property programs and presents MolProgram. Section 4 describes the
 training and evaluation protocols. Section 5 reports the compositional and
 candidate-budget scaling results. Section 6 discusses limitations and broader
 implications, and Section 7 concludes the paper.
+
+% Working external-comparison tables. Internal SFT/Group-RL budget curves
+% belong in the ablation section rather than in the main benchmark table.
+\input{results_tables.tex}
 
 \bibliography{references}
 \bibliographystyle{iclr2027_conference}
