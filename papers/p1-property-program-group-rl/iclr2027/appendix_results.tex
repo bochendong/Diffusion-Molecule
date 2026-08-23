@@ -126,55 +126,73 @@ control, but it must not be presented as source-preserving editing success.
 \label{sec:appendix-actions}
 
 A source-similarity reward applied to free-form direct SMILES Group-RL did not
-produce any candidates above the required source-similarity threshold. In a
-paired 200-example validation experiment, replacing free-form editing with
-executable GraphEditDSL actions raises raw $k=1$ validity from 31.0\% to
-100\% and strict $\operatorname{Acc}_{\mathrm{all}}(.65)$ from 0\% to 20.0\%,
-without reducing held-out de novo strict success. At $k=8$, an explicitly
-assisted finalizer reaches 43.5\% strict accuracy. These validation results
-motivate source-consistent action policies, but are not part of the main
-MolProgram claim.
+produce any candidates above the required source-similarity threshold.
+Replacing free-form editing with executable GraphEditDSL actions makes every
+raw first candidate valid and gives 26.5\%
+$\operatorname{Acc}_{\mathrm{all}}(.65)$ on the paired repair evaluation.
+This large gain in reachability motivates action-based editing, but it is a
+separate validation result rather than part of the main MolProgram claim.
 
-\subsection{Frozen slots for ongoing repair experiments}
-\label{sec:appendix-pending}
+\subsection{Syntax-safe decoding and source-consistency repair}
+\label{sec:appendix-repair}
 
-We retain empty cells for the preregistered repair runs rather than filling
-them with selected-molecule validity or results from a different evaluation
-subset.
+We next evaluate two frozen, single-seed repairs. Syntax-safe decoding changes
+the autoregressive decoder itself rather than filtering invalid outputs after
+generation. Source-consistency ranking uses only the input molecule,
+scaffold retention, and local edit magnitude; it never observes a target
+molecule or output-property oracle.
 
 \begin{table}[h]
   \centering
-  \caption{Syntax-safe decoding repair. Pending rows remain blank until the
-  paired P2 evaluation completes.}
+  \caption{Paired syntax-safe decoding evaluation (\%). Each row uses the
+  same frozen condition subset for the legacy and repaired decoders.}
   \label{tab:validity-repair}
   \small
-  \begin{tabular}{llrrr}
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{llrrrrr}
     \toprule
-    Evaluation & Decoder & Raw validity@1 & Raw strict@1 & Pass@8 \\
+    Evaluation & Decoder & Valid@1 & Strict@1 & Pass@8 & Valid@20 & Pass@20 \\
     \midrule
-    2p--7p & legacy Group-RL & 33.53 & 8.93 & 41.72 \\
-    2p--7p & syntax-safe Group-RL & -- & -- & -- \\
-    OOD & legacy Group-RL & 12.10 & 3.20 & 23.60 \\
-    OOD & syntax-safe Group-RL & -- & -- & -- \\
+    2p--7p & Legacy & 34.9 & 10.2 & 43.8 & 34.5 & 60.2 \\
+    2p--7p & Syntax-safe & \textbf{48.2} & 10.2 & \textbf{51.6} & \textbf{50.5} & \textbf{68.5} \\
+    OOD & Legacy & 12.0 & 3.3 & 26.7 & 13.1 & 46.3 \\
+    OOD & Syntax-safe & \textbf{29.0} & \textbf{9.7} & \textbf{42.7} & \textbf{30.1} & \textbf{61.7} \\
     \bottomrule
   \end{tabular}
 \end{table}
 
+Syntax-safe decoding raises first-draw validity by 13.3 points on 2p--7p and
+17.0 points on OOD, while improving Pass@8 by 7.8 and 16.0 points,
+respectively. It nevertheless misses the preregistered $+20$-point validity
+promotion gate. Moreover, the aggregate OOD gain is driven mainly by the
+forward- and reverse-direction subsets: on the small OOD 7p subset,
+Pass@20 falls from 18.2\% to 4.5\%. We therefore report the repair as a
+positive decoder ablation, not as evidence that high-order extrapolation has
+been solved.
+
 \begin{table}[h]
   \centering
-  \caption{Source-consistent executable editing. Pending rows use source-only
-  consistency ranking; target molecules and output property oracles do not
-  enter raw selection.}
+  \caption{Source-consistent executable editing (\%). ``Finalizer@8'' is an
+  explicitly assisted source-only selection protocol and is not one-shot.}
   \label{tab:edit-repair}
   \scriptsize
   \setlength{\tabcolsep}{3pt}
-  \begin{tabular}{lrrr}
+  \begin{tabular}{llrrr}
     \toprule
-    Edit policy & Validity@1 & $\operatorname{Acc}_{\mathrm{all}}(.65)$ & $\operatorname{Acc}_{\mathrm{all}}(.15)$ \\
+    Edit policy & Protocol & Validity & $\operatorname{Acc}_{\mathrm{all}}(.65)$ & $\operatorname{Acc}_{\mathrm{all}}(.15)$ \\
     \midrule
-    Protected action policy & 100.0 & 20.0 & 20.0 \\
-    Source-consistent action policy & -- & -- & -- \\
-    Strong source-consistent action policy & -- & -- & -- \\
+    Protected action & Raw@1 & 100.0 & \textbf{26.5} & \textbf{26.5} \\
+    Source-consistent & Raw@1 & 100.0 & 26.0 & 26.0 \\
+    Strong consistent & Raw@1 & 100.0 & 23.0 & 23.0 \\
+    Protected action & Finalizer@8 & 100.0 & 62.0 & 62.0 \\
+    Source-consistent & Finalizer@8 & 100.0 & \textbf{66.0} & \textbf{66.0} \\
+    Strong consistent & Finalizer@8 & 100.0 & 64.0 & 64.0 \\
     \bottomrule
   \end{tabular}
 \end{table}
+
+Consistency ranking does not improve the raw first candidate: the protected
+policy remains best by 0.5 points. The source-consistent finalizer does reach
+66.0\% at $k=8$, four points above the protected-policy finalizer, but this is
+an assisted-selection result. The preregistered raw-edit gate therefore fails,
+and we do not promote this variant as a new editing policy.

@@ -10,7 +10,7 @@ and ablations, not external SOTA comparisons.
   comparison, compact SFT-vs-Group-RL budget table, and 2p-to-7p scaling.
 - Appendix: raw validity, G64 negative ablation, full MolEdit-Instruct
   comparison, MuMO source-fidelity diagnostic, GraphEditDSL validation, and
-  pending P1/P2 repair slots.
+  completed syntax-safe decoding and source-consistency repair tables.
 - SketchMol Supplementary Table 1 is not copied into the main comparison:
   DIFFUMOL and DiGress are evaluated for unconditional distribution matching,
   not under the 2p-to-7p property-program protocol.
@@ -152,9 +152,48 @@ The larger rollout group increases validity and slightly raises raw success at
 reduces 7p pass@20 on this single-seed subset. G64 should therefore remain a
 negative ablation; the current G16 checkpoint stays in the main table.
 
+## Appendix decoder repair: paired P2 evaluation
+
+Syntax-safe decoding modifies the raw autoregressive decoder; it is not a
+posthoc validity filter. The paired evaluation uses 384 2p--7p programs and
+300 OOD programs.
+
+| evaluation | decoder | validity@1 | strict@1 | pass@8 | validity@20 | pass@20 |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2p--7p | legacy | 34.9 | 10.2 | 43.8 | 34.5 | 60.2 |
+| 2p--7p | syntax-safe | **48.2** | 10.2 | **51.6** | **50.5** | **68.5** |
+| OOD | legacy | 12.0 | 3.3 | 26.7 | 13.1 | 46.3 |
+| OOD | syntax-safe | **29.0** | **9.7** | **42.7** | **30.1** | **61.7** |
+
+The repair is scientifically positive but misses the preregistered +20-point
+validity gate. The aggregate OOD gain is also not a high-order result: OOD 7p
+pass@20 falls from 18.2% to 4.5%, while the strongest improvements occur in
+the forward- and reverse-direction subsets.
+
+## Appendix editing repair: paired P1/P2 evaluation
+
+Raw ranking uses no target molecule or output property oracle. `Finalizer@8`
+is explicitly assisted source-only selection and must not be described as
+one-shot.
+
+| edit policy | protocol | validity | Acc_all(0.65) | Acc_all(0.15) |
+| --- | --- | ---: | ---: | ---: |
+| protected action | raw@1 | 100.0 | **26.5** | **26.5** |
+| source-consistent | raw@1 | 100.0 | 26.0 | 26.0 |
+| strong consistent | raw@1 | 100.0 | 23.0 | 23.0 |
+| protected action | finalizer@8 | 100.0 | 62.0 | 62.0 |
+| source-consistent | finalizer@8 | 100.0 | **66.0** | **66.0** |
+| strong consistent | finalizer@8 | 100.0 | 64.0 | 64.0 |
+
+The raw edit gate fails: consistency does not improve first-candidate
+accuracy. The 66.0% result is useful evidence for assisted candidate selection
+only.
+
 ## Evidence paths
 
 - De novo and OOD: `outputs/p1_property_program_group_rl_seed7/final/p1_report.md`
 - Matched-seed editing: `outputs/p1_property_program_group_rl_seed7/edit_sampling_scaling_seed7_matched/edit_sampling_paper_table.md`
 - G64 vs SFT: `outputs/p1_hard_grpo_g64_seed7/final_vs_sft/report.md`
 - G64 vs G16: `outputs/p1_hard_grpo_g64_seed7/final_vs_g16/report.md`
+- Syntax-safe decoder: `outputs/p2_validity_edit_repair_seed7/final/p2_report.md`
+- Source consistency: `outputs/p1_source_consistency_validity_pilot_v1/seed_7/p1_source_consistency_validity_report.md`

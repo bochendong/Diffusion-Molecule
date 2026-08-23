@@ -156,5 +156,8 @@ Together, these results show a consistent but bounded advantage: Group-RL
 raises small-budget success across the full compositional axis, while
 high-order de novo generation, raw SMILES validity, and source preservation
 remain open limitations. Full validity diagnostics, negative ablations,
-MolEdit-Instruct comparisons, and incomplete repair experiments are reported
-in the appendix rather than mixed into the main result narrative.
+MolEdit-Instruct comparisons, and paired decoder/editing repairs are reported
+in the appendix rather than mixed into the main result narrative. In
+particular, syntax-safe decoding substantially improves raw validity and
+low-budget OOD success, but does not meet its preregistered promotion gate or
+repair the small high-order OOD subset.

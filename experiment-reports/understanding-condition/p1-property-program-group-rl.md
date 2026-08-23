@@ -99,3 +99,29 @@ The infrastructure reruns are:
 
 At the time of this update all four are pending because the requested GPU node
 is unavailable. The completed OOD SFT pool from job `20285887` is retained.
+
+## P1/P2 validity and consistency repairs (2026-08-23)
+
+The follow-up jobs completed successfully on Nibi:
+
+- `20331234` --- source-consistency/validity pilot;
+- `20333563` --- paired 2p--7p syntax-safe evaluation;
+- `20333564` --- paired OOD syntax-safe evaluation;
+- `20333565` --- P2 finalizer.
+
+Syntax-safe decoding improves raw validity from 34.9% to 48.2% at `k=1` on
+the paired 2p--7p subset and from 12.0% to 29.0% on OOD. Pass@8 improves from
+43.8% to 51.6% and from 26.7% to 42.7%, respectively. It remains below the
+preregistered +20-point validity promotion gate. The aggregate OOD result also
+hides a high-order caveat: OOD 7p Pass@20 decreases from 18.2% to 4.5%.
+
+For executable editing, the protected, source-consistent, and strongly
+consistent policies all have 100% raw validity. Their raw first-candidate
+strict accuracies are 26.5%, 26.0%, and 23.0%, so consistency ranking does not
+pass the raw-edit gate. Under explicitly assisted source-only finalization at
+`k=8`, they reach 62.0%, 66.0%, and 64.0%. The 66.0% figure is therefore an
+assisted-selection result, not one-shot editing.
+
+The preregistered decision is `stop` for both promotion gates. The de novo
+decoder remains a positive ablation worth reporting; the consistency variant
+does not warrant further training in its current form.
