@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Submit the protected GraphEditDSL full Table1 evaluation to one H100 20 GB MIG.
+# Submit the protected GraphEditDSL full Table1 evaluation to one available full H100.
 
 set -euo pipefail
 
@@ -12,7 +12,7 @@ command -v sbatch >/dev/null 2>&1 || { echo "ERROR: sbatch not found" >&2; exit 
 
 export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 ACCOUNT="${UMTP_GRAPH_ACTION_SLURM_ACCOUNT:-rrg-hup}"
-GPU="${UMTP_GRAPH_ACTION_SLURM_GPUS:-nvidia_h100_80gb_hbm3_2g.20gb:1}"
+GPU="${UMTP_GRAPH_ACTION_SLURM_GPUS:-h100:1}"
 MEM="${UMTP_GRAPH_ACTION_SLURM_MEM:-64G}"
 CPUS="${UMTP_GRAPH_ACTION_SLURM_CPUS:-8}"
 TIME="${UMTP_GRAPH_ACTION_SLURM_TIME:-04:00:00}"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Submit the fast single-seed P5 gate on one H100 20 GB MIG.
+# Submit the fast single-seed P5 gate on one available full H100.
 
 set -euo pipefail
 
@@ -12,7 +12,7 @@ command -v sbatch >/dev/null 2>&1 || { echo "ERROR: sbatch not found" >&2; exit 
 export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 SEED="${P5_SEED:-7}"
 ACCOUNT="${P5_SLURM_ACCOUNT:-rrg-hup}"
-GPU="${P5_SLURM_GPU:-nvidia_h100_80gb_hbm3_2g.20gb:1}"
+GPU="${P5_SLURM_GPU:-h100:1}"
 TIME="${P5_SLURM_TIME:-02:00:00}"
 MEM="${P5_SLURM_MEM:-64G}"
 CPUS="${P5_SLURM_CPUS:-8}"
@@ -39,4 +39,3 @@ echo "  job_id=$job_id"
 echo "  gpu=$GPU"
 echo "  time=$TIME"
 echo "  log=$LOG_DIR/p5-source-copy-s${SEED}-${job_id}.log"
-
