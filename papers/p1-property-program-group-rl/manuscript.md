@@ -8,29 +8,28 @@
 
 ## Abstract
 
-Multi-property molecular generation is difficult to assess because two axes
-are often confounded: compositional complexity and sampling budget. A model
-may appear to satisfy a high-order property specification because it assigns
-more probability to successful molecules, or simply because evaluation
-selects one success from hundreds of candidates. We formulate molecular
-objectives as variable-length *property programs* and study whether
-group-relative reinforcement learning (Group-RL) improves the candidate
-efficiency of a direct SMILES generator as program complexity increases. The
+Generating molecules that satisfy many simultaneous property constraints is
+central to inverse molecular design. Yet compositional controllability is
+often measured after selecting from a large candidate pool, conflating a
+better conditional generator with additional search. We study compositional
+molecular design through variable-length *property programs* and ask whether
+group-relative reinforcement learning (Group-RL) increases the probability of
+strict success rather than merely benefiting from best-of-many selection. Our
 model combines frozen instruction features with deterministic numerical
-property-program tokens and a compact autoregressive decoder. We train it
-with a property-count curriculum, then apply Group-RL using verifiable
-molecular-property rewards. Candidates are generated without retrieval, a
-molecular library, a materializer, or inference-time property reranking. On a
-preliminary single-seed gate of 256 six- and seven-property conditions,
-Group-RL raises strict success among the first 20 candidates from 3.63% to
-4.75% and empirical pass@20 from 37.1% to 50.8%. Across 1,000
-out-of-distribution conditions, pass@20 rises from 35.2% to 41.7%, while
-one-shot success changes from 3.5% to 3.2%. Thus, the observed gain is not
-uniform first-sample improvement; it is an increased probability that a small
-candidate set contains a solution. By reporting raw success, pass@k, validity,
-and uniqueness over the full budget curve, we make best-of-many search an
-explicit part of compositional molecular generation rather than a hidden
-evaluation advantage.
+property tokens and a compact autoregressive SMILES decoder. It is trained
+with a property-count curriculum and then post-trained with Group-RL using
+verifiable molecular-property rewards. All candidates are sampled directly,
+without an external molecular library, materializer, or property-aware
+reranking. On 256 six- and seven-property conditions, Group-RL increases raw
+strict success among the first 20 candidates from 3.63% to 4.75% and the
+fraction of conditions solved within 20 draws from 37.1% to 50.8%. Across
+1,000 out-of-distribution conditions, the latter rises from 35.2% to 41.7%,
+although one-shot success changes from 3.5% to 3.2%. Thus, Group-RL does not
+uniformly improve the first draw; instead, it makes a modest candidate set
+more likely to contain a molecule satisfying all constraints. Our
+budget-scaling evaluation separates improvement under compositional control
+from best-of-many search, providing a more transparent account of conditional
+molecular generation.
 
 ## 1. Introduction
 
@@ -117,4 +116,3 @@ This paper makes four contributions:
 4. We provide single-seed evidence that Group-RL improves success within small
    candidate sets for hard six/seven-property and OOD programs, while exposing
    the important boundary that OOD one-shot success does not improve.
-

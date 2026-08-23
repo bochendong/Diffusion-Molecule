@@ -29,6 +29,8 @@ reviewed and the final P1 tables are mirrored from Nibi.
 ## Files
 
 - `manuscript.md`: abstract and Introduction working draft;
+- `abstract-literature-study.md`: rhetorical comparison of ten neighboring
+  paper abstracts and the resulting P1 positioning;
 - `claims-and-evidence.md`: claim ledger and evidence gates;
 - `references.bib`: verified starting bibliography.
 - `iclr2027/main.tex`: anonymous ICLR abstract/Introduction scaffold;
