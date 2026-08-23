@@ -348,11 +348,16 @@ def summarize_input_group(items: list[dict[str, object]]) -> dict[str, object]:
     sim_any = any(truthy(item.get("external_source_similarity_success")) for item in items)
     prop_any = any(truthy(item.get("external_all_property_success")) for item in items)
     strict_any = any(truthy(item.get("external_strict_success")) for item in items)
-    full_coverage_any = any(
-        truthy(item.get("external_valid")) and truthy(item.get("external_full_property_coverage")) for item in items
-    )
     success_candidates = [item for item in items if truthy(item.get("external_official_success"))]
     best = best_success_candidate(success_candidates)
+    # An all-invalid group is an observed failure, not an oracle-coverage
+    # failure.  More generally, a group is fully evaluable when every valid
+    # candidate has property coverage, or when one covered candidate already
+    # establishes best-of-k success.
+    official_evaluable = bool(best) or all(
+        not truthy(item.get("external_valid")) or truthy(item.get("external_full_property_coverage"))
+        for item in items
+    )
     return {
         "candidate_rows": len(items),
         "valid": valid_any,
@@ -360,7 +365,7 @@ def summarize_input_group(items: list[dict[str, object]]) -> dict[str, object]:
         "source_similarity_success": sim_any,
         "all_property_success": prop_any,
         "strict_success": strict_any,
-        "official_evaluable": full_coverage_any,
+        "official_evaluable": official_evaluable,
         "official_success": bool(best),
         "success_similarity": parse_float(best.get("external_source_tanimoto")) if best else None,
         "success_relative_improvement": parse_float(best.get("external_mean_relative_improvement")) if best else None,

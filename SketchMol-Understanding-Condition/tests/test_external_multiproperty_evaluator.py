@@ -142,6 +142,39 @@ def test_invalid_candidates_do_not_mark_covered_best_of_k_as_missing_oracle(monk
     assert task_summary["missing_oracle_properties"] == ""
 
 
+def test_all_invalid_group_is_an_official_failure_not_missing_oracle(monkeypatch):
+    evaluator = load_evaluator()
+    monkeypatch.setattr(evaluator, "canonical_smiles", lambda smiles: str(smiles or "").strip() or None)
+    monkeypatch.setattr(evaluator, "molecular_properties", lambda _smiles: {})
+
+    detail = [
+        evaluator.evaluate_row(
+            {
+                "condition_id": "input_1",
+                "source_smiles": "SRC",
+                "generated_smiles": "",
+                "external_suite": "mumo",
+                "external_task_split": "ind",
+                "external_task_id": "B",
+                "external_task_properties": "bbbp",
+            },
+            generated_props={},
+            source_props_lookup={},
+            smiles_column="generated_smiles",
+            source_smiles_column="source_smiles",
+            min_source_tanimoto=0.4,
+        )
+    ]
+    summary = evaluator.summarize(detail, group_column="condition_id")
+    task_summary = next(item for item in summary if item["external_task_id"] == "B")
+
+    assert task_summary["validity"] == "0"
+    assert task_summary["success_rate"] == "0"
+    assert task_summary["official_evaluable_rate"] == "1"
+    assert task_summary["success_rate_status"] == "official"
+    assert task_summary["missing_oracle_properties"] == ""
+
+
 def test_missing_source_does_not_count_as_similarity_success(monkeypatch):
     evaluator = load_evaluator()
     monkeypatch.setattr(evaluator, "canonical_smiles", lambda smiles: str(smiles or "").strip() or None)
