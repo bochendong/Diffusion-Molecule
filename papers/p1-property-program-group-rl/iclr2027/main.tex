@@ -21,11 +21,11 @@ is a central challenge in drug discovery and materials design. Existing
 conditional generators typically express molecular objectives as flat
 condition vectors or instructions, leaving their behavior under increasingly
 complex and out-of-distribution property combinations poorly understood. Here,
-we introduce \emph{Compositional Property Programs}, a direct molecular
-generation framework that represents each design request as a variable-length
-program of property targets, tolerances, and directions. The framework
-combines LLM-derived instruction features with explicit numerical program
-tokens and translates their joint representation into SMILES using a compact
+we introduce \emph{MolProgram}, a direct molecular generation framework that
+represents each design request as a variable-length program of property
+targets, tolerances, and directions. MolProgram combines LLM-derived
+instruction features with explicit numerical program tokens and translates
+their joint representation into SMILES using a compact
 autoregressive decoder. A property-count curriculum emphasizes high-order
 programs during supervised training. We then apply a Group Relative Policy
 Optimization (GRPO)-style post-training objective that learns from groups of
@@ -38,9 +38,8 @@ objectives to difficult high-order, reversed, extreme, and rare property
 combinations. Extensive experiments demonstrate that GRPO-style post-training
 improves high-order and out-of-distribution control over
 supervised fine-tuning, with gains already visible at modest sampling budgets.
-These results establish property programs as a unified interface for scaling
-direct molecular generation toward increasingly compositional design
-objectives.
+These results establish MolProgram as a unified framework for scaling direct
+molecular generation toward increasingly compositional design objectives.
 \end{abstract}
 
 \section{Introduction}
