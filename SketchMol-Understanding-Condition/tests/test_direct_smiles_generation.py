@@ -1382,6 +1382,33 @@ def test_conditioned_smiles_decoder_forward_and_generate():
     assert generated.shape[1] >= 2
 
 
+def test_direct_smiles_grammar_requires_balanced_branch_and_ring_before_eos():
+    if not TORCH_AVAILABLE:
+        pytest.skip("torch is required to import the direct SMILES decoder")
+    from sketchmol_understanding_condition.direct_smiles_generation import (
+        build_vocabulary,
+        smiles_grammar_allowed_ids,
+        tokenize_smiles,
+    )
+
+    vocab = build_vocabulary(["C(C)C", "C1CC1"])
+    tokens = vocab.id_to_token
+
+    open_branch = vocab.encode(tokenize_smiles("C(C"), add_bos=True)
+    allowed = smiles_grammar_allowed_ids(open_branch, token_text=tokens, eos_id=vocab.eos_id)
+    assert vocab.eos_id not in allowed
+    assert vocab.token_to_id[")"] in allowed
+
+    open_ring = vocab.encode(tokenize_smiles("C1CC"), add_bos=True)
+    allowed = smiles_grammar_allowed_ids(open_ring, token_text=tokens, eos_id=vocab.eos_id)
+    assert vocab.eos_id not in allowed
+    assert vocab.token_to_id["1"] in allowed
+
+    complete = vocab.encode(tokenize_smiles("C1CC1"), add_bos=True)
+    allowed = smiles_grammar_allowed_ids(complete, token_text=tokens, eos_id=vocab.eos_id)
+    assert vocab.eos_id in allowed
+
+
 def test_direct_smiles_property_rerank_prefers_strict_candidate(monkeypatch):
     if not TORCH_AVAILABLE:
         pytest.skip("torch is required to import the direct SMILES training script")

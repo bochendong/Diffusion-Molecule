@@ -197,6 +197,7 @@ class ConditionedSmilesDecoder(nn.Module):
         no_repeat_ngram_size: int = 0,
         min_new_tokens: int = 0,
         suppress_ids: Sequence[int] | None = None,
+        smiles_token_text: Sequence[str] | None = None,
     ) -> torch.Tensor:
         batch = condition_tokens.shape[0]
         device = condition_tokens.device
@@ -208,6 +209,13 @@ class ConditionedSmilesDecoder(nn.Module):
         for step in range(max(1, int(max_new_tokens))):
             logits = self(condition_tokens, generated, condition_mask=condition_mask)[:, -1, :]
             logits[:, list(blocked_ids)] = -torch.inf
+            if smiles_token_text is not None:
+                apply_smiles_grammar_mask_(
+                    logits,
+                    generated,
+                    token_text=smiles_token_text,
+                    eos_id=int(eos_id),
+                )
             if step < max(0, int(min_new_tokens)):
                 logits[:, int(eos_id)] = -torch.inf
             if repetition_penalty and repetition_penalty > 1.0:
@@ -236,6 +244,93 @@ class ConditionedSmilesDecoder(nn.Module):
             if bool(finished.all()):
                 break
         return generated
+
+
+SMILES_BOND_TOKENS = frozenset({"-", "=", "#", "/", "\\", ":", "~"})
+
+
+def smiles_token_kind(token: str) -> str:
+    if token.startswith("[") and token.endswith("]"):
+        return "atom"
+    if re.fullmatch(r"(?:[A-Z][a-z]?|[bcnops]|\*)", token):
+        return "atom"
+    if token in SMILES_BOND_TOKENS:
+        return "bond"
+    if token == "(":
+        return "branch_open"
+    if token == ")":
+        return "branch_close"
+    if re.fullmatch(r"(?:\d|%\d{2})", token):
+        return "ring"
+    if token == ".":
+        return "dot"
+    return "other"
+
+
+def smiles_grammar_allowed_ids(
+    sequence: Sequence[int],
+    *,
+    token_text: Sequence[str],
+    eos_id: int,
+) -> set[int]:
+    """Return a conservative next-token set for a partial SMILES string."""
+    depth = 0
+    open_rings: set[str] = set()
+    previous = "start"
+    has_atom = False
+    for token_id in sequence:
+        index = int(token_id)
+        if not 0 <= index < len(token_text):
+            continue
+        token = token_text[index]
+        if token in SPECIAL_TOKENS:
+            continue
+        kind = smiles_token_kind(token)
+        if kind == "atom":
+            has_atom = True
+        elif kind == "branch_open":
+            depth += 1
+        elif kind == "branch_close":
+            depth = max(0, depth - 1)
+        elif kind == "ring":
+            if token in open_rings:
+                open_rings.remove(token)
+            else:
+                open_rings.add(token)
+        previous = kind
+
+    expecting_atom = previous in {"start", "bond", "branch_open", "dot", "other"}
+    allowed: set[int] = set()
+    for token_id, token in enumerate(token_text):
+        kind = smiles_token_kind(token)
+        if kind == "atom":
+            allowed.add(token_id)
+        elif not expecting_atom and kind in {"bond", "branch_open", "ring", "dot"}:
+            allowed.add(token_id)
+        elif not expecting_atom and kind == "branch_close" and depth > 0:
+            allowed.add(token_id)
+    if has_atom and not expecting_atom and depth == 0 and not open_rings:
+        allowed.add(int(eos_id))
+    return allowed
+
+
+def apply_smiles_grammar_mask_(
+    logits: torch.Tensor,
+    generated: torch.Tensor,
+    *,
+    token_text: Sequence[str],
+    eos_id: int,
+) -> None:
+    for row_index in range(generated.shape[0]):
+        allowed = smiles_grammar_allowed_ids(
+            generated[row_index].tolist(),
+            token_text=token_text,
+            eos_id=eos_id,
+        )
+        if not allowed:
+            continue
+        blocked = [token_id for token_id in range(logits.shape[-1]) if token_id not in allowed]
+        logits[row_index, blocked] = -torch.inf
 
 
 def build_vocabulary(smiles_values: Sequence[str]) -> SmilesVocabulary:

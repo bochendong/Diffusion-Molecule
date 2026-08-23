@@ -111,6 +111,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--repetition-penalty", type=float, default=1.0)
     parser.add_argument("--no-repeat-ngram-size", type=int, default=0)
     parser.add_argument("--min-new-tokens", type=int, default=0)
+    parser.add_argument(
+        "--smiles-grammar-constraint",
+        action="store_true",
+        help="Mask locally impossible SMILES tokens during autoregressive decoding.",
+    )
     parser.add_argument("--parallel-samples", type=int, default=1)
     parser.add_argument("--max-parallel-sequences", type=int, default=1024)
     parser.add_argument("--disable-property-rerank", action="store_true")
@@ -258,6 +263,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             repetition_penalty=float(args.repetition_penalty),
             no_repeat_ngram_size=int(args.no_repeat_ngram_size),
             min_new_tokens=int(args.min_new_tokens),
+            smiles_grammar_constraint=bool(args.smiles_grammar_constraint),
             parallel_samples=int(args.parallel_samples),
             max_parallel_sequences=int(args.max_parallel_sequences),
             property_rerank=not bool(args.disable_property_rerank),
@@ -284,6 +290,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "condition_mixing_mode": condition_mixing_mode,
         "reset_training_state": bool(args.reset_training_state),
         "device": str(device),
+        "smiles_grammar_constraint": bool(args.smiles_grammar_constraint),
     }
     (args.output_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps(summary, indent=2, sort_keys=True))
@@ -673,6 +680,7 @@ def write_predictions(
     repetition_penalty: float,
     no_repeat_ngram_size: int,
     min_new_tokens: int,
+    smiles_grammar_constraint: bool,
     parallel_samples: int,
     max_parallel_sequences: int,
     property_rerank: bool,
@@ -748,6 +756,7 @@ def write_predictions(
                 no_repeat_ngram_size=no_repeat_ngram_size,
                 min_new_tokens=min_new_tokens,
                 suppress_ids=suppress_ids,
+                smiles_token_text=vocab.id_to_token if smiles_grammar_constraint else None,
             ).cpu()
             for row_offset in range(prompt_count):
                 start = row_offset * chunk
@@ -812,6 +821,7 @@ def write_predictions(
         "parallel_samples": sample_parallel,
         "max_parallel_sequences": max_parallel_sequences,
         "property_rerank": bool(property_rerank),
+        "smiles_grammar_constraint": bool(smiles_grammar_constraint),
         "mean_candidate_count": _mean(candidate_counts),
         "mean_valid_candidate_count": _mean(valid_candidate_counts),
         "mean_unique_valid_candidate_count": _mean(unique_valid_candidate_counts),
