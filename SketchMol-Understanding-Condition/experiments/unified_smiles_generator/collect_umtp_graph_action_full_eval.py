@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import hashlib
 import json
 import math
 import sys
@@ -29,6 +30,10 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--candidate-summary", required=True, type=Path)
     parser.add_argument("--output-prefix", required=True, type=Path)
     parser.add_argument("--budgets", default="1,8,20,64,256")
+    parser.add_argument("--checkpoint", type=Path)
+    parser.add_argument("--method-name", default="umtp_graph_action_policy_protected")
+    parser.add_argument("--report-title", default="Protected GraphEditDSL Full Table1 Evaluation")
+    parser.add_argument("--protocol", default="protected_graph_edit_dsl_full_table1")
     return parser.parse_args(argv)
 
 
@@ -86,17 +91,29 @@ def pct(value: object) -> str:
     return "" if not math.isfinite(parsed) else f"{100.0 * parsed:.1f}%"
 
 
+def sha256(path: Path | None) -> str:
+    if path is None:
+        return ""
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def write_report(
     path: Path,
     aggregate: Sequence[Mapping[str, object]],
     per_task: Sequence[Mapping[str, object]],
     candidate_summary: Mapping[str, object],
     budgets: Sequence[int],
+    report_title: str,
+    method_name: str,
 ) -> None:
     lines = [
-        "# Protected GraphEditDSL Full Table1 Evaluation",
+        f"# {report_title}",
         "",
-        "The checkpoint is unchanged from the protected pilot. Candidate selection follows the official source-relative `instruction_tasks` predicate.",
+        f"Method: `{method_name}`. Candidate selection follows the official source-relative `instruction_tasks` predicate.",
         "",
         "## Aggregate",
         "",
@@ -151,7 +168,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     write_csv(aggregate_csv, aggregate)
     write_csv(per_task_csv, per_task)
     payload = {
-        "protocol": "protected_graph_edit_dsl_full_table1",
+        "protocol": str(args.protocol),
+        "method_name": str(args.method_name),
+        "checkpoint": str(args.checkpoint or ""),
+        "checkpoint_sha256": sha256(args.checkpoint),
         "budgets": list(budgets),
         "candidate_csv": str(args.candidate_csv),
         "candidate_summary": candidate_summary,
@@ -163,7 +183,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     }
     summary_json.parent.mkdir(parents=True, exist_ok=True)
     summary_json.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    write_report(report_md, aggregate, per_task, candidate_summary, budgets)
+    write_report(
+        report_md,
+        aggregate,
+        per_task,
+        candidate_summary,
+        budgets,
+        str(args.report_title),
+        str(args.method_name),
+    )
     print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 

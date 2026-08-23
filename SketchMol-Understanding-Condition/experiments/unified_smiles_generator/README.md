@@ -232,6 +232,22 @@ action checkpoints at `n=1,8,20`, freezes the legacy de novo path, and stops
 before training unless GSK3B is at least 95% oracle-evaluable with at least 5%
 strict one-step reachability. Formal Table1 test rows are not used for the gate.
 
+After the validation pilot, the frozen v2 checkpoint can be evaluated on the
+formal Table1 test split without retraining:
+
+```bash
+UMTP_GRAPH_ACTION_CHECKPOINT=SketchMol-Understanding-Condition/outputs/umtp_graph_action_instruction_v2/seed_7/action_policy/umtp_graph_action_policy.pt \
+UMTP_GRAPH_ACTION_FULL_ROOT=SketchMol-Understanding-Condition/outputs/umtp_graph_action_instruction_v2_full_eval_v1/seed_7 \
+UMTP_GRAPH_ACTION_METHOD_NAME=umtp_graph_action_instruction_v2 \
+UMTP_GRAPH_ACTION_REPORT_TITLE='Instruction-aligned GraphEditDSL v2 Full Table1 Evaluation' \
+UMTP_GRAPH_ACTION_PROTOCOL=instruction_aligned_graph_edit_dsl_v2_full_table1 \
+UMTP_GRAPH_ACTION_SLURM_JOB_NAME=umtp-action-v2-full-s7 \
+bash SketchMol-Understanding-Condition/experiments/unified_smiles_generator/submit_umtp_graph_action_full_eval.sh
+```
+
+The runner records the exact checkpoint path and SHA256 in the final summary;
+raw and finalizer rows continue to share one immutable candidate pool.
+
 The default `auto` reward mode routes each row by `task_mode`, so mixed
 de novo/edit batches are valid.
 

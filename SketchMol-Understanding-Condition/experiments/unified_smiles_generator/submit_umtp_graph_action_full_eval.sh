@@ -20,13 +20,14 @@ PARTITION="${UMTP_GRAPH_ACTION_SLURM_PARTITION:-${SUCC_SLURM_PARTITION:-}}"
 MAIL_USER="${UMTP_GRAPH_ACTION_SLURM_MAIL_USER:-dongbochen1218@gmail.com}"
 LOG_DIR="${SUCC_LOG_DIR:-$PROJECT_DIR/logs/umtp_graph_action_full_eval_v1}"
 SEED="${UMTP_GRAPH_ACTION_SEED:-7}"
+JOB_NAME="${UMTP_GRAPH_ACTION_SLURM_JOB_NAME:-umtp-action-full-s${SEED}}"
 
 mkdir -p "$LOG_DIR"
 
 args=(
   --parsable
   --account="$ACCOUNT"
-  --job-name="umtp-action-full-s${SEED}"
+  --job-name="$JOB_NAME"
   --time="$TIME"
   --mem="$MEM"
   --cpus-per-task="$CPUS"
@@ -42,7 +43,7 @@ fi
 submission="$(sbatch "${args[@]}" --wrap="bash '$SCRIPT_DIR/run_umtp_graph_action_full_eval.sh'")"
 job_id="${submission%%;*}"
 
-echo "Protected GraphEditDSL full Table1 evaluation submitted"
+echo "GraphEditDSL full Table1 evaluation submitted"
 echo "  job_id=$job_id"
 echo "  gpu=$GPU"
 echo "  time=$TIME"
