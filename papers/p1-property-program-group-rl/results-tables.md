@@ -4,6 +4,17 @@ Draft status: single-seed results. The paper must lead with externally aligned
 benchmarks below. SFT-vs-Group-RL and budget-scaling tables are method evidence
 and ablations, not external SOTA comparisons.
 
+## Manuscript placement
+
+- Main text: matched-budget SketchMol de novo comparison, MuMO horizontal
+  comparison, compact SFT-vs-Group-RL budget table, and 2p-to-7p scaling.
+- Appendix: raw validity, G64 negative ablation, full MolEdit-Instruct
+  comparison, MuMO source-fidelity diagnostic, GraphEditDSL validation, and
+  pending P1/P2 repair slots.
+- SketchMol Supplementary Table 1 is not copied into the main comparison:
+  DIFFUMOL and DiGress are evaluated for unconditional distribution matching,
+  not under the 2p-to-7p property-program protocol.
+
 ## Main external comparison: de novo generation
 
 This is the currently completed cross-paper table. Both rows use a 40-candidate
@@ -19,7 +30,7 @@ on 4p, and loses increasingly badly on 5p--7p. Its average is 5.0 points below
 SketchMol. This table supports compositional-scaling analysis, but not an
 overall state-of-the-art claim.
 
-## Main external comparison: source-conditioned editing
+## Appendix external comparison: source-conditioned editing
 
 MolEditRL uses the official Table1 aggregate. `first candidate` is honest
 one-shot generation. `assisted @20` selects one output using a property-aware
@@ -27,7 +38,13 @@ verifier and must never be described as one-shot.
 
 | method | protocol | validity | Acc_all(0.65) | Acc_all(0.15) |
 | --- | --- | ---: | ---: | ---: |
-| MolEditRL (reported) | external paper | -- | **45.0** | **72.7** |
+| BioT5 | reported | **100.0** | 0.0 | 29.2 |
+| MolGen | reported | **100.0** | 3.3 | 22.2 |
+| REINVENT4 | reported | 64.1 | 12.5 | 25.0 |
+| DrugAssist | reported | 97.9 | 34.9 | 41.1 |
+| GeLLM3O-Mistral | reported | 90.2 | 15.2 | 35.4 |
+| GeLLM3O-Llama | reported | 90.1 | 14.5 | 40.4 |
+| MolEditRL | reported | 96.6 | **45.0** | **72.7** |
 | MolProgram Group-RL | first candidate | 23.4 | 0.0 | 3.9 |
 | MolProgram SFT | assisted @20 | 96.4 | 0.0 | 17.9 |
 | MolProgram Group-RL | assisted @20 | 97.2 | 0.0 | 19.0 |
@@ -37,7 +54,23 @@ score by 1.1 points over SFT. Both checkpoints remain at zero for the official
 strict 0.65 threshold and far below MolEditRL. Editing currently supports the
 unified-interface claim, not the competitive-performance claim.
 
-## External diagnostic: MuMOInstruct
+## Main external comparison: MuMOInstruct
+
+All rows use the official 20-candidate SR definition. External values are
+means re-aggregated from GeLLM3O Tables 3 and 4.
+
+| method | adaptation | IND SR | OOD SR |
+| --- | --- | ---: | ---: |
+| Mistral-7B | 5-shot | 28.4 | 42.2 |
+| GPT-4o | 1-shot | 13.5 | 18.2 |
+| Claude-3.5 | 5-shot | 38.3 | 50.4 |
+| LlaSMol-Mistral | chemistry foundation model | 39.8 | 55.2 |
+| Prompt-MolOpt | task-specific non-LLM | 16.3 | -- |
+| GeLLM3O-P(6)-Mistral | MuMO instruction tuning | **76.1** | 88.7 |
+| GeLLM3O-P(6)-Llama | MuMO instruction tuning | 72.2 | **90.8** |
+| MolProgram Group-RL | direct molecular policy | 32.3 | 68.8 |
+
+## Appendix diagnostic: MuMO source fidelity
 
 The completed official 20-candidate evaluation gives MolProgram Group-RL
 50.4% property SR: 32.3% on IND tasks and 68.8% on OOD tasks. This is not a

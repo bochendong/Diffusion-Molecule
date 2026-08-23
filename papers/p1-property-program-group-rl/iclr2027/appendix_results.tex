@@ -1,0 +1,180 @@
+\section{Additional Results and Diagnostics}
+\label{sec:appendix-results}
+
+\subsection{Raw validity across candidate budgets}
+\label{sec:appendix-validity}
+
+Table~\ref{tab:raw-validity} reports raw candidate validity separately from
+strict property success. Group-RL improves in-distribution validity by roughly
+five points, but OOD validity remains close to 12\% for both policies. Nearly
+every valid draw is unique, indicating that invalid SMILES syntax rather than
+conventional mode collapse is the primary sample-efficiency bottleneck.
+
+\begin{table}[h]
+  \centering
+  \caption{Raw candidate validity (\%) at matched generation prefixes.}
+  \label{tab:raw-validity}
+  \small
+  \begin{tabular}{llrrr}
+    \toprule
+    Evaluation & Method & $k=1$ & $k=8$ & $k=20$ \\
+    \midrule
+    2p--7p & SFT & 29.20 & 28.85 & 29.04 \\
+    2p--7p & Group-RL & \textbf{33.53} & \textbf{33.86} & \textbf{34.25} \\
+    OOD & SFT & \textbf{12.50} & \textbf{11.92} & 11.51 \\
+    OOD & Group-RL & 12.10 & 11.63 & \textbf{11.60} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Larger rollout groups are not sufficient}
+\label{sec:appendix-g64}
+
+Table~\ref{tab:g64-ablation} compares the main group-16 policy with a
+hard-only continuation using 64 rollouts per program on a fixed 6p/7p subset.
+The larger group improves validity but reduces Pass@20 from 50.78\% to 45.31\%,
+driven by a large 7p regression. We therefore retain group 16 and report group
+64 as a negative ablation rather than selecting it on raw validity.
+
+\begin{table}[h]
+  \centering
+  \caption{Hard-program rollout-group ablation (\%). G64 continues training
+  from the G16 checkpoint using only 6p/7p programs.}
+  \label{tab:g64-ablation}
+  \scriptsize
+  \setlength{\tabcolsep}{3.5pt}
+  \begin{tabular}{lrrrrrr}
+    \toprule
+    Method & $k$ & Raw strict & Pass@$k$ & 6p Pass@$k$ & 7p Pass@$k$ & Validity \\
+    \midrule
+    SFT & 8 & 3.47 & 21.88 & 21.88 & 21.88 & 28.27 \\
+    Group-RL G16 & 8 & \textbf{4.74} & \textbf{28.12} & 31.25 & \textbf{25.00} & 32.91 \\
+    Group-RL G64 & 8 & 4.44 & 25.78 & \textbf{32.81} & 18.75 & \textbf{36.38} \\
+    \midrule
+    SFT & 20 & 3.63 & 37.11 & 39.84 & 34.38 & 29.00 \\
+    Group-RL G16 & 20 & 4.75 & \textbf{50.78} & \textbf{50.78} & \textbf{50.78} & 33.26 \\
+    Group-RL G64 & 20 & \textbf{5.02} & 45.31 & \textbf{50.78} & 39.84 & \textbf{35.63} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{MolEdit-Instruct comparison}
+\label{sec:appendix-moledit}
+
+Table~\ref{tab:moledit-horizontal} places MolProgram alongside seven published
+MolEdit-Instruct baselines. External values are ten-task macro-averages
+recomputed from Table~1 of \citet{zhuang2025moleditrl}. The comparison exposes
+the boundary of direct decoding: MolProgram's first raw candidate is much less
+valid and less source-preserving than every specialized editing model. A
+property-aware 20-candidate selector improves relaxed accuracy but remains
+assisted inference and does not repair the strict 0.65 threshold.
+
+\begin{table}[h]
+  \centering
+  \caption{MolEdit-Instruct ten-task macro-average (\%).
+  $\operatorname{Acc}_{\mathrm{all}}(t)$ requires both the requested property
+  directions and source Tanimoto similarity of at least $t$.}
+  \label{tab:moledit-horizontal}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{llrrr}
+    \toprule
+    Method & Protocol & Validity & $\operatorname{Acc}_{\mathrm{all}}(.65)$ & $\operatorname{Acc}_{\mathrm{all}}(.15)$ \\
+    \midrule
+    BioT5 & reported & \textbf{100.0} & 0.0 & 29.2 \\
+    MolGen & reported & \textbf{100.0} & 3.3 & 22.2 \\
+    REINVENT4 & reported & 64.1 & 12.5 & 25.0 \\
+    DrugAssist & reported & 97.9 & 34.9 & 41.1 \\
+    GeLLM3O$_{\mathrm{Mistral}}$ & reported & 90.2 & 15.2 & 35.4 \\
+    GeLLM3O$_{\mathrm{Llama}}$ & reported & 90.1 & 14.5 & 40.4 \\
+    MolEditRL & reported & 96.6 & \textbf{45.0} & \textbf{72.7} \\
+    \midrule
+    MolProgram (Group-RL) & first raw candidate & 23.4 & 0.0 & 3.9 \\
+    MolProgram (SFT) & assisted, $k=20$ & 96.4 & 0.0 & 17.9 \\
+    MolProgram (Group-RL) & assisted, $k=20$ & 97.2 & 0.0 & 19.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{MuMO source-fidelity diagnostic}
+\label{sec:appendix-mumo}
+
+Under the official 20-candidate MuMO oracle, MolProgram reaches 50.4\% overall
+property SR, with 32.3\% IND and 68.8\% OOD SR. However, mean source
+similarity among successful outputs is only 0.098, and no input passes the
+additional 0.4 source-similarity diagnostic. The policy therefore often finds
+a molecule with the desired properties by changing the molecular identity
+rather than editing the input locally. MuMO SR is useful evidence for property
+control, but it must not be presented as source-preserving editing success.
+
+\begin{table}[h]
+  \centering
+  \caption{MolProgram on MuMOInstruct under the official property SR and an
+  additional source-fidelity diagnostic.}
+  \label{tab:mumo-fidelity}
+  \small
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Method & Overall SR & IND SR & OOD SR & Sim(success) & Sim$\geq .4$ \\
+    \midrule
+    MolProgram (Group-RL) & 50.4 & 32.3 & 68.8 & 0.098 & 0.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Executable actions improve editing reachability}
+\label{sec:appendix-actions}
+
+A source-similarity reward applied to free-form direct SMILES Group-RL did not
+produce any candidates above the required source-similarity threshold. In a
+paired 200-example validation experiment, replacing free-form editing with
+executable GraphEditDSL actions raises raw $k=1$ validity from 31.0\% to
+100\% and strict $\operatorname{Acc}_{\mathrm{all}}(.65)$ from 0\% to 20.0\%,
+without reducing held-out de novo strict success. At $k=8$, an explicitly
+assisted finalizer reaches 43.5\% strict accuracy. These validation results
+motivate source-consistent action policies, but are not part of the main
+MolProgram claim.
+
+\subsection{Frozen slots for ongoing repair experiments}
+\label{sec:appendix-pending}
+
+We retain empty cells for the preregistered repair runs rather than filling
+them with selected-molecule validity or results from a different evaluation
+subset.
+
+\begin{table}[h]
+  \centering
+  \caption{Syntax-safe decoding repair. Pending rows remain blank until the
+  paired P2 evaluation completes.}
+  \label{tab:validity-repair}
+  \small
+  \begin{tabular}{llrrr}
+    \toprule
+    Evaluation & Decoder & Raw validity@1 & Raw strict@1 & Pass@8 \\
+    \midrule
+    2p--7p & legacy Group-RL & 33.53 & 8.93 & 41.72 \\
+    2p--7p & syntax-safe Group-RL & -- & -- & -- \\
+    OOD & legacy Group-RL & 12.10 & 3.20 & 23.60 \\
+    OOD & syntax-safe Group-RL & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \caption{Source-consistent executable editing. Pending rows use source-only
+  consistency ranking; target molecules and output property oracles do not
+  enter raw selection.}
+  \label{tab:edit-repair}
+  \scriptsize
+  \setlength{\tabcolsep}{3pt}
+  \begin{tabular}{lrrr}
+    \toprule
+    Edit policy & Validity@1 & $\operatorname{Acc}_{\mathrm{all}}(.65)$ & $\operatorname{Acc}_{\mathrm{all}}(.15)$ \\
+    \midrule
+    Protected action policy & 100.0 & 20.0 & 20.0 \\
+    Source-consistent action policy & -- & -- & -- \\
+    Strong source-consistent action policy & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
