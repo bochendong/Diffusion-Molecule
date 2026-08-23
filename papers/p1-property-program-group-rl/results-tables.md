@@ -17,18 +17,32 @@ and ablations, not external SOTA comparisons.
 
 ## Main external comparison: de novo generation
 
-This is the currently completed cross-paper table. Both rows use a 40-candidate
-budget. Values are strict success percentages.
+The final external table must cover multiple generation paradigms rather than
+presenting only a SketchMol--MolProgram pairwise comparison. We therefore
+reserve matched-protocol rows for SPMM (property-vector/SMILES foundation
+model), STGG+ (spanning-tree autoregressive generation), and Graph DiT (graph
+diffusion). Their published task-specific values must not be copied into these
+cells: each method must be rerun on the same 1,000 held-out targets per
+complexity, tolerances, and 40-candidate budget. Dashes below mean pending
+matched reruns, not zero performance.
 
-| method | average | 2p | 3p | 4p | 5p | 6p | 7p |
-| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| SketchMol (reported reference) | **73.1** | 80.4 | 76.8 | **73.6** | **71.6** | **67.8** | **68.5** |
-| MolProgram Group-RL @40 | 68.1 | **91.7** | **83.2** | 72.7 | 63.6 | 51.0 | 46.5 |
+| method | representation | status | average | 2p | 3p | 4p | 5p | 6p | 7p |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| SPMM | property vector + SMILES | matched rerun pending | -- | -- | -- | -- | -- | -- | -- |
+| STGG+ | spanning-tree sequence | matched rerun pending | -- | -- | -- | -- | -- | -- | -- |
+| Graph DiT | molecular graph | matched rerun pending | -- | -- | -- | -- | -- | -- | -- |
+| SketchMol | molecular image | reported matched reference | **73.1** | 80.4 | 76.8 | **73.6** | **71.6** | **67.8** | **68.5** |
+| MolProgram Group-RL | direct SMILES | ours, matched rerun | 68.1 | **91.7** | **83.2** | 72.7 | 63.6 | 51.0 | 46.5 |
 
 The honest reading is mixed: MolProgram wins on 2p and 3p, is 0.9 points lower
 on 4p, and loses increasingly badly on 5p--7p. Its average is 5.0 points below
 SketchMol. This table supports compositional-scaling analysis, but not an
 overall state-of-the-art claim.
+
+Execution priority is SPMM first because its released property-to-SMILES
+interface is closest to the present target representation, followed by one
+structural family (STGG+ or Graph DiT). The table should contain at least two
+completed external families in addition to SketchMol before submission.
 
 ## Appendix external comparison: source-conditioned editing
 

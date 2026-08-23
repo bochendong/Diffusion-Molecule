@@ -30,33 +30,48 @@ We then evaluate zero-source generation under the SketchMol multi-property
 protocol. For each of 1,000 held-out property vectors at each complexity level,
 a method receives 40 generation attempts and succeeds if at least one valid
 molecule satisfies every active property within the benchmark tolerance.
-Table~\ref{tab:sketchmol-fair40} therefore compares the two methods under the
-same target construction, property tolerance, and candidate budget. MolProgram
+Table~\ref{tab:sketchmol-fair40} defines a matched comparison spanning
+property--SMILES foundation models, autoregressive structural generators,
+graph diffusion, image diffusion, and our direct-SMILES policy
+\citep{chang2024spmm,jolicoeurmartineau2024stggplus,liu2024graphdit,wang2025sketchmol}.
+We report only completed evaluations: external rows remain blank until they
+are rerun on the identical targets rather than importing numbers from an
+incompatible dataset or tolerance. Among the two completed rows, MolProgram
 is substantially stronger on two- and three-property programs and remains
 within 0.9 points at four properties. SketchMol is stronger from five
-properties onward and leads
-the overall average by 5.0 points. The comparison identifies high-order
-composition, rather than low-order conditional control, as the principal
-remaining gap.
+properties onward and leads the overall average by 5.0 points. The present
+comparison therefore identifies high-order composition as the principal gap,
+but does not yet establish an overall state-of-the-art result.
 
-\begin{table}[t]
+\begin{table*}[t]
   \centering
-  \caption{Strict success (\%) on the SketchMol multi-property de novo
-  benchmark at a matched budget of 40 candidates per condition. Published
-  SketchMol values are reused under the matched benchmark contract
-  \citep{wang2025sketchmol}.}
+  \caption{External comparison planned under the SketchMol multi-property
+  de novo protocol. Strict success (\%) uses the same 1,000 targets per
+  complexity, property tolerances, and 40 candidates per condition. The
+  SketchMol row is the published matched reference; MolProgram is evaluated
+  on the same target file. Dashes mark matched reruns that are pending, not
+  reported failures. Bold marks the best completed result.}
   \label{tab:sketchmol-fair40}
-  \small
-  \setlength{\tabcolsep}{4.5pt}
-  \begin{tabular}{lrrrrrrr}
+  \scriptsize
+  \setlength{\tabcolsep}{3.6pt}
+  \begin{tabular}{lllrrrrrrr}
     \toprule
-    Method & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
+    Method & Molecular representation & Evaluation status & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
     \midrule
-    SketchMol & \textbf{73.1} & 80.4 & 76.8 & \textbf{73.6} & \textbf{71.6} & \textbf{67.8} & \textbf{68.5} \\
-    MolProgram (Group-RL) & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
+    SPMM & property vector + SMILES & matched rerun pending
+      & -- & -- & -- & -- & -- & -- & -- \\
+    STGG+ & spanning-tree sequence & matched rerun pending
+      & -- & -- & -- & -- & -- & -- & -- \\
+    Graph DiT & molecular graph & matched rerun pending
+      & -- & -- & -- & -- & -- & -- & -- \\
+    SketchMol & molecular image & published matched reference
+      & \textbf{73.1} & 80.4 & 76.8 & \textbf{73.6} & \textbf{71.6} & \textbf{67.8} & \textbf{68.5} \\
+    \midrule
+    MolProgram (Group-RL) & direct SMILES & ours, matched rerun
+      & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
     \bottomrule
   \end{tabular}
-\end{table}
+\end{table*}
 
 We next test whether the same direct molecular policy transfers to the
 source-conditioned MuMOInstruct benchmark. Table~\ref{tab:mumo-horizontal}
