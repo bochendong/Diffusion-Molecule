@@ -5,7 +5,7 @@
 \usepackage{hyperref}
 \usepackage{url}
 
-\title{Compositional Property Programs for Direct Molecular Generation\\
+\title{From Instructions to Molecules: LLM-Grounded Property Programs\\
 with Group-Relative Reinforcement Learning}
 
 % Keep anonymous for ICLR 2027 submission.
@@ -16,28 +16,27 @@ with Group-Relative Reinforcement Learning}
 \maketitle
 
 \begin{abstract}
-Generating molecules that satisfy many simultaneous property constraints is
-central to inverse molecular design. However, compositional controllability is
-often evaluated after selecting from a large candidate pool, making it
-difficult to distinguish a better conditional generator from additional
-search. We introduce variable-length \emph{property programs} for direct
-molecular generation and investigate whether group-relative reinforcement
-learning (Group-RL) improves control as program complexity increases. Our
-model combines frozen instruction features with deterministic numerical
-property tokens and a compact autoregressive SMILES decoder. The decoder is
-first trained with a property-count curriculum and then post-trained with
-Group-RL using programmatically verifiable molecular-property rewards. All
-candidates are produced directly by the model, without retrieval from an
-external molecular library or inference-time property reranking. We evaluate
-raw success, pass@$k$, validity, and uniqueness across high-order and
-out-of-distribution property programs as a function of candidate budget.
-Group-RL improves overall low-budget success on difficult compositional
-objectives, with gains visible at modest candidate budgets rather than only
-under large sample pools. These improvements do not uniformly extend to
-one-shot generation, revealing an important distinction between single-sample
-quality and the probability that a small candidate set contains a solution.
-Our results establish candidate budget as an essential axis for evaluating
-compositional molecular generation.
+Large language models are turning molecular design into instruction following,
+but precise multi-property design asks more than following a flat prompt:
+objectives must be composed, quantified, and jointly satisfied as complexity
+grows. We propose to view this task as program execution and introduce
+\emph{LLM-grounded property programs} for direct de novo molecular generation.
+An LLM maps natural-language design intent into semantic condition features,
+while a structured numerical program specifies a variable number of property
+targets, tolerances, and directions. A compact autoregressive policy translates
+their joint representation into SMILES and is trained with a property-count
+curriculum. We then apply group-relative reinforcement learning with
+programmatically verifiable molecular-property rewards, allowing chemical
+feedback to supervise program execution without a learned critic. This
+separation of semantic intent, exact specification, and chemical realization
+supports high-order, reversed, extreme, and rare property combinations without
+retrieval or a molecular materializer. To distinguish conditional control from
+best-of-many search, we evaluate the same candidate stream across sampling
+budgets. Experiments show gains over supervised training on difficult
+high-order and out-of-distribution programs, already visible at modest
+candidate budgets. These results suggest that property programs can move
+molecular language models from prompt-conditioned generation toward executing
+increasingly compositional design intent.
 \end{abstract}
 
 \section{Introduction}
@@ -60,13 +59,14 @@ design as image generation with molecular-expert feedback
 spanning-tree generator and adds self-criticism
 \citep{jolicoeurmartineau2024stggplus}. Molecular language models such as
 GeLLM3O and GeLLM4O-C instead express multi-property objectives as
-instructions \citep{dey2025gellm3o,dey2025controllable}. Together, these
-methods show substantial progress in multi-conditional generation. Yet their
-representations, task definitions, property oracles, and candidate-selection
-budgets differ, making it hard to isolate a basic learning question: as the
-number and novelty of constraints grow, does a training method improve the
-generator itself, or does success mainly come from drawing and screening more
-candidates?
+instructions \citep{dey2025gellm3o,dey2025controllable}. LLMs offer a natural
+interface for open-ended design intent, but text alone is an imprecise carrier
+of numerical targets, tolerances, and directions. Conversely, fixed numerical
+condition vectors provide precision but not a general instruction interface.
+This motivates a hybrid question: can frozen LLM representations and explicit
+numerical programs jointly support high-order molecular control, and can
+verifier-based post-training improve that control as objectives become more
+compositional?
 
 This distinction matters because molecular generation commonly evaluates a
 selected output from a candidate pool. If a condition receives hundreds of
@@ -79,19 +79,21 @@ small candidate set contains a solution without making the most likely first
 sample better. Candidate budget should therefore be treated as an explicit
 evaluation axis, alongside property count and distribution shift.
 
-We study this issue with \emph{property programs}: variable-length numerical
-specifications that identify the active properties and encode their targets,
-tolerances, and directions. The program is combined with frozen instruction
-features and passed to a compact autoregressive Transformer that directly
-generates SMILES. Supervised fine-tuning uses a property-count curriculum to
-emphasize higher-order programs. We then apply Group-RL, a group-relative
-policy update with deterministic molecular-property feedback, an auxiliary
-SFT objective, and a frozen-reference regularizer. The molecular generator is
-the compact decoder; Qwen2.5-VL-7B-Instruct is used only as a frozen condition
-encoder and is never updated by either SFT or Group-RL
-\citep{bai2025qwen25vl}. All evaluated candidates come directly from the
-policy, without retrieval from an external molecule collection or
-inference-time property reranking.
+We answer this question with \emph{LLM-grounded property programs}. A frozen
+Qwen2.5-VL-7B-Instruct encoder converts the natural-language design request
+into semantic condition features \citep{bai2025qwen25vl}. A parallel,
+variable-length numerical program identifies the active properties and
+encodes their targets, tolerances, and directions. A compact autoregressive
+Transformer attends to both representations and directly generates SMILES.
+Supervised fine-tuning uses a property-count curriculum to emphasize
+higher-order programs. We then apply Group-RL, a group-relative policy update
+with deterministic molecular-property feedback, an auxiliary SFT objective,
+and a frozen-reference regularizer. This division of labor is deliberate: the
+LLM supplies the instruction interface, the numerical program supplies exact
+control, and Group-RL aligns the SMILES policy with a chemical verifier. The
+7B encoder remains frozen; molecular generation and RL post-training occur in
+the compact decoder. All evaluated candidates come directly from this policy,
+without retrieval or inference-time property reranking.
 
 Our central evaluation preserves the seeded generation order and measures
 prefixes of the same candidate pool at
@@ -116,9 +118,10 @@ composition and sampling budget.
 
 This paper makes four contributions:
 \begin{enumerate}
-  \item We formulate direct molecular generation using variable-length
-  numerical property programs that represent target values, tolerances,
-  directions, active properties, and program length.
+  \item We introduce LLM-grounded property programs, combining semantic
+  instruction features with explicit variable-length numerical specifications
+  of target values, tolerances, directions, active properties, and program
+  length.
   \item We combine a property-count curriculum with group-relative
   reinforcement learning driven by programmatically verifiable
   molecular-property rewards.

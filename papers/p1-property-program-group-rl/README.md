@@ -1,7 +1,7 @@
 # P1 paper workspace
 
-Working title: **Compositional Property Programs for Direct Molecular
-Generation with Group-Relative Reinforcement Learning**.
+Working title: **From Instructions to Molecules: LLM-Grounded Property
+Programs with Group-Relative Reinforcement Learning**.
 
 This is the **ICLR 2027** paper workspace. It deliberately remains independent
 of GraphEditDSL and source-conditioned molecular editing. The official ICLR
