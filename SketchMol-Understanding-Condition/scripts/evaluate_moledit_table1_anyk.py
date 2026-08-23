@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Honest any@k MolEdit Table1 metrics from raw candidates (no ranking)."""
+"""MolEdit Table1 metrics from raw candidates with explicit aggregation."""
 
 from __future__ import annotations
 
@@ -54,6 +54,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--candidates", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--candidate-limit", type=int, default=20)
+    parser.add_argument("--aggregation", choices=("any", "candidate"), default="any")
     parser.add_argument("--thresholds", default="0.65,0.15")
     parser.add_argument("--model-name", default="DirectSMILES-anyk")
     parser.add_argument("--method-filter", default=None)
@@ -106,9 +107,14 @@ def main() -> int:
             evaluate_prediction(ref, smiles, task_specs, chem=chem, thresholds=thresholds)
             for smiles in pool
         ]
-        any_row = aggregate_anyk(evaluated_candidates, thresholds=thresholds)
-        any_row["task_key"] = current_task_key
-        grouped[current_task_key].append(any_row)
+        if args.aggregation == "candidate":
+            for evaluated in evaluated_candidates:
+                evaluated["task_key"] = current_task_key
+                grouped[current_task_key].append(evaluated)
+        else:
+            any_row = aggregate_anyk(evaluated_candidates, thresholds=thresholds)
+            any_row["task_key"] = current_task_key
+            grouped[current_task_key].append(any_row)
         tanimotos = [
             float(item["source_tanimoto"])
             for item in evaluated_candidates
@@ -137,7 +143,7 @@ def main() -> int:
                     property_hit_counts.get(key, 0), matched_predictions_by_task.get(key, 0)
                 ),
                 "mean_best_source_tanimoto": _mean_list(mean_best_tanimoto.get(key, [])),
-                "selection": f"any@{int(args.candidate_limit)}",
+                "selection": selection_label(args.aggregation, int(args.candidate_limit)),
             }
         )
         summary["status"] = coverage_status(summary)
@@ -162,7 +168,7 @@ def main() -> int:
                     reference_counts.get(key, 0) - matched_predictions_by_task.get(key, 0), 0
                 ),
                 "missing_oracle_skipped_rows": skipped_missing_oracle.get(key, 0),
-                "selection": f"any@{int(args.candidate_limit)}",
+                "selection": selection_label(args.aggregation, int(args.candidate_limit)),
             }
             for threshold in thresholds:
                 summary[f"Acc_all({threshold:g})"] = ""
@@ -230,6 +236,12 @@ def aggregate_anyk(candidates: Sequence[Mapping[str, object]], *, thresholds: Se
         key = f"success_t{threshold:g}"
         row[key] = any(bool(item.get(key)) for item in candidates)
     return row
+
+
+def selection_label(aggregation: str, candidate_limit: int) -> str:
+    if aggregation == "candidate":
+        return f"candidate-level@n={candidate_limit}"
+    return f"any@{candidate_limit}"
 
 
 def _mean(numerator: int, denominator: int) -> float | str:

@@ -183,15 +183,14 @@ sample_variant() {
       --task-filter table1 \
       --missing-oracle-policy fail
   done
-  "$PYTHON_BIN" "$REPO_DIR/SketchMol-Unified-3MDiffusion/scripts/evaluate_moledit_table_metrics.py" \
+  "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_moledit_table1_anyk.py" \
     --reference "$VALIDATION_SOURCE" \
-    --predictions "$variant_dir/candidates.csv" \
+    --candidates "$variant_dir/candidates.csv" \
     --output-dir "$variant_dir/candidate20" \
+    --candidate-limit 20 \
+    --aggregation candidate \
     --model-name "p4_${variant}_n20" \
-    --method "p4_${variant}" \
     --task-filter table1 \
-    --include-empty-table1 \
-    --require-table1-coverage \
     --missing-oracle-policy fail
 }
 
