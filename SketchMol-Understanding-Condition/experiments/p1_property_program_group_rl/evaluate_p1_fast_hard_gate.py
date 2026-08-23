@@ -10,6 +10,7 @@ from pathlib import Path
 from evaluate_p1_sampling_scaling import (
     build_condition_table,
     build_paired_deltas,
+    build_validity_audit,
     condition_key,
     load_candidate_groups,
     read_rows,
@@ -48,7 +49,12 @@ def main() -> int:
         condition_rows.extend(build_condition_table("two_p_to_seven_p", model, eval_rows, groups[model], BUDGETS))
     lookup = {("two_p_to_seven_p", condition_key(row)): row for row in eval_rows}
     summary = summarize_condition_table(condition_rows, lookup)
+    validity_audit = build_validity_audit(summary)
     deltas = build_paired_deltas(condition_rows, lookup, resamples=args.bootstrap_resamples, seed=args.seed)
+    summary_index = {
+        (str(row["model"]), str(row["group_type"]), str(row["group"]), int(row["candidate_budget"])): row
+        for row in summary
+    }
     delta_index = {
         (str(row["group_type"]), str(row["group"]), int(row["candidate_budget"])): row for row in deltas
     }
@@ -101,10 +107,35 @@ def main() -> int:
                 f"{float(row['delta_empirical_prefix_pass_at_k']):+.4f} | "
                 f"[{float(row['delta_empirical_prefix_pass_at_k_ci95_low']):+.4f}, {float(row['delta_empirical_prefix_pass_at_k_ci95_high']):+.4f}] |"
             )
+    lines.extend(
+        [
+            "",
+            "## Absolute low-budget metrics and validity alignment",
+            "",
+            "Raw candidate validity is measured over every unselected draw. Selected validity@k is the condition-level "
+            "probability that at least one of the first k candidates is valid and is the quantity comparable to older "
+            "best-of-k validity tables.",
+            "",
+            "| model | k | raw success | pass@k | raw candidate validity | selected validity@k | strict among valid | empty raw | nonempty RDKit-invalid |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for model in ("sft", "group_rl"):
+        for budget in BUDGETS:
+            row = summary_index[(model, "overall", "all", budget)]
+            validity = float(row["validity_fraction"])
+            strict_in_valid = float(row["raw_success_fraction"]) / validity if validity else 0.0
+            lines.append(
+                f"| {model} | {budget} | {float(row['raw_success_fraction']):.4f} | "
+                f"{float(row['empirical_prefix_pass_at_k']):.4f} | {validity:.4f} | "
+                f"{float(row['selected_validity_at_k']):.4f} | {strict_in_valid:.4f} | "
+                f"{float(row['empty_raw_fraction']):.4f} | {float(row['nonempty_invalid_fraction']):.4f} |"
+            )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     write_csv(args.output_dir / "condition_metrics.csv", condition_rows)
     write_csv(args.output_dir / "scaling_summary.csv", summary)
     write_csv(args.output_dir / "paired_deltas.csv", deltas)
+    write_csv(args.output_dir / "validity_audit.csv", validity_audit)
     (args.output_dir / "gate.json").write_text(json.dumps(gate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     report = "\n".join(lines) + "\n"
     (args.output_dir / "report.md").write_text(report, encoding="utf-8")

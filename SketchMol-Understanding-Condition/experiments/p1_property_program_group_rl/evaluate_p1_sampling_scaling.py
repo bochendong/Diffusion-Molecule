@@ -23,6 +23,7 @@ MODELS = ("sft", "group_rl")
 @dataclass(frozen=True)
 class Candidate:
     index: int
+    raw_smiles: str
     valid: bool
     strict: bool
     canonical_smiles: str
@@ -67,11 +68,17 @@ def parse_budgets(text: str) -> tuple[int, ...]:
 
 def candidate_from_row(row: Mapping[str, object]) -> Candidate:
     index = int(float(row.get("direct_candidate_index") or row.get("candidate_index") or 0))
+    raw = str(
+        row.get("direct_candidate_raw_smiles")
+        or row.get("generated_smiles")
+        or row.get("direct_candidate_canonical_smiles")
+        or ""
+    ).strip()
     canonical = str(row.get("direct_candidate_canonical_smiles") or "").strip()
     strict_fraction = _float(row.get("direct_candidate_strict_fraction"))
     valid = bool(canonical)
     strict = valid and math.isclose(strict_fraction, 1.0, rel_tol=0.0, abs_tol=1e-9)
-    return Candidate(index=index, valid=valid, strict=strict, canonical_smiles=canonical)
+    return Candidate(index=index, raw_smiles=raw, valid=valid, strict=strict, canonical_smiles=canonical)
 
 
 def load_candidate_groups(path: Path, *, required_count: int) -> dict[str, list[Candidate]]:
@@ -121,7 +128,14 @@ def condition_metrics(candidates: Sequence[Candidate], budgets: Sequence[int]) -
                 "raw_success_fraction": strict_count / budget,
                 "empirical_prefix_pass_at_k": float(strict_count > 0),
                 "estimated_pass_at_k": estimated_pass_at_k(total, total_successes, budget),
+                # Historical Direct-SMILES tables evaluate the single molecule
+                # selected from k candidates. Because every valid candidate
+                # outranks an invalid one, its validity is equivalent to this
+                # condition-level any-valid rate, not raw candidate validity.
+                "selected_validity_at_k": float(bool(valid)),
                 "validity_fraction": len(valid) / budget,
+                "empty_raw_fraction": sum(not item.raw_smiles for item in prefix) / budget,
+                "nonempty_invalid_fraction": sum(bool(item.raw_smiles) and not item.valid for item in prefix) / budget,
                 "unique_valid_count": unique_valid,
                 "unique_valid_fraction": unique_valid / budget,
             }
@@ -175,10 +189,39 @@ METRICS = (
     "raw_success_fraction",
     "empirical_prefix_pass_at_k",
     "estimated_pass_at_k",
+    "selected_validity_at_k",
     "validity_fraction",
+    "empty_raw_fraction",
+    "nonempty_invalid_fraction",
     "unique_valid_count",
     "unique_valid_fraction",
 )
+
+
+def build_validity_audit(summary: Sequence[Mapping[str, object]]) -> list[dict[str, object]]:
+    """Make the selected-vs-raw validity distinction explicit for paper tables."""
+    out: list[dict[str, object]] = []
+    for row in summary:
+        raw_success = float(row["raw_success_fraction"])
+        raw_validity = float(row["validity_fraction"])
+        out.append(
+            {
+                "benchmark": row["benchmark"],
+                "model": row["model"],
+                "group_type": row["group_type"],
+                "group": row["group"],
+                "candidate_budget": row["candidate_budget"],
+                "conditions": row["conditions"],
+                "raw_candidate_validity": raw_validity,
+                "selected_validity_at_k": row["selected_validity_at_k"],
+                "raw_strict_success": raw_success,
+                "strict_success_given_valid_candidate": raw_success / raw_validity if raw_validity else 0.0,
+                "empty_raw_fraction": row["empty_raw_fraction"],
+                "nonempty_rdkit_invalid_fraction": row["nonempty_invalid_fraction"],
+                "unique_valid_fraction": row["unique_valid_fraction"],
+            }
+        )
+    return out
 
 
 def summarize_condition_table(
@@ -366,8 +409,8 @@ def render_report(
             "",
             "## Overall sampling scaling",
             "",
-            "| benchmark | model | k | raw success | empirical pass@k | estimated pass@k | validity | unique valid / k |",
-            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+            "| benchmark | model | k | raw success | empirical pass@k | estimated pass@k | raw candidate validity | selected validity@k | unique valid / k |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
         ]
     )
     for benchmark in ("two_p_to_seven_p", "ood"):
@@ -380,7 +423,35 @@ def render_report(
                 lines.append(
                     f"| {benchmark} | {model} | {budget} | {float(row['raw_success_fraction']):.4f} | "
                     f"{float(row['empirical_prefix_pass_at_k']):.4f} | {float(row['estimated_pass_at_k']):.4f} | "
-                    f"{float(row['validity_fraction']):.4f} | {float(row['unique_valid_fraction']):.4f} |"
+                    f"{float(row['validity_fraction']):.4f} | {float(row['selected_validity_at_k']):.4f} | "
+                    f"{float(row['unique_valid_fraction']):.4f} |"
+                )
+    lines.extend(
+        [
+            "",
+            "## Validity metric alignment",
+            "",
+            "`raw candidate validity` is the fraction of all unselected draws that RDKit can parse. "
+            "`selected validity@k` is the fraction of conditions with at least one valid molecule among the first k draws; "
+            "it is the validity quantity comparable to historical property-reranked best-of-k tables. "
+            "The two metrics must not be compared as if they were identical.",
+            "",
+            "| benchmark | model | k | raw candidate validity | selected validity@k | strict among valid candidates | empty raw | nonempty RDKit-invalid |",
+            "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |",
+        ]
+    )
+    for benchmark in ("two_p_to_seven_p", "ood"):
+        for model in MODELS:
+            for budget in (1, 20, 256):
+                row = summary_index.get((benchmark, model, "overall", "all", budget))
+                if row is None:
+                    continue
+                validity = float(row["validity_fraction"])
+                strict_in_valid = float(row["raw_success_fraction"]) / validity if validity else 0.0
+                lines.append(
+                    f"| {benchmark} | {model} | {budget} | {validity:.4f} | "
+                    f"{float(row['selected_validity_at_k']):.4f} | {strict_in_valid:.4f} | "
+                    f"{float(row['empty_raw_fraction']):.4f} | {float(row['nonempty_invalid_fraction']):.4f} |"
                 )
     lines.extend(
         [
@@ -418,7 +489,7 @@ def render_report(
             "- `strong_single_seed_signal`: all preregistered low-budget point gates pass, and the overall 2p-7p raw-success CIs at k=8/20 plus empirical pass@8 CI exclude zero.",
             "- `promising_single_seed_signal`: every low-budget point gate passes, but one-seed confidence evidence is not yet uniformly decisive.",
             "- `sampling_heavy_only`: low-budget evidence fails while Group-RL only wins at k=256.",
-            "- This run is a one-seed gate, not a final paper claim. A positive gate must be followed by multi-seed confirmation and external baseline reproduction.",
+            "- This run deliberately remains a single-seed result and does not estimate between-seed variance. External baseline reproduction is a separate paper-facing gate.",
         ]
     )
     return "\n".join(lines) + "\n"
@@ -487,6 +558,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         (benchmark, condition_key(row)): row for benchmark, rows in eval_sets.items() for row in rows
     }
     summary = summarize_condition_table(condition_rows, eval_lookup)
+    validity_audit = build_validity_audit(summary)
     deltas = build_paired_deltas(
         condition_rows,
         eval_lookup,
@@ -510,6 +582,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     write_csv(args.output_dir / "p1_condition_metrics.csv", condition_rows)
     write_csv(args.output_dir / "p1_scaling_summary.csv", summary)
     write_csv(args.output_dir / "p1_paired_deltas.csv", deltas)
+    write_csv(args.output_dir / "p1_validity_audit.csv", validity_audit)
     (args.output_dir / "p1_gate.json").write_text(json.dumps(gate, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     report = render_report(summary, deltas, gate)
     (args.output_dir / "p1_report.md").write_text(report, encoding="utf-8")

@@ -51,6 +51,14 @@ Primary artifacts:
 - `final/p1_scaling_summary.csv`
 - `final/p1_paired_deltas.csv`
 - `final/p1_condition_metrics.csv`
+- `final/p1_validity_audit.csv`
+
+`p1_validity_audit.csv` separates two quantities that older benchmark tables
+often collapse into the word `validity`: raw candidate-level RDKit validity,
+and selected validity@k (the fraction of conditions with at least one valid
+candidate in the first k draws). Historical best-of-k validity is comparable
+to the latter, not to raw candidate validity. The audit also separates empty
+decodes from nonempty strings that fail RDKit parsing.
 
 The generator also writes `diagnostic_property_reranked_selected.csv` for
 backward compatibility. P1 excludes that file from every reported metric.
@@ -74,4 +82,5 @@ When scheduling latency is the bottleneck, run
 generates only the first 20 raw candidates, and reports k=1/4/8/20. Its
 one-hour GPU walltime is designed for backfill and answers the missing
 hard-complexity kill question quickly; it is explicitly not the final n=256
-P1 result.
+P1 result. Re-running its CPU finalizer is sufficient to add the validity audit
+to an already completed fast candidate pool; no GPU regeneration is required.

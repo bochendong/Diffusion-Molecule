@@ -6,6 +6,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "experiments" / "p1_property_program_group_rl" / "evaluate_p1_sampling_scaling.py"
@@ -39,6 +41,7 @@ def candidate_rows(condition_ids: list[str], successes: dict[str, set[int]]) -> 
                 {
                     "condition_id": condition_id,
                     "direct_candidate_index": index,
+                    "direct_candidate_raw_smiles": f"C{index + 1}" if index % 11 else "",
                     "direct_candidate_canonical_smiles": f"C{index + 1}" if index % 11 else "",
                     "direct_candidate_strict_fraction": 1.0 if strict else 0.0,
                 }
@@ -132,3 +135,16 @@ def test_p1_end_to_end_uses_raw_first_candidate_and_emits_gate(tmp_path: Path) -
     report = (output_dir / "p1_report.md").read_text(encoding="utf-8")
     assert "`k=1` is the first raw draw" in report
     assert "property-reranked selected molecule is diagnostic-only" in report
+    assert "Validity metric alignment" in report
+    validity_rows = list(csv.DictReader((output_dir / "p1_validity_audit.csv").open(encoding="utf-8")))
+    row = next(
+        item
+        for item in validity_rows
+        if item["benchmark"] == "two_p_to_seven_p"
+        and item["model"] == "sft"
+        and item["group_type"] == "overall"
+        and item["candidate_budget"] == "20"
+    )
+    assert float(row["raw_candidate_validity"]) == pytest.approx(0.9)
+    assert float(row["selected_validity_at_k"]) == 1.0
+    assert float(row["empty_raw_fraction"]) == pytest.approx(0.1)
