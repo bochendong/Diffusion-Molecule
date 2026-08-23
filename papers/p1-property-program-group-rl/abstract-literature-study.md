@@ -28,10 +28,13 @@ Across the ten papers, the most common sequence is:
    generalization result; and
 6. close with the scientific meaning rather than another implementation detail.
 
-Most successful abstracts do not enumerate every metric or caveat. For P1, the
-right compression is to retain raw strict success and empirical pass@20, use
-the OOD one-shot decline as the claim boundary, and move validity, uniqueness,
-all budgets, and training specifics to the main paper.
+Most successful abstracts do not enumerate every metric or caveat. More
+specifically, only three of the ten abstracts report an exact comparative
+performance number; the others state their empirical conclusion
+qualitatively. For P1, the right compression is therefore to describe the
+low-budget and OOD findings without exact percentages, retain the one-shot
+boundary qualitatively, and move all numerical values to the Introduction and
+Results.
 
 ## P1 positioning implied by the comparison
 
