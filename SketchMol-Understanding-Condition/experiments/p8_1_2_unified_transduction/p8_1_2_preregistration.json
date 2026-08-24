@@ -1,0 +1,21 @@
+{
+  "experiment": "P8.1.2",
+  "seed": 7,
+  "representation": "run-length SELFIES sequence transduction",
+  "shared_contract": {
+    "decoder_count": 1,
+    "interpreter_count": 1,
+    "output_language_count": 1,
+    "task_router": false,
+    "de_novo_initial_sequence": "empty",
+    "editing_initial_sequence": "source SELFIES"
+  },
+  "r1_factor": "canonical target atom serialization",
+  "r2_single_change": "source-MCS-aligned target atom serialization",
+  "next_model_gate": {
+    "single_seed": 7,
+    "candidates_per_condition": 20,
+    "raw_budgets": [1, 8, 20],
+    "property_reranking": false
+  }
+}
