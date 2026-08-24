@@ -30,6 +30,8 @@ def test_p6_has_one_mode_agnostic_program_contract() -> None:
     assert "task_router\": False" in source
     assert "task_specific_head\": False" in source
     assert "property_aware_finalizer\": False" in source
+    runner = RUNNER.read_text(encoding="utf-8")
+    assert runner.count("--condition-layout p6_transition") == 3
 
 
 def test_p6_is_single_seed_and_reports_honest_low_budget_metrics() -> None:

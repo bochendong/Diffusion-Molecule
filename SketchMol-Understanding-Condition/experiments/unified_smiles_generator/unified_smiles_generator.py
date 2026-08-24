@@ -1678,6 +1678,25 @@ def condition_array_for_row(
     condition_layout: str = "unified",
 ) -> np.ndarray:
     layout = str(condition_layout or "unified")
+    if layout == "p6_transition":
+        base = store.get(row)
+        if base is None:
+            base = direct_cond.fallback_condition_features(row, condition_dim)
+        if int(base.shape[-1]) != int(condition_dim):
+            raise ValueError(f"Condition feature dim mismatch: {base.shape[-1]} != {condition_dim}")
+        source_text = str(row.get("source_smiles", "") or row.get("molecule_smiles", "") or "").strip()
+        # This is an initial-graph state observation, not a task router: it is
+        # derived entirely from whether the supplied graph is empty and feeds
+        # the same decoder/head/interpreter in both cases.
+        initial_state = expand_condition_token(
+            [4.0, float(not source_text), float(bool(source_text)), 0.0],
+            condition_dim,
+        )[None, :].astype(np.float32)
+        program = direct_cond.property_program_tokens(row, condition_dim)
+        if source_text:
+            source = source_smiles_condition_tokens(row, condition_dim, max_source_tokens=max_source_tokens)
+            return np.concatenate([base, initial_state, source, program], axis=0)
+        return np.concatenate([base, initial_state, program], axis=0)
     if layout in {"transformation", "direct_compat", "direct_edit_compat", "property_program_only"}:
         if layout == "property_program_only":
             return direct_cond.property_program_tokens(row, condition_dim)

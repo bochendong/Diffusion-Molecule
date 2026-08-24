@@ -73,7 +73,7 @@ echo "=== P6 train exactly one decoder/checkpoint ==="
   --train-features-dir "$TRAIN_FEATURES" \
   --eval-features-dir "$VALIDATION_FEATURES" \
   --output-dir "$MODEL_DIR" \
-  --condition-layout transformation \
+  --condition-layout p6_transition \
   --max-smiles-length 188 \
   --epochs "${P6_EPOCHS:-4}" \
   --batch-size "${P6_BATCH_SIZE:-48}" \
@@ -105,6 +105,7 @@ echo "=== P6 sample both modes through the same decoder and interpreter ==="
   --eval-features-dir "$DENOVO_FEATURES" \
   --candidate-output-csv "$OUTPUT_ROOT/eval/denovo/candidates.csv" \
   --summary-json "$OUTPUT_ROOT/eval/denovo/sampling_summary.json" \
+  --condition-layout p6_transition \
   --num-samples 20 --max-new-tokens 188 --temperature 0.8 --top-k 32 --top-p 0.95 \
   --seed 1407 --device auto
 "$PYTHON_BIN" "$SCRIPT_DIR/p6_transition_program.py" sample \
@@ -113,6 +114,7 @@ echo "=== P6 sample both modes through the same decoder and interpreter ==="
   --eval-features-dir "$VALIDATION_FEATURES" \
   --candidate-output-csv "$OUTPUT_ROOT/eval/edit/candidates.csv" \
   --summary-json "$OUTPUT_ROOT/eval/edit/sampling_summary.json" \
+  --condition-layout p6_transition \
   --num-samples 20 --max-new-tokens 64 --temperature 0.8 --top-k 32 --top-p 0.95 \
   --seed 2407 --device auto
 
