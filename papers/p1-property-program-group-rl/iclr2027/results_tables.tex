@@ -13,37 +13,61 @@ candidate streams preserve generation order, Raw@1 is exactly the first model
 draw, and property-reranked selection is never reported as one-shot generation.
 All experiments use the frozen single seed specified before evaluation.
 
-Table~\ref{tab:framework-overview} summarizes the completed evidence across
-the two initial-state regimes. Every MolProgram row uses the same typed
-property-program contract, programmatic verification interface, and
-within-condition group-relative learning principle; the transition operator is
-the state-dependent component. The table keeps condition-level Pass@$k$ and
-candidate-level editing accuracy visibly separate.
+Table~\ref{tab:main-benchmarks} gives the main external comparison under the
+two initial-state regimes. Panel (a) uses the matched SketchMol de novo
+protocol, while Panel (b) reports candidate-level macro averages over the ten
+MolEdit-Instruct tasks. The panels are not numerically pooled: each compares
+MolProgram with published methods under the metric native to that benchmark.
+Subsequent tables isolate the effect of GRPO, candidate budget, and property
+count.
 
 \begin{table*}[t]
   \centering
-  \caption{MolProgram across molecular construction and editing. SFT and GRPO
-  are evaluated under the same candidate stream within each row. De novo
-  Pass@$k$ is condition-level; editing accuracy averages every unranked
-  candidate. Strict and relaxed editing denote
+  \caption{Main comparison across molecular construction and editing.
+  \textbf{(a)} Strict de novo success (\%) under the matched protocol of
+  \citet{wang2025sketchmol}: 1,000 targets per property count and 40 candidates
+  per target.
+  \textbf{(b)} Macro candidate-level MolEdit-Instruct performance (\%) over
+  ten tasks. Strict and relaxed denote
   $\operatorname{Acc}_{\rm all}(.65)$ and
-  $\operatorname{Acc}_{\rm all}(.15)$, respectively. Published references are
-  included only under an identical metric. Bold denotes the best completed
-  value in a row.}
-  \label{tab:framework-overview}
+  $\operatorname{Acc}_{\rm all}(.15)$; the corresponding valid columns
+  condition on valid generations. Published editing values are aggregated from
+  Table~1 of \citet{zhuang2025moleditrl}. Every MolProgram candidate is scored
+  without property-aware inference-time reranking. Bold denotes the best value
+  within each panel and column.}
+  \label{tab:main-benchmarks}
   \scriptsize
-  \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{lllrrrr}
+  \textbf{(a) De novo construction}\par\vspace{2pt}
+  \setlength{\tabcolsep}{4.2pt}
+  \begin{tabular}{llrrrrrrr}
     \toprule
-    Initial graph & Operator & Metric & SFT & GRPO & $\Delta$ & Published ref. \\
+    Method & Representation & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
     \midrule
-    Empty (2p--7p) & Direct SMILES & Pass@8 & 35.37 & \textbf{41.72} & +6.35 & -- \\
-    Empty (2p--7p) & Direct SMILES & Pass@20 & 54.88 & \textbf{62.52} & +7.64 & -- \\
-    Empty (OOD) & Direct SMILES & Pass@20 & 35.20 & \textbf{41.70} & +6.50 & -- \\
-    Source (MolEdit) & Graph-event kernel & Cand. strict
-      & 43.35 & \textbf{46.12} & +2.77 & MolEditRL: 45.00 \\
-    Source (MolEdit) & Graph-event kernel & Cand. relaxed
-      & 57.60 & 61.90 & +4.30 & \textbf{MolEditRL: 72.70} \\
+    SketchMol & molecular image
+      & \textbf{73.1} & 80.4 & 76.8 & \textbf{73.6} & \textbf{71.6} & \textbf{67.8} & \textbf{68.5} \\
+    MolProgram (direct GRPO) & direct SMILES
+      & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
+    \bottomrule
+  \end{tabular}
+  \par\vspace{5pt}
+  \textbf{(b) Source-conditioned editing}\par\vspace{2pt}
+  \setlength{\tabcolsep}{5.5pt}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Method & Validity & \shortstack{Cand. strict\\all}
+      & \shortstack{Cand. strict\\valid}
+      & \shortstack{Cand. relaxed\\all}
+      & \shortstack{Cand. relaxed\\valid} \\
+    \midrule
+    BioT5 & \textbf{100.00} & 0.00 & 0.00 & 29.18 & 29.18 \\
+    MolGen & \textbf{100.00} & 3.25 & 3.25 & 22.24 & 22.24 \\
+    REINVENT4 & 64.05 & 12.53 & 20.08 & 25.03 & 34.20 \\
+    DrugAssist & 97.94 & 34.86 & 35.58 & 41.13 & 41.96 \\
+    GeLLM$^3$O$_{\rm M}$ & 90.18 & 15.24 & 16.81 & 35.40 & 39.15 \\
+    GeLLM$^3$O$_{\rm L}$ & 90.14 & 14.52 & 16.14 & 40.44 & 44.92 \\
+    MolEditRL & 96.62 & 45.02 & 46.41 & \textbf{72.66} & \textbf{75.17} \\
+    \midrule
+    MolProgram (event GRPO) & 97.51 & \textbf{46.12} & \textbf{46.88} & 61.90 & 63.03 \\
     \bottomrule
   \end{tabular}
 \end{table*}
@@ -142,40 +166,16 @@ claim that high-order extrapolation or validity has been solved.
 \subsection{Comparison with matched de novo generation}
 \label{sec:results-denovo-external}
 
-Table~\ref{tab:sketchmol-fair40} places the direct MolProgram policy in the
-SketchMol multi-property protocol. Each method receives 40 attempts for each
+Panel (a) of Table~\ref{tab:main-benchmarks} places the direct MolProgram
+policy in the SketchMol multi-property protocol. Each method receives 40 attempts for each
 of 1,000 held-out target vectors at every complexity, and a condition succeeds
-when at least one valid molecule satisfies every active tolerance. We import
-only the published SketchMol row because it uses the matched target and
-tolerance contract. Methods whose published results use different targets,
-oracles, or budgets are omitted rather than displayed as empty rows or compared
-through incompatible protocols. MolProgram is stronger on 2p and 3p and is
-within 0.9 points at 4p. SketchMol leads from 5p onward and by 5.0 points on the
-overall average. The external comparison therefore identifies high-order
-generation as the primary remaining de novo gap and does not support an overall
-state-of-the-art claim.
-
-\begin{table*}[t]
-  \centering
-  \caption{Matched comparison under the SketchMol multi-property de novo
-  protocol. Strict success (\%) uses 1,000 targets per complexity, the same
-  property tolerances, and 40 candidates per condition. Only completed results
-  under this exact protocol are included. Bold marks the best value.}
-  \label{tab:sketchmol-fair40}
-  \scriptsize
-  \setlength{\tabcolsep}{3.6pt}
-  \begin{tabular}{llrrrrrrr}
-    \toprule
-    Method & Molecular representation & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
-    \midrule
-    SketchMol & molecular image
-      & \textbf{73.1} & 80.4 & 76.8 & \textbf{73.6} & \textbf{71.6} & \textbf{67.8} & \textbf{68.5} \\
-    \midrule
-    MolProgram (direct GRPO) & direct SMILES
-      & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
-    \bottomrule
-  \end{tabular}
-\end{table*}
+when at least one valid molecule satisfies every active tolerance. We include
+only SketchMol because other published methods use different targets, oracles,
+or candidate budgets and therefore require matched reruns. MolProgram is
+stronger on 2p and 3p and is within 0.9 points at 4p. SketchMol leads from 5p
+onward and by 5.0 points on the overall average. The comparison identifies
+high-order generation as the primary remaining de novo gap and does not support
+an overall state-of-the-art claim.
 
 \subsection{Shared programs benefit from state-appropriate transition operators}
 \label{sec:results-transition-audit}
@@ -202,10 +202,10 @@ editing rather than an across-the-board state-of-the-art claim.
 
 \begin{table}[t]
   \centering
-  \caption{MolEdit Table 1 macro results under two aggregation rules. Candidate
-  accuracy averages over every unranked output and is directly comparable to
-  MolEditRL; Any@20 asks whether a condition has at least one hit. MolProgram
-  uses one frozen seed and exactly 20 raw candidates per condition.}
+  \caption{Editing aggregation audit. Candidate accuracy averages every
+  unranked output and is directly comparable to the published MolEditRL task
+  macro; Any@20 instead asks whether a condition has at least one hit.
+  MolProgram uses one frozen seed and exactly 20 raw candidates per condition.}
   \label{tab:operator-split}
   \small
   \setlength{\tabcolsep}{4pt}
@@ -216,7 +216,7 @@ editing rather than an across-the-board state-of-the-art claim.
     Single-checkpoint ablation & 100.00 & 17.08 & 18.03 & 70.50 & 71.00 \\
     MolProgram event SFT & 97.38 & 43.35 & 57.60 & 76.52 & 92.51 \\
     MolProgram event GRPO & \textbf{97.51} & \textbf{46.12} & 61.90 & \textbf{78.83} & \textbf{93.31} \\
-    MolEditRL (reported candidate macro) & 96.62 & 45.00 & \textbf{72.70} & -- & -- \\
+    MolEditRL (published task macro) & 96.62 & 45.02 & \textbf{72.66} & -- & -- \\
     \bottomrule
   \end{tabular}
 \end{table}
