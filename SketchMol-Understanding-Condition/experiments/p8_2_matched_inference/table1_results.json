@@ -1,0 +1,363 @@
+{
+  "aggregates": {
+    "any1": {
+      "Acc_all(0.15)": 0.24,
+      "Acc_all(0.65)": 0.235,
+      "Acc_valid(0.15)": 0.24,
+      "Acc_valid(0.65)": 0.235,
+      "Validity": 1.0
+    },
+    "any20": {
+      "Acc_all(0.15)": 0.71,
+      "Acc_all(0.65)": 0.705,
+      "Acc_valid(0.15)": 0.71,
+      "Acc_valid(0.65)": 0.705,
+      "Validity": 1.0
+    },
+    "any8": {
+      "Acc_all(0.15)": 0.535,
+      "Acc_all(0.65)": 0.53,
+      "Acc_valid(0.15)": 0.535,
+      "Acc_valid(0.65)": 0.53,
+      "Validity": 1.0
+    },
+    "candidate20": {
+      "Acc_all(0.15)": 0.18025,
+      "Acc_all(0.65)": 0.17075,
+      "Acc_valid(0.15)": 0.18025,
+      "Acc_valid(0.65)": 0.17075,
+      "Validity": 1.0
+    }
+  },
+  "candidate_identity_fraction": 0.0,
+  "candidate_rows": 4000,
+  "candidate_unique_fraction": 1.0,
+  "candidates_per_condition": 20,
+  "checkpoint_sha256": "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+  "conditions": 200,
+  "property_reranking": false,
+  "protocol": "p8_2_matched_table1_raw20_v1",
+  "target_molecule_used_at_inference": false,
+  "tasks": [
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.0,
+        "Acc_all(0.65)": 0.0,
+        "Acc_valid(0.15)": 0.0,
+        "Acc_valid(0.65)": 0.0,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 0.0,
+        "Acc_all(0.65)": 0.0,
+        "Acc_valid(0.15)": 0.0,
+        "Acc_valid(0.65)": 0.0,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 0.0,
+        "Acc_all(0.65)": 0.0,
+        "Acc_valid(0.15)": 0.0,
+        "Acc_valid(0.65)": 0.0,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.0,
+        "Acc_all(0.65)": 0.0,
+        "Acc_valid(0.15)": 0.0,
+        "Acc_valid(0.65)": 0.0,
+        "Validity": 1.0
+      },
+      "task": "GSK3B\u2191",
+      "task_key": "GSK3B:increase"
+    },
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.0,
+        "Acc_all(0.65)": 0.0,
+        "Acc_valid(0.15)": 0.0,
+        "Acc_valid(0.65)": 0.0,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 0.55,
+        "Acc_all(0.65)": 0.55,
+        "Acc_valid(0.15)": 0.55,
+        "Acc_valid(0.65)": 0.55,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 0.25,
+        "Acc_all(0.65)": 0.25,
+        "Acc_valid(0.15)": 0.25,
+        "Acc_valid(0.65)": 0.25,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.03,
+        "Acc_all(0.65)": 0.03,
+        "Acc_valid(0.15)": 0.03,
+        "Acc_valid(0.65)": 0.03,
+        "Validity": 1.0
+      },
+      "task": "Rotbonds\u2193",
+      "task_key": "RB:decrease"
+    },
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.9,
+        "Acc_all(0.65)": 0.85,
+        "Acc_valid(0.15)": 0.9,
+        "Acc_valid(0.65)": 0.85,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 1.0,
+        "Acc_all(0.65)": 1.0,
+        "Acc_valid(0.15)": 1.0,
+        "Acc_valid(0.65)": 1.0,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 1.0,
+        "Acc_all(0.65)": 1.0,
+        "Acc_valid(0.15)": 1.0,
+        "Acc_valid(0.65)": 1.0,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.775,
+        "Acc_all(0.65)": 0.71,
+        "Acc_valid(0.15)": 0.775,
+        "Acc_valid(0.65)": 0.71,
+        "Validity": 1.0
+      },
+      "task": "MW\u2191",
+      "task_key": "MW:increase"
+    },
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.2,
+        "Acc_all(0.65)": 0.2,
+        "Acc_valid(0.15)": 0.2,
+        "Acc_valid(0.65)": 0.2,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 0.9,
+        "Acc_all(0.65)": 0.85,
+        "Acc_valid(0.15)": 0.9,
+        "Acc_valid(0.65)": 0.85,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 0.5,
+        "Acc_all(0.65)": 0.45,
+        "Acc_valid(0.15)": 0.5,
+        "Acc_valid(0.65)": 0.45,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.13,
+        "Acc_all(0.65)": 0.12,
+        "Acc_valid(0.15)": 0.13,
+        "Acc_valid(0.65)": 0.12,
+        "Validity": 1.0
+      },
+      "task": "SA\u2193",
+      "task_key": "SA:decrease"
+    },
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.05,
+        "Acc_all(0.65)": 0.05,
+        "Acc_valid(0.15)": 0.05,
+        "Acc_valid(0.65)": 0.05,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 0.4,
+        "Acc_all(0.65)": 0.4,
+        "Acc_valid(0.15)": 0.4,
+        "Acc_valid(0.65)": 0.4,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 0.2,
+        "Acc_all(0.65)": 0.2,
+        "Acc_valid(0.15)": 0.2,
+        "Acc_valid(0.65)": 0.2,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.0225,
+        "Acc_all(0.65)": 0.0225,
+        "Acc_valid(0.15)": 0.0225,
+        "Acc_valid(0.65)": 0.0225,
+        "Validity": 1.0
+      },
+      "task": "Haccept\u2193 SA\u2193",
+      "task_key": "HBA:decrease+SA:decrease"
+    },
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.1,
+        "Acc_all(0.65)": 0.1,
+        "Acc_valid(0.15)": 0.1,
+        "Acc_valid(0.65)": 0.1,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 0.75,
+        "Acc_all(0.65)": 0.75,
+        "Acc_valid(0.15)": 0.75,
+        "Acc_valid(0.65)": 0.75,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 0.55,
+        "Acc_all(0.65)": 0.55,
+        "Acc_valid(0.15)": 0.55,
+        "Acc_valid(0.65)": 0.55,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.09,
+        "Acc_all(0.65)": 0.0875,
+        "Acc_valid(0.15)": 0.09,
+        "Acc_valid(0.65)": 0.0875,
+        "Validity": 1.0
+      },
+      "task": "QED\u2191 SA\u2193",
+      "task_key": "QED:increase+SA:decrease"
+    },
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.05,
+        "Acc_all(0.65)": 0.05,
+        "Acc_valid(0.15)": 0.05,
+        "Acc_valid(0.65)": 0.05,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 0.7,
+        "Acc_all(0.65)": 0.7,
+        "Acc_valid(0.15)": 0.7,
+        "Acc_valid(0.65)": 0.7,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 0.45,
+        "Acc_all(0.65)": 0.45,
+        "Acc_valid(0.15)": 0.45,
+        "Acc_valid(0.65)": 0.45,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.0925,
+        "Acc_all(0.65)": 0.085,
+        "Acc_valid(0.15)": 0.0925,
+        "Acc_valid(0.65)": 0.085,
+        "Validity": 1.0
+      },
+      "task": "Haccept\u2193 LogP\u2191",
+      "task_key": "HBA:decrease+LogP:increase"
+    },
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.05,
+        "Acc_all(0.65)": 0.05,
+        "Acc_valid(0.15)": 0.05,
+        "Acc_valid(0.65)": 0.05,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 0.85,
+        "Acc_all(0.65)": 0.85,
+        "Acc_valid(0.15)": 0.85,
+        "Acc_valid(0.65)": 0.85,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 0.6,
+        "Acc_all(0.65)": 0.6,
+        "Acc_valid(0.15)": 0.6,
+        "Acc_valid(0.65)": 0.6,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.1,
+        "Acc_all(0.65)": 0.1,
+        "Acc_valid(0.15)": 0.1,
+        "Acc_valid(0.65)": 0.1,
+        "Validity": 1.0
+      },
+      "task": "Haccept\u2193 MW\u2193",
+      "task_key": "HBA:decrease+MW:decrease"
+    },
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.45,
+        "Acc_all(0.65)": 0.45,
+        "Acc_valid(0.15)": 0.45,
+        "Acc_valid(0.65)": 0.45,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 0.95,
+        "Acc_all(0.65)": 0.95,
+        "Acc_valid(0.15)": 0.95,
+        "Acc_valid(0.65)": 0.95,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 0.8,
+        "Acc_all(0.65)": 0.8,
+        "Acc_valid(0.15)": 0.8,
+        "Acc_valid(0.65)": 0.8,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.11,
+        "Acc_all(0.65)": 0.11,
+        "Acc_valid(0.15)": 0.11,
+        "Acc_valid(0.65)": 0.11,
+        "Validity": 1.0
+      },
+      "task": "DRD2\u2193 MW\u2193 SA\u2193",
+      "task_key": "DRD2:decrease+MW:decrease+SA:decrease"
+    },
+    {
+      "any1": {
+        "Acc_all(0.15)": 0.6,
+        "Acc_all(0.65)": 0.6,
+        "Acc_valid(0.15)": 0.6,
+        "Acc_valid(0.65)": 0.6,
+        "Validity": 1.0
+      },
+      "any20": {
+        "Acc_all(0.15)": 1.0,
+        "Acc_all(0.65)": 1.0,
+        "Acc_valid(0.15)": 1.0,
+        "Acc_valid(0.65)": 1.0,
+        "Validity": 1.0
+      },
+      "any8": {
+        "Acc_all(0.15)": 1.0,
+        "Acc_all(0.65)": 1.0,
+        "Acc_valid(0.15)": 1.0,
+        "Acc_valid(0.65)": 1.0,
+        "Validity": 1.0
+      },
+      "candidate20": {
+        "Acc_all(0.15)": 0.4525,
+        "Acc_all(0.65)": 0.4425,
+        "Acc_valid(0.15)": 0.4525,
+        "Acc_valid(0.65)": 0.4425,
+        "Validity": 1.0
+      },
+      "task": "Haccept\u2191 MW\u2191 QED\u2193",
+      "task_key": "HBA:increase+MW:increase+QED:decrease"
+    }
+  ]
+}
