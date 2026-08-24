@@ -22,8 +22,7 @@ submission="$(sbatch --parsable --account="${P811_SLURM_ACCOUNT:-rrg-hup}" \
   --output="$LOG_DIR/p811-r2-s${SEED}-%j.log" --export=ALL \
   --wrap="bash '$SCRIPT_DIR/run_p8_1_1_r2_temperature.sh'")"
 job_id="${submission%%;*}"
-echo "P8.1.1-R2 temperature intervention submitted"
+echo "P8.1.1-R2 mandatory temperature intervention submitted"
 echo "  job_id=$job_id"
 echo "  dependency=afterok:$R1_JOB_ID"
 echo "  log=$LOG_DIR/p811-r2-s${SEED}-${job_id}.log"
-

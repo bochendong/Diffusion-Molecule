@@ -31,19 +31,22 @@ for path in "$CHECKPOINT" "$TRAIN_CSV" "$EDIT_CSV" "$DENOVO_CSV" \
 done
 
 export PYTHONPATH="$PROJECT_DIR:$PROJECT_DIR/experiments/unified_smiles_generator:$PROJECT_DIR/scripts${PYTHONPATH:+:$PYTHONPATH}"
-"$PYTHON_BIN" "$SCRIPT_DIR/require_high_entropy.py" \
-  --summary "$R1_ROOT/eval/edit/sampling_summary.json" --minimum "${P811_R2_MIN_ENTROPY:-0.85}"
+R2_TEMPERATURE="${P811_R2_TEMPERATURE:-$(
+  "$PYTHON_BIN" "$SCRIPT_DIR/choose_r2_temperature.py" \
+    --summary "$R1_ROOT/eval/edit/sampling_summary.json" \
+    --threshold "${P811_R2_ENTROPY_THRESHOLD:-0.85}"
+)}"
 
 mkdir -p "$R2_ROOT/eval/edit" "$R2_ROOT/eval/denovo"
 # The de-novo arm is immutable because R2 changes only edit-policy temperature.
 cp -a "$R1_ROOT/eval/denovo/." "$R2_ROOT/eval/denovo/"
 
-echo "=== P8.1.1-R2 single factor: transaction temperature 1.0 -> 0.25 ==="
+echo "=== P8.1.1-R2 single factor: transaction temperature 1.0 -> $R2_TEMPERATURE ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/sample_raw_transactions.py" \
   --checkpoint "$CHECKPOINT" --eval-csv "$EDIT_CSV" --eval-features-dir "$EDIT_FEATURES" \
   --output-csv "$R2_ROOT/eval/edit/candidates.csv" \
   --summary-json "$R2_ROOT/eval/edit/sampling_summary.json" \
-  --num-samples 20 --temperature "${P811_R2_TEMPERATURE:-0.25}" --seed 2907 --device auto
+  --num-samples 20 --temperature "$R2_TEMPERATURE" --seed 2907 --device auto
 
 for budget in 1 8 20; do
   "$PYTHON_BIN" "$PROJECT_DIR/scripts/evaluate_moledit_table1_anyk.py" \
@@ -64,4 +67,3 @@ done
   --output "$R2_ROOT/final_audit.json"
 touch "$R2_ROOT/COMPLETE"
 echo "P8.1.1-R2 complete: $R2_ROOT"
-
