@@ -192,17 +192,20 @@ learned task classifier selects a separate decoder or checkpoint. The
 resulting de novo branch is bit-exact to the legacy
 P1 Group-RL policy. On the 200-condition MolEdit gate, the populated-source
 branch achieves 23.5\%, 53.0\%, and 70.5\% strict success at raw budgets
-$k=1,8,20$. Candidate validity is 100\%, and 17.07\% of the complete unranked
-20-candidate pool is a strict success. Paper-facing matched hard-de-novo values
+$k=1,8,20$. Candidate validity is 100\%, and 17.075\% of the complete unranked
+20-candidate pool is a strict success. These Any@$k$ values measure whether a
+condition has at least one hit; they are not the candidate-level accuracies in
+Table~\ref{tab:moledit-full}. Paper-facing matched hard-de-novo values
 have not yet been exported and are therefore left blank rather than inferred
 from the bit-exact audit.
 
 \begin{table}[t]
   \centering
-  \caption{Promoted single-checkpoint state-adaptive gate. Candidate validity
-  is measured over all unselected draws; Strict@1 and Pass@$k$ are averaged
-  over conditions. Dashes denote a pending paper-facing matched export, not a
-  reported failure.}
+  \caption{Within-method budget scaling for the promoted single-checkpoint
+  state-adaptive gate. Candidate validity is measured over all unselected
+  draws; Strict@1 and Pass@$k$ are averaged over conditions. Pass@$k$ is not
+  comparable to candidate-level Table~\ref{tab:moledit-full}. Dashes denote a
+  pending paper-facing matched export, not a reported failure.}
   \label{tab:unified-policy-gate}
   \small
   \setlength{\tabcolsep}{4pt}
@@ -216,6 +219,34 @@ from the bit-exact audit.
   \end{tabular}
 \end{table}
 
+Applying group-relative REINFORCE to the transaction branch is a negative
+ablation. Table~\ref{tab:transaction-rl-negative} compares both preregistered
+rounds with the unchanged state-adaptive policy under the same raw stream.
+R1 uses a joint-bottleneck reward and R2 changes only its aggregation to a
+dense soft-min. Neither update improves the base: candidate-level strict
+accuracy decreases from 17.075\% to 16.750\% and 16.775\%, while Any@20
+decreases from 70.5\% to 61.5\% and 62.0\%. We therefore retain transaction
+Group-RL as a negative ablation rather than part of the promoted method.
+
+\begin{table}[t]
+  \centering
+  \caption{Negative transaction-branch reinforcement ablation on the same
+  MolEdit gate. Both columns use the strict 0.65 source-similarity criterion,
+  but candidate accuracy and condition-level Any@20 are different estimands.}
+  \label{tab:transaction-rl-negative}
+  \small
+  \setlength{\tabcolsep}{7pt}
+  \begin{tabular}{lrr}
+    \toprule
+    Policy & Candidate strict (\%) & Any@20 (\%) \\
+    \midrule
+    State-adaptive base & \textbf{17.075} & \textbf{70.5} \\
+    Transaction RL R1 (joint bottleneck) & 16.750 & 61.5 \\
+    Transaction RL R2 (dense soft-min) & 16.775 & 62.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
 \subsection{Source-conditioned editing against published baselines}
 \label{sec:results-editing}
 
@@ -224,11 +255,11 @@ ten tasks, validity, and overall/valid-conditional accuracy at source
 similarity thresholds 0.65 and 0.15. Every published method is evaluated from
 20 generated molecules per input and candidate-wise over the unranked pool.
 This is intentionally different from Pass@$k$ or a property-selected output.
-The populated row reports the complete P6 uniform-action candidate pool on a
-bounded 20-input-per-task pilot and is retained as an ablation rather than
-presented as the promoted method. The state-adaptive MolProgram row remains
-blank until the same paper-facing per-task metrics are exported from P8.1.1.
-We omit FCD because it is not part of our evaluation contract.
+The uniform-action row reports the complete P6 candidate pool on a bounded
+20-input-per-task pilot and is retained as an ablation rather than presented as
+the promoted method. The state-adaptive MolProgram row is the matched P8.2
+candidate-level export over 4,000 unranked candidates. We omit FCD because it is
+not part of our evaluation contract.
 
 \input{moledit_table1.tex}
 
@@ -244,6 +275,15 @@ the appendix. The uniform-action row is populated only by raw samples from its
 single shared checkpoint; its 17.75\% macro strict candidate accuracy is
 below MolEditRL overall, although it exceeds MolEditRL on the MW-increase task
 at the strict 0.65 threshold.
+
+The promoted state-adaptive policy achieves aggregate candidate-level
+$\operatorname{Acc}_{\rm all}$ of 17.075\% at similarity 0.65 and 18.025\% at
+0.15. These values remain below the corresponding MolEditRL task averages of
+45.0\% and 72.7\%. At the strict threshold, MolProgram exceeds MolEditRL only
+on MW$\uparrow$ (71.00\% versus 40.40\%) and on the final three-property task
+Haccept$\uparrow$/MW$\uparrow$/QED$\downarrow$ (44.25\% versus 43.00\%). Its
+70.5\% Any@20 instead answers whether each condition has at least one strict
+hit among 20 draws and must not be compared with these candidate-level rows.
 
 \subsection{MuMOInstruct IND and OOD task families}
 \label{sec:results-mumo}
