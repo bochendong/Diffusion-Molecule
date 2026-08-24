@@ -46,6 +46,13 @@ once before the same mixed R2 SFT. Representation, rows, optimizer, candidate
 order, budgets and evaluators are unchanged. This tests negative transfer; it
 does not introduce a second head or checkpoint at inference.
 
+The first raw queue exposed an implementation-only grammar mismatch: an
+observed stereochemical SELFIES spelling such as `[\\F]` was absent from the
+sealed robust-alphabet checkpoint vocabulary. Evaluation now intersects
+observed semantic terminals with that vocabulary and reports every dropped
+spelling. The eval-only continuation reuses the trained R1/R2 checkpoints, so
+this repair changes neither scientific round.
+
 Run on Nibi:
 
 ```bash

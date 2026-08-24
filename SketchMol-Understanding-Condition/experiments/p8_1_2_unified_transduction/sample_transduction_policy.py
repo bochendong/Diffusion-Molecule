@@ -172,7 +172,16 @@ def main() -> int:
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
     store = unified.FeatureStore(args.eval_features_dir, array_name="query_tokens", variant="full")
-    semantic_tokens = observed_selfies_tokens(args.train_csv)
+    observed_semantic_tokens = observed_selfies_tokens(args.train_csv)
+    # Prepared rows can contain stereochemical SELFIES spellings (for
+    # example ``[\\F]``) that are absent from the checkpoint's sealed robust
+    # alphabet. Such spellings mapped to UNK during training and must not be
+    # exposed as grammar terminals during sampling.
+    vocabulary_tokens = set(vocab.token_to_id)
+    semantic_tokens = observed_semantic_tokens & vocabulary_tokens
+    dropped_semantic_tokens = sorted(observed_semantic_tokens - semantic_tokens)
+    if not semantic_tokens:
+        raise ValueError("No observed SELFIES semantic token is present in the checkpoint vocabulary")
     rows = p6.read_rows(args.eval_csv)
     output: list[dict[str, object]] = []
     valid = complete = 0
@@ -233,6 +242,8 @@ def main() -> int:
         "rows_with_valid_candidate": rows_with_valid,
         "row_validity": rows_with_valid / max(len(rows), 1),
         "grammar_complete": complete / max(total, 1),
+        "semantic_vocabulary_size": len(semantic_tokens),
+        "dropped_semantic_tokens": dropped_semantic_tokens,
         "property_reranking": False,
     }
     args.summary_json.parent.mkdir(parents=True, exist_ok=True)
