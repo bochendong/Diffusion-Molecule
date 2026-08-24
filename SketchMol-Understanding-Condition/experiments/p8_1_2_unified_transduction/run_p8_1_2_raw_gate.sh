@@ -23,15 +23,18 @@ DIRECT_ROOT="${P812_DIRECT_ROOT:-$PROJECT_DIR/outputs/direct_smiles_denovo_2p7p_
 SUITE_ROOT="${P812_SUITE_ROOT:-$PROJECT_DIR/outputs/unified_smiles_generator_suite_v1}"
 JOINT_ROOT="${P812_JOINT_ROOT:-$PROJECT_DIR/outputs/unified_smiles_generator_joint_v2}"
 OUTPUT_ROOT="${P812_OUTPUT_ROOT:-$PROJECT_DIR/outputs/p8_1_2_unified_transduction_raw_v1/seed_${SEED}}"
+ORACLE_ROOT="${P812_ORACLE_ROOT:-$PROJECT_DIR/outputs/p8_1_2_unified_transduction_v1/seed_${SEED}}"
 BASE_CHECKPOINT="$P6_ROOT/policy/umtp_graph_action_policy.pt"
-TRAIN_SOURCE="$P6_ROOT/data/train_transition_programs.csv"
-VALIDATION_SOURCE="$P6_ROOT/data/validation_transition_programs.csv"
+TRAIN_R2="$ORACLE_ROOT/r2/transduction_rows.csv"
+TRAIN_R2_SUMMARY="$ORACLE_ROOT/r2/oracle_summary.json"
+VALIDATION_R2="$ORACLE_ROOT/r2_validation/transduction_rows.csv"
+VALIDATION_R2_SUMMARY="$ORACLE_ROOT/r2_validation/oracle_summary.json"
 TRAIN_FEATURES="$SUITE_ROOT/feature_variants/train_condition_features_hf_vlm"
 VALIDATION_FEATURES="$JOINT_ROOT/feature_variants/validation_condition_features_hf_vlm"
 DENOVO_FEATURES="$DIRECT_ROOT/eval_condition_features_hf_vlm"
 CHECKPOINT="$OUTPUT_ROOT/policy/umtp_graph_action_policy.pt"
 
-for path in "$BASE_CHECKPOINT" "$TRAIN_SOURCE" "$VALIDATION_SOURCE" \
+for path in "$BASE_CHECKPOINT" "$TRAIN_R2" "$TRAIN_R2_SUMMARY" "$VALIDATION_R2" "$VALIDATION_R2_SUMMARY" \
   "$P6_ROOT/data/denovo_hard_gate.csv" "$P6_ROOT/data/edit_table1_gate.csv"; do
   [[ -f "$path" ]] || { echo "ERROR: missing input: $path" >&2; exit 2; }
 done
@@ -46,23 +49,15 @@ export MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
-echo "=== P8.1.2 freeze R2 source-aligned mixed transduction rows ==="
-"$PYTHON_BIN" "$SCRIPT_DIR/transduction_oracle.py" \
-  --input-csv "$TRAIN_SOURCE" \
-  --output-csv "$OUTPUT_ROOT/data/train_r2.csv" \
-  --summary-json "$OUTPUT_ROOT/data/train_r2_summary.json" \
-  --variant r2_source_aligned --max-program-tokens 188
-"$PYTHON_BIN" "$SCRIPT_DIR/transduction_oracle.py" \
-  --input-csv "$VALIDATION_SOURCE" \
-  --output-csv "$OUTPUT_ROOT/data/validation_r2.csv" \
-  --summary-json "$OUTPUT_ROOT/data/validation_r2_summary.json" \
-  --variant r2_source_aligned --max-program-tokens 188
+echo "=== P8.1.2 verify CPU-prepared R2 rows; never run RDKit MCS on GPU ==="
+"$PYTHON_BIN" "$SCRIPT_DIR/verify_prepared_r2.py" --rows "$TRAIN_R2" --summary "$TRAIN_R2_SUMMARY"
+"$PYTHON_BIN" "$SCRIPT_DIR/verify_prepared_r2.py" --rows "$VALIDATION_R2" --summary "$VALIDATION_R2_SUMMARY"
 
 echo "=== P8.1.2 train exactly one mixed empty/source decoder ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/train_transduction_policy.py" train \
   --base-checkpoint "$BASE_CHECKPOINT" \
-  --train-csv "$OUTPUT_ROOT/data/train_r2.csv" \
-  --eval-csv "$OUTPUT_ROOT/data/validation_r2.csv" \
+  --train-csv "$TRAIN_R2" \
+  --eval-csv "$VALIDATION_R2" \
   --train-features-dir "$TRAIN_FEATURES" --eval-features-dir "$VALIDATION_FEATURES" \
   --output-dir "$OUTPUT_ROOT/policy" --condition-layout p6_transition \
   --max-smiles-length 188 --epochs "${P812_EPOCHS:-4}" \
@@ -73,14 +68,14 @@ echo "=== P8.1.2 train exactly one mixed empty/source decoder ==="
 
 echo "=== P8.1.2 raw 20 samples: same checkpoint, same transducer ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/sample_transduction_policy.py" \
-  --checkpoint "$CHECKPOINT" --train-csv "$OUTPUT_ROOT/data/train_r2.csv" \
+  --checkpoint "$CHECKPOINT" --train-csv "$TRAIN_R2" \
   --eval-csv "$P6_ROOT/data/denovo_hard_gate.csv" --eval-features-dir "$DENOVO_FEATURES" \
   --candidate-output-csv "$OUTPUT_ROOT/eval/denovo/candidates.csv" \
   --summary-json "$OUTPUT_ROOT/eval/denovo/sampling_summary.json" \
   --num-samples 20 --max-new-tokens 128 --temperature 0.8 --top-k 32 --top-p 0.95 \
   --seed 1812 --device auto
 "$PYTHON_BIN" "$SCRIPT_DIR/sample_transduction_policy.py" \
-  --checkpoint "$CHECKPOINT" --train-csv "$OUTPUT_ROOT/data/train_r2.csv" \
+  --checkpoint "$CHECKPOINT" --train-csv "$TRAIN_R2" \
   --eval-csv "$P6_ROOT/data/edit_table1_gate.csv" --eval-features-dir "$VALIDATION_FEATURES" \
   --candidate-output-csv "$OUTPUT_ROOT/eval/edit/candidates.csv" \
   --summary-json "$OUTPUT_ROOT/eval/edit/sampling_summary.json" \
