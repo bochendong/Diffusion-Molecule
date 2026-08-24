@@ -1,0 +1,49 @@
+{
+  "protocol": "p8_1_5_roundtrip_consistency_v1",
+  "seed": 7,
+  "hypothesis": "A cycle-consistency loss that reconstructs the source from the edited molecule under the inverse property program improves source-faithful editing without changing the P1 de-novo path.",
+  "shared_contract": {
+    "initial_checkpoint": "outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/direct_smiles_model_group_rl/direct_smiles_generator_rl.pt",
+    "checkpoint_count_per_arm": 1,
+    "decoder_count": 1,
+    "output_head_count": 1,
+    "output_language": "full molecule SMILES",
+    "task_interface": "empty versus nonempty source state; EDIT condition token only on source-present rows",
+    "external_router": false,
+    "external_materializer": false,
+    "property_rerank": false,
+    "source_copy_candidate": false,
+    "trainable_scope": "source_only",
+    "p1_de_novo_condition_layout": "bit-exact base plus direct property program",
+    "training": {
+      "epochs": 2,
+      "samples_per_epoch": 4096,
+      "batch_size": 64,
+      "learning_rate": 0.0001,
+      "per_mode_forward_support": 1000
+    },
+    "evaluation": {
+      "denovo": "P6 frozen hard 2p-7p subset with 6p and 7p strata",
+      "edit": "P6 frozen MolEdit Table1 subset",
+      "raw_candidate_budgets": [1, 8, 20],
+      "candidate_level": true,
+      "metrics": ["raw_success_fraction", "pass_at_k", "validity", "unique", "identity_copy_fraction"]
+    }
+  },
+  "r1": {
+    "name": "forward_only",
+    "cycle_weight": 0.0,
+    "training_rows": "balanced de-novo and forward edit rows"
+  },
+  "r2": {
+    "name": "inverse_program_cycle",
+    "cycle_weight": 1.0,
+    "single_changed_factor": "add inverse-program source reconstruction supervision",
+    "training_rows": "identical forward rows plus inverse-program cycle rows",
+    "queue_policy": "afterany R1; poor R1 does not eliminate R2"
+  },
+  "interpretation": {
+    "positive": "R2 improves raw edit validity and/or Acc_all at k=1/8/20 while de-novo remains equal within deterministic sampling noise.",
+    "negative": "Cycle reconstruction causes copying or fails to improve edit metrics; retain as completed negative ablation rather than redefining selection."
+  }
+}
