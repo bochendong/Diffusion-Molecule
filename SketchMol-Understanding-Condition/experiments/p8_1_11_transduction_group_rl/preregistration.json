@@ -1,0 +1,45 @@
+{
+  "protocol": "p8_1_11_transduction_group_relative_reinforce_v1",
+  "seed": 7,
+  "base": "P8.1.2-R1 P6-warmstart checkpoint",
+  "hypothesis": "Group-relative molecular property feedback can raise strict success of the 100%-valid unified SELFIES transducer without changing its shared program algebra.",
+  "algorithm": {
+    "name": "group-relative REINFORCE",
+    "is_grpo": false,
+    "reason_not_grpo": "no PPO importance ratio or clipped surrogate",
+    "rollouts_per_prompt": 4,
+    "advantage": "within-prompt standardized reward",
+    "stabilizers": ["sampled squared reference log-ratio penalty", "oracle-program SFT anchor"]
+  },
+  "unified_contract": {
+    "checkpoint_count_per_arm": 1,
+    "decoder_count": 1,
+    "interpreter_count": 1,
+    "program_algebra": "TRANSDUCE plus KEEP DELETE INSERT STOP",
+    "output_language": "SELFIES transduction program",
+    "de_novo_initial_state": "empty SELFIES sequence",
+    "edit_initial_state": "source SELFIES sequence",
+    "router": false,
+    "materializer": false,
+    "property_rerank": false
+  },
+  "training_support": {
+    "denovo": "train-only 6p and 7p rows, 32 each",
+    "edit": "64 train-only non-assay rows",
+    "evaluation_rows_used": 0,
+    "evaluation_targets_used": 0,
+    "target_structure_reward_access": false
+  },
+  "r1": {"reward_aggregation": "joint_bottleneck"},
+  "r2": {
+    "reward_aggregation": "dense_softmin",
+    "single_changed_factor": "reward aggregation",
+    "must_run_policy": "afterany R1"
+  },
+  "shared_evaluation": {
+    "subsets": ["P6 hard de-novo", "P6 MolEdit Table1"],
+    "raw_candidate_budgets": [1, 8, 20],
+    "metrics": ["raw success fraction", "pass@k", "validity", "unique", "identity", "strict nonidentity"],
+    "property_reranking": false
+  }
+}
