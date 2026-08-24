@@ -12,6 +12,7 @@ import os
 import pickle
 import sys
 import types
+import warnings
 from collections import defaultdict
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
@@ -117,12 +118,34 @@ def sha256_file(path: Path) -> str:
 
 
 class PinnedMorganClassifierOracle:
-    """Run a provenance-pinned sklearn assay model on TDC ECFP4 features."""
+    """Run a provenance-pinned sklearn assay model on its training features."""
 
-    def __init__(self, model_path: Path):
+    def __init__(self, model_path: Path, prop: str = "GSK3B"):
         self.model_path = model_path.resolve()
-        with self.model_path.open("rb") as handle:
+        self.prop = canonical_property(prop)
+        with self.model_path.open("rb") as handle, warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            if self.prop == "DRD2":
+                import sklearn.svm._classes as svm_classes
+
+                sys.modules.setdefault("sklearn.svm.classes", svm_classes)
             self.model = pickle.load(handle)
+        if self.prop == "DRD2":
+            old = vars(self.model)
+            for name, value in {
+                "_n_support": old.get("n_support_"),
+                "_probA": old.get("probA_"),
+                "_probB": old.get("probB_"),
+            }.items():
+                if not hasattr(self.model, name) and value is not None:
+                    setattr(self.model, name, value)
+            if not hasattr(self.model, "n_features_in_"):
+                shape_fit = getattr(self.model, "shape_fit_", None)
+                if not shape_fit or len(shape_fit) != 2:
+                    raise ValueError("Pinned DRD2 SVC is missing shape_fit_")
+                self.model.n_features_in_ = int(shape_fit[1])
+            if not hasattr(self.model, "break_ties"):
+                self.model.break_ties = False
 
     def __call__(self, smiles: str) -> float:
         from rdkit import Chem, DataStructs
@@ -131,9 +154,16 @@ class PinnedMorganClassifierOracle:
         molecule = Chem.MolFromSmiles(str(smiles or ""))
         if molecule is None:
             raise ValueError("invalid SMILES")
-        fingerprint = AllChem.GetMorganFingerprintAsBitVect(molecule, 2, nBits=2048)
         features = np.zeros(2048, dtype=np.float32)
-        DataStructs.ConvertToNumpyArray(fingerprint, features)
+        if self.prop == "DRD2":
+            fingerprint = AllChem.GetMorganFingerprint(
+                molecule, 3, useCounts=True, useFeatures=True
+            )
+            for index, count in fingerprint.GetNonzeroElements().items():
+                features[int(index) % 2048] += float(count)
+        else:
+            fingerprint = AllChem.GetMorganFingerprintAsBitVect(molecule, 2, nBits=2048)
+            DataStructs.ConvertToNumpyArray(fingerprint, features)
         probability = self.model.predict_proba(features.reshape(1, -1))
         return float(probability[0, 1])
 
@@ -146,7 +176,7 @@ def configured_pinned_oracle(prop: str) -> PinnedMorganClassifierOracle | None:
     path = Path(configured).expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(f"{env_name} does not exist: {path}")
-    return PinnedMorganClassifierOracle(path)
+    return PinnedMorganClassifierOracle(path, prop=prop)
 
 
 def configured_oracle_provenance() -> dict[str, dict[str, str]]:
