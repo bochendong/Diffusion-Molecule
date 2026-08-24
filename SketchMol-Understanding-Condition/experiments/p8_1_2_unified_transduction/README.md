@@ -40,6 +40,12 @@ claim that P6 solved de-novo generation: P6's near-zero hard-de-novo validity
 makes negative transfer the main preregistered risk. The raw gate therefore
 requires both modes from the same checkpoint and cannot pass on editing alone.
 
+Raw R2 changes exactly that warm-start prior: P6 is replaced by the P1
+high-order de-novo Group-RL checkpoint, with source-aware parameters expanded
+once before the same mixed R2 SFT. Representation, rows, optimizer, candidate
+order, budgets and evaluators are unchanged. This tests negative transfer; it
+does not introduce a second head or checkpoint at inference.
+
 Run on Nibi:
 
 ```bash

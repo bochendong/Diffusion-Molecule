@@ -1,0 +1,22 @@
+{
+  "experiment": "P8.1.2 raw R2",
+  "seed": 7,
+  "dependency_policy": "afterany raw R1 so R2 runs even if R1 is scientifically negative",
+  "single_scientific_change": {
+    "name": "warmstart_prior",
+    "r1": "P6 mixed graph-transition checkpoint",
+    "r2": "P1 de-novo Group-RL checkpoint with source-aware parameter expansion"
+  },
+  "held_fixed": [
+    "R2 source-aligned SELFIES transduction rows",
+    "one decoder, one softmax, one interpreter",
+    "same train and validation rows",
+    "four SFT epochs and optimization hyperparameters",
+    "same P6 hard de-novo and Table1 editing subsets",
+    "20 raw generation-order candidates",
+    "k=1,8,20",
+    "no property reranking"
+  ],
+  "causal_hypothesis": "P6 transfers an edit-dominant low-level action prior that harms empty-source generation; P1 Group-RL transfers high-order property competence while mixed R2 SFT learns the same source-aware transduction language.",
+  "risk": "new source-conditioning parameters may make editing learn more slowly, so R2 must pass both modes and cannot be selected on de-novo alone"
+}

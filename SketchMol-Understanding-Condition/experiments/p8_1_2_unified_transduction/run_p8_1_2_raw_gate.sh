@@ -24,7 +24,7 @@ SUITE_ROOT="${P812_SUITE_ROOT:-$PROJECT_DIR/outputs/unified_smiles_generator_sui
 JOINT_ROOT="${P812_JOINT_ROOT:-$PROJECT_DIR/outputs/unified_smiles_generator_joint_v2}"
 OUTPUT_ROOT="${P812_OUTPUT_ROOT:-$PROJECT_DIR/outputs/p8_1_2_unified_transduction_raw_v1/seed_${SEED}}"
 ORACLE_ROOT="${P812_ORACLE_ROOT:-$PROJECT_DIR/outputs/p8_1_2_unified_transduction_v1/seed_${SEED}}"
-BASE_CHECKPOINT="$P6_ROOT/policy/umtp_graph_action_policy.pt"
+BASE_CHECKPOINT="${P812_BASE_CHECKPOINT:-$P6_ROOT/policy/umtp_graph_action_policy.pt}"
 TRAIN_R2="$ORACLE_ROOT/r2/transduction_rows.csv"
 TRAIN_R2_SUMMARY="$ORACLE_ROOT/r2/oracle_summary.json"
 TRAIN_R2_SHA256="$ORACLE_ROOT/r2/transduction_rows.sha256"
@@ -57,6 +57,10 @@ echo "=== P8.1.2 verify CPU-prepared R2 rows; never run RDKit MCS on GPU ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/verify_prepared_r2.py" --rows "$VALIDATION_R2" --summary "$VALIDATION_R2_SUMMARY" --sha256-file "$VALIDATION_R2_SHA256"
 
 echo "=== P8.1.2 train exactly one mixed empty/source decoder ==="
+SOURCE_WARMSTART_ARGS=()
+if [[ "${P812_SOURCE_AWARE_WARMSTART:-0}" == "1" ]]; then
+  SOURCE_WARMSTART_ARGS+=(--source-aware-warmstart)
+fi
 "$PYTHON_BIN" "$SCRIPT_DIR/train_transduction_policy.py" train \
   --base-checkpoint "$BASE_CHECKPOINT" \
   --train-csv "$TRAIN_R2" \
@@ -67,7 +71,7 @@ echo "=== P8.1.2 train exactly one mixed empty/source decoder ==="
   --batch-size "${P812_BATCH_SIZE:-48}" --eval-batch-size 64 \
   --samples-per-epoch "${P812_SAMPLES_PER_EPOCH:-8192}" \
   --lr "${P812_LR:-8e-5}" --weight-decay 1e-4 --distill-weight 0 \
-  --trainable-scope all --seed "$SEED" --device auto
+  --trainable-scope all "${SOURCE_WARMSTART_ARGS[@]}" --seed "$SEED" --device auto
 
 echo "=== P8.1.2 raw 20 samples: same checkpoint, same transducer ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/sample_transduction_policy.py" \
