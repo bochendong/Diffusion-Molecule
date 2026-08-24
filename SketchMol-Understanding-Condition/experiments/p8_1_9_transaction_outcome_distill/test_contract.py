@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parent
 def main() -> int:
     run = (ROOT / "run_round.sh").read_text()
     submit = (ROOT / "submit_queue.sh").read_text()
+    precompute = (ROOT / "run_precompute.sh").read_text()
     builder = (ROOT / "build_teacher_pseudopairs.py").read_text()
     assert "source_clamped_entrypoint.py\" train" in run
     assert "--trainable-scope source_only" in run
@@ -18,6 +19,8 @@ def main() -> int:
     assert "--num-samples 20" in run
     assert "property-rerank" not in run.lower()
     assert "afterany:$r1" in submit
+    assert "afterany:$pre" in submit
+    assert "build_teacher_pseudopairs.py" in precompute
     assert '"eval_candidates_used_for_training": False' in builder
     assert "np.argmax" in builder
     assert "outcome in eval_molecules" in builder
