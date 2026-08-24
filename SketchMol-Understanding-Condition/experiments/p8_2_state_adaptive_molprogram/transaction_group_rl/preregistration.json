@@ -1,0 +1,15 @@
+{
+  "experiment": "P8.2 transaction branch group-relative RL",
+  "seed": 7,
+  "base": "the shared P8.1.1-R2 checkpoint (P8.1.1-R1 weights; R2 was decoding-temperature only)",
+  "hypothesis": "Group-relative outcome rewards improve the learned ordering of mechanically executable short transactions while preserving the legacy direct-SMILES path exactly.",
+  "R1": "joint_bottleneck group-relative REINFORCE",
+  "R2": "dense_softmin group-relative REINFORCE; reward aggregation is the only changed factor",
+  "mandatory_R2": true,
+  "rollouts_per_prompt": 4,
+  "anchors": {"sampled_group_reference_KL": 0.05, "oracle_SFT": 0.1},
+  "trainable": "source memory and appended transaction-token embeddings only",
+  "leakage": "fail closed for eval identifiers, sources, and targets; reward receives no target structure",
+  "inference": "source-only mechanical support, raw sampling, no property rerank",
+  "evaluation": "same checkpoint on P6 hard de novo and MolEdit Table1, raw k=1,8,20 and candidate fraction"
+}
