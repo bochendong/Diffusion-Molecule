@@ -4,7 +4,7 @@ set -euo pipefail
 ROUND_NAME="${1:?round name}" CHECKPOINT="${2:?checkpoint}" OUTPUT_ROOT="${3:?output root}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
-UNIFIED_DIR="$PROJECT_DIR/experiments/unified_smiles_generator"
+UNIFIED_ENTRY="$SCRIPT_DIR/full_smiles_entrypoint.py"
 SEED="${P814_SEED:-7}"
 P6_ROOT="${P814_P6_ROOT:-$PROJECT_DIR/outputs/p6_unified_transition_policy_v1/seed_${SEED}}"
 DIRECT_ROOT="${P814_DIRECT_ROOT:-$PROJECT_DIR/outputs/direct_smiles_denovo_2p7p_v2_mixed_condition}"
@@ -15,7 +15,7 @@ PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 mkdir -p "$OUTPUT_ROOT/eval/denovo" "$OUTPUT_ROOT/eval/edit"
 sample_one() {
   local mode="$1" eval_csv="$2" features="$3" seed="$4"
-  "$PYTHON_BIN" "$UNIFIED_DIR/unified_smiles_generator.py" sample \
+  "$PYTHON_BIN" "$UNIFIED_ENTRY" sample \
     --checkpoint "$CHECKPOINT" --eval-csv "$eval_csv" --eval-condition-features-dir "$features" \
     --condition-layout unified --output-dir "$OUTPUT_ROOT/eval/$mode/raw" \
     --prediction-csv "$OUTPUT_ROOT/eval/$mode/selected_raw.csv" \

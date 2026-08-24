@@ -4,7 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"; PROJECT_DIR="$(cd "$
 if command -v module >/dev/null 2>&1; then module purge >/dev/null 2>&1 || true; module load StdEnv/2023 python/3.11 rdkit/2025.09.4; module load cuda/12.6 2>/dev/null || true; fi
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"; SEED="${P814_SEED:-7}"
 R1="$PROJECT_DIR/outputs/p8_1_4_full_smiles_multitask_r1/seed_${SEED}"; OUT="$PROJECT_DIR/outputs/p8_1_4_full_smiles_multitask_r2_grpo/seed_${SEED}"
-UNIFIED="$PROJECT_DIR/experiments/unified_smiles_generator/unified_smiles_generator.py"; mkdir -p "$OUT/policy"
+UNIFIED="$SCRIPT_DIR/full_smiles_entrypoint.py"; mkdir -p "$OUT/policy"
 export PYTHONPATH="$PROJECT_DIR:$PROJECT_DIR/experiments/unified_smiles_generator${PYTHONPATH:+:$PYTHONPATH}"
 echo 'R2 single factor: add one source-only GRPO epoch against identity copy.'
 "$PYTHON_BIN" "$UNIFIED" group-rl --train-csv "$R1/data/r2_edit_train.csv" --condition-features-dir "$R1/data/mixed_features" \

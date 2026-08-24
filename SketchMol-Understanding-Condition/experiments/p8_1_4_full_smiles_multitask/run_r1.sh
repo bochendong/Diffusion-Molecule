@@ -8,7 +8,7 @@ OUT="${P814_R1_ROOT:-$PROJECT_DIR/outputs/p8_1_4_full_smiles_multitask_r1/seed_$
 DIRECT="$PROJECT_DIR/outputs/direct_smiles_denovo_2p7p_v2_mixed_condition"
 TABLE1="$PROJECT_DIR/outputs/direct_smiles_moledit_table1_group_rl_v1"
 BASE="${P814_BASE_CHECKPOINT:-$PROJECT_DIR/outputs/direct_smiles_denovo_2p7p_v2_group_rl_v1/direct_smiles_model_group_rl/direct_smiles_generator_rl.pt}"
-UNIFIED="$PROJECT_DIR/experiments/unified_smiles_generator/unified_smiles_generator.py"
+UNIFIED="$SCRIPT_DIR/full_smiles_entrypoint.py"
 mkdir -p "$OUT/data" "$OUT/policy"; export PYTHONPATH="$PROJECT_DIR:$PROJECT_DIR/experiments/unified_smiles_generator${PYTHONPATH:+:$PYTHONPATH}"
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}" MKL_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}" TOKENIZERS_PARALLELISM=false
 
