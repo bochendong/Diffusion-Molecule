@@ -1,0 +1,37 @@
+{
+  "architecture": {
+    "checkpoint_count": 1,
+    "decoder_count": 1,
+    "interpreter_count": 1,
+    "only_task_difference": "empty initial graph versus supplied source graph",
+    "property_aware_finalizer": false,
+    "task_router": false,
+    "task_specific_head": false
+  },
+  "candidate_budgets": [
+    1,
+    8,
+    20
+  ],
+  "claim_scope": "bounded_single_seed_representation_and_policy_gate",
+  "denovo_gate": {
+    "property_counts": [
+      6,
+      7
+    ],
+    "rows_per_count": 32
+  },
+  "editing_gate": {
+    "benchmark": "MolEdit-Instruct Table 1",
+    "rows_per_task": 20,
+    "source_similarity_threshold": 0.65
+  },
+  "primary_metrics": [
+    "raw_success_fraction",
+    "pass_at_k",
+    "validity_fraction",
+    "unique_fraction",
+    "official_editing_strict_accuracy"
+  ],
+  "seed": 7
+}

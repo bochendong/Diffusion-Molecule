@@ -82,6 +82,13 @@ FRAGMENT_TOKENS = {
     "C1CC1": "<FRAG_CYCLOPROPYL>",
 }
 BOND_ORDERS = ("single", "double", "triple")
+TRANSITION_CONTROL_TOKENS = ("<MOL_PROGRAM>", "<ACTION_END>", "<STOP>")
+TRANSITION_OP_TOKENS = ("<INIT_ATOM>", "<ADD_BOND>")
+TRANSITION_ATOMIC_NUMBER_TOKENS = tuple(f"<Z_{value:03d}>" for value in range(1, 119))
+TRANSITION_CHARGE_TOKENS = tuple(f"<CHARGE_{value:+d}>" for value in range(-4, 5))
+TRANSITION_H_TOKENS = tuple(f"<H_{value}>" for value in range(0, 9))
+TRANSITION_FLAG_TOKENS = ("<AROM_0>", "<AROM_1>", "<NOIMPL_0>", "<NOIMPL_1>")
+TRANSITION_BOND_TOKENS = ("<ORDER_SINGLE>", "<ORDER_DOUBLE>", "<ORDER_TRIPLE>", "<ORDER_AROMATIC>")
 DEFAULT_SOURCE_SIMILARITY_THRESHOLD = 0.65
 VOCAB_PARAMETER_NAMES = {
     "token_embedding.weight",
@@ -258,6 +265,17 @@ def action_vocabulary(*, max_site_index: int = 127) -> list[str]:
     tokens.extend(atom_token(atom) for atom in ATOM_VALUES)
     tokens.extend(FRAGMENT_TOKENS.values())
     tokens.extend(order_token(order) for order in BOND_ORDERS)
+    # P6 uses the same decoder and interpreter for empty-graph construction and
+    # source-conditioned editing.  These tokens are inert for earlier UMTP
+    # checkpoints unless a row explicitly supplies a molecular transition
+    # program as its target.
+    tokens.extend(TRANSITION_CONTROL_TOKENS)
+    tokens.extend(TRANSITION_OP_TOKENS)
+    tokens.extend(TRANSITION_ATOMIC_NUMBER_TOKENS)
+    tokens.extend(TRANSITION_CHARGE_TOKENS)
+    tokens.extend(TRANSITION_H_TOKENS)
+    tokens.extend(TRANSITION_FLAG_TOKENS)
+    tokens.extend(TRANSITION_BOND_TOKENS)
     return list(dict.fromkeys(tokens))
 
 
@@ -712,21 +730,24 @@ def build_policy_dataset(
     dataset: list[dict[str, object]] = []
     for row in rows:
         mode = unified.task_mode_for_row(row)
-        if mode == unified.EDIT_MODE:
-            raw = str(row.get("policy_target_tokens_json", "") or "").strip()
-            if not raw:
-                continue
+        # A molecular transition program is mode-agnostic: the same serialized
+        # target is used whether the initial graph is empty or supplied by the
+        # row.  Legacy de-novo rows without one retain the direct-SMILES target.
+        raw = str(row.get("policy_target_tokens_json", "") or "").strip()
+        if raw:
             try:
                 tokens = json.loads(raw)
             except json.JSONDecodeError:
                 continue
             if not isinstance(tokens, list) or not all(isinstance(token, str) for token in tokens):
                 continue
-        else:
+        elif mode == unified.DE_NOVO_MODE:
             target = str(row.get("target_smiles", "") or "").strip()
             if not target:
                 continue
             tokens = unified.tokenize_smiles(target)[: max(1, int(max_smiles_length))]
+        else:
+            continue
         decoder_input = vocab.encode(tokens, add_bos=True, add_eos=False)
         target_ids = vocab.encode(tokens, add_bos=False, add_eos=True)
         condition = unified.condition_array_for_row(
