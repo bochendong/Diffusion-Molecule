@@ -1,0 +1,27 @@
+{
+  "experiment": "P8.1.13 verified counterfactual preference distillation",
+  "seed": 7,
+  "base": "P8.1.7-compatible P8.1.4 full-SMILES checkpoint",
+  "scientific_hypothesis": "A full-SMILES source-conditioned student can learn the boundary between verified strict edits and close valid failures more directly from same-prompt preferences than from positive-only SFT.",
+  "unified_contract": {
+    "checkpoint": 1,
+    "decoder": 1,
+    "output_language": "full molecule SMILES",
+    "task_token_allowed": true,
+    "router": false,
+    "materializer": false,
+    "teacher_at_inference": false,
+    "property_reranking": false
+  },
+  "pair_contract": {
+    "positive": "official Table1 strict success at 0.65 source similarity and nonidentity",
+    "negative": "same train source/program, valid, official strict failure, closest source Tanimoto then property fraction",
+    "leakage": "fail closed over eval identifiers, sources, original targets, positive pseudo-targets, and negative pseudo-targets"
+  },
+  "rounds": {
+    "R1": "uniform reference-based length-normalized DPO",
+    "R2": "same data, base, beta, optimizer, training and decoding; only pair loss weighting changes to teacher confidence"
+  },
+  "mandatory_second_round": true,
+  "evaluation": "seed7 P6 hard de novo and MolEdit Table1; raw k=1,8,20, candidate validity and identity; no rerank"
+}
