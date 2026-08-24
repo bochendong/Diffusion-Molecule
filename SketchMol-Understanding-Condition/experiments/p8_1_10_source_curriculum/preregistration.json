@@ -1,0 +1,37 @@
+{
+  "experiment": "P8.1.10 source-aligned curriculum",
+  "seed": 7,
+  "base_lineage": {
+    "shared_policy": "P1 Group-RL shared tensors",
+    "source_modules": "P8.1.4 source-aware full-SMILES checkpoint",
+    "condition_layout": "P8.1.7 null-source direct-compatible layout",
+    "note": "P8.1.7 is an inference-layout experiment, not a separately trained checkpoint"
+  },
+  "inference_contract": {
+    "checkpoint_count": 1,
+    "decoder_count": 1,
+    "softmax_count": 1,
+    "output_language": "full-molecule SMILES",
+    "explicit_task_token": true,
+    "null_source": true,
+    "router": false,
+    "materializer": false,
+    "property_rerank": false
+  },
+  "data_contract": {
+    "training_source": "MolEdit Table1 training partition only",
+    "evaluation_source": "P6 hard de novo and MolEdit Table1 gates",
+    "eval_targets_used_for_training": false,
+    "canonical_target_and_pair_overlap_must_be_zero": true
+  },
+  "r1": "clean source reconstruction, then property-edit SFT",
+  "r2": "local span-corrupted source reconstruction, then the identical property-edit SFT",
+  "single_r2_factor": "delete one contiguous 12 percent source-token span during reconstruction stage only",
+  "evaluation": {
+    "generation_order": "raw 20",
+    "budgets": [1, 8, 20],
+    "candidate_level": true,
+    "edit_diagnostics": ["RDKit validity", "identity", "strict nonidentity", "relaxed nonidentity"],
+    "denovo_protection": "candidate-semantic bit exact against P8.1.7 R1 with the same seed"
+  }
+}
