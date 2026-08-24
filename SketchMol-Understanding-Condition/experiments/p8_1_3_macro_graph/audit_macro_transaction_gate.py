@@ -101,9 +101,17 @@ def normalized_motif(smiles: str) -> str:
 
 def factor_payload(smiles: str, factor: str) -> tuple[tuple[str, ...], tuple[tuple[int, str], ...]]:
     """Serialize a region as components plus typed port links."""
-    mol = Chem.MolFromSmiles(str(smiles or ""), sanitize=False)
+    mol = Chem.MolFromSmiles(str(smiles or ""))
+    if mol is None:
+        mol = Chem.MolFromSmiles(str(smiles or ""), sanitize=False)
     if mol is None:
         raise ValueError("invalid_payload")
+    # BRICS queries ring membership.  MMPA variables with a dummy attachment
+    # can take the sanitize=False fallback, so initialize graph invariants
+    # explicitly before FindBRICSBonds instead of turning an RDKit precondition
+    # violation into apparent representation non-coverage.
+    mol.UpdatePropertyCache(strict=False)
+    Chem.GetSymmSSSR(mol)
     if factor == "whole":
         return (Chem.MolToSmiles(mol, canonical=True, isomericSmiles=True),), ()
     candidates = list(BRICS.FindBRICSBonds(mol))
