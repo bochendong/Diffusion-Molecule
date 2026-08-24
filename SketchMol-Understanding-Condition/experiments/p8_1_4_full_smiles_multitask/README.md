@@ -11,9 +11,11 @@ and trains only small source-gated residual modules on a balanced de-novo/edit
 set. It intentionally disables the pointer-generator: preserving a source is
 not counted as solving an edit, and the audit reports identity-copy rate.
 
-R2 always runs after R1. Its only scientific change is one source-only GRPO
-epoch with an explicit identity-copy penalty; architecture, data language,
-checkpoint, raw candidate order, decoding, and evaluation remain fixed.
+R2 always runs after R1. Its only scientific change is adding one source-only
+Group-RL stage. The preregistered Group-RL reward includes an identity-copy
+penalty; this is part of that single objective change, not a second ablation.
+Architecture, data language, checkpoint lineage, raw candidate order, decoding,
+and evaluation remain fixed.
 Both rounds use the P6 hard de-novo and Table1 edit subsets, exactly 20 raw
 candidates per condition, `k=1,8,20`, candidate-level metrics, and no property
 reranking.

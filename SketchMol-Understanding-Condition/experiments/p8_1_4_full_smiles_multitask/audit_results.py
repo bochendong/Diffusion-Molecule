@@ -39,18 +39,24 @@ def main() -> int:
             nonempty += 1
             identity += int(generated == source)
     config = dict(trained.get("model_config", {}))
+    saved_args = dict(trained.get("args", {}))
+    condition_layout = str(saved_args.get("condition_layout", ""))
     payload = {
         "protocol": "p8_1_4_one_checkpoint_audit_v1",
         "one_checkpoint": True,
         "one_shared_decoder": "decoder.layers.0.self_attn.in_proj_weight" in trained_state,
         "one_shared_output_head": "output.weight" in trained_state,
         "same_smiles_vocabulary": base.get("vocab") == trained.get("vocab"),
-        "condition_layout": str(trained.get("args", {}).get("condition_layout", "")),
+        "condition_layout": condition_layout,
+        "explicit_task_token_in_condition": condition_layout == "unified",
+        "task_token_marker": 3.0,
+        "task_token_values": {"GENERATE": [1.0, 0.0], "EDIT": [0.0, 1.0]},
         "source_copy_pointer": bool(config.get("source_copy_aware", False)),
         "router": False,
         "interpreter": False,
         "materializer": False,
         "property_rerank": False,
+        "inference_route_count": 1,
         "common_base_tensors": len(common),
         "changed_base_tensors": changed,
         "base_path_bitwise_protected": not changed,
