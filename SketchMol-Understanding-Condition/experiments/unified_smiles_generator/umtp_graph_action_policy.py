@@ -129,6 +129,14 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     train.add_argument("--max-smiles-length", type=int, default=160)
     train.add_argument("--max-source-tokens", type=int, default=96)
     train.add_argument("--max-site-index", type=int, default=127)
+    train.add_argument(
+        "--source-aware-warmstart",
+        action="store_true",
+        help=(
+            "Upgrade a source-free direct-SMILES checkpoint with newly initialized source memory. "
+            "Legacy parameters and vocabulary rows remain protected under source_action training."
+        ),
+    )
     train.add_argument("--epochs", type=int, default=3)
     train.add_argument("--batch-size", type=int, default=64)
     train.add_argument("--eval-batch-size", type=int, default=128)
@@ -684,6 +692,7 @@ def expand_checkpoint_model(
     *,
     max_site_index: int,
     max_sequence_length: int | None = None,
+    source_aware_warmstart: bool = False,
     device: torch.device,
 ) -> tuple[unified.ConditionedSmilesDecoder, unified.SmilesVocabulary, dict[str, object], int]:
     vocab = unified.SmilesVocabulary.from_dict(checkpoint["vocab"])
@@ -691,6 +700,16 @@ def expand_checkpoint_model(
     vocab.update([action_vocabulary(max_site_index=int(max_site_index))])
     config = dict(checkpoint["model_config"])
     config["vocab_size"] = len(vocab.token_to_id)
+    if bool(source_aware_warmstart) and not bool(config.get("source_aware", False)):
+        config.update(
+            {
+                "source_aware": True,
+                "source_encoder_layers": 2,
+                "source_residual_scale": 1.0,
+                "source_copy_aware": False,
+                "source_adapter_layers": 0,
+            }
+        )
     if max_sequence_length is not None:
         # Positional encodings are non-persistent buffers, so increasing their
         # extent preserves every learned checkpoint parameter while allowing
@@ -844,6 +863,7 @@ def train_command(args: argparse.Namespace) -> int:
         checkpoint,
         max_site_index=int(args.max_site_index),
         max_sequence_length=int(args.max_smiles_length) + 2,
+        source_aware_warmstart=bool(args.source_aware_warmstart),
         device=device,
     )
     teacher = load_teacher(checkpoint, device)
