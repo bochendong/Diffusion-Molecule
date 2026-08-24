@@ -19,6 +19,7 @@ P6_ROOT="${P818_P6_ROOT:-$PROJECT_DIR/outputs/p6_unified_transition_policy_v1/se
 JOINT_ROOT="${P818_JOINT_ROOT:-$PROJECT_DIR/outputs/unified_smiles_generator_joint_v2}"
 CHECKPOINT="$R1_ROOT/policy/masked_molecule_policy.pt"
 EDIT_CSV="$P6_ROOT/data/edit_table1_gate.csv"
+DENOVO_CSV="$P6_ROOT/data/denovo_hard_gate.csv"
 EDIT_FEATURES="$JOINT_ROOT/feature_variants/validation_condition_features_hf_vlm"
 R2_FRACTION="${P818_R2_MASK_FRACTION:-$(
   "$PYTHON_BIN" "$SCRIPT_DIR/choose_r2_mask_fraction.py" \
@@ -27,6 +28,13 @@ R2_FRACTION="${P818_R2_MASK_FRACTION:-$(
 
 mkdir -p "$R2_ROOT/eval/edit" "$R2_ROOT/eval/denovo"
 cp -a "$R1_ROOT/eval/denovo/." "$R2_ROOT/eval/denovo/"
+"$PYTHON_BIN" "$SCRIPT_DIR/normalize_denovo_candidates.py" \
+  --input "$R2_ROOT/eval/denovo/candidates.csv" --output "$R2_ROOT/eval/denovo/candidates.normalized.csv"
+mv "$R2_ROOT/eval/denovo/candidates.normalized.csv" "$R2_ROOT/eval/denovo/candidates.csv"
+"$PYTHON_BIN" "$PROJECT_DIR/experiments/p6_unified_molecular_transition_policy/evaluate_p6_denovo_gate.py" \
+  --eval-csv "$DENOVO_CSV" --candidates-csv "$R2_ROOT/eval/denovo/candidates.csv" \
+  --output-json "$R2_ROOT/eval/denovo/metrics.json" --output-md "$R2_ROOT/eval/denovo/report.md" \
+  --budgets 1,8,20
 "$PYTHON_BIN" "$SCRIPT_DIR/masked_molecule_policy.py" sample \
   --checkpoint "$CHECKPOINT" --eval-csv "$EDIT_CSV" --eval-features-dir "$EDIT_FEATURES" \
   --candidate-output-csv "$R2_ROOT/eval/edit/candidates.csv" \
@@ -47,4 +55,3 @@ done
   --output "$R2_ROOT/unified_audit.json"
 touch "$R2_ROOT/COMPLETE"
 echo "P8.1.8-R2 complete: $R2_ROOT"
-

@@ -429,6 +429,9 @@ def sample_command(args: argparse.Namespace) -> int:
             item = dict(row)
             item.update({
                 "generated_smiles": smiles, "candidate_smiles": smiles,
+                "direct_candidate_index": candidate_index,
+                "direct_candidate_raw_smiles": smiles,
+                "direct_candidate_canonical_smiles": smiles,
                 "generation_rank": candidate_index + 1, "candidate_rank": candidate_index + 1,
                 "method": "p8_1_8_masked_selfies_policy",
                 "p818_identity": str(is_identity),
@@ -581,4 +584,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
