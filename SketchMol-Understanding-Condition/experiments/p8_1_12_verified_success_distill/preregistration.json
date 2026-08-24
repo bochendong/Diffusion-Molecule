@@ -1,0 +1,36 @@
+{
+  "protocol": "p8_1_12_verified_success_outcome_distill_v1",
+  "seed": 7,
+  "hypothesis": "Distilling only train-time transaction outcomes that already satisfy the official joint property and source-preservation predicate transfers executable editing success into one full-SMILES student.",
+  "teacher_selection": {
+    "support": "source-only executable P8.1.1 transactions on train rows",
+    "success_filter_before_selection": true,
+    "success_predicate": "official Table1 all-property improvement and source Tanimoto >= 0.65",
+    "identity_allowed": false,
+    "selection_inside_success_set": "maximum teacher sequence likelihood",
+    "property_reranking_at_inference": false,
+    "eval_candidates_allowed": false
+  },
+  "student": {
+    "initial_checkpoint": "P8.1.7/P8.1.4 single full-SMILES checkpoint",
+    "trainable_scope": "source_only",
+    "checkpoint_count_at_inference": 1,
+    "decoder_count": 1,
+    "teacher_at_inference": false,
+    "router": false,
+    "materializer": false,
+    "property_rerank": false
+  },
+  "r1": {"verified_outcome_weighting": "uniform"},
+  "r2": {
+    "verified_outcome_weighting": "teacher_likelihood_confidence",
+    "single_changed_factor": "teacher likelihood confidence weighting",
+    "must_run_policy": "afterany R1"
+  },
+  "evaluation": {
+    "denovo": "P6 hard",
+    "edit": "frozen Table1",
+    "raw_candidate_budgets": [1, 8, 20],
+    "metrics": ["validity", "strict_success", "identity", "strict_nonidentity", "source_tanimoto"]
+  }
+}
