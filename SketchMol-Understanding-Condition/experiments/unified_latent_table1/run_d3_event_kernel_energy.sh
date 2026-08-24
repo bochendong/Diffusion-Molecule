@@ -124,9 +124,29 @@ fi
   --candidates "$OUTPUT_DIR/d3_event_kernel_energy_table1_n20_candidates.csv" \
   --output-dir "$OUTPUT_DIR/moledit_table_metrics_any20" \
   --candidate-limit 20 \
+  --require-exact-candidate-count \
   --model-name d3_event_kernel_energy \
   --task-filter table1 \
   --missing-oracle-policy fail
+
+"$PYTHON_BIN" "$SHARED_PROJECT_DIR/scripts/evaluate_moledit_table1_anyk.py" \
+  --reference "$EVAL_CSV" \
+  --candidates "$OUTPUT_DIR/d3_event_kernel_energy_table1_n20_candidates.csv" \
+  --output-dir "$OUTPUT_DIR/moledit_table_metrics_candidate20" \
+  --candidate-limit 20 \
+  --aggregation candidate \
+  --require-exact-candidate-count \
+  --model-name d3_event_kernel_energy \
+  --task-filter table1 \
+  --missing-oracle-policy fail
+
+"$PYTHON_BIN" "$SCRIPT_DIR/summarize_d3_table1_aggregations.py" \
+  --candidate-json "$OUTPUT_DIR/moledit_table_metrics_candidate20/moledit_table_summary.json" \
+  --any-json "$OUTPUT_DIR/moledit_table_metrics_any20/moledit_table_summary.json" \
+  --output-json "$OUTPUT_DIR/d3_table1_aggregation_audit.json" \
+  --output-markdown "$OUTPUT_DIR/d3_table1_aggregation_audit.md" \
+  --model-name d3_event_kernel_energy \
+  --candidate-limit 20
 
 "$PYTHON_BIN" "$C_DIR/align_official_gsk3b_candidates.py" \
   --official-reference "$OFFICIAL_GSK3B" \

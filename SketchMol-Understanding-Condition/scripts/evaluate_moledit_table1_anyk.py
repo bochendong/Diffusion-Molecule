@@ -55,6 +55,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--candidate-limit", type=int, default=20)
     parser.add_argument("--aggregation", choices=("any", "candidate"), default="any")
+    parser.add_argument(
+        "--require-exact-candidate-count",
+        action="store_true",
+        help="Fail when a matched reference does not have exactly --candidate-limit raw rows.",
+    )
     parser.add_argument("--thresholds", default="0.65,0.15")
     parser.add_argument("--model-name", default="DirectSMILES-anyk")
     parser.add_argument("--method-filter", default=None)
@@ -93,6 +98,10 @@ def main() -> int:
         pool = grouped_candidates.get(ref_id, [])
         if not pool:
             continue
+        if args.require_exact_candidate_count and len(pool) != int(args.candidate_limit):
+            raise SystemExit(
+                f"Reference {ref_id} has {len(pool)} candidates; expected exactly {int(args.candidate_limit)}"
+            )
         matched_predictions_by_task[current_task_key] += 1
         missing_oracles = sorted(chem.missing_oracles(task_specs))
         if missing_oracles and args.missing_oracle_policy == "skip-task":
@@ -202,7 +211,7 @@ def load_candidates(path: Path, *, method_filter: str | None, candidate_limit: i
                 row,
                 (*PREDICTION_SMILES_COLUMNS, "direct_candidate_canonical_smiles", "direct_candidate_raw_smiles"),
             )
-            if not row_id or not smiles:
+            if not row_id:
                 continue
             grouped[row_id].append((candidate_index(row), smiles))
     out: dict[str, list[str]] = {}
