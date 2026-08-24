@@ -19,145 +19,138 @@ with Group-Relative Reinforcement Learning}
 \maketitle
 
 \begin{abstract}
-Designing molecules that jointly satisfy multiple physicochemical properties
-is a central challenge in drug discovery and materials design. Existing
-conditional generators typically express molecular objectives as flat
-condition vectors or instructions, leaving their behavior under increasingly
-complex and out-of-distribution property combinations poorly understood. Here,
-we introduce \emph{MolProgram}, a direct molecular generation framework that
-represents each design request as a variable-length program of property
-targets, tolerances, and directions. MolProgram combines LLM-derived
-instruction features with explicit numerical program tokens and translates
-their joint representation into SMILES using a compact
-autoregressive decoder. A property-count curriculum emphasizes high-order
-programs during supervised training. We then apply a Group Relative Policy
-Optimization (GRPO)-style post-training objective that learns from groups of
-sampled molecules and programmatically verifiable property feedback to improve
-joint constraint satisfaction. All molecules are generated directly by the
-model, without retrieval from an external molecular library, a molecular
-materializer, or inference-time property reranking. By varying both program
-complexity and candidate budget, we evaluate generation from low-order
-objectives to difficult high-order, reversed, extreme, and rare property
-combinations. Extensive experiments demonstrate that GRPO-style post-training
-improves high-order and out-of-distribution control over
-supervised fine-tuning, with gains already visible at modest sampling budgets.
-These results establish MolProgram as a unified framework for scaling direct
-molecular generation toward increasingly compositional design objectives.
+Goal-directed molecular design is central to drug discovery and materials
+development, yet practical design requests often combine a variable number of
+numerical objectives and may either require a molecule to be created from
+scratch or an existing molecule to be modified. Existing systems commonly
+treat de novo generation and molecular editing as separate tasks, encode
+multiple objectives as a flat condition or free-form instruction, and report
+property-selected best-of-many outputs. We introduce \emph{MolProgram}, a
+unified molecular transition framework in which a design request is represented
+as a variable-length program of property targets, tolerances, and directions,
+while the molecular input is represented only by its initial graph state.
+An automatically derived initial-state token distinguishes an empty graph from
+a supplied source graph without routing to a task-specific model. A single
+autoregressive policy, checkpoint, typed graph-action vocabulary, and
+deterministic interpreter are consequently used for both generation and
+editing. MolProgram combines frozen LLM-derived instruction features with
+explicit numerical program tokens, emphasizes high-order programs through a
+property-count curriculum, and applies group-relative reinforcement learning
+with programmatically verifiable molecular feedback. The model constructs
+molecules without retrieval from an external molecular library or
+property-aware inference-time reranking. In a representation audit, the common
+transition language covers 96.5\% of mixed de novo and editing trajectories and
+reconstructs 99.8\% of the covered editing targets. On direct de novo
+generation, group-relative post-training improves Pass@8 and Pass@20 over
+supervised fine-tuning by 6.35 and 7.64 percentage points on two-to-seven
+property programs, and by 3.90 and 6.50 points on out-of-distribution programs.
+A first shared-policy gate obtains 26.5\% macro strict editing accuracy on its
+first candidates but fails on long-horizon 6p/7p construction, identifying
+sequence horizon as a central obstacle to unified learning.
+These results motivate molecular design as one compositional transition problem
+while identifying the optimization required to make both boundary conditions
+work in a single policy.
 \end{abstract}
 
 \section{Introduction}
+Goal-directed molecular design is widely used in drug discovery and materials
+development to create or modify molecules toward desired physicochemical and
+biological profiles. It is commonly formulated as a conditional molecular
+transition problem: given a property program
+$P=\{(j,y_j,\tau_j,d_j)\}_{j=1}^{m}$ and an initial molecular graph $G_0$,
+learn a policy $\pi_\theta$ whose terminal graph satisfies all clauses in $P$.
+Each clause specifies a property identity $j$, target $y_j$, tolerance
+$\tau_j$, and optional direction $d_j$; $G_0=\varnothing$ defines de novo
+generation, whereas $G_0=G_{\mathrm{src}}$ defines source-conditioned editing.
+A general solution iteratively samples a molecular action
+$a_t\sim\pi_\theta(a_t\mid P,G_t,a_{<t})$ and applies an interpreter
+$G_{t+1}=\mathcal I(G_t,a_t)$ until a stop action produces the candidate
+molecule.
 
-Multi-property de novo molecular generation is widely used in computer-aided
-drug discovery and materials design to propose candidates that satisfy several
-physicochemical requirements at once. The task can be formulated as
-conditional distribution learning: given a variable-length property program
-$P=\{(j,y_j,\tau_j,d_j)\}_{j=1}^{m}$, learn a distribution
-$p_\theta(s\mid P)$ over molecular strings $s$. Each program clause identifies
-a property $j$, a target $y_j$, a tolerance $\tau_j$, and an optional direction
-$d_j$; a generated string is a strict solution only if it is chemically valid
-and satisfies every active clause. We study the zero-source setting, in which
-no initial molecule is provided and the model must directly generate a
-molecule from the requested property program. A common solution is to learn a
-conditional generator from property-labeled molecules and then approximate the
-design objective by drawing, guiding, or selecting candidates from
-$p_\theta(s\mid P)$.
+Existing approaches instantiate this iteration through several broad
+paradigms rather than isolated model families. Sequence generators decode
+molecular strings token by token and provide a compact route to conditional
+generation \citep{bagal2022molgpt}. Graph and image diffusion models iteratively
+denoise structural states and can impose numerical or categorical guidance
+throughout construction \citep{liu2024graphdit,wang2025sketchmol}.
+Arbitrary-subset conditional models use property masking, guidance, or
+self-criticism to operate on different subsets of available objectives
+\citep{jolicoeurmartineau2024stggplus}. Instruction-tuned molecular language
+models use natural-language task descriptions to transfer across objectives
+and molecular operations \citep{dey2025gellm3o,dey2025controllable}. In
+parallel, verifier-guided sampling and reinforcement learning use molecular
+predictors or programmatic property functions to improve outcomes that are not
+fully captured by supervised likelihood
+\citep{wang2025sketchmol,gao2026cmoral,shao2024deepseekmath}.
 
-This general strategy has developed along several complementary paradigms.
-Sequence generators concatenate molecular strings with property tokens or
-condition vectors and decode candidates autoregressively, providing a compact
-and scalable route to direct generation \citep{bagal2022molgpt}. Graph and
-image generators instead
-embed conditions into iterative denoising processes, allowing molecular
-structure to be constructed under numerical or categorical guidance
-\citep{liu2024graphdit,wang2025sketchmol}. Arbitrary-subset conditional models
-use property masking, classifier-free guidance, or self-criticism to support
-different subsets of available attributes
-\citep{jolicoeurmartineau2024stggplus}. Instruction-tuned molecular models
-replace fixed task interfaces with natural language and transfer across
-multi-property objectives \citep{dey2025gellm3o,dey2025controllable}. More
-recently, feedback-based methods have used molecular predictors or programmatic
-property functions for selection, guidance, and reinforcement learning,
-enabling the generator to optimize objectives that are difficult to capture
-with supervised likelihood alone \citep{wang2025sketchmol,gao2026cmoral}.
+These paradigms all approximate a sequence of condition-dependent molecular
+transitions; however, their interfaces make compositional and operational
+generalization difficult to identify. A flat property vector does not expose
+the internal structure or length of a variable objective set, making
+high-order composition difficult to distinguish from interpolation among
+individual property correlations. A free-form instruction provides semantic
+flexibility but is imprecise about numerical targets, tolerances, and reversed
+or extreme constraints. Direct string generation is efficient but fragile
+under long-horizon validity and source preservation, whereas graph construction
+is valid by design but often tied to a fixed task interface. Most importantly,
+de novo generation and molecular editing are usually implemented with separate
+heads, decoders, action spaces, or post-processing pipelines, even though they
+differ only in whether the initial graph is empty. Best-of-many evaluation can
+then hide these modeling limitations by increasing success through search or
+property-aware selection rather than by increasing the policy probability of a
+strict solution \citep{gao2022sampleefficiency}.
 
-Despite their different representations, these paradigms share several
-limitations under compositional scaling. First, a variable set of objectives is
-commonly collapsed into a flat condition vector or instruction, so property
-count and the internal structure of a request are not explicit modeling
-objects. This makes it difficult to distinguish learning individual
-property--structure correlations from learning how those correlations compose
-in high-order, reversed, extreme, or rarely observed combinations. Second,
-natural-language instructions offer a flexible semantic interface but are an
-imprecise representation of numerical targets and tolerances, whereas fixed
-numerical vectors are precise but provide little structure for variable-length
-composition. Third, evaluation often reports a molecule selected from many
-samples without treating the candidate budget as part of the method. A
-best-of-many success can therefore increase even when the probability assigned
-to strict solutions remains small, obscuring whether progress comes from
-conditional generation or additional search
-\citep{gao2022sampleefficiency}.
+Our key observation is that generation and editing need not be unified by a
+task router; they can instead be treated as executions of the same molecular
+transition program under different boundary conditions. If the objective is
+represented as an explicit variable-length program and graph occupancy is
+represented as part of the initial state, one policy can learn both how
+constraints compose and how the available molecular state changes the next
+valid action. This formulation preserves the semantic benefit of an
+instruction, the numerical precision of structured targets, and the chemical
+validity of executable graph transitions.
 
-Our key observation is that multi-property design is better represented as
-execution of a structured, variable-length program than as response to a flat
-condition. Such a program can retain the semantic context of an instruction
-while exposing the identity, target, tolerance, direction, and total complexity
-of every active constraint. It also makes two difficulty axes explicit:
-program complexity determines what must be composed, while candidate budget
-determines how much search is allowed. This view suggests that training should
-both emphasize increasingly high-order programs and use verifiable feedback to
-compare alternative executions of the same program.
-
-Following this insight, we present \textbf{MolProgram}, a direct SMILES
-generation framework that combines semantic instruction conditioning, explicit
-numerical property programs, and group-relative policy optimization.
-MolProgram first encodes the design instruction using frozen LLM-derived
-features and augments them with deterministic tokens for the active property
-clauses and a program summary. A compact autoregressive Transformer then
-cross-attends to this joint representation and produces SMILES without
-retrieval from an external molecular library or a materialization stage. During
-supervised training, a property-count curriculum reweights sampling and token
-loss toward high-order programs. During post-training, a Group Relative Policy
-Optimization (GRPO)-style objective compares groups of candidates generated
-for the same program and uses programmatically verifiable molecular-property
-rewards, together with supervised and reference-policy regularization, to
-update the SMILES policy \citep{shao2024deepseekmath}. The LLM condition
-encoder remains frozen; GRPO-style
-post-training updates the compact molecular decoder rather than the LLM itself.
-
-We evaluate MolProgram by preserving generation order and measuring prefixes of
-the same candidate stream over a range of budgets. This separates raw candidate
-success from the probability that a condition is solved at least once, and
-prevents property-aware selection from being presented as one-shot generation.
-Across difficult six- and seven-property programs and out-of-distribution
-reversed, extreme, and rare combinations, GRPO-style post-training improves
-success over supervised fine-tuning at modest candidate budgets. The resulting
-picture is deliberately more specific than a best-of-many headline: MolProgram
-improves the probability that a small sample set contains a strict solution,
-while its effect need not be uniform for the first draw.
+Thus, we present \textbf{MolProgram}, a unified molecular transition framework
+that combines LLM-derived instruction conditioning, explicit property-program
+tokens, an automatically derived initial-graph token, typed graph actions, and
+group-relative reinforcement learning. MolProgram first augments frozen
+instruction features with deterministic tokens for every active property
+clause and with an \textsc{Init-Empty} or \textsc{Init-Source} observation
+computed directly from $G_0$. A single compact autoregressive Transformer then
+emits a variable-length program over atom initialization, atom and bond
+addition, local replacement, deletion, fragment attachment, bond-order change,
+and stop actions. One deterministic interpreter executes these actions on
+$G_0$, so de novo generation and editing share the same decoder, checkpoint,
+action vocabulary, and output semantics. Supervised training uses a
+property-count curriculum to emphasize high-order programs, after which a
+GRPO-style objective compares groups of executions for the same program and
+updates the common molecular policy using validity, property satisfaction, and
+source-relative feedback; the LLM feature extractor remains frozen.
 
 The main contributions of this work are as follows:
 \begin{enumerate}
-  \item We formulate zero-source multi-property molecular generation through
-  variable-length property programs and introduce MolProgram, which combines
-  LLM-derived instruction conditioning, explicit numerical program tokens, a
-  property-count curriculum, and GRPO-style verifier-based post-training in a
-  direct SMILES generator.
-  \item We develop a budget-transparent evaluation of compositional control and
-  provide empirical evidence that group-relative post-training improves
-  difficult high-order and out-of-distribution program satisfaction at modest
-  sampling budgets, without relying on retrieval, materialization, or
-  inference-time property reranking.
+  \item We formulate de novo generation and molecular editing as one
+  initial-state-conditioned transition problem and introduce MolProgram, which
+  uses one property-program interface, policy, typed action language, checkpoint,
+  and interpreter for both operations without a task router or external
+  molecular library.
+  \item We develop property-count curriculum learning, verifier-based
+  group-relative post-training, and a budget-transparent evaluation that
+  separately reports raw success, Pass@$k$, validity, uniqueness, and
+  source-preserving editing, providing empirical evidence for improved
+  high-order and out-of-distribution control while retaining explicit failure
+  cases.
 \end{enumerate}
 
 The remainder of the paper is organized as follows. Section 2 reviews
-conditional molecular generation and reinforcement post-training. Section 3
-formalizes property programs and presents MolProgram. Section 4 describes the
-training and evaluation protocols. Section 5 reports the compositional and
-candidate-budget scaling results. Section 6 discusses limitations and broader
+conditional molecular generation, editing, and reinforcement post-training.
+Section 3 formalizes compositional property programs and the unified molecular
+transition problem. Section 4 presents MolProgram and its training objectives.
+Section 5 reports de novo, editing, complexity-scaling, and
+out-of-distribution results. Section 6 discusses limitations and broader
 implications, and Section 7 concludes the paper.
 
-% Results are generated from the frozen P1 evidence tables. Pending P2 repair
-% values remain blank in appendix_results.tex until their validation gate ends.
+% Results combine frozen direct-policy evidence with the bounded P6 unified gate.
 \input{results_tables.tex}
 
 \appendix

@@ -8,10 +8,10 @@
   $\operatorname{Acc}_{\mathrm{valid}}(t)$ conditions on valid generations.
   Every method is evaluated from 20 generated molecules per input, and all
   MolProgram metrics are computed over the complete unranked candidate pool
-  rather than a selected output or an any-hit event. Dashes reserve the
-  MolProgram--P4 cells until a full-scale matched evaluation is completed;
-  the 20-input-per-task pilot is reported separately. Bold denotes the best
-  completed accuracy value.}
+  rather than a selected output or an any-hit event. The MolProgram row is a
+  bounded single-seed gate with 20 inputs per task and is therefore preliminary,
+  whereas published baselines use their full evaluation sets. Bold denotes the
+  best completed accuracy value under the displayed task metric.}
   \label{tab:moledit-full}
   \setlength{\tabcolsep}{2.2pt}
   \renewcommand{\arraystretch}{0.88}
@@ -41,8 +41,8 @@
       & & .876 & .138 & .1575 & .506 & .5776 \\
     MolEditRL & & .952 & \textbf{.342} & \textbf{.3592} & \textbf{.514} & \textbf{.5399}
       & & .984 & \textbf{.634} & \textbf{.6443} & \textbf{.830} & \textbf{.8435} \\
-    MolProgram--P4 & & -- & -- & -- & -- & --
-      & & -- & -- & -- & -- & -- \\
+    MolProgram (unified pilot) & & .6225 & .0000 & .0000 & .0000 & .0000
+      & & .6350 & .0825 & .1299 & .0825 & .1299 \\
     \midrule
     BioT5 & \multirow{8}{*}{MW$\uparrow$} & 1 & 0 & 0 & .354 & .354
       & \multirow{8}{*}{SA$\downarrow$} & 1 & 0 & 0 & .428 & .428 \\
@@ -56,10 +56,10 @@
       & & .916 & .350 & .3821 & .662 & .7227 \\
     GeLLM$^3$O$_{\rm L}$ & & .884 & .232 & .2624 & .472 & .5339
       & & .888 & .238 & .268 & .640 & .7207 \\
-    MolEditRL & & .960 & \textbf{.404} & \textbf{.4208} & \textbf{.856} & \textbf{.8917}
+    MolEditRL & & .960 & .404 & .4208 & \textbf{.856} & \textbf{.8917}
       & & .988 & \textbf{.628} & \textbf{.6356} & \textbf{.828} & \textbf{.8381} \\
-    MolProgram--P4 & & -- & -- & -- & -- & --
-      & & -- & -- & -- & -- & -- \\
+    MolProgram (unified pilot) & & .5550 & \textbf{.4225} & \textbf{.7613} & .4375 & .7883
+      & & .6675 & .0925 & .1386 & .1100 & .1648 \\
     \midrule
     BioT5 & \multirow{8}{*}{\shortstack{Haccept$\downarrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .306 & .306
       & \multirow{8}{*}{\shortstack{QED$\uparrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .272 & .272 \\
@@ -75,8 +75,8 @@
       & & .904 & .206 & .2279 & .586 & .6482 \\
     MolEditRL & & .972 & \textbf{.346} & \textbf{.356} & \textbf{.510} & \textbf{.5247}
       & & .974 & \textbf{.632} & \textbf{.6489} & \textbf{.788} & \textbf{.809} \\
-    MolProgram--P4 & & -- & -- & -- & -- & --
-      & & -- & -- & -- & -- & -- \\
+    MolProgram (unified pilot) & & .6025 & .0175 & .0291 & .0175 & .0291
+      & & .6100 & .1750 & .2869 & .1750 & .2869 \\
     \midrule
     BioT5 & \multirow{8}{*}{\shortstack{Haccept$\downarrow$\\LogP$\uparrow$}} & 1 & 0 & 0 & .360 & .360
       & \multirow{8}{*}{\shortstack{Haccept$\downarrow$\\MW$\downarrow$}} & 1 & 0 & 0 & .342 & .342 \\
@@ -92,8 +92,8 @@
       & & .932 & .128 & .1373 & .432 & .4635 \\
     MolEditRL & & .946 & \textbf{.316} & \textbf{.334} & \textbf{.800} & \textbf{.8457}
       & & .942 & \textbf{.252} & \textbf{.2675} & \textbf{.660} & \textbf{.7006} \\
-    MolProgram--P4 & & -- & -- & -- & -- & --
-      & & -- & -- & -- & -- & -- \\
+    MolProgram (unified pilot) & & .6600 & .0800 & .1212 & .0825 & .1250
+      & & .7775 & .1650 & .2122 & .1650 & .2122 \\
     \midrule
     BioT5 & \multirow{8}{*}{\shortstack{DRD2$\downarrow$\\MW$\downarrow$, SA$\downarrow$}} & 1 & 0 & 0 & .136 & .136
       & \multirow{8}{*}{\shortstack{Haccept$\uparrow$\\MW$\uparrow$, QED$\downarrow$}} & 1 & 0 & 0 & .088 & .088 \\
@@ -109,8 +109,8 @@
       & & .886 & .040 & .0451 & .084 & .0948 \\
     MolEditRL & & .986 & \textbf{.518} & \textbf{.5254} & \textbf{.724} & \textbf{.7343}
       & & .958 & \textbf{.430} & \textbf{.4489} & \textbf{.756} & \textbf{.7891} \\
-    MolProgram--P4 & & -- & -- & -- & -- & --
-      & & -- & -- & -- & -- & -- \\
+    MolProgram (unified pilot) & & .8325 & .4775 & .5736 & .4775 & .5736
+      & & .5925 & .2625 & .4430 & .2625 & .4430 \\
     \bottomrule
   \end{tabular}}
 \end{table*}

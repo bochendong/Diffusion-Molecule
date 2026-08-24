@@ -1,115 +1,35 @@
 \section{Results}
 \label{sec:results}
 
-We organize the main results around three questions. First, how does
-MolProgram compare with prior methods under established multi-property
-benchmarks? Second, does group-relative post-training improve direct
-generation at practical candidate budgets rather than only under large
-best-of-$k$ search? Third, does the gain persist as the number of simultaneous
-constraints increases? Unless stated otherwise, MolProgram uses one frozen
-evaluation seed, preserves generation order, and never reports a
-property-reranked candidate as one-shot generation.
+We organize the results around three questions. First, does group-relative
+post-training improve compositional property control at practical candidate
+budgets rather than only under large best-of-$k$ search? Second, does the gain
+persist as property programs become longer and move out of distribution? Third,
+can de novo generation and source-conditioned editing be expressed and learned
+through one executable transition interface? Unless stated otherwise, all
+candidate streams preserve generation order, Raw@1 is exactly the first model
+draw, and property-reranked selection is never reported as one-shot generation.
+All experiments use the frozen single seed specified before evaluation.
 
-\subsection{Comparison with prior methods}
-\label{sec:results-prior}
-
-We first align source-conditioned editing with the complete MolEdit-Instruct
-comparison rather than reporting only a macro-average. Table~\ref{tab:moledit-full}
-retains all ten tasks and the five metrics used in our comparison: validity
-and overall/valid accuracy at two source-similarity thresholds. Following the benchmark
-contract, every method generates 20 molecules per input and accuracy is
-computed candidate-wise over the complete unranked pool. Raw@1 and pass@$k$
-are budget diagnostics and are reported separately rather than mixed into the
-external comparison. The completed P4 run does not pass its promotion gate:
-on its 20-input-per-task pilot, the final Group-RL student obtains zero
-$\operatorname{Acc}_{\mathrm{all}}(.65)$, 32.5\% mean validity, and 7.5\% mean
-$\operatorname{Acc}_{\mathrm{all}}(.15)$. Because this pilot is smaller than
-the published benchmark evaluation, it is reported in the appendix and does
-not populate the P4 row. Distillation preserves the source-free de novo path
-but does not make direct SMILES decoding a competitive source-preserving
-editor. We omit FCD because it is outside the present evaluation contract.
-
-\input{moledit_table1.tex}
-
-We then evaluate zero-source generation under the SketchMol multi-property
-protocol. For each of 1,000 held-out property vectors at each complexity level,
-a method receives 40 generation attempts and succeeds if at least one valid
-molecule satisfies every active property within the benchmark tolerance.
-Table~\ref{tab:sketchmol-fair40} defines a matched comparison spanning
-property--SMILES foundation models, autoregressive structural generators,
-graph diffusion, image diffusion, and our direct-SMILES policy
-\citep{chang2024spmm,jolicoeurmartineau2024stggplus,liu2024graphdit,wang2025sketchmol}.
-We report only completed evaluations: external rows remain blank until they
-are rerun on the identical targets rather than importing numbers from an
-incompatible dataset or tolerance. Among the two completed rows, MolProgram
-is substantially stronger on two- and three-property programs and remains
-within 0.9 points at four properties. SketchMol is stronger from five
-properties onward and leads the overall average by 5.0 points. The present
-comparison therefore identifies high-order composition as the principal gap,
-but does not yet establish an overall state-of-the-art result.
-
-\begin{table*}[t]
-  \centering
-  \caption{External comparison planned under the SketchMol multi-property
-  de novo protocol. Strict success (\%) uses the same 1,000 targets per
-  complexity, property tolerances, and 40 candidates per condition. The
-  SketchMol row is the published matched reference; MolProgram is evaluated
-  on the same target file. Dashes mark matched reruns that are pending, not
-  reported failures. Bold marks the best completed result.}
-  \label{tab:sketchmol-fair40}
-  \scriptsize
-  \setlength{\tabcolsep}{3.6pt}
-  \begin{tabular}{lllrrrrrrr}
-    \toprule
-    Method & Molecular representation & Evaluation status & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
-    \midrule
-    SPMM & property vector + SMILES & matched rerun pending
-      & -- & -- & -- & -- & -- & -- & -- \\
-    STGG+ & spanning-tree sequence & matched rerun pending
-      & -- & -- & -- & -- & -- & -- & -- \\
-    Graph DiT & molecular graph & matched rerun pending
-      & -- & -- & -- & -- & -- & -- & -- \\
-    SketchMol & molecular image & published matched reference
-      & \textbf{73.1} & 80.4 & 76.8 & \textbf{73.6} & \textbf{71.6} & \textbf{67.8} & \textbf{68.5} \\
-    \midrule
-    MolProgram (Group-RL) & direct SMILES & ours, matched rerun
-      & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
-    \bottomrule
-  \end{tabular}
-\end{table*}
-
-We next use MuMOInstruct to expose source-conditioned composition at the task
-level. Tables~\ref{tab:mumo-ind-full} and~\ref{tab:mumo-ood-full} retain the
-benchmark's five IND and five OOD task families and report success rate (SR),
-source similarity among successes (Sim), and relative improvement among
-successes (RI), rather than collapsing each split to one average
-\citep{dey2025gellm3o}. This layout separates general-purpose LLMs,
-chemistry-foundation models, task-specific systems, and generalist
-instruction-tuned models. The frozen P4 row remains blank until all three
-official metrics are exported for every task under the same 20-candidate
-contract. Aggregate property success without the corresponding source
-fidelity is retained only as a diagnostic in
-Appendix~\ref{sec:appendix-mumo}.
-
-\input{mumo_tables.tex}
-
-\subsection{Group-relative post-training improves practical-budget generation}
+\subsection{Group-relative post-training improves low-budget de novo design}
 \label{sec:results-budget}
 
-Table~\ref{tab:budget-scaling} compares SFT and Group-RL on 6,000
-two-to-seven-property programs and 1,000 OOD programs. The Group-RL gain is
-already visible with small candidate groups. On 2p--7p, first-draw strict
-success increases from 7.02\% to 8.93\%, while Pass@8 and Pass@20 improve by
-6.35 and 7.64 points, respectively. OOD is more nuanced: SFT is slightly
-better on the first draw, but Group-RL overtakes it by $k=8$ and improves
-Pass@20 from 35.20\% to 41.70\%. The benefit is therefore not a
-best-of-256-only effect, although it is not uniform at $k=1$.
+Table~\ref{tab:budget-scaling} compares supervised fine-tuning (SFT) and
+Group-RL on 6,000 two-to-seven-property programs and 1,000
+out-of-distribution (OOD) programs. The improvement is already visible at
+small candidate budgets. On 2p--7p, strict success on the first draw increases
+from 7.02\% to 8.93\%; Pass@8 and Pass@20 increase by 6.35 and 7.64 percentage
+points. The OOD first draw is deliberately reported as a negative result: SFT
+is 0.30 points better. Group-RL nevertheless overtakes SFT by $k=8$ and raises
+Pass@20 from 35.20\% to 41.70\%. The observed advantage is therefore not a
+$k=256$-only effect, but neither is it a uniform improvement in one-shot
+generation.
 
 \begin{table}[t]
   \centering
-  \caption{Budget-transparent direct generation. Raw strict is the
+  \caption{Budget-transparent direct de novo generation. Raw strict is the
   candidate-level strict-success fraction; Pass@$k$ is the percentage of
-  conditions solved at least once within the first $k$ draws.}
+  property programs solved at least once within the first $k$ model draws.}
   \label{tab:budget-scaling}
   \scriptsize
   \setlength{\tabcolsep}{3.5pt}
@@ -130,16 +50,25 @@ best-of-256-only effect, although it is not uniform at $k=1$.
   \end{tabular}
 \end{table}
 
-\subsection{The gain persists with increasing program complexity}
+Raw validity explains part, but not all, of this change. Across the matched
+2p--7p stream, Group-RL raises candidate validity from 29.04\% to 34.25\% at
+$k=20$ while also increasing the fraction of valid molecules that satisfy all
+active clauses. OOD validity remains low and nearly unchanged (11.51\% versus
+11.60\%), even though OOD Pass@20 improves by 6.50 points. Thus the OOD gain
+comes from reallocating probability among the small valid subset, rather than
+from solving molecular syntax in general. Full validity and uniqueness
+diagnostics are reported in Appendix~\ref{sec:appendix-validity}.
+
+\subsection{The gain persists as programs become more compositional}
 \label{sec:results-complexity}
 
-Absolute success decreases monotonically with program length for both models,
-confirming that property count exposes a genuine compositional difficulty
-axis. Nevertheless, Table~\ref{tab:complexity-scaling} shows that Group-RL
-improves every property count at both practical budgets. At $k=20$, it adds
-4.9 points on 6p and 8.4 points on 7p programs; the largest improvement is
-11.8 points on 5p. Thus the aggregate gain cannot be explained by easy
-two-property conditions dominating the benchmark.
+Absolute success decreases with program length for both policies, confirming
+that property count defines a genuine compositional difficulty axis.
+Table~\ref{tab:complexity-scaling} shows, however, that Group-RL improves every
+property count at both practical budgets. At $k=20$, the gain is 4.9 points on
+6p programs and 8.4 points on 7p programs; the largest increase, 11.8 points,
+occurs at 5p. The aggregate improvement therefore cannot be explained by easy
+two-property requests dominating the benchmark.
 
 \begin{table}[t]
   \centering
@@ -164,12 +93,173 @@ two-property conditions dominating the benchmark.
   \end{tabular}
 \end{table}
 
-Together, these results show a consistent but bounded advantage: Group-RL
-raises small-budget success across the full compositional axis, while
-high-order de novo generation, raw SMILES validity, and source preservation
-remain open limitations. Full validity diagnostics, negative ablations,
-MolEdit-Instruct comparisons, and paired decoder/editing repairs are reported
-in the appendix rather than mixed into the main result narrative. In
-particular, syntax-safe decoding substantially improves raw validity and
-low-budget OOD success, but does not meet its preregistered promotion gate or
-repair the small high-order OOD subset.
+The OOD split contains reversed directions, extreme targets, and property
+combinations that are rare or absent during training. Group-RL improves the
+aggregate OOD stream from $k=8$ onward, but the improvement is not uniform
+across OOD strata. In particular, a syntax-safe decoder raises overall OOD
+validity and Pass@20 but regresses on the small OOD 7p subset. We therefore
+interpret the completed evidence as improved compositional sampling, not as a
+claim that high-order extrapolation or validity has been solved.
+
+\subsection{Comparison with matched de novo generation}
+\label{sec:results-denovo-external}
+
+Table~\ref{tab:sketchmol-fair40} places the direct MolProgram policy in the
+SketchMol multi-property protocol. Each method receives 40 attempts for each
+of 1,000 held-out target vectors at every complexity, and a condition succeeds
+when at least one valid molecule satisfies every active tolerance. We import
+only the published SketchMol row because it uses the matched target and
+tolerance contract; other external methods remain blank until rerun rather than
+being compared through incompatible datasets. MolProgram is stronger on 2p and
+3p and is within 0.9 points at 4p. SketchMol leads from 5p onward and by 5.0
+points on the overall average. The external comparison therefore identifies
+high-order generation as the primary remaining de novo gap and does not support
+an overall state-of-the-art claim.
+
+\begin{table*}[t]
+  \centering
+  \caption{Matched comparison under the SketchMol multi-property de novo
+  protocol. Strict success (\%) uses 1,000 targets per complexity, the same
+  property tolerances, and 40 candidates per condition. Dashes denote pending
+  matched reruns, not reported failures. Bold marks the best completed result.}
+  \label{tab:sketchmol-fair40}
+  \scriptsize
+  \setlength{\tabcolsep}{3.6pt}
+  \begin{tabular}{lllrrrrrrr}
+    \toprule
+    Method & Molecular representation & Evaluation status & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
+    \midrule
+    SPMM & property vector + SMILES & matched rerun pending
+      & -- & -- & -- & -- & -- & -- & -- \\
+    STGG+ & spanning-tree sequence & matched rerun pending
+      & -- & -- & -- & -- & -- & -- & -- \\
+    Graph DiT & molecular graph & matched rerun pending
+      & -- & -- & -- & -- & -- & -- & -- \\
+    SketchMol & molecular image & published matched reference
+      & \textbf{73.1} & 80.4 & 76.8 & \textbf{73.6} & \textbf{71.6} & \textbf{67.8} & \textbf{68.5} \\
+    \midrule
+    MolProgram (direct Group-RL) & direct SMILES & ours, matched rerun
+      & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
+    \bottomrule
+  \end{tabular}
+\end{table*}
+
+\subsection{One transition language covers empty and source graphs}
+\label{sec:results-transition-audit}
+
+Before measuring task performance, we audit whether one typed transition
+language can faithfully express trajectories for both initial-state regimes.
+Table~\ref{tab:transition-audit} uses the frozen mixed training pool and applies
+the same serializer and deterministic interpreter to every trajectory. The
+language covers 96.5\% of all rows under the fixed 188-token limit. Editing
+coverage is 100\%, and 99.8\% of covered editing programs reconstruct their
+selected executable targets exactly after canonicalization. De novo coverage
+is lower because atom-by-atom construction produces longer programs; exact
+reconstruction is additionally affected by stereochemical details that are not
+fully represented in the current bond state. These are representation
+diagnostics, not held-out molecular-design accuracies.
+
+\begin{table}[t]
+  \centering
+  \caption{Unified molecular-transition representation audit. ``Covered''
+  denotes a serializable program within the fixed token limit; exact
+  reconstruction is measured only among covered rows.}
+  \label{tab:transition-audit}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Initial graph & Input rows & Covered rows & Coverage (\%) & Exact recon. (\%) \\
+    \midrule
+    Empty (de novo) & 288 & 261 & 90.6 & 80.5 \\
+    Source (editing) & 480 & 480 & 100.0 & \textbf{99.8} \\
+    \midrule
+    Overall & 768 & 741 & \textbf{96.5} & 93.0 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+The audit isolates the intended meaning of \emph{unified}: the initial graph
+changes, but the property-program interface, initial-state observation,
+autoregressive decoder, checkpoint, action vocabulary, and interpreter do not.
+The initial-state token is computed from graph occupancy and does not select a
+task-specific head. The first held-out unified-policy gate evaluates raw
+candidate streams on hard 6p/7p de novo conditions and on all ten
+MolEdit-Instruct task families. Its result is asymmetric. Editing obtains at
+least one valid molecule for every input and reaches 26.5\%, 47.5\%, and 54.0\%
+macro strict accuracy at $k=1,8,20$, respectively. Across the complete unranked
+20-candidate pool, validity is 65.55\% and strict candidate-level accuracy is
+17.75\%. In contrast, only 3 of 1,280 hard de novo action sequences execute to
+valid molecules (0.234\%), and none satisfies all six or seven properties. The
+shared policy therefore learns short source-conditioned transitions but not
+long-horizon empty-graph construction.
+
+\begin{table}[t]
+  \centering
+  \caption{First single-checkpoint unified-policy gate. Candidate validity is
+  measured over all unselected draws; Strict@1 and Pass@$k$ are averaged over
+  conditions (and then over task families for editing).}
+  \label{tab:unified-policy-gate}
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lrrrrr}
+    \toprule
+    Evaluation & Conditions & Cand. validity & Strict@1 & Pass@8 & Pass@20 \\
+    \midrule
+    Hard de novo (6p/7p) & 64 & 0.23 & 0.0 & 0.0 & 0.0 \\
+    MolEdit Table 1 pilot & 200 & 65.55 & \textbf{26.5} & \textbf{47.5} & \textbf{54.0} \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Source-conditioned editing against published baselines}
+\label{sec:results-editing}
+
+Table~\ref{tab:moledit-full} retains the complete MolEdit-Instruct comparison:
+ten tasks, validity, and overall/valid-conditional accuracy at source
+similarity thresholds 0.65 and 0.15. Every published method is evaluated from
+20 generated molecules per input and candidate-wise over the unranked pool.
+This is intentionally different from Pass@$k$ or a property-selected output.
+The unified MolProgram row reports the complete P6 candidate pool on a bounded
+20-input-per-task pilot and is marked as preliminary rather than treated as a
+full-scale matched result. We omit FCD because it is not part of our evaluation
+contract.
+
+\input{moledit_table1.tex}
+
+The earlier direct-SMILES transfer experiments explain why the unified policy
+uses executable transitions rather than a second free-form string mode. A
+source-aware direct decoder produces valid molecules but fails to preserve the
+input at the strict similarity threshold, whereas a standalone executable
+action policy reaches 100\% validity and 26.5\% raw first-candidate strict
+accuracy on the paired repair subset. A source-only finalizer can raise the
+latter number to 66.0\% at $k=8$, but this is assisted selection and is kept in
+the appendix. The P6 row is populated only by raw samples from the single
+shared transition checkpoint; its 17.75\% macro strict candidate accuracy is
+below MolEditRL overall, although it exceeds MolEditRL on the MW-increase task
+at the strict 0.65 threshold.
+
+\subsection{MuMOInstruct IND and OOD task families}
+\label{sec:results-mumo}
+
+Tables~\ref{tab:mumo-ind-full} and~\ref{tab:mumo-ood-full} preserve the five IND
+and five OOD MuMOInstruct task families and their three complementary metrics:
+success rate (SR), similarity among successful outputs (Sim), and relative
+improvement among successes (RI) \citep{dey2025gellm3o}. This fuller layout is
+necessary because a high property SR can coexist with very low source
+similarity. The unified MolProgram cells remain blank until all official
+oracles and source-fidelity metrics are exported from the same 20-candidate
+run.
+
+\input{mumo_tables.tex}
+
+Taken together, the completed results support two bounded conclusions.
+Group-relative post-training increases the probability that a modest direct
+sample set solves a compositional property program, including at 6p, 7p, and
+on aggregate OOD requests. Separately, one typed graph-transition language can
+represent both empty-graph construction and source-graph editing with high
+coverage and near-exact editing execution. The first jointly trained checkpoint
+does not retain both advantages simultaneously: it provides non-trivial editing
+but collapses on long de novo action programs. Unified representation is
+therefore established, while unified policy optimization remains an open
+problem rather than a completed performance claim.
