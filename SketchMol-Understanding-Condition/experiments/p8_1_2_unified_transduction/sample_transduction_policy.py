@@ -220,6 +220,7 @@ def main() -> int:
             item.update({
                 "generated_smiles": canonical,
                 "candidate_smiles": canonical,
+                "direct_candidate_canonical_smiles": canonical,
                 "direct_candidate_index": candidate_index,
                 "generation_rank": candidate_index + 1,
                 "candidate_rank": candidate_index + 1,

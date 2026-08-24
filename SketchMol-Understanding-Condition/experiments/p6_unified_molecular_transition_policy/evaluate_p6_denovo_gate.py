@@ -32,6 +32,17 @@ def main() -> int:
     for values in grouped.values():
         values.sort(key=lambda row: int(float(row.get("direct_candidate_index") or 0)))
     records = []
+
+    def canonical_candidate(item: dict[str, str]) -> str:
+        canonical = str(item.get("direct_candidate_canonical_smiles") or "").strip()
+        if canonical:
+            return canonical
+        # Unified samplers also emit a canonical ``candidate_smiles`` plus an
+        # explicit validity audit. Accept that schema without treating an
+        # arbitrary non-empty raw decoding as valid.
+        audited_valid = str(item.get("valid_smiles") or "").strip().lower() == "true"
+        return str(item.get("candidate_smiles") or "").strip() if audited_valid else ""
+
     for stratum in ("all", "6p", "7p"):
         conditions = [
             row for row in eval_rows
@@ -43,12 +54,12 @@ def main() -> int:
                 key = str(row.get("condition_id") or row.get("sample_id") or "")
                 values = grouped.get(key, [])[:budget]
                 strict = [
-                    bool(item.get("direct_candidate_canonical_smiles"))
+                    bool(canonical_candidate(item))
                     and math.isclose(float(item.get("direct_candidate_strict_fraction") or 0), 1.0, abs_tol=1e-9)
                     for item in values
                 ]
-                valid = [bool(item.get("direct_candidate_canonical_smiles")) for item in values]
-                canonicals = [item.get("direct_candidate_canonical_smiles", "") for item in values if item.get("direct_candidate_canonical_smiles")]
+                valid = [bool(canonical_candidate(item)) for item in values]
+                canonicals = [canonical_candidate(item) for item in values if canonical_candidate(item)]
                 denominator = max(budget, 1)
                 raw.append(sum(strict) / denominator)
                 passed.append(float(any(strict)))
