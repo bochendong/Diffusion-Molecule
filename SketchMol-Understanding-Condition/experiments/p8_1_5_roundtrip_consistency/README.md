@@ -21,5 +21,8 @@ and therefore is not cancelled by a poor R1.
 
 Both arms report the P6 hard de-novo strata and MolEdit Table1 edit subset with
 raw `k=1,8,20`, candidate-level success, validity, uniqueness, and identity-copy
-fraction.  Candidate order is untouched and no property-based selection is
-performed.
+fraction.  The audit also reports strict non-identity success and the raw
+source-Tanimoto distribution, so an apparent consistency gain caused by exact
+copying cannot pass as successful editing.  Candidate order is untouched and
+no property-based selection is performed; R1 is the matched no-cycle raw20
+control.
