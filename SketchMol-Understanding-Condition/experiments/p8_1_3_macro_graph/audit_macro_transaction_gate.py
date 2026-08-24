@@ -285,8 +285,25 @@ def group_summary(rows: Sequence[Mapping[str, object]]) -> dict[str, object]:
     }
 
 
+def brics_preflight() -> None:
+    """Fail closed before a target-aware audit can mislabel infrastructure errors."""
+    probe = "CC(=O)Nc1ccc(O)cc1"
+    components, links = factor_payload(probe, "brics")
+    reconstructed = assemble_components(components, links)
+    if reconstructed != canonical(probe):
+        raise RuntimeError(
+            f"BRICS preflight reconstruction failed: {reconstructed!r} != {canonical(probe)!r}"
+        )
+    # Exercise the MMPA-variable path, including its unmatched external port.
+    variable_components, _ = factor_payload("[*:1]CC(=O)Nc1ccccc1", "brics")
+    if not variable_components:
+        raise RuntimeError("BRICS MMPA-variable preflight produced no components")
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if str(args.payload_factor) == "brics":
+        brics_preflight()
     rows = read_rows(args.input_csv)
     evidence: list[dict[str, object]] = []
     transactions: list[MacroTransaction | None] = []
@@ -337,6 +354,17 @@ def main(argv: Sequence[str] | None = None) -> int:
                 }
             )
             transactions.append(None)
+
+    infrastructure_failures = {
+        reason: count
+        for reason, count in failures.items()
+        if "Pre-condition Violation" in reason or "RingInfo" in reason
+    }
+    if infrastructure_failures:
+        raise RuntimeError(
+            "Fail-closed RDKit infrastructure errors: "
+            + json.dumps(infrastructure_failures, sort_keys=True)
+        )
 
     # Frozen stratified fit/holdout split.  Targets only label this oracle audit;
     # holdout motifs never enter the vocabulary.
