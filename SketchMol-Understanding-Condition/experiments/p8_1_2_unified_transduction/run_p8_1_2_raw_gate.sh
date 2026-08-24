@@ -27,14 +27,17 @@ ORACLE_ROOT="${P812_ORACLE_ROOT:-$PROJECT_DIR/outputs/p8_1_2_unified_transductio
 BASE_CHECKPOINT="$P6_ROOT/policy/umtp_graph_action_policy.pt"
 TRAIN_R2="$ORACLE_ROOT/r2/transduction_rows.csv"
 TRAIN_R2_SUMMARY="$ORACLE_ROOT/r2/oracle_summary.json"
+TRAIN_R2_SHA256="$ORACLE_ROOT/r2/transduction_rows.sha256"
 VALIDATION_R2="$ORACLE_ROOT/r2_validation/transduction_rows.csv"
 VALIDATION_R2_SUMMARY="$ORACLE_ROOT/r2_validation/oracle_summary.json"
+VALIDATION_R2_SHA256="$ORACLE_ROOT/r2_validation/transduction_rows.sha256"
 TRAIN_FEATURES="$SUITE_ROOT/feature_variants/train_condition_features_hf_vlm"
 VALIDATION_FEATURES="$JOINT_ROOT/feature_variants/validation_condition_features_hf_vlm"
 DENOVO_FEATURES="$DIRECT_ROOT/eval_condition_features_hf_vlm"
 CHECKPOINT="$OUTPUT_ROOT/policy/umtp_graph_action_policy.pt"
 
-for path in "$BASE_CHECKPOINT" "$TRAIN_R2" "$TRAIN_R2_SUMMARY" "$VALIDATION_R2" "$VALIDATION_R2_SUMMARY" \
+for path in "$BASE_CHECKPOINT" "$TRAIN_R2" "$TRAIN_R2_SUMMARY" "$TRAIN_R2_SHA256" \
+  "$VALIDATION_R2" "$VALIDATION_R2_SUMMARY" "$VALIDATION_R2_SHA256" \
   "$P6_ROOT/data/denovo_hard_gate.csv" "$P6_ROOT/data/edit_table1_gate.csv"; do
   [[ -f "$path" ]] || { echo "ERROR: missing input: $path" >&2; exit 2; }
 done
@@ -50,8 +53,8 @@ export TOKENIZERS_PARALLELISM=false
 export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
 
 echo "=== P8.1.2 verify CPU-prepared R2 rows; never run RDKit MCS on GPU ==="
-"$PYTHON_BIN" "$SCRIPT_DIR/verify_prepared_r2.py" --rows "$TRAIN_R2" --summary "$TRAIN_R2_SUMMARY"
-"$PYTHON_BIN" "$SCRIPT_DIR/verify_prepared_r2.py" --rows "$VALIDATION_R2" --summary "$VALIDATION_R2_SUMMARY"
+"$PYTHON_BIN" "$SCRIPT_DIR/verify_prepared_r2.py" --rows "$TRAIN_R2" --summary "$TRAIN_R2_SUMMARY" --sha256-file "$TRAIN_R2_SHA256"
+"$PYTHON_BIN" "$SCRIPT_DIR/verify_prepared_r2.py" --rows "$VALIDATION_R2" --summary "$VALIDATION_R2_SUMMARY" --sha256-file "$VALIDATION_R2_SHA256"
 
 echo "=== P8.1.2 train exactly one mixed empty/source decoder ==="
 "$PYTHON_BIN" "$SCRIPT_DIR/train_transduction_policy.py" train \

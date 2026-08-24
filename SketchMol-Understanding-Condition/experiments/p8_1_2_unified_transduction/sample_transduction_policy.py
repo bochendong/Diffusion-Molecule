@@ -56,37 +56,42 @@ def observed_selfies_tokens(path: Path) -> set[str]:
     return output
 
 
-def prefix_state(tokens: Sequence[str], source_length: int) -> tuple[str, int, int]:
-    """Return parser state, consumed source count, and inserted token count."""
+def prefix_state(tokens: Sequence[str], source_length: int) -> tuple[str, int, int, int]:
+    """Return state, source cursor, emitted length, and current insert length."""
     if not tokens or tokens[0] != transduction.START:
-        return "start", 0, 0
+        return "start", 0, 0, 0
     cursor = 0
-    inserted = 0
+    emitted = 0
+    current_insert = 0
     in_insert = False
     for token in tokens[1:]:
         if token == transduction.STOP:
-            return "stopped", cursor, inserted
+            return "stopped", cursor, emitted, current_insert
         if in_insert:
             if token == transduction.INSERT_END:
                 in_insert = False
+                current_insert = 0
             else:
-                inserted += 1
+                emitted += 1
+                current_insert += 1
             continue
         if token == transduction.INSERT:
             in_insert = True
         elif token.startswith("<KEEP_"):
-            cursor += transduction.parse_count(token, "KEEP")
+            count = transduction.parse_count(token, "KEEP")
+            cursor += count
+            emitted += count
         elif token.startswith("<DELETE_"):
             cursor += transduction.parse_count(token, "DELETE")
     if cursor > source_length:
-        return "invalid", cursor, inserted
-    return ("insert" if in_insert else "boundary"), cursor, inserted
+        return "invalid", cursor, emitted, current_insert
+    return ("insert" if in_insert else "boundary"), cursor, emitted, current_insert
 
 
 def allowed_tokens(
     tokens: Sequence[str], *, source_length: int, semantic_tokens: set[str]
 ) -> set[str]:
-    state, cursor, inserted = prefix_state(tokens, source_length)
+    state, cursor, emitted, current_insert = prefix_state(tokens, source_length)
     if state == "start":
         return {transduction.START}
     if state == "stopped":
@@ -95,7 +100,7 @@ def allowed_tokens(
         return set()
     if state == "insert":
         allowed = set(semantic_tokens)
-        if inserted > 0:
+        if current_insert > 0:
             allowed.add(transduction.INSERT_END)
         return allowed
     remaining = source_length - cursor
@@ -103,7 +108,7 @@ def allowed_tokens(
     if remaining > 0:
         allowed.update(f"<KEEP_{count}>" for count in range(1, remaining + 1))
         allowed.update(f"<DELETE_{count}>" for count in range(1, remaining + 1))
-    elif inserted > 0:
+    elif emitted > 0:
         allowed.add(transduction.STOP)
     return allowed
 

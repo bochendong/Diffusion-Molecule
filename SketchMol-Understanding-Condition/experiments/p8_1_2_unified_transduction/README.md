@@ -33,6 +33,13 @@ reconstruction and budget fit while reducing editing mean length from 18.25 to
 to 94.94%. De-novo length was unchanged (mean 42.16, p95 57), so the causal
 effect is specifically source alignment rather than an easier dataset.
 
+The raw model deliberately starts from P6 because that is the only existing
+checkpoint already trained on the exact mixed condition features and both
+empty/source initial states. This is a speed-controlled warm start, not a
+claim that P6 solved de-novo generation: P6's near-zero hard-de-novo validity
+makes negative transfer the main preregistered risk. The raw gate therefore
+requires both modes from the same checkpoint and cannot pass on editing alone.
+
 Run on Nibi:
 
 ```bash

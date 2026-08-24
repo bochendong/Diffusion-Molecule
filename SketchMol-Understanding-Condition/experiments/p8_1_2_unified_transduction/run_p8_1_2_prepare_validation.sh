@@ -20,5 +20,10 @@ mkdir -p "$ORACLE_ROOT/r2_validation"
   --summary-json "$ORACLE_ROOT/r2_validation/oracle_summary.json" \
   --variant r2_source_aligned --max-program-tokens 188
 "$PYTHON_BIN" "$SCRIPT_DIR/verify_prepared_r2.py" \
+  --rows "$ORACLE_ROOT/r2/transduction_rows.csv" \
+  --summary "$ORACLE_ROOT/r2/oracle_summary.json" \
+  --sha256-file "$ORACLE_ROOT/r2/transduction_rows.sha256"
+"$PYTHON_BIN" "$SCRIPT_DIR/verify_prepared_r2.py" \
   --rows "$ORACLE_ROOT/r2_validation/transduction_rows.csv" \
-  --summary "$ORACLE_ROOT/r2_validation/oracle_summary.json"
+  --summary "$ORACLE_ROOT/r2_validation/oracle_summary.json" \
+  --sha256-file "$ORACLE_ROOT/r2_validation/transduction_rows.sha256"
