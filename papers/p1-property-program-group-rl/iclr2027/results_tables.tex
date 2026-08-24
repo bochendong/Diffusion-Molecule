@@ -28,13 +28,13 @@ count.
   its benchmark; values are not pooled across panels. Every MolProgram
   candidate is scored without property-aware inference-time reranking.}
   \label{tab:main-benchmarks}
-  \begin{subtable}[t]{\textwidth}
+  \begin{minipage}[t]{\textwidth}
     \centering
-    \caption{De novo construction. Strict success (\%) under the matched
+    \parbox{\textwidth}{\small \captiona~\textbf{De novo construction.}
+    Strict success (\%) under the matched
     protocol of \citet{wang2025sketchmol}: 1,000 targets per property count and
     40 candidates per target. Dashes reserve rows for methods that still
     require matched evaluation; they are not zero scores.}
-    \label{tab:main-denovo}
     \scriptsize
     \setlength{\tabcolsep}{4.2pt}
     \begin{tabular}{llrrrrrrr}
@@ -51,17 +51,17 @@ count.
         & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
       \bottomrule
     \end{tabular}
-  \end{subtable}
+  \end{minipage}
 
   \vspace{6pt}
-  \begin{subtable}[t]{\textwidth}
+  \begin{minipage}[t]{\textwidth}
     \centering
-    \caption{Source-conditioned editing. Each cell is candidate-level strict
+    \parbox{\textwidth}{\small \captionb~\textbf{Source-conditioned editing.}
+    Each cell is candidate-level strict
     $\operatorname{Acc}_{\rm all}(.65)$ (\%) for one MolEdit-Instruct task;
     Avg. is the unweighted ten-task macro. Published values are transcribed
     from Table~1 of \citet{zhuang2025moleditrl}. Bold denotes the best completed
     value in a column. HA and Rot abbreviate Haccept and Rotbonds.}
-    \label{tab:main-editing}
     \scriptsize
     \setlength{\tabcolsep}{2.4pt}
     \resizebox{\textwidth}{!}{%
@@ -87,7 +87,7 @@ count.
       MolProgram (event GRPO) & 97.51 & \textbf{46.12} & 15.45 & \textbf{86.92} & 7.45 & \textbf{63.10} & \textbf{51.10} & 59.60 & \textbf{61.87} & \textbf{56.05} & 45.45 & 14.19 \\
       \bottomrule
     \end{tabular}}
-  \end{subtable}
+  \end{minipage}
 \end{table*}
 
 \subsection{Group-relative post-training improves low-budget de novo design}
@@ -184,7 +184,7 @@ claim that high-order extrapolation or validity has been solved.
 \subsection{Comparison with matched de novo generation}
 \label{sec:results-denovo-external}
 
-Table~\ref{tab:main-denovo} places the direct MolProgram
+Table~\ref{tab:main-benchmarks}(a) places the direct MolProgram
 policy in the SketchMol multi-property protocol. Each method receives 40 attempts for each
 of 1,000 held-out target vectors at every complexity, and a condition succeeds
 when at least one valid molecule satisfies every active tolerance. We include
@@ -242,7 +242,7 @@ editing rather than an across-the-board state-of-the-art claim.
 \subsection{Source-conditioned editing against published baselines}
 \label{sec:results-editing}
 
-Table~\ref{tab:main-editing} gives the primary strict endpoint separately for
+Table~\ref{tab:main-benchmarks}(b) gives the primary strict endpoint separately for
 all ten MolEdit-Instruct tasks. Published rows retain their reported
 candidate-level metrics; our event-editor row averages exactly 20 generated
 trajectories per condition over the complete unranked pool. This is
