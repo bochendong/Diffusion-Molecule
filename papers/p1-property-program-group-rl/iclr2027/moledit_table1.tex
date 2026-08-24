@@ -9,8 +9,8 @@
   Published rows retain their reported candidate-level evaluation protocol.
   MolProgram metrics are computed over 997 conditions and 19,940 raw outputs,
   with exactly 20 unranked candidates per condition; they are neither a
-  selected output nor an Any@20 event. The uniform-action row is a bounded
-  single-seed ablation, whereas D3 + Group-RL is the promoted editing method.
+  selected output nor an Any@20 event. MolProgram uses its source-anchored
+  graph-event operator followed by GRPO.
   Bold denotes the best completed accuracy value under the displayed task
   metric.}
   \label{tab:moledit-full}
@@ -28,8 +28,8 @@
       & \shortstack{$\operatorname{Acc}_{\rm all}$\\$(.15)$}
       & \shortstack{$\operatorname{Acc}_{\rm valid}$\\$(.15)$} \\
     \midrule
-    BioT5 & \multirow{9}{*}{GSK3$\beta\uparrow$} & 1 & 0 & 0 & .328 & .328
-      & \multirow{9}{*}{Rotbonds$\downarrow$} & 1 & 0 & 0 & .304 & .304 \\
+    BioT5 & \multirow{8}{*}{GSK3$\beta\uparrow$} & 1 & 0 & 0 & .328 & .328
+      & \multirow{8}{*}{Rotbonds$\downarrow$} & 1 & 0 & 0 & .304 & .304 \\
     MolGen & & 1 & .024 & .024 & .315 & .315
       & & 1 & .022 & .022 & .312 & .312 \\
     REINVENT4 & & .722 & .130 & .180 & .272 & .377
@@ -42,13 +42,11 @@
       & & .876 & .138 & .1575 & .506 & .5776 \\
     MolEditRL & & .952 & \textbf{.342} & \textbf{.3592} & \textbf{.514} & \textbf{.5399}
       & & .984 & .634 & .6443 & .830 & .8435 \\
-    Uniform-action ablation & & .6225 & .0000 & .0000 & .0000 & .0000
-      & & .6350 & .0825 & .1299 & .0825 & .1299 \\
-    MolProgram (D3 + Group-RL, ours) & & .9389 & .1545 & .1646 & .3616 & .3852
+    MolProgram (event GRPO, ours) & & .9389 & .1545 & .1646 & .3616 & .3852
       & & .9955 & \textbf{.8692} & \textbf{.8732} & \textbf{.9389} & \textbf{.9432} \\
     \midrule
-    BioT5 & \multirow{9}{*}{MW$\uparrow$} & 1 & 0 & 0 & .354 & .354
-      & \multirow{9}{*}{SA$\downarrow$} & 1 & 0 & 0 & .428 & .428 \\
+    BioT5 & \multirow{8}{*}{MW$\uparrow$} & 1 & 0 & 0 & .354 & .354
+      & \multirow{8}{*}{SA$\downarrow$} & 1 & 0 & 0 & .428 & .428 \\
     MolGen & & 1 & .036 & .036 & .362 & .362
       & & 1 & .016 & .016 & .306 & .306 \\
     REINVENT4 & & .654 & .068 & .104 & .340 & .5199
@@ -59,15 +57,13 @@
       & & .916 & .350 & .3821 & .662 & .7227 \\
     GeLLM$^3$O$_{\rm L}$ & & .884 & .232 & .2624 & .472 & .5339
       & & .888 & .238 & .268 & .640 & .7207 \\
-    MolEditRL & & .960 & .404 & .4208 & \textbf{.856} & \textbf{.8917}
+    MolEditRL & & .960 & \textbf{.404} & \textbf{.4208} & \textbf{.856} & \textbf{.8917}
       & & .988 & .628 & .6356 & .828 & .8381 \\
-    Uniform-action ablation & & .5550 & \textbf{.4225} & \textbf{.7613} & .4375 & .7883
-      & & .6675 & .0925 & .1386 & .1100 & .1648 \\
-    MolProgram (D3 + Group-RL, ours) & & .9665 & .0745 & .0771 & .1490 & .1542
+    MolProgram (event GRPO, ours) & & .9665 & .0745 & .0771 & .1490 & .1542
       & & .9885 & \textbf{.6310} & \textbf{.6383} & \textbf{.8440} & \textbf{.8538} \\
     \midrule
-    BioT5 & \multirow{9}{*}{\shortstack{Haccept$\downarrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .306 & .306
-      & \multirow{9}{*}{\shortstack{QED$\uparrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .272 & .272 \\
+    BioT5 & \multirow{8}{*}{\shortstack{Haccept$\downarrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .306 & .306
+      & \multirow{8}{*}{\shortstack{QED$\uparrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .272 & .272 \\
     MolGen & & 1 & .015 & .015 & .196 & .196
       & & 1 & .017 & .017 & .254 & .254 \\
     REINVENT4 & & .659 & .098 & .179 & .218 & .2781
@@ -80,13 +76,11 @@
       & & .904 & .206 & .2279 & .586 & .6482 \\
     MolEditRL & & .972 & .346 & .356 & .510 & .5247
       & & .974 & \textbf{.632} & \textbf{.6489} & \textbf{.788} & \textbf{.809} \\
-    Uniform-action ablation & & .6025 & .0175 & .0291 & .0175 & .0291
-      & & .6100 & .1750 & .2869 & .1750 & .2869 \\
-    MolProgram (D3 + Group-RL, ours) & & .9805 & \textbf{.5110} & \textbf{.5212} & \textbf{.7265} & \textbf{.7409}
+    MolProgram (event GRPO, ours) & & .9805 & \textbf{.5110} & \textbf{.5212} & \textbf{.7265} & \textbf{.7409}
       & & .9795 & .5960 & .6085 & .7630 & .7790 \\
     \midrule
-    BioT5 & \multirow{9}{*}{\shortstack{Haccept$\downarrow$\\LogP$\uparrow$}} & 1 & 0 & 0 & .360 & .360
-      & \multirow{9}{*}{\shortstack{Haccept$\downarrow$\\MW$\downarrow$}} & 1 & 0 & 0 & .342 & .342 \\
+    BioT5 & \multirow{8}{*}{\shortstack{Haccept$\downarrow$\\LogP$\uparrow$}} & 1 & 0 & 0 & .360 & .360
+      & \multirow{8}{*}{\shortstack{Haccept$\downarrow$\\MW$\downarrow$}} & 1 & 0 & 0 & .342 & .342 \\
     MolGen & & 1 & .072 & .072 & .125 & .125
       & & 1 & .051 & .051 & .109 & .109 \\
     REINVENT4 & & .581 & .173 & .197 & .305 & .3854
@@ -99,13 +93,11 @@
       & & .932 & .128 & .1373 & .432 & .4635 \\
     MolEditRL & & .946 & .316 & .334 & \textbf{.800} & \textbf{.8457}
       & & .942 & .252 & .2675 & .660 & .7006 \\
-    Uniform-action ablation & & .6600 & .0800 & .1212 & .0825 & .1250
-      & & .7775 & .1650 & .2122 & .1650 & .2122 \\
-    MolProgram (D3 + Group-RL, ours) & & .9863 & \textbf{.6187} & \textbf{.6273} & .7181 & .7281
+    MolProgram (event GRPO, ours) & & .9863 & \textbf{.6187} & \textbf{.6273} & .7181 & .7281
       & & .9850 & \textbf{.5605} & \textbf{.5690} & \textbf{.8195} & \textbf{.8320} \\
     \midrule
-    BioT5 & \multirow{9}{*}{\shortstack{DRD2$\downarrow$\\MW$\downarrow$, SA$\downarrow$}} & 1 & 0 & 0 & .136 & .136
-      & \multirow{9}{*}{\shortstack{Haccept$\uparrow$\\MW$\uparrow$, QED$\downarrow$}} & 1 & 0 & 0 & .088 & .088 \\
+    BioT5 & \multirow{8}{*}{\shortstack{DRD2$\downarrow$\\MW$\downarrow$, SA$\downarrow$}} & 1 & 0 & 0 & .136 & .136
+      & \multirow{8}{*}{\shortstack{Haccept$\uparrow$\\MW$\uparrow$, QED$\downarrow$}} & 1 & 0 & 0 & .088 & .088 \\
     MolGen & & 1 & .039 & .039 & .128 & .128
       & & 1 & .033 & .033 & .117 & .117 \\
     REINVENT4 & & .522 & .093 & .2302 & .173 & .283
@@ -118,9 +110,7 @@
       & & .886 & .040 & .0451 & .084 & .0948 \\
     MolEditRL & & .986 & \textbf{.518} & \textbf{.5254} & \textbf{.724} & \textbf{.7343}
       & & .958 & \textbf{.430} & \textbf{.4489} & \textbf{.756} & \textbf{.7891} \\
-    Uniform-action ablation & & .8325 & .4775 & .5736 & .4775 & .5736
-      & & .5925 & .2625 & .4430 & .2625 & .4430 \\
-    MolProgram (D3 + Group-RL, ours) & & .9945 & .4545 & .4570 & .6610 & .6647
+    MolProgram (event GRPO, ours) & & .9945 & .4545 & .4570 & .6610 & .6647
       & & .9359 & .1419 & .1516 & .2081 & .2223 \\
     \bottomrule
   \end{tabular}}

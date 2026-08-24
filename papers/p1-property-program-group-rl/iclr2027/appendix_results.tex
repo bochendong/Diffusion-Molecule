@@ -5,7 +5,7 @@
 \label{sec:appendix-validity}
 
 Table~\ref{tab:raw-validity} reports raw candidate validity separately from
-strict property success. Group-RL improves in-distribution validity by roughly
+strict property success. GRPO improves in-distribution validity by roughly
 five points, but OOD validity remains close to 12\% for both policies. Nearly
 every valid draw is unique, indicating that invalid SMILES syntax rather than
 conventional mode collapse is the primary sample-efficiency bottleneck.
@@ -20,9 +20,9 @@ conventional mode collapse is the primary sample-efficiency bottleneck.
     Evaluation & Method & $k=1$ & $k=8$ & $k=20$ \\
     \midrule
     2p--7p & SFT & 29.20 & 28.85 & 29.04 \\
-    2p--7p & Group-RL & \textbf{33.53} & \textbf{33.86} & \textbf{34.25} \\
+    2p--7p & GRPO & \textbf{33.53} & \textbf{33.86} & \textbf{34.25} \\
     OOD & SFT & \textbf{12.50} & \textbf{11.92} & 11.51 \\
-    OOD & Group-RL & 12.10 & 11.63 & \textbf{11.60} \\
+    OOD & GRPO & 12.10 & 11.63 & \textbf{11.60} \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -48,12 +48,12 @@ driven by a large 7p regression. We therefore retain group 16 and report group
     Method & $k$ & Raw strict & Pass@$k$ & 6p Pass@$k$ & 7p Pass@$k$ & Validity \\
     \midrule
     SFT & 8 & 3.47 & 21.88 & 21.88 & 21.88 & 28.27 \\
-    Group-RL G16 & 8 & \textbf{4.74} & \textbf{28.12} & 31.25 & \textbf{25.00} & 32.91 \\
-    Group-RL G64 & 8 & 4.44 & 25.78 & \textbf{32.81} & 18.75 & \textbf{36.38} \\
+    GRPO G16 & 8 & \textbf{4.74} & \textbf{28.12} & 31.25 & \textbf{25.00} & 32.91 \\
+    GRPO G64 & 8 & 4.44 & 25.78 & \textbf{32.81} & 18.75 & \textbf{36.38} \\
     \midrule
     SFT & 20 & 3.63 & 37.11 & 39.84 & 34.38 & 29.00 \\
-    Group-RL G16 & 20 & 4.75 & \textbf{50.78} & \textbf{50.78} & \textbf{50.78} & 33.26 \\
-    Group-RL G64 & 20 & \textbf{5.02} & 45.31 & \textbf{50.78} & 39.84 & \textbf{35.63} \\
+    GRPO G16 & 20 & 4.75 & \textbf{50.78} & \textbf{50.78} & \textbf{50.78} & 33.26 \\
+    GRPO G64 & 20 & \textbf{5.02} & 45.31 & \textbf{50.78} & 39.84 & \textbf{35.63} \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -70,7 +70,7 @@ $\operatorname{Acc}_{\mathrm{all}}(.65)$ across its 20 inputs per task. Its
 candidate-level mean validity is 32.5\% and its relaxed-threshold
 $\operatorname{Acc}_{\mathrm{all}}(.15)$ is 7.5\%, below the frozen base
 checkpoint's 36.8\% and 11.8\%, respectively. Teacher coverage reaches 77\%,
-and the checkpoint audit confirms that both SFT and Group-RL leave the de novo
+and the checkpoint audit confirms that both SFT and GRPO leave the de novo
 path bit-identical; the failure is therefore localized to the attempted
 source-conditioned editing transfer. Because the pilot uses a smaller
 evaluation set than the published comparison, these values do not populate
@@ -98,7 +98,7 @@ control, but it must not be presented as source-preserving editing success.
     \toprule
     Method & Overall SR & IND SR & OOD SR & Sim(success) & Sim$\geq .4$ \\
     \midrule
-    Direct constructor (Group-RL transfer) & 50.4 & 32.3 & 68.8 & 0.098 & 0.0 \\
+    Direct constructor (GRPO transfer) & 50.4 & 32.3 & 68.8 & 0.098 & 0.0 \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -106,7 +106,7 @@ control, but it must not be presented as source-preserving editing success.
 \subsection{Executable actions improve editing reachability}
 \label{sec:appendix-actions}
 
-A source-similarity reward applied to free-form direct SMILES Group-RL did not
+A source-similarity reward applied to free-form direct SMILES GRPO did not
 produce any candidates above the required source-similarity threshold.
 Replacing free-form editing with executable GraphEditDSL actions makes every
 raw first candidate valid and gives 26.5\%

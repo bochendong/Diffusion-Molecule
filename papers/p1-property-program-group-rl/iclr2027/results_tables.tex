@@ -13,16 +13,51 @@ candidate streams preserve generation order, Raw@1 is exactly the first model
 draw, and property-reranked selection is never reported as one-shot generation.
 All experiments use the frozen single seed specified before evaluation.
 
+Table~\ref{tab:framework-overview} summarizes the completed evidence across
+the two initial-state regimes. Every MolProgram row uses the same typed
+property-program contract, programmatic verification interface, and
+within-condition group-relative learning principle; the transition operator is
+the state-dependent component. The table keeps condition-level Pass@$k$ and
+candidate-level editing accuracy visibly separate.
+
+\begin{table*}[t]
+  \centering
+  \caption{MolProgram across molecular construction and editing. SFT and GRPO
+  are evaluated under the same candidate stream within each row. De novo
+  Pass@$k$ is condition-level; editing accuracy averages every unranked
+  candidate. Strict and relaxed editing denote
+  $\operatorname{Acc}_{\rm all}(.65)$ and
+  $\operatorname{Acc}_{\rm all}(.15)$, respectively. Published references are
+  included only under an identical metric. Bold denotes the best completed
+  value in a row.}
+  \label{tab:framework-overview}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lllrrrr}
+    \toprule
+    Initial graph & Operator & Metric & SFT & GRPO & $\Delta$ & Published ref. \\
+    \midrule
+    Empty (2p--7p) & Direct SMILES & Pass@8 & 35.37 & \textbf{41.72} & +6.35 & -- \\
+    Empty (2p--7p) & Direct SMILES & Pass@20 & 54.88 & \textbf{62.52} & +7.64 & -- \\
+    Empty (OOD) & Direct SMILES & Pass@20 & 35.20 & \textbf{41.70} & +6.50 & -- \\
+    Source (MolEdit) & Graph-event kernel & Cand. strict
+      & 43.35 & \textbf{46.12} & +2.77 & MolEditRL: 45.00 \\
+    Source (MolEdit) & Graph-event kernel & Cand. relaxed
+      & 57.60 & 61.90 & +4.30 & \textbf{MolEditRL: 72.70} \\
+    \bottomrule
+  \end{tabular}
+\end{table*}
+
 \subsection{Group-relative post-training improves low-budget de novo design}
 \label{sec:results-budget}
 
 Table~\ref{tab:budget-scaling} compares supervised fine-tuning (SFT) and
-Group-RL on 6,000 two-to-seven-property programs and 1,000
+GRPO on 6,000 two-to-seven-property programs and 1,000
 out-of-distribution (OOD) programs. The improvement is already visible at
 small candidate budgets. On 2p--7p, strict success on the first draw increases
 from 7.02\% to 8.93\%; Pass@8 and Pass@20 increase by 6.35 and 7.64 percentage
 points. The OOD first draw is deliberately reported as a negative result: SFT
-is 0.30 points better. Group-RL nevertheless overtakes SFT by $k=8$ and raises
+is 0.30 points better. GRPO nevertheless overtakes SFT by $k=8$ and raises
 Pass@20 from 35.20\% to 41.70\%. The observed advantage is therefore not a
 $k=256$-only effect, but neither is it a uniform improvement in one-shot
 generation.
@@ -31,7 +66,8 @@ generation.
   \centering
   \caption{Budget-transparent direct de novo generation. Raw strict is the
   candidate-level strict-success fraction; Pass@$k$ is the percentage of
-  property programs solved at least once within the first $k$ model draws.}
+  property programs solved at least once within the first $k$ model draws.
+  Both variants use MolProgram's direct-SMILES transition operator.}
   \label{tab:budget-scaling}
   \scriptsize
   \setlength{\tabcolsep}{3.5pt}
@@ -39,7 +75,7 @@ generation.
     \toprule
     Evaluation & $k$ & \multicolumn{2}{c}{Raw strict (\%)} & \multicolumn{3}{c}{Pass@$k$ (\%)} \\
     \cmidrule{3-4}\cmidrule{5-7}
-    & & SFT & Group-RL & SFT & Group-RL & $\Delta$ \\
+    & & SFT & GRPO & SFT & GRPO & $\Delta$ \\
     \midrule
     2p--7p & 1  & 7.02 & \textbf{8.93} & 7.02 & \textbf{8.93} & +1.91 \\
     2p--7p & 8  & 7.26 & \textbf{9.28} & 35.37 & \textbf{41.72} & +6.35 \\
@@ -53,7 +89,7 @@ generation.
 \end{table}
 
 Raw validity explains part, but not all, of this change. Across the matched
-2p--7p stream, Group-RL raises candidate validity from 29.04\% to 34.25\% at
+2p--7p stream, GRPO raises candidate validity from 29.04\% to 34.25\% at
 $k=20$ while also increasing the fraction of valid molecules that satisfy all
 active clauses. OOD validity remains low and nearly unchanged (11.51\% versus
 11.60\%), even though OOD Pass@20 improves by 6.50 points. Thus the OOD gain
@@ -66,7 +102,7 @@ diagnostics are reported in Appendix~\ref{sec:appendix-validity}.
 
 Absolute success decreases with program length for both policies, confirming
 that property count defines a genuine compositional difficulty axis.
-Table~\ref{tab:complexity-scaling} shows, however, that Group-RL improves every
+Table~\ref{tab:complexity-scaling} shows, however, that GRPO improves every
 property count at both practical budgets. At $k=20$, the gain is 4.9 points on
 6p programs and 8.4 points on 7p programs; the largest increase, 11.8 points,
 occurs at 5p. The aggregate improvement therefore cannot be explained by easy
@@ -83,7 +119,7 @@ two-property requests dominating the benchmark.
     \toprule
     & \multicolumn{3}{c}{Pass@8} & \multicolumn{3}{c}{Pass@20} \\
     \cmidrule{2-4}\cmidrule{5-7}
-    Properties & SFT & Group-RL & $\Delta$ & SFT & Group-RL & $\Delta$ \\
+    Properties & SFT & GRPO & $\Delta$ & SFT & GRPO & $\Delta$ \\
     \midrule
     2 & 58.6 & \textbf{68.1} & +9.5 & 78.6 & \textbf{85.6} & +7.0 \\
     3 & 45.4 & \textbf{52.6} & +7.2 & 66.0 & \textbf{73.7} & +7.7 \\
@@ -96,7 +132,7 @@ two-property requests dominating the benchmark.
 \end{table}
 
 The OOD split contains reversed directions, extreme targets, and property
-combinations that are rare or absent during training. Group-RL improves the
+combinations that are rare or absent during training. GRPO improves the
 aggregate OOD stream from $k=8$ onward, but the improvement is not uniform
 across OOD strata. In particular, a syntax-safe decoder raises overall OOD
 validity and Pass@20 but regresses on the small OOD 7p subset. We therefore
@@ -111,36 +147,31 @@ SketchMol multi-property protocol. Each method receives 40 attempts for each
 of 1,000 held-out target vectors at every complexity, and a condition succeeds
 when at least one valid molecule satisfies every active tolerance. We import
 only the published SketchMol row because it uses the matched target and
-tolerance contract; other external methods remain blank until rerun rather than
-being compared through incompatible datasets. MolProgram is stronger on 2p and
-3p and is within 0.9 points at 4p. SketchMol leads from 5p onward and by 5.0
-points on the overall average. The external comparison therefore identifies
-high-order generation as the primary remaining de novo gap and does not support
-an overall state-of-the-art claim.
+tolerance contract. Methods whose published results use different targets,
+oracles, or budgets are omitted rather than displayed as empty rows or compared
+through incompatible protocols. MolProgram is stronger on 2p and 3p and is
+within 0.9 points at 4p. SketchMol leads from 5p onward and by 5.0 points on the
+overall average. The external comparison therefore identifies high-order
+generation as the primary remaining de novo gap and does not support an overall
+state-of-the-art claim.
 
 \begin{table*}[t]
   \centering
   \caption{Matched comparison under the SketchMol multi-property de novo
   protocol. Strict success (\%) uses 1,000 targets per complexity, the same
-  property tolerances, and 40 candidates per condition. Dashes denote pending
-  matched reruns, not reported failures. Bold marks the best completed result.}
+  property tolerances, and 40 candidates per condition. Only completed results
+  under this exact protocol are included. Bold marks the best value.}
   \label{tab:sketchmol-fair40}
   \scriptsize
   \setlength{\tabcolsep}{3.6pt}
-  \begin{tabular}{lllrrrrrrr}
+  \begin{tabular}{llrrrrrrr}
     \toprule
-    Method & Molecular representation & Evaluation status & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
+    Method & Molecular representation & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
     \midrule
-    SPMM & property vector + SMILES & matched rerun pending
-      & -- & -- & -- & -- & -- & -- & -- \\
-    STGG+ & spanning-tree sequence & matched rerun pending
-      & -- & -- & -- & -- & -- & -- & -- \\
-    Graph DiT & molecular graph & matched rerun pending
-      & -- & -- & -- & -- & -- & -- & -- \\
-    SketchMol & molecular image & published matched reference
+    SketchMol & molecular image
       & \textbf{73.1} & 80.4 & 76.8 & \textbf{73.6} & \textbf{71.6} & \textbf{67.8} & \textbf{68.5} \\
     \midrule
-    MolProgram (direct Group-RL) & direct SMILES & ours, matched rerun
+    MolProgram (direct GRPO) & direct SMILES
       & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
     \bottomrule
   \end{tabular}
@@ -161,7 +192,8 @@ ranker, inference oracle, second edit, or MCS glue.
 
 Table~\ref{tab:operator-split} reports both candidate-level accuracy and
 Any@20 rather than conflating them. On 997 held-out conditions and 19,940 raw
-candidates, supervised D3 reaches 43.35\% strict candidate accuracy. Applying
+candidates, the supervised event editor reaches 43.35\% strict candidate
+accuracy. Applying
 the same group-relative learning principle used by the direct constructor
 raises strict accuracy by 2.77 points to 46.12\%, exceeding MolEditRL's
 reported 45.0\% task macro. The relaxed result remains lower than MolEditRL
@@ -172,8 +204,8 @@ editing rather than an across-the-board state-of-the-art claim.
   \centering
   \caption{MolEdit Table 1 macro results under two aggregation rules. Candidate
   accuracy averages over every unranked output and is directly comparable to
-  MolEditRL; Any@20 asks whether a condition has at least one hit. D3 uses one
-  frozen seed and exactly 20 raw candidates per condition.}
+  MolEditRL; Any@20 asks whether a condition has at least one hit. MolProgram
+  uses one frozen seed and exactly 20 raw candidates per condition.}
   \label{tab:operator-split}
   \small
   \setlength{\tabcolsep}{4pt}
@@ -182,8 +214,8 @@ editing rather than an across-the-board state-of-the-art claim.
     Editor & Validity & Cand. strict & Cand. relaxed & Any@20 strict & Any@20 relaxed \\
     \midrule
     Single-checkpoint ablation & 100.00 & 17.08 & 18.03 & 70.50 & 71.00 \\
-    D3 supervised & 97.38 & 43.35 & 57.60 & 76.52 & 92.51 \\
-    D3 + Group-RL & \textbf{97.51} & \textbf{46.12} & 61.90 & \textbf{78.83} & \textbf{93.31} \\
+    MolProgram event SFT & 97.38 & 43.35 & 57.60 & 76.52 & 92.51 \\
+    MolProgram event GRPO & \textbf{97.51} & \textbf{46.12} & 61.90 & \textbf{78.83} & \textbf{93.31} \\
     MolEditRL (reported candidate macro) & 96.62 & 45.00 & \textbf{72.70} & -- & -- \\
     \bottomrule
   \end{tabular}
@@ -195,16 +227,17 @@ editing rather than an across-the-board state-of-the-art claim.
 Table~\ref{tab:moledit-full} retains the complete MolEdit-Instruct comparison:
 ten tasks, validity, and overall/valid-conditional accuracy at source
 similarity thresholds 0.65 and 0.15. The published rows retain their reported
-candidate-level metrics. Our D3 rows use exactly 20 generated trajectories per
-condition and are evaluated candidate-wise over the complete unranked pool.
+candidate-level metrics. Our event-editor rows use exactly 20 generated
+trajectories per condition and are evaluated candidate-wise over the complete
+unranked pool.
 This is intentionally different from Pass@$k$, Any@$k$, or a
 property-selected output. The single-checkpoint result is retained only as an
-ablation; D3 + Group-RL is the promoted editing operator. We omit FCD because
+ablation; event GRPO is the promoted editing operator. We omit FCD because
 it is not part of our evaluation contract.
 
 \input{moledit_table1.tex}
 
-The per-task table exposes a heterogeneous gain. D3 + Group-RL is strongest on
+The per-task table exposes a heterogeneous gain. Event GRPO is strongest on
 Rotbonds$\downarrow$, SA$\downarrow$, and four two-property tasks, but remains
 weak on GSK3B$\uparrow$, MW$\uparrow$, and the final three-property request.
 Macro $\operatorname{Acc}_{\rm all}(.65)$ nevertheless reaches 46.12\%, 1.12
@@ -228,12 +261,12 @@ run.
 \input{mumo_tables.tex}
 
 Taken together, the completed results support two bounded conclusions.
-Group-relative post-training increases the probability that a modest direct
+GRPO increases the probability that a modest direct
 sample set solves a compositional property program, including at 6p, 7p, and
 on aggregate OOD requests. Sharing the property-program and verifier layers
 while specializing the molecular transition operator avoids the severe editing
 loss of a forced single-checkpoint design. The source-anchored operator exceeds
-MolEditRL under strict candidate-level accuracy after Group-RL, but not under
+MolEditRL under strict candidate-level accuracy after GRPO, but not under
 the relaxed threshold. We therefore claim a unified request and learning
 framework with state-appropriate solvers, not a universal decoder or uniform
 dominance across editing criteria.
