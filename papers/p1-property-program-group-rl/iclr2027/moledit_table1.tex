@@ -6,13 +6,13 @@
   $\operatorname{Acc}_{\mathrm{all}}(t)$ requires both property success and
   source Tanimoto similarity of at least $t$;
   $\operatorname{Acc}_{\mathrm{valid}}(t)$ conditions on valid generations.
-  Every method is evaluated from 20 generated molecules per input, and all
-  MolProgram metrics are computed over the complete unranked candidate pool
-  rather than a selected output or an any-hit event. The uniform-action row is
-  a bounded single-seed P6 ablation. The promoted state-adaptive row is the
-  matched candidate-level export from 20 inputs and 20 raw candidates per task;
-  it is not Any@20. Published baselines use their full evaluation sets. Bold
-  denotes the best completed accuracy value under the displayed task metric.}
+  Published rows retain their reported candidate-level evaluation protocol.
+  MolProgram metrics are computed over 997 conditions and 19,940 raw outputs,
+  with exactly 20 unranked candidates per condition; they are neither a
+  selected output nor an Any@20 event. The uniform-action row is a bounded
+  single-seed ablation, whereas D3 + Group-RL is the promoted editing method.
+  Bold denotes the best completed accuracy value under the displayed task
+  metric.}
   \label{tab:moledit-full}
   \setlength{\tabcolsep}{2.2pt}
   \renewcommand{\arraystretch}{0.88}
@@ -41,11 +41,11 @@
     GeLLM$^3$O$_{\rm L}$ & & .902 & .114 & .1264 & .294 & .3259
       & & .876 & .138 & .1575 & .506 & .5776 \\
     MolEditRL & & .952 & \textbf{.342} & \textbf{.3592} & \textbf{.514} & \textbf{.5399}
-      & & .984 & \textbf{.634} & \textbf{.6443} & \textbf{.830} & \textbf{.8435} \\
+      & & .984 & .634 & .6443 & .830 & .8435 \\
     Uniform-action ablation & & .6225 & .0000 & .0000 & .0000 & .0000
       & & .6350 & .0825 & .1299 & .0825 & .1299 \\
-    MolProgram (state-adaptive, ours) & & 1 & 0 & 0 & 0 & 0
-      & & 1 & .0300 & .0300 & .0300 & .0300 \\
+    MolProgram (D3 + Group-RL, ours) & & .9389 & .1545 & .1646 & .3616 & .3852
+      & & .9955 & \textbf{.8692} & \textbf{.8732} & \textbf{.9389} & \textbf{.9432} \\
     \midrule
     BioT5 & \multirow{9}{*}{MW$\uparrow$} & 1 & 0 & 0 & .354 & .354
       & \multirow{9}{*}{SA$\downarrow$} & 1 & 0 & 0 & .428 & .428 \\
@@ -60,11 +60,11 @@
     GeLLM$^3$O$_{\rm L}$ & & .884 & .232 & .2624 & .472 & .5339
       & & .888 & .238 & .268 & .640 & .7207 \\
     MolEditRL & & .960 & .404 & .4208 & \textbf{.856} & \textbf{.8917}
-      & & .988 & \textbf{.628} & \textbf{.6356} & \textbf{.828} & \textbf{.8381} \\
-    Uniform-action ablation & & .5550 & .4225 & \textbf{.7613} & .4375 & .7883
+      & & .988 & .628 & .6356 & .828 & .8381 \\
+    Uniform-action ablation & & .5550 & \textbf{.4225} & \textbf{.7613} & .4375 & .7883
       & & .6675 & .0925 & .1386 & .1100 & .1648 \\
-    MolProgram (state-adaptive, ours) & & 1 & \textbf{.7100} & .7100 & .7750 & .7750
-      & & 1 & .1200 & .1200 & .1300 & .1300 \\
+    MolProgram (D3 + Group-RL, ours) & & .9665 & .0745 & .0771 & .1490 & .1542
+      & & .9885 & \textbf{.6310} & \textbf{.6383} & \textbf{.8440} & \textbf{.8538} \\
     \midrule
     BioT5 & \multirow{9}{*}{\shortstack{Haccept$\downarrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .306 & .306
       & \multirow{9}{*}{\shortstack{QED$\uparrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .272 & .272 \\
@@ -78,12 +78,12 @@
       & & .882 & .012 & .0136 & .224 & .254 \\
     GeLLM$^3$O$_{\rm L}$ & & .920 & .118 & .1283 & .388 & .4217
       & & .904 & .206 & .2279 & .586 & .6482 \\
-    MolEditRL & & .972 & \textbf{.346} & \textbf{.356} & \textbf{.510} & \textbf{.5247}
+    MolEditRL & & .972 & .346 & .356 & .510 & .5247
       & & .974 & \textbf{.632} & \textbf{.6489} & \textbf{.788} & \textbf{.809} \\
     Uniform-action ablation & & .6025 & .0175 & .0291 & .0175 & .0291
       & & .6100 & .1750 & .2869 & .1750 & .2869 \\
-    MolProgram (state-adaptive, ours) & & 1 & .0225 & .0225 & .0225 & .0225
-      & & 1 & .0875 & .0875 & .0900 & .0900 \\
+    MolProgram (D3 + Group-RL, ours) & & .9805 & \textbf{.5110} & \textbf{.5212} & \textbf{.7265} & \textbf{.7409}
+      & & .9795 & .5960 & .6085 & .7630 & .7790 \\
     \midrule
     BioT5 & \multirow{9}{*}{\shortstack{Haccept$\downarrow$\\LogP$\uparrow$}} & 1 & 0 & 0 & .360 & .360
       & \multirow{9}{*}{\shortstack{Haccept$\downarrow$\\MW$\downarrow$}} & 1 & 0 & 0 & .342 & .342 \\
@@ -97,12 +97,12 @@
       & & .910 & .176 & .1934 & .370 & .4066 \\
     GeLLM$^3$O$_{\rm L}$ & & .904 & .130 & .1438 & .354 & .3916
       & & .932 & .128 & .1373 & .432 & .4635 \\
-    MolEditRL & & .946 & \textbf{.316} & \textbf{.334} & \textbf{.800} & \textbf{.8457}
-      & & .942 & \textbf{.252} & \textbf{.2675} & \textbf{.660} & \textbf{.7006} \\
+    MolEditRL & & .946 & .316 & .334 & \textbf{.800} & \textbf{.8457}
+      & & .942 & .252 & .2675 & .660 & .7006 \\
     Uniform-action ablation & & .6600 & .0800 & .1212 & .0825 & .1250
       & & .7775 & .1650 & .2122 & .1650 & .2122 \\
-    MolProgram (state-adaptive, ours) & & 1 & .0850 & .0850 & .0925 & .0925
-      & & 1 & .1000 & .1000 & .1000 & .1000 \\
+    MolProgram (D3 + Group-RL, ours) & & .9863 & \textbf{.6187} & \textbf{.6273} & .7181 & .7281
+      & & .9850 & \textbf{.5605} & \textbf{.5690} & \textbf{.8195} & \textbf{.8320} \\
     \midrule
     BioT5 & \multirow{9}{*}{\shortstack{DRD2$\downarrow$\\MW$\downarrow$, SA$\downarrow$}} & 1 & 0 & 0 & .136 & .136
       & \multirow{9}{*}{\shortstack{Haccept$\uparrow$\\MW$\uparrow$, QED$\downarrow$}} & 1 & 0 & 0 & .088 & .088 \\
@@ -117,11 +117,11 @@
     GeLLM$^3$O$_{\rm L}$ & & .918 & .108 & .1176 & .288 & .3137
       & & .886 & .040 & .0451 & .084 & .0948 \\
     MolEditRL & & .986 & \textbf{.518} & \textbf{.5254} & \textbf{.724} & \textbf{.7343}
-      & & .958 & .430 & \textbf{.4489} & \textbf{.756} & \textbf{.7891} \\
+      & & .958 & \textbf{.430} & \textbf{.4489} & \textbf{.756} & \textbf{.7891} \\
     Uniform-action ablation & & .8325 & .4775 & .5736 & .4775 & .5736
       & & .5925 & .2625 & .4430 & .2625 & .4430 \\
-    MolProgram (state-adaptive, ours) & & 1 & .1100 & .1100 & .1100 & .1100
-      & & 1 & \textbf{.4425} & .4425 & .4525 & .4525 \\
+    MolProgram (D3 + Group-RL, ours) & & .9945 & .4545 & .4570 & .6610 & .6647
+      & & .9359 & .1419 & .1516 & .2081 & .2223 \\
     \bottomrule
   \end{tabular}}
 \end{table*}

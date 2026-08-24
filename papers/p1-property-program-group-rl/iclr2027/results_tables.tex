@@ -5,8 +5,9 @@ We organize the results around three questions. First, does group-relative
 post-training improve compositional property control at practical candidate
 budgets rather than only under large best-of-$k$ search? Second, does the gain
 persist as property programs become longer and move out of distribution? Third,
-can de novo generation and source-conditioned editing share one learned policy
-while retaining the legal output support appropriate to each molecular state?
+can de novo generation and source-conditioned editing share a property-program
+and reinforcement interface while using transition operators appropriate to
+their different molecular states?
 Unless stated otherwise, all
 candidate streams preserve generation order, Raw@1 is exactly the first model
 draw, and property-reranked selection is never reported as one-shot generation.
@@ -145,105 +146,45 @@ an overall state-of-the-art claim.
   \end{tabular}
 \end{table*}
 
-\subsection{State-adaptive support preserves both boundary conditions}
+\subsection{Shared programs benefit from state-appropriate transition operators}
 \label{sec:results-transition-audit}
 
-We first test the stricter alternative of forcing one typed transition
-language onto both initial-state regimes. This uniform-action ablation can
-faithfully express most trajectories but exposes a severe length asymmetry.
-Table~\ref{tab:transition-audit} uses the frozen mixed training pool and applies
-the same serializer and deterministic interpreter to every trajectory. The
-language covers 96.5\% of all rows under the fixed 188-token limit. Editing
-coverage is 100\%, and 99.8\% of covered editing programs reconstruct their
-selected executable targets exactly after canonicalization. De novo coverage
-is lower because atom-by-atom construction produces longer programs; exact
-reconstruction is additionally affected by stereochemical details that are not
-fully represented in the current bond state. These are representation
-diagnostics, not held-out molecular-design accuracies.
+Forcing construction and editing through one checkpoint is attractive but not
+supported by the matched evidence. The single-checkpoint ablation preserves
+the direct de novo policy yet reaches only 17.075\% strict
+candidate-level accuracy on its 200-condition editing gate. We therefore share
+the property-program and verifier layers while assigning the empty and
+populated boundary conditions different transition operators. The promoted
+editor is a source-anchored, validity-preserving graph-event kernel; it samples
+exactly 20 raw trajectories per condition without a task router, molecular
+ranker, inference oracle, second edit, or MCS glue.
+
+Table~\ref{tab:operator-split} reports both candidate-level accuracy and
+Any@20 rather than conflating them. On 997 held-out conditions and 19,940 raw
+candidates, supervised D3 reaches 43.35\% strict candidate accuracy. Applying
+the same group-relative learning principle used by the direct constructor
+raises strict accuracy by 2.77 points to 46.12\%, exceeding MolEditRL's
+reported 45.0\% task macro. The relaxed result remains lower than MolEditRL
+(61.90\% versus 72.7\%), so the gain is specific to source-preserving strict
+editing rather than an across-the-board state-of-the-art claim.
 
 \begin{table}[t]
   \centering
-  \caption{Uniform-action representation ablation. ``Covered''
-  denotes a serializable program within the fixed token limit; exact
-  reconstruction is measured only among covered rows.}
-  \label{tab:transition-audit}
-  \small
-  \setlength{\tabcolsep}{5pt}
-  \begin{tabular}{lrrrr}
-    \toprule
-    Initial graph & Input rows & Covered rows & Coverage (\%) & Exact recon. (\%) \\
-    \midrule
-    Empty (de novo) & 288 & 261 & 90.6 & 80.5 \\
-    Source (editing) & 480 & 480 & 100.0 & \textbf{99.8} \\
-    \midrule
-    Overall & 768 & 741 & \textbf{96.5} & 93.0 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-The promoted MolProgram policy resolves this asymmetry through deterministic
-state-adaptive support. Empty sources expose the legacy full-SMILES literals;
-populated sources expose typed transactions executable on that source. Both
-supports are scored by the same property conditioner, autoregressive decoder,
-base vocabulary projection, union-vocabulary final softmax, and checkpoint.
-A disclosed source-conditioned residual is added only for populated sources.
-Source occupancy selects the legal support and activates this residual; no
-learned task classifier selects a separate decoder or checkpoint. The
-resulting de novo branch is bit-exact to the legacy
-P1 Group-RL policy. On the 200-condition MolEdit gate, the populated-source
-branch achieves 23.5\%, 53.0\%, and 70.5\% strict success at raw budgets
-$k=1,8,20$. Candidate validity is 100\%, and 17.075\% of the complete unranked
-20-candidate pool is a strict success. These Any@$k$ values measure whether a
-condition has at least one hit; they are not the candidate-level accuracies in
-Table~\ref{tab:moledit-full}. Paper-facing matched hard-de-novo values
-are measured on 2,000 6p/7p conditions and 40,000 unranked candidates. The
-hard subset reaches 5.5\% Strict@1, 28.3\% Pass@8, and 45.6\% Pass@20 at
-33.3\% candidate validity. The complete 6,000-condition curve is reported in
-the accompanying result artifact; its aggregate Pass@20 is 62.5\%.
-
-\begin{table}[t]
-  \centering
-  \caption{Within-method budget scaling for the promoted single-checkpoint
-  state-adaptive gate. Candidate validity is measured over all unselected
-  draws; Strict@1 and Pass@$k$ are averaged over conditions. Pass@$k$ is not
-  comparable to candidate-level Table~\ref{tab:moledit-full}.}
-  \label{tab:unified-policy-gate}
+  \caption{MolEdit Table 1 macro results under two aggregation rules. Candidate
+  accuracy averages over every unranked output and is directly comparable to
+  MolEditRL; Any@20 asks whether a condition has at least one hit. D3 uses one
+  frozen seed and exactly 20 raw candidates per condition.}
+  \label{tab:operator-split}
   \small
   \setlength{\tabcolsep}{4pt}
   \begin{tabular}{lrrrrr}
     \toprule
-    Evaluation & Conditions & Cand. validity & Strict@1 & Pass@8 & Pass@20 \\
+    Editor & Validity & Cand. strict & Cand. relaxed & Any@20 strict & Any@20 relaxed \\
     \midrule
-    Hard de novo (6p/7p) & 2,000 & 33.3 & 5.5 & 28.3 & 45.6 \\
-    MolEdit Table 1 pilot & 200 & \textbf{100.0} & \textbf{23.5} & \textbf{53.0} & \textbf{70.5} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-Applying group-relative REINFORCE to the transaction branch is a negative
-ablation. Table~\ref{tab:transaction-rl-negative} compares both preregistered
-rounds with the unchanged state-adaptive policy under the same raw stream.
-R1 uses a joint-bottleneck reward and R2 changes only its aggregation to a
-dense soft-min. Neither update improves the base: candidate-level strict
-accuracy decreases from 17.075\% to 16.750\% and 16.775\%, while Any@20
-decreases from 70.5\% to 61.5\% and 62.0\%. We therefore retain transaction
-Group-RL as a negative ablation rather than part of the promoted method.
-
-\begin{table}[t]
-  \centering
-  \caption{Negative transaction-branch reinforcement ablation on the same
-  MolEdit gate. Both columns use the strict 0.65 source-similarity criterion,
-  but candidate accuracy and condition-level Any@20 are different estimands.}
-  \label{tab:transaction-rl-negative}
-  \small
-  \setlength{\tabcolsep}{7pt}
-  \begin{tabular}{lrr}
-    \toprule
-    Policy & Candidate strict (\%) & Any@20 (\%) \\
-    \midrule
-    State-adaptive base & \textbf{17.075} & \textbf{70.5} \\
-    Transaction RL R1 (joint bottleneck) & 16.750 & 61.5 \\
-    Transaction RL R2 (dense soft-min) & 16.775 & 62.0 \\
+    Single-checkpoint ablation & 100.00 & 17.08 & 18.03 & 70.50 & 71.00 \\
+    D3 supervised & 97.38 & 43.35 & 57.60 & 76.52 & 92.51 \\
+    D3 + Group-RL & \textbf{97.51} & \textbf{46.12} & 61.90 & \textbf{78.83} & \textbf{93.31} \\
+    MolEditRL (reported candidate macro) & 96.62 & 45.00 & \textbf{72.70} & -- & -- \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -253,38 +194,24 @@ Group-RL as a negative ablation rather than part of the promoted method.
 
 Table~\ref{tab:moledit-full} retains the complete MolEdit-Instruct comparison:
 ten tasks, validity, and overall/valid-conditional accuracy at source
-similarity thresholds 0.65 and 0.15. Every published method is evaluated from
-20 generated molecules per input and candidate-wise over the unranked pool.
-This is intentionally different from Pass@$k$ or a property-selected output.
-The uniform-action row reports the complete P6 candidate pool on a bounded
-20-input-per-task pilot and is retained as an ablation rather than presented as
-the promoted method. The state-adaptive MolProgram row is the matched P8.2
-candidate-level export over 4,000 unranked candidates. We omit FCD because it is
-not part of our evaluation contract.
+similarity thresholds 0.65 and 0.15. The published rows retain their reported
+candidate-level metrics. Our D3 rows use exactly 20 generated trajectories per
+condition and are evaluated candidate-wise over the complete unranked pool.
+This is intentionally different from Pass@$k$, Any@$k$, or a
+property-selected output. The single-checkpoint result is retained only as an
+ablation; D3 + Group-RL is the promoted editing operator. We omit FCD because
+it is not part of our evaluation contract.
 
 \input{moledit_table1.tex}
 
-The earlier direct-SMILES transfer experiments explain why the populated-source
-support uses executable transactions rather than unconstrained full-string
-rewriting. A
-source-aware direct decoder produces valid molecules but fails to preserve the
-input at the strict similarity threshold, whereas a standalone executable
-action policy reaches 100\% validity and 26.5\% raw first-candidate strict
-accuracy on the paired repair subset. A source-only finalizer can raise the
-latter number to 66.0\% at $k=8$, but this is assisted selection and is kept in
-the appendix. The uniform-action row is populated only by raw samples from its
-single shared checkpoint; its 17.75\% macro strict candidate accuracy is
-below MolEditRL overall, although it exceeds MolEditRL on the MW-increase task
-at the strict 0.65 threshold.
-
-The promoted state-adaptive policy achieves aggregate candidate-level
-$\operatorname{Acc}_{\rm all}$ of 17.075\% at similarity 0.65 and 18.025\% at
-0.15. These values remain below the corresponding MolEditRL task averages of
-45.0\% and 72.7\%. At the strict threshold, MolProgram exceeds MolEditRL only
-on MW$\uparrow$ (71.00\% versus 40.40\%) and on the final three-property task
-Haccept$\uparrow$/MW$\uparrow$/QED$\downarrow$ (44.25\% versus 43.00\%). Its
-70.5\% Any@20 instead answers whether each condition has at least one strict
-hit among 20 draws and must not be compared with these candidate-level rows.
+The per-task table exposes a heterogeneous gain. D3 + Group-RL is strongest on
+Rotbonds$\downarrow$, SA$\downarrow$, and four two-property tasks, but remains
+weak on GSK3B$\uparrow$, MW$\uparrow$, and the final three-property request.
+Macro $\operatorname{Acc}_{\rm all}(.65)$ nevertheless reaches 46.12\%, 1.12
+points above MolEditRL, while macro $\operatorname{Acc}_{\rm all}(.15)$ reaches
+61.90\%, 10.80 points below MolEditRL. Candidate validity is 97.51\%. The same
+raw stream reaches 78.83\% strict Any@20, but this answers whether a condition
+has at least one hit and is never substituted for candidate-level accuracy.
 
 \subsection{MuMOInstruct IND and OOD task families}
 \label{sec:results-mumo}
@@ -294,7 +221,7 @@ and five OOD MuMOInstruct task families and their three complementary metrics:
 success rate (SR), similarity among successful outputs (Sim), and relative
 improvement among successes (RI) \citep{dey2025gellm3o}. This fuller layout is
 necessary because a high property SR can coexist with very low source
-similarity. The unified MolProgram cells remain blank until all official
+similarity. The MolProgram cells remain blank until all official
 oracles and source-fidelity metrics are exported from the same 20-candidate
 run.
 
@@ -303,12 +230,10 @@ run.
 Taken together, the completed results support two bounded conclusions.
 Group-relative post-training increases the probability that a modest direct
 sample set solves a compositional property program, including at 6p, 7p, and
-on aggregate OOD requests. The uniform-action ablation shows that identical
-trajectory semantics are representable but poorly matched to the very
-different construction horizons. State-adaptive MolProgram instead preserves
-the legacy de novo policy bit-exactly while reaching non-trivial raw editing
-success through the same conditioner, decoder, base projection, final union
-softmax, and checkpoint, with the disclosed source-conditioned residual.
-This establishes a shared learned policy with deterministic state-dependent
-legal support; it does not claim that empty and populated graphs have identical
-output semantics, and matched per-task and OOD exports remain open.
+on aggregate OOD requests. Sharing the property-program and verifier layers
+while specializing the molecular transition operator avoids the severe editing
+loss of a forced single-checkpoint design. The source-anchored operator exceeds
+MolEditRL under strict candidate-level accuracy after Group-RL, but not under
+the relaxed threshold. We therefore claim a unified request and learning
+framework with state-appropriate solvers, not a universal decoder or uniform
+dominance across editing criteria.

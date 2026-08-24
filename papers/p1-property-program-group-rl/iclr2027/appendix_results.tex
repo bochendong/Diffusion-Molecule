@@ -65,7 +65,7 @@ The complete ten-task comparison is reported in
 Table~\ref{tab:moledit-full} rather than compressed into a macro-average.
 This exposes task-level failures under the matched 20-candidate, candidate-wise
 protocol. Raw@1 and pass@$k$ remain separate budget diagnostics. The completed
-P4 distillation pilot also reaches zero strict
+P4 single-checkpoint distillation pilot also reaches zero strict
 $\operatorname{Acc}_{\mathrm{all}}(.65)$ across its 20 inputs per task. Its
 candidate-level mean validity is 32.5\% and its relaxed-threshold
 $\operatorname{Acc}_{\mathrm{all}}(.15)$ is 7.5\%, below the frozen base
@@ -79,7 +79,8 @@ Table~\ref{tab:moledit-full}.
 \subsection{MuMO source-fidelity diagnostic}
 \label{sec:appendix-mumo}
 
-Under the official 20-candidate MuMO oracle, MolProgram reaches 50.4\% overall
+Under the official 20-candidate MuMO oracle, the direct-constructor transfer
+ablation reaches 50.4\% overall
 property SR, with 32.3\% IND and 68.8\% OOD SR. However, mean source
 similarity among successful outputs is only 0.098, and no input passes the
 additional 0.4 source-similarity diagnostic. The policy therefore often finds
@@ -97,7 +98,7 @@ control, but it must not be presented as source-preserving editing success.
     \toprule
     Method & Overall SR & IND SR & OOD SR & Sim(success) & Sim$\geq .4$ \\
     \midrule
-    MolProgram (Group-RL) & 50.4 & 32.3 & 68.8 & 0.098 & 0.0 \\
+    Direct constructor (Group-RL transfer) & 50.4 & 32.3 & 68.8 & 0.098 & 0.0 \\
     \bottomrule
   \end{tabular}
 \end{table}

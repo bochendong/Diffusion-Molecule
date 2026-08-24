@@ -1,0 +1,70 @@
+{
+  "candidate_rows_per_model": 19940,
+  "conditions": 997,
+  "exact_candidates_per_condition": 20,
+  "external_reference": {
+    "Acc_all(0.15)": 0.727,
+    "Acc_all(0.65)": 0.45,
+    "method": "MolEditRL"
+  },
+  "integrity": {
+    "candidate_order": "raw_unranked",
+    "empty_outputs_count_as_invalid": true,
+    "exact_candidate_count_required": true,
+    "inference_property_reranking": false,
+    "posthoc_regeneration": false,
+    "posthoc_training": false
+  },
+  "grpo": {
+    "any20_macro": {
+      "Acc_all(0.15)": 0.9331258741258741,
+      "Acc_all(0.65)": 0.7883081363081363,
+      "Validity": 0.998989898989899
+    },
+    "candidate_macro": {
+      "Acc_all(0.15)": 0.6189717726717726,
+      "Acc_all(0.65)": 0.4611837884337885,
+      "Acc_valid(0.15)": 0.6303341300866616,
+      "Acc_valid(0.65)": 0.4687818154826777,
+      "Validity": 0.9750965756465757
+    },
+    "per_task_candidate": {
+      "DRD2_down_MW_down_SA_down": {"candidates": 2000, "Validity": 0.9945, "Acc_all(0.65)": 0.4545, "Acc_valid(0.65)": 0.45701357466063347, "Acc_all(0.15)": 0.661, "Acc_valid(0.15)": 0.6646556058310709},
+      "GSK3B_up": {"candidates": 1980, "Validity": 0.9388888888888889, "Acc_all(0.65)": 0.15454545454545454, "Acc_valid(0.65)": 0.16460462863293863, "Acc_all(0.15)": 0.3616161616161616, "Acc_valid(0.15)": 0.38515331001076425},
+      "Haccept_down_LogP_up": {"candidates": 1820, "Validity": 0.9862637362637363, "Acc_all(0.65)": 0.6186813186813187, "Acc_valid(0.65)": 0.6272980501392757, "Acc_all(0.15)": 0.7181318681318681, "Acc_valid(0.15)": 0.7281337047353761},
+      "Haccept_down_MW_down": {"candidates": 2000, "Validity": 0.985, "Acc_all(0.65)": 0.5605, "Acc_valid(0.65)": 0.5690355329949238, "Acc_all(0.15)": 0.8195, "Acc_valid(0.15)": 0.8319796954314721},
+      "Haccept_down_SA_down": {"candidates": 2000, "Validity": 0.9805, "Acc_all(0.65)": 0.511, "Acc_valid(0.65)": 0.5211626710861805, "Acc_all(0.15)": 0.7265, "Acc_valid(0.15)": 0.7409484956654768},
+      "Haccept_up_MW_up_QED_down": {"candidates": 1980, "Validity": 0.9358585858585858, "Acc_all(0.65)": 0.14191919191919192, "Acc_valid(0.65)": 0.15164597501357958, "Acc_all(0.15)": 0.2080808080808081, "Acc_valid(0.15)": 0.22234220532319392},
+      "MW_up": {"candidates": 2000, "Validity": 0.9665, "Acc_all(0.65)": 0.0745, "Acc_valid(0.65)": 0.07708225556130367, "Acc_all(0.15)": 0.149, "Acc_valid(0.15)": 0.154164511123642},
+      "QED_up_SA_down": {"candidates": 2000, "Validity": 0.9795, "Acc_all(0.65)": 0.596, "Acc_valid(0.65)": 0.6084737110770801, "Acc_all(0.15)": 0.763, "Acc_valid(0.15)": 0.7789688616630934},
+      "Rotbonds_down": {"candidates": 1980, "Validity": 0.9954545454545455, "Acc_all(0.65)": 0.8691919191919192, "Acc_valid(0.65)": 0.8731608320649426, "Acc_all(0.15)": 0.9388888888888889, "Acc_valid(0.15)": 0.9431760527650939},
+      "SA_down": {"candidates": 2000, "Validity": 0.9885, "Acc_all(0.65)": 0.631, "Acc_valid(0.65)": 0.6383409205867476, "Acc_all(0.15)": 0.844, "Acc_valid(0.15)": 0.8538189175518462}
+    },
+    "strict_beats_moleditrl": true
+  },
+  "job_id": 20401081,
+  "job_status": "COMPLETED",
+  "job_wall_time": "00:08:32",
+  "protocol": "d3_table1_candidate_and_anyk_v1",
+  "provenance": {
+    "grpo_audit": "outputs/d3_event_kernel_energy_grpo_table1_n20/d3_table1_aggregation_audit.json",
+    "log": "logs/d3_candidate_level_posthoc/d3-candidate-metrics-20401081.log",
+    "supervised_audit": "outputs/d3_event_kernel_energy_table1_n20/d3_table1_aggregation_audit.json"
+  },
+  "seed": 2005,
+  "supervised": {
+    "any20_macro": {
+      "Acc_all(0.15)": 0.9250551670551672,
+      "Acc_all(0.65)": 0.7652151182151183,
+      "Validity": 0.998989898989899
+    },
+    "candidate_macro": {
+      "Acc_all(0.15)": 0.5759958596958595,
+      "Acc_all(0.65)": 0.43350062715062726,
+      "Acc_valid(0.15)": 0.5873974013635885,
+      "Acc_valid(0.65)": 0.441052893907014,
+      "Validity": 0.9737876956376956
+    },
+    "strict_beats_moleditrl": false
+  }
+}
