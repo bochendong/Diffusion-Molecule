@@ -12,6 +12,7 @@ def main() -> int:
     forward = {
         "condition_id": "e1", "source_smiles": "CC", "target_smiles": "CCC",
         "task_mode": "edit", "QED_direction": "increase",
+        "source_QED": "0.4", "target_QED": "0.6",
         "instruction": "increase QED", "external_property_directions_json": '{"QED":"increase"}',
     }
     inverse = cycle_row(forward)
@@ -19,6 +20,8 @@ def main() -> int:
     assert inverse["target_smiles"] == "CC"
     assert inverse["condition_id"] == "e1__cycle"
     assert inverse["QED_direction"] == "decrease"
+    assert inverse["target_QED"] == "0.4"
+    assert inverse["source_QED"] == "0.6"
     assert inverse["instruction"] == "decrease QED"
     assert inverse["external_property_directions_json"] == '{"QED": "decrease"}'
     print("P8.1.5 contract OK")

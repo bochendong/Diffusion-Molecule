@@ -119,6 +119,17 @@ def cycle_row(forward: dict[str, str]) -> dict[str, str]:
     row["target_smiles"] = str(forward.get("source_smiles", "") or "").strip()
     row["task_mode"] = "edit"
     row["roundtrip_role"] = "cycle_inverse"
+    # Absolute property targets must describe the molecule reconstructed by
+    # the inverse leg (the original source), not the forward target.  The
+    # public Table1 pack already carries both source_* and target_* values.
+    for key in list(forward):
+        if not key.startswith("target_") or key == "target_smiles":
+            continue
+        suffix = key[len("target_") :]
+        source_key = f"source_{suffix}"
+        if source_key in forward and str(forward.get(source_key, "") or "").strip():
+            row[key] = str(forward[source_key])
+            row[source_key] = str(forward.get(key, "") or "")
     for key in list(row):
         if key.endswith("_direction"):
             row[key] = str(invert_direction(row[key]))
