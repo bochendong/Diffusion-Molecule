@@ -69,6 +69,7 @@ class AtomSpec:
     explicit_hs: int = 0
     aromatic: bool = False
     no_implicit: bool = False
+    chirality: int = 0
 
 
 @dataclass(frozen=True)
@@ -131,28 +132,30 @@ def atom_spec(atom: Chem.Atom) -> AtomSpec:
         explicit_hs=int(atom.GetNumExplicitHs()),
         aromatic=bool(atom.GetIsAromatic()),
         no_implicit=bool(atom.GetNoImplicit()),
+        chirality=int(atom.GetChiralTag()),
     )
 
 
 def atom_tokens(spec: AtomSpec) -> list[str]:
     return [
-        f"<Z_{spec.atomic_num:03d}>",
-        f"<CHARGE_{spec.formal_charge:+d}>",
-        f"<H_{spec.explicit_hs}>",
-        f"<AROM_{int(spec.aromatic)}>",
-        f"<NOIMPL_{int(spec.no_implicit)}>",
+        f"<AS_{spec.atomic_num:03d}_{spec.formal_charge:+d}_{spec.explicit_hs}_"
+        f"{int(spec.aromatic)}_{int(spec.no_implicit)}_{spec.chirality}>"
     ]
 
 
 def parse_atom_tokens(tokens: Sequence[str]) -> AtomSpec:
-    if len(tokens) != 5:
-        raise ValueError("atom descriptor must contain five tokens")
+    if len(tokens) != 1 or not tokens[0].startswith("<AS_") or not tokens[0].endswith(">"):
+        raise ValueError("atom descriptor must contain one typed state token")
+    fields = tokens[0][1:-1].split("_")
+    if len(fields) != 7 or fields[0] != "AS":
+        raise ValueError(f"invalid atom state token: {tokens[0]}")
     return AtomSpec(
-        atomic_num=int(tokens[0][3:-1]),
-        formal_charge=int(tokens[1][8:-1]),
-        explicit_hs=int(tokens[2][3:-1]),
-        aromatic=bool(int(tokens[3][6:-1])),
-        no_implicit=bool(int(tokens[4][8:-1])),
+        atomic_num=int(fields[1]),
+        formal_charge=int(fields[2]),
+        explicit_hs=int(fields[3]),
+        aromatic=bool(int(fields[4])),
+        no_implicit=bool(int(fields[5])),
+        chirality=int(fields[6]),
     )
 
 
@@ -281,8 +284,8 @@ def parse_program(tokens: Sequence[str], *, tolerate_incomplete_suffix: bool = F
                     TransitionAction(
                         "add_atom",
                         site=parse_site(chunk[1]),
-                        atom=parse_atom_tokens(chunk[2:7]),
-                        bond_order=TOKEN_TO_ORDER[chunk[7]],
+                        atom=parse_atom_tokens(chunk[2:3]),
+                        bond_order=TOKEN_TO_ORDER[chunk[3]],
                     )
                 )
             elif chunk and chunk[0] == ADD_BOND:
@@ -327,6 +330,7 @@ def make_atom(spec: AtomSpec) -> Chem.Atom:
     atom.SetNumExplicitHs(int(spec.explicit_hs))
     atom.SetIsAromatic(bool(spec.aromatic))
     atom.SetNoImplicit(bool(spec.no_implicit))
+    atom.SetChiralTag(Chem.ChiralType(int(spec.chirality)))
     return atom
 
 
@@ -402,7 +406,11 @@ def prepare_command(args: argparse.Namespace) -> int:
             if len(tokens) > int(args.max_program_tokens):
                 raise ValueError("program_too_long")
             generated = execute_program(source_for_row(row), actions)
-            expected = str(row.get("target_smiles", "") or row.get("policy_target_smiles", "") or "")
+            expected = (
+                str(row.get("target_smiles", "") or "")
+                if mode == unified.DE_NOVO_MODE
+                else str(row.get("policy_target_smiles", "") or "")
+            )
             expected_canonical = unified.safe_canonical_smiles(expected)
             same = bool(generated and expected_canonical and generated == expected_canonical)
             exact.setdefault(mode, []).append(same)
@@ -455,8 +463,7 @@ def prepare_command(args: argparse.Namespace) -> int:
 def p6_allowed_tokens(vocab: unified.SmilesVocabulary) -> set[int]:
     prefixes = (
         "<MOL_PROGRAM>", "<ACTION_END>", "<STOP>", "<INIT_ATOM>", "<ADD_", "<SUBSTITUTE_",
-        "<REPLACE_", "<DELETE_", "<CHANGE_", "<SITE_", "<Z_", "<CHARGE_", "<H_", "<AROM_",
-        "<NOIMPL_", "<ORDER_", "<FRAG_", "<ATOM_",
+        "<REPLACE_", "<DELETE_", "<CHANGE_", "<SITE_", "<AS_", "<ORDER_", "<FRAG_", "<ATOM_",
     )
     return {
         index for token, index in vocab.token_to_id.items()

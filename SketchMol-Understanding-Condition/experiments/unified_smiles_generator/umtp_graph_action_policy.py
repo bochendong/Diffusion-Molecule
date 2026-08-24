@@ -84,10 +84,15 @@ FRAGMENT_TOKENS = {
 BOND_ORDERS = ("single", "double", "triple")
 TRANSITION_CONTROL_TOKENS = ("<MOL_PROGRAM>", "<ACTION_END>", "<STOP>")
 TRANSITION_OP_TOKENS = ("<INIT_ATOM>", "<ADD_BOND>")
-TRANSITION_ATOMIC_NUMBER_TOKENS = tuple(f"<Z_{value:03d}>" for value in range(1, 119))
-TRANSITION_CHARGE_TOKENS = tuple(f"<CHARGE_{value:+d}>" for value in range(-4, 5))
-TRANSITION_H_TOKENS = tuple(f"<H_{value}>" for value in range(0, 9))
-TRANSITION_FLAG_TOKENS = ("<AROM_0>", "<AROM_1>", "<NOIMPL_0>", "<NOIMPL_1>")
+TRANSITION_ATOM_STATE_TOKENS = tuple(
+    f"<AS_{atomic_num:03d}_{charge:+d}_{hydrogens}_{aromatic}_{no_implicit}_{chirality}>"
+    for atomic_num in (5, 6, 7, 8, 9, 14, 15, 16, 17, 35, 53)
+    for charge in (-1, 0, 1)
+    for hydrogens in range(0, 5)
+    for aromatic in (0, 1)
+    for no_implicit in (0, 1)
+    for chirality in range(0, 4)
+)
 TRANSITION_BOND_TOKENS = ("<ORDER_SINGLE>", "<ORDER_DOUBLE>", "<ORDER_TRIPLE>", "<ORDER_AROMATIC>")
 DEFAULT_SOURCE_SIMILARITY_THRESHOLD = 0.65
 VOCAB_PARAMETER_NAMES = {
@@ -271,10 +276,7 @@ def action_vocabulary(*, max_site_index: int = 127) -> list[str]:
     # program as its target.
     tokens.extend(TRANSITION_CONTROL_TOKENS)
     tokens.extend(TRANSITION_OP_TOKENS)
-    tokens.extend(TRANSITION_ATOMIC_NUMBER_TOKENS)
-    tokens.extend(TRANSITION_CHARGE_TOKENS)
-    tokens.extend(TRANSITION_H_TOKENS)
-    tokens.extend(TRANSITION_FLAG_TOKENS)
+    tokens.extend(TRANSITION_ATOM_STATE_TOKENS)
     tokens.extend(TRANSITION_BOND_TOKENS)
     return list(dict.fromkeys(tokens))
 
