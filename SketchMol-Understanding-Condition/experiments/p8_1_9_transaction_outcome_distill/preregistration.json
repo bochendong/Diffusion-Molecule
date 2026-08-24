@@ -1,0 +1,37 @@
+{
+  "protocol": "p8_1_9_transaction_outcome_distill_v1",
+  "seed": 7,
+  "hypothesis": "A source-transaction teacher can transfer its editing behavior into a single full-SMILES student without retaining the teacher or its interpreter at inference.",
+  "teacher": {
+    "checkpoint": "outputs/p8_1_1_short_transaction_r1/seed_7/policy/umtp_graph_action_policy.pt",
+    "role": "offline train-only pseudo-label generation",
+    "selection": "deterministic argmax under teacher sequence likelihood",
+    "property_reranking": false,
+    "evaluation_candidates_allowed_for_training": false
+  },
+  "student": {
+    "initial_checkpoint": "outputs/p8_1_4_full_smiles_multitask_r1/seed_7/policy/unified_smiles_generator.pt",
+    "checkpoint_count_at_inference": 1,
+    "decoder_count": 1,
+    "output_head_count": 1,
+    "output_language": "full molecule SMILES",
+    "router": false,
+    "materializer": false,
+    "property_rerank": false,
+    "trainable_scope": "source_only"
+  },
+  "r1": {"pseudo_pair_weighting": "uniform"},
+  "r2": {
+    "pseudo_pair_weighting": "teacher_confidence_replication",
+    "single_changed_factor": "teacher outcome confidence weighting",
+    "must_run_policy": "afterany R1"
+  },
+  "shared_evaluation": {
+    "seed": 7,
+    "candidate_budgets": [1, 8, 20],
+    "raw_order": true,
+    "candidate_level": true,
+    "denovo": "P6 hard 2p-7p",
+    "edit": "frozen MolEdit Table1"
+  }
+}
