@@ -124,6 +124,7 @@ def main() -> int:
     passed = (
         payload["both_arms_checkpoint_sha_exact"]
         and payload["p811_source_aware_single_decoder"]
+        and payload["p811_legacy_denovo_parameters_bit_exact"]
         and not payload["property_reranking"]
         and not payload["edit_target_molecule_used_at_inference"]
         and not payload["support_eval_target_molecule_used_at_inference"]
