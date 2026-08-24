@@ -5,8 +5,9 @@ We organize the results around three questions. First, does group-relative
 post-training improve compositional property control at practical candidate
 budgets rather than only under large best-of-$k$ search? Second, does the gain
 persist as property programs become longer and move out of distribution? Third,
-can de novo generation and source-conditioned editing be expressed and learned
-through one executable transition interface? Unless stated otherwise, all
+can de novo generation and source-conditioned editing share one learned policy
+while retaining the legal output support appropriate to each molecular state?
+Unless stated otherwise, all
 candidate streams preserve generation order, Raw@1 is exactly the first model
 draw, and property-reranked selection is never reported as one-shot generation.
 All experiments use the frozen single seed specified before evaluation.
@@ -144,11 +145,12 @@ an overall state-of-the-art claim.
   \end{tabular}
 \end{table*}
 
-\subsection{One transition language covers empty and source graphs}
+\subsection{State-adaptive support preserves both boundary conditions}
 \label{sec:results-transition-audit}
 
-Before measuring task performance, we audit whether one typed transition
-language can faithfully express trajectories for both initial-state regimes.
+We first test the stricter alternative of forcing one typed transition
+language onto both initial-state regimes. This uniform-action ablation can
+faithfully express most trajectories but exposes a severe length asymmetry.
 Table~\ref{tab:transition-audit} uses the frozen mixed training pool and applies
 the same serializer and deterministic interpreter to every trajectory. The
 language covers 96.5\% of all rows under the fixed 188-token limit. Editing
@@ -161,7 +163,7 @@ diagnostics, not held-out molecular-design accuracies.
 
 \begin{table}[t]
   \centering
-  \caption{Unified molecular-transition representation audit. ``Covered''
+  \caption{Uniform-action representation ablation. ``Covered''
   denotes a serializable program within the fixed token limit; exact
   reconstruction is measured only among covered rows.}
   \label{tab:transition-audit}
@@ -179,26 +181,28 @@ diagnostics, not held-out molecular-design accuracies.
   \end{tabular}
 \end{table}
 
-The audit isolates the intended meaning of \emph{unified}: the initial graph
-changes, but the property-program interface, initial-state observation,
-autoregressive decoder, checkpoint, action vocabulary, and interpreter do not.
-The initial-state token is computed from graph occupancy and does not select a
-task-specific head. The first held-out unified-policy gate evaluates raw
-candidate streams on hard 6p/7p de novo conditions and on all ten
-MolEdit-Instruct task families. Its result is asymmetric. Editing obtains at
-least one valid molecule for every input and reaches 26.5\%, 47.5\%, and 54.0\%
-macro strict accuracy at $k=1,8,20$, respectively. Across the complete unranked
-20-candidate pool, validity is 65.55\% and strict candidate-level accuracy is
-17.75\%. In contrast, only 3 of 1,280 hard de novo action sequences execute to
-valid molecules (0.234\%), and none satisfies all six or seven properties. The
-shared policy therefore learns short source-conditioned transitions but not
-long-horizon empty-graph construction.
+The promoted MolProgram policy resolves this asymmetry through deterministic
+state-adaptive support. Empty sources expose the legacy full-SMILES literals;
+populated sources expose typed transactions executable on that source. Both
+supports are scored by the same property conditioner, autoregressive decoder,
+base vocabulary projection, union-vocabulary final softmax, and checkpoint.
+A disclosed source-conditioned residual is added only for populated sources.
+Source occupancy selects the legal support and activates this residual; no
+learned task classifier selects a separate decoder or checkpoint. The
+resulting de novo branch is bit-exact to the legacy
+P1 Group-RL policy. On the 200-condition MolEdit gate, the populated-source
+branch achieves 23.5\%, 53.0\%, and 70.5\% strict success at raw budgets
+$k=1,8,20$. Candidate validity is 100\%, and 17.07\% of the complete unranked
+20-candidate pool is a strict success. Paper-facing matched hard-de-novo values
+have not yet been exported and are therefore left blank rather than inferred
+from the bit-exact audit.
 
 \begin{table}[t]
   \centering
-  \caption{First single-checkpoint unified-policy gate. Candidate validity is
-  measured over all unselected draws; Strict@1 and Pass@$k$ are averaged over
-  conditions (and then over task families for editing).}
+  \caption{Promoted single-checkpoint state-adaptive gate. Candidate validity
+  is measured over all unselected draws; Strict@1 and Pass@$k$ are averaged
+  over conditions. Dashes denote a pending paper-facing matched export, not a
+  reported failure.}
   \label{tab:unified-policy-gate}
   \small
   \setlength{\tabcolsep}{4pt}
@@ -206,8 +210,8 @@ long-horizon empty-graph construction.
     \toprule
     Evaluation & Conditions & Cand. validity & Strict@1 & Pass@8 & Pass@20 \\
     \midrule
-    Hard de novo (6p/7p) & 64 & 0.23 & 0.0 & 0.0 & 0.0 \\
-    MolEdit Table 1 pilot & 200 & 65.55 & \textbf{26.5} & \textbf{47.5} & \textbf{54.0} \\
+    Hard de novo (6p/7p) & -- & -- & -- & -- & -- \\
+    MolEdit Table 1 pilot & 200 & \textbf{100.0} & \textbf{23.5} & \textbf{53.0} & \textbf{70.5} \\
     \bottomrule
   \end{tabular}
 \end{table}
@@ -220,22 +224,24 @@ ten tasks, validity, and overall/valid-conditional accuracy at source
 similarity thresholds 0.65 and 0.15. Every published method is evaluated from
 20 generated molecules per input and candidate-wise over the unranked pool.
 This is intentionally different from Pass@$k$ or a property-selected output.
-The unified MolProgram row reports the complete P6 candidate pool on a bounded
-20-input-per-task pilot and is marked as preliminary rather than treated as a
-full-scale matched result. We omit FCD because it is not part of our evaluation
-contract.
+The populated row reports the complete P6 uniform-action candidate pool on a
+bounded 20-input-per-task pilot and is retained as an ablation rather than
+presented as the promoted method. The state-adaptive MolProgram row remains
+blank until the same paper-facing per-task metrics are exported from P8.1.1.
+We omit FCD because it is not part of our evaluation contract.
 
 \input{moledit_table1.tex}
 
-The earlier direct-SMILES transfer experiments explain why the unified policy
-uses executable transitions rather than a second free-form string mode. A
+The earlier direct-SMILES transfer experiments explain why the populated-source
+support uses executable transactions rather than unconstrained full-string
+rewriting. A
 source-aware direct decoder produces valid molecules but fails to preserve the
 input at the strict similarity threshold, whereas a standalone executable
 action policy reaches 100\% validity and 26.5\% raw first-candidate strict
 accuracy on the paired repair subset. A source-only finalizer can raise the
 latter number to 66.0\% at $k=8$, but this is assisted selection and is kept in
-the appendix. The P6 row is populated only by raw samples from the single
-shared transition checkpoint; its 17.75\% macro strict candidate accuracy is
+the appendix. The uniform-action row is populated only by raw samples from its
+single shared checkpoint; its 17.75\% macro strict candidate accuracy is
 below MolEditRL overall, although it exceeds MolEditRL on the MW-increase task
 at the strict 0.65 threshold.
 
@@ -256,10 +262,12 @@ run.
 Taken together, the completed results support two bounded conclusions.
 Group-relative post-training increases the probability that a modest direct
 sample set solves a compositional property program, including at 6p, 7p, and
-on aggregate OOD requests. Separately, one typed graph-transition language can
-represent both empty-graph construction and source-graph editing with high
-coverage and near-exact editing execution. The first jointly trained checkpoint
-does not retain both advantages simultaneously: it provides non-trivial editing
-but collapses on long de novo action programs. Unified representation is
-therefore established, while unified policy optimization remains an open
-problem rather than a completed performance claim.
+on aggregate OOD requests. The uniform-action ablation shows that identical
+trajectory semantics are representable but poorly matched to the very
+different construction horizons. State-adaptive MolProgram instead preserves
+the legacy de novo policy bit-exactly while reaching non-trivial raw editing
+success through the same conditioner, decoder, base projection, final union
+softmax, and checkpoint, with the disclosed source-conditioned residual.
+This establishes a shared learned policy with deterministic state-dependent
+legal support; it does not claim that empty and populated graphs have identical
+output semantics, and matched per-task and OOD exports remain open.

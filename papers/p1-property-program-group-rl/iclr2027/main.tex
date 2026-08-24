@@ -29,27 +29,27 @@ property-selected best-of-many outputs. We introduce \emph{MolProgram}, a
 unified molecular transition framework in which a design request is represented
 as a variable-length program of property targets, tolerances, and directions,
 while the molecular input is represented only by its initial graph state.
-An automatically derived initial-state token distinguishes an empty graph from
-a supplied source graph without routing to a task-specific model. A single
-autoregressive policy, checkpoint, typed graph-action vocabulary, and
-deterministic interpreter are consequently used for both generation and
-editing. MolProgram combines frozen LLM-derived instruction features with
-explicit numerical program tokens, emphasizes high-order programs through a
-property-count curriculum, and applies group-relative reinforcement learning
-with programmatically verifiable molecular feedback. The model constructs
-molecules without retrieval from an external molecular library or
-property-aware inference-time reranking. In a representation audit, the common
-transition language covers 96.5\% of mixed de novo and editing trajectories and
-reconstructs 99.8\% of the covered editing targets. On direct de novo
-generation, group-relative post-training improves Pass@8 and Pass@20 over
-supervised fine-tuning by 6.35 and 7.64 percentage points on two-to-seven
-property programs, and by 3.90 and 6.50 points on out-of-distribution programs.
-A first shared-policy gate obtains 26.5\% macro strict editing accuracy on its
-first candidates but fails on long-horizon 6p/7p construction, identifying
-sequence horizon as a central obstacle to unified learning.
-These results motivate molecular design as one compositional transition problem
-while identifying the optimization required to make both boundary conditions
-work in a single policy.
+MolProgram uses one property conditioner, autoregressive decoder, base
+vocabulary projection, union-vocabulary final softmax, and checkpoint, while
+adapting the legal output support to the supplied state: an empty source yields
+a complete SMILES literal, whereas a populated source yields a typed executable
+transaction.
+This support is determined mechanically from source occupancy and graph
+executability rather than by a learned router. MolProgram combines frozen
+LLM-derived instruction features with explicit numerical program tokens,
+emphasizes high-order programs through a property-count curriculum, and applies
+group-relative reinforcement learning with programmatically verifiable
+molecular feedback. The model constructs molecules without retrieval from an
+external molecular library or property-aware inference-time reranking. On
+direct de novo generation, group-relative post-training improves Pass@8 and
+Pass@20 over supervised fine-tuning by 6.35 and 7.64 percentage points on
+two-to-seven-property programs, and by 3.90 and 6.50 points on
+out-of-distribution programs. The promoted shared checkpoint preserves this de
+novo policy bit-exactly and, on a 200-condition MolEdit gate, reaches 23.5\%,
+53.0\%, and 70.5\% strict success at raw budgets 1, 8, and 20 with 100\%
+candidate validity. These results show that compositional molecular design can
+share one learned policy across both boundary conditions without conflating a
+state-dependent legal action space with task-specific routing.
 \end{abstract}
 
 \section{Introduction}
@@ -63,7 +63,8 @@ Each clause specifies a property identity $j$, target $y_j$, tolerance
 $\tau_j$, and optional direction $d_j$; $G_0=\varnothing$ defines de novo
 generation, whereas $G_0=G_{\mathrm{src}}$ defines source-conditioned editing.
 A general solution iteratively samples a molecular action
-$a_t\sim\pi_\theta(a_t\mid P,G_t,a_{<t})$ and applies an interpreter
+$a_t\sim\pi_\theta(a_t\mid P,G_t,a_{<t})$ from the state-dependent legal
+support $\mathcal A(G_t)$ and applies an interpreter
 $G_{t+1}=\mathcal I(G_t,a_t)$ until a stop action produces the candidate
 molecule.
 
@@ -100,40 +101,44 @@ then hide these modeling limitations by increasing success through search or
 property-aware selection rather than by increasing the policy probability of a
 strict solution \citep{gao2022sampleefficiency}.
 
-Our key observation is that generation and editing need not be unified by a
-task router; they can instead be treated as executions of the same molecular
-transition program under different boundary conditions. If the objective is
-represented as an explicit variable-length program and graph occupancy is
-represented as part of the initial state, one policy can learn both how
-constraints compose and how the available molecular state changes the next
-valid action. This formulation preserves the semantic benefit of an
-instruction, the numerical precision of structured targets, and the chemical
-validity of executable graph transitions.
+Our key observation is that unification should attach to the learned policy,
+not to an artificial requirement that empty and populated graphs expose the
+same chemically meaningful actions. Graph occupancy already determines which
+actions can be executed: the empty boundary requires molecular construction,
+whereas a populated boundary admits source-relative transactions. If this
+support is determined before model scoring, one policy can learn both how
+constraints compose and how the available molecular state changes the legal
+next output without learning a task router. This formulation preserves the
+semantic benefit of an instruction, the numerical precision of structured
+targets, and the different error geometry appropriate to construction and
+editing.
 
 Thus, we present \textbf{MolProgram}, a unified molecular transition framework
 that combines LLM-derived instruction conditioning, explicit property-program
-tokens, an automatically derived initial-graph token, typed graph actions, and
-group-relative reinforcement learning. MolProgram first augments frozen
-instruction features with deterministic tokens for every active property
-clause and with an \textsc{Init-Empty} or \textsc{Init-Source} observation
-computed directly from $G_0$. A single compact autoregressive Transformer then
-emits a variable-length program over atom initialization, atom and bond
-addition, local replacement, deletion, fragment attachment, bond-order change,
-and stop actions. One deterministic interpreter executes these actions on
-$G_0$, so de novo generation and editing share the same decoder, checkpoint,
-action vocabulary, and output semantics. Supervised training uses a
-property-count curriculum to emphasize high-order programs, after which a
-GRPO-style objective compares groups of executions for the same program and
-updates the common molecular policy using validity, property satisfaction, and
-source-relative feedback; the LLM feature extractor remains frozen.
+tokens, state-adaptive legal output support, and group-relative reinforcement
+learning. MolProgram first augments frozen instruction features with
+deterministic tokens for every active property clause and encodes the supplied
+source, including the empty-source boundary. A single compact autoregressive
+Transformer scores one union vocabulary through one shared base projection and
+final softmax. When the source is empty, transaction tokens are masked and the
+policy emits a complete SMILES literal; when the source is populated, the
+available typed transactions are constructed deterministically from that
+source and scored by the same decoder with a source-conditioned logit residual.
+Source occupancy, rather than a learned task classifier, activates this
+residual; no router selects a separate decoder, checkpoint, or final softmax.
+The direct de novo policy is trained with a property-count curriculum and a GRPO-style
+objective over programmatically verified sample groups; source-only training
+then adds transaction-token and source-memory parameters while protecting the
+legacy de novo path bit-for-bit.
 
 The main contributions of this work are as follows:
 \begin{enumerate}
   \item We formulate de novo generation and molecular editing as one
   initial-state-conditioned transition problem and introduce MolProgram, which
-  uses one property-program interface, policy, typed action language, checkpoint,
-  and interpreter for both operations without a task router or external
-  molecular library.
+  uses one property-program interface, conditioner, decoder, base projection,
+  union-vocabulary final softmax, and checkpoint with deterministic
+  state-adaptive legal support and a disclosed source-conditioned residual,
+  without a learned task router or external molecular library.
   \item We develop property-count curriculum learning, verifier-based
   group-relative post-training, and a budget-transparent evaluation that
   separately reports raw success, Pass@$k$, validity, uniqueness, and
@@ -150,7 +155,7 @@ Section 5 reports de novo, editing, complexity-scaling, and
 out-of-distribution results. Section 6 discusses limitations and broader
 implications, and Section 7 concludes the paper.
 
-% Results combine frozen direct-policy evidence with the bounded P6 unified gate.
+% Results combine frozen direct-policy evidence with the promoted P8.1.1 gate.
 \input{results_tables.tex}
 
 \appendix

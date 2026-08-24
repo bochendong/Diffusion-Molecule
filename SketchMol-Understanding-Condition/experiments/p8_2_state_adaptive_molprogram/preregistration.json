@@ -1,0 +1,55 @@
+{
+  "protocol": "p8_2_state_adaptive_molprogram_architecture_v1",
+  "status": "method promotion; no new GPU experiment",
+  "seed": 7,
+  "promoted_evidence": "P8.1.1-R2",
+  "hypothesis": "A single molecular policy can be operationally unified while exposing a chemically state-dependent legal action support.",
+  "shared_policy": {
+    "property_conditioner": "one frozen LLM-derived condition stream plus explicit property-program tokens",
+    "decoder": "one source-aware autoregressive Transformer",
+    "vocabulary": "one union vocabulary containing SMILES literals and typed transaction tokens",
+    "base_vocab_projection": "one shared output projection",
+    "source_logit_residual": "one source-conditioned residual projection activated by deterministic source presence",
+    "softmax": "one final union-vocabulary softmax after adding the optional source residual",
+    "checkpoint_count": 1,
+    "checkpoint_lineage": "P1 Group-RL plus source-only P8.1.1 training",
+    "r2_checkpoint_change": false
+  },
+  "state_adaptive_action_support": {
+    "empty_source": {
+      "output": "complete SMILES literal",
+      "legal_support": "legacy SMILES tokens",
+      "masked_support": "typed transaction tokens"
+    },
+    "populated_source": {
+      "output": "one typed executable transaction",
+      "legal_support": "transactions deterministically executable on the source graph",
+      "masked_support": "free complete-molecule literal candidates"
+    },
+    "support_selector": "deterministic source occupancy and graph executability",
+    "learned_router": false,
+    "router_selected_head": false,
+    "source_conditioned_logit_residual": true,
+    "task_specific_decoder": false,
+    "task_specific_checkpoint": false
+  },
+  "inference_contract": {
+    "target_molecule_access": false,
+    "property_oracle_access": false,
+    "property_reranking": false,
+    "external_molecular_library": false,
+    "candidate_order": "raw policy sampling order",
+    "budgets": [1, 8, 20]
+  },
+  "required_audit": {
+    "same_checkpoint_hash_for_both_modes": true,
+    "legacy_de_novo_parameters_bit_exact": true,
+    "legacy_vocabulary_ids_exact": true,
+    "train_eval_id_overlap": 0,
+    "train_eval_transition_fingerprint_overlap": 0,
+    "property_reranking": false,
+    "target_at_inference": false
+  },
+  "claim_boundary": "P8.2 claims one checkpoint, conditioner, decoder, union vocabulary, base vocabulary projection, and final softmax with state-adaptive legal support. It discloses a learned source-conditioned logit residual and does not claim parameter-identical paths or identical output semantics across empty and populated molecular states.",
+  "paper_policy": "Do not populate unexported P8.1.1 task cells or claim new benchmark results from this architecture promotion."
+}
