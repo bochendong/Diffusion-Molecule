@@ -21,6 +21,12 @@ frozen.  The transaction teacher and interpreter are absent at inference.
 - R2: same base, verified outcomes, steps, and seed; only teacher-likelihood
   confidence weighting changes.
 
+Both mandatory rounds completed on Nibi (PRE `20392190`, R1 `20392191`, R2
+`20392192`).  The paired result is negative at the strict Table-1 threshold:
+confidence weighting improves raw candidate validity and relaxed Any@20, but
+strict candidate success and strict Any@1/8/20 remain zero.  See
+[RESULTS.md](RESULTS.md) for the frozen raw-order metrics and audit.
+
 ```bash
 bash SketchMol-Understanding-Condition/experiments/p8_1_12_verified_success_distill/submit_queue.sh
 ```
