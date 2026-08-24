@@ -30,6 +30,11 @@ for path in "$REFERENCE" "$EVALUATOR" "$SUMMARIZER"; do
 done
 
 export SUCC_GSK3B_ORACLE_PATH="${SUCC_GSK3B_ORACLE_PATH:-$SHARED_PROJECT_DIR/inputs/tdc_oracles/gsk3b_legacy_sklearn_compatible.pkl}"
+export SUCC_DRD2_ORACLE_PATH="${SUCC_DRD2_ORACLE_PATH:-$SHARED_PROJECT_DIR/inputs/tdc_oracles/drd2_graph2graph_svc_py36.pkl}"
+
+for path in "$SUCC_GSK3B_ORACLE_PATH" "$SUCC_DRD2_ORACLE_PATH"; do
+  [[ -f "$path" ]] || { echo "ERROR: missing pinned oracle: $path" >&2; exit 2; }
+done
 
 evaluate_one() {
   local label="$1"
