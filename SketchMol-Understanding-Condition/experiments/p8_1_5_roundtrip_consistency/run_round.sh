@@ -12,6 +12,10 @@ if command -v module >/dev/null 2>&1; then
   module load StdEnv/2023 python/3.11 rdkit/2025.09.4
   module load cuda/12.6 2>/dev/null || true
 fi
+DEFAULT_OVERLAY_PYTHON="/home/bdong/.venvs/molscribe_overlay/bin/python"
+if [[ -z "${SUCC_PYTHON_BIN:-}" && -x "$DEFAULT_OVERLAY_PYTHON" ]]; then
+  SUCC_PYTHON_BIN="$DEFAULT_OVERLAY_PYTHON"
+fi
 PYTHON_BIN="${SUCC_PYTHON_BIN:-${PYTHON_BIN:-python3}}"
 SEED="${P815_SEED:-7}"
 OUT="${P815_OUTPUT_ROOT:-$PROJECT_DIR/outputs/p8_1_5_roundtrip_${ROUND}/seed_${SEED}}"

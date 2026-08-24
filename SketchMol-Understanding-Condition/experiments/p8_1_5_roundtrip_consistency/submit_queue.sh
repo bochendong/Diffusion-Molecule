@@ -4,6 +4,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/../.." && pwd)"
 LOG_DIR="$PROJECT_DIR/logs/p8_1_5_roundtrip_consistency"
 mkdir -p "$LOG_DIR"
+export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 common=(--parsable --account="${P815_ACCOUNT:-rrg-hup}" --time="${P815_TIME:-00:15:00}" --mem=48G --cpus-per-task=8 --gpus="${P815_GPU:-h100:1}" --export=ALL)
 r1="$(sbatch "${common[@]}" --job-name=p8.1.5-r1-s7 --output="$LOG_DIR/r1-%j.log" --wrap="bash '$SCRIPT_DIR/run_round.sh' r1")"; r1="${r1%%;*}"
 # R2 runs even if R1's diagnostic fails; it is an independently initialized causal arm.
