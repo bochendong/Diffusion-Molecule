@@ -10,6 +10,7 @@ cd "$REPO_DIR"
 
 command -v sbatch >/dev/null 2>&1 || { echo "ERROR: sbatch not found" >&2; exit 2; }
 
+export SUCC_PYTHON_BIN="${SUCC_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 ACCOUNT="${SUCC_D3_POSTHOC_ACCOUNT:-def-hup-ab}"
 TIME="${SUCC_D3_POSTHOC_TIME:-00:30:00}"
 MEM="${SUCC_D3_POSTHOC_MEM:-16G}"
