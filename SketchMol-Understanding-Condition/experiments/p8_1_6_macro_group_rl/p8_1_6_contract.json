@@ -1,0 +1,36 @@
+{
+  "protocol": "p8_1_6_macro_group_rl_v1",
+  "seed": 7,
+  "initial_checkpoint": "p8_1_4_full_smiles_multitask_r1/seed_7/policy/unified_smiles_generator.pt",
+  "unification": {
+    "checkpoint_per_round": 1,
+    "decoder_count": 1,
+    "output_head_count": 1,
+    "output_language": "full_smiles",
+    "explicit_task_condition": true,
+    "new_output_tokens": 0,
+    "router": false,
+    "interpreter": false,
+    "materializer": false,
+    "property_rerank": false
+  },
+  "shared_training": {
+    "rows": 256,
+    "rollouts_per_prompt": 8,
+    "rl_objective": "grpo",
+    "reference_kl_weight": 0.08,
+    "sft_weight": 1.0
+  },
+  "rounds": {
+    "r1": {"reward_aggregation": "joint_bottleneck"},
+    "r2": {"reward_aggregation": "dense_softmin"}
+  },
+  "single_changed_factor": "reward_aggregation",
+  "evaluation": {
+    "subsets": ["p6_hard_denovo", "p6_table1_edit"],
+    "raw_candidates": 20,
+    "budgets": [1, 8, 20],
+    "candidate_level": true,
+    "identity_audit": true
+  }
+}
