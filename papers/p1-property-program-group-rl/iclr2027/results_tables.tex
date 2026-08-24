@@ -93,19 +93,21 @@ out-of-distribution (OOD) programs. The improvement is already visible at
 small candidate budgets. On 2p--7p, strict success on the first draw increases
 from 7.02\% to 8.93\%; Pass@8 and Pass@20 increase by 6.35 and 7.64 percentage
 points. The OOD first draw is deliberately reported as a negative result: SFT
-is 0.30 points better. GRPO nevertheless overtakes SFT by $k=8$ and raises
+is 0.30 points better. GRPO nevertheless overtakes SFT by $k=4$ and raises
 Pass@20 from 35.20\% to 41.70\%. The observed advantage is therefore not a
 $k=256$-only effect, but neither is it a uniform improvement in one-shot
-generation. Exact raw-success, validity, and Pass@$k$ values are retained in
+generation. At $k=256$, the advantage remains positive but narrows to 3.76
+points on 2p--7p (94.88\% versus 91.12\%) and 4.30 points on OOD (91.90\%
+versus 87.60\%). Exact raw-success, validity, and Pass@$k$ values are retained in
 Appendix~\ref{sec:appendix-validity}.
 
 \begin{figure*}[t]
   \centering
   \includegraphics[width=\textwidth]{figures/budget_scaling.pdf}
-  \caption{Ordered-prefix candidate-budget scaling for direct de novo
+  \caption{Ordered-prefix candidate-budget scaling from $k=1$ to $k=256$ for direct de novo
   generation. Each point is the percentage of property programs solved at
   least once within the first $k$ raw model draws; no property-aware reranking
-  is applied. GRPO improves every evaluated practical budget on 2p--7p and
+  is applied. GRPO improves every evaluated budget on 2p--7p and
   overtakes SFT from $k=4$ on OOD, despite the honest OOD regression at $k=1$.
   Both panels use the same frozen single seed.}
   \label{fig:budget-scaling}

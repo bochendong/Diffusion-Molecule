@@ -20,36 +20,30 @@ sample-efficiency bottleneck.
   \label{tab:budget-scaling-exact}
   \scriptsize
   \setlength{\tabcolsep}{4.5pt}
-  \begin{tabular}{llrrrrrrrrrrrr}
+  \begin{tabular}{lrrrrrrr}
     \toprule
-    & & \multicolumn{3}{c}{$k=1$} & \multicolumn{3}{c}{$k=4$}
-      & \multicolumn{3}{c}{$k=8$} & \multicolumn{3}{c}{$k=20$} \\
-    \cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}\cmidrule(lr){12-14}
-    Evaluation & Method
-      & Raw & Valid & Pass
-      & Raw & Valid & Pass
-      & Raw & Valid & Pass
-      & Raw & Valid & Pass \\
+    Evaluation & $k$ & \multicolumn{2}{c}{Raw strict}
+      & \multicolumn{2}{c}{Validity} & \multicolumn{2}{c}{Pass@$k$} \\
+    \cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
+    & & SFT & GRPO & SFT & GRPO & SFT & GRPO \\
     \midrule
-    2p--7p & SFT
-      & 7.02 & 29.20 & 7.02 & 7.21 & 28.78 & 22.58
-      & 7.26 & 28.85 & 35.37 & 7.30 & 29.04 & 54.88 \\
-    2p--7p & GRPO
-      & \textbf{8.93} & \textbf{33.53} & \textbf{8.93}
-      & \textbf{9.15} & \textbf{33.89} & \textbf{27.60}
-      & \textbf{9.28} & \textbf{33.86} & \textbf{41.72}
-      & \textbf{9.41} & \textbf{34.25} & \textbf{62.52} \\
+    2p--7p & 1   & 7.02 & \textbf{8.93} & 29.20 & \textbf{33.53} & 7.02 & \textbf{8.93} \\
+    2p--7p & 4   & 7.21 & \textbf{9.15} & 28.78 & \textbf{33.89} & 22.58 & \textbf{27.60} \\
+    2p--7p & 8   & 7.26 & \textbf{9.28} & 28.85 & \textbf{33.86} & 35.37 & \textbf{41.72} \\
+    2p--7p & 20  & 7.30 & \textbf{9.41} & 29.04 & \textbf{34.25} & 54.88 & \textbf{62.52} \\
+    2p--7p & 32  & 7.32 & \textbf{9.43} & 29.26 & \textbf{34.17} & 63.50 & \textbf{71.58} \\
+    2p--7p & 64  & 7.30 & \textbf{9.51} & 29.27 & \textbf{34.06} & 76.18 & \textbf{83.42} \\
+    2p--7p & 128 & 7.34 & \textbf{9.48} & 29.28 & \textbf{34.06} & 85.12 & \textbf{90.87} \\
+    2p--7p & 256 & 7.32 & \textbf{9.47} & 29.25 & \textbf{34.06} & 91.12 & \textbf{94.88} \\
     \midrule
-    OOD & SFT
-      & \textbf{3.50} & \textbf{12.50} & \textbf{3.50}
-      & 3.25 & \textbf{11.97} & 11.70
-      & 3.20 & \textbf{11.92} & 19.70
-      & 3.14 & 11.51 & 35.20 \\
-    OOD & GRPO
-      & 3.20 & 12.10 & 3.20
-      & \textbf{3.80} & 11.87 & \textbf{13.90}
-      & \textbf{3.77} & 11.63 & \textbf{23.60}
-      & \textbf{3.79} & \textbf{11.59} & \textbf{41.70} \\
+    OOD & 1   & \textbf{3.50} & 3.20 & \textbf{12.50} & 12.10 & \textbf{3.50} & 3.20 \\
+    OOD & 4   & 3.25 & \textbf{3.80} & \textbf{11.97} & 11.87 & 11.70 & \textbf{13.90} \\
+    OOD & 8   & 3.20 & \textbf{3.77} & \textbf{11.92} & 11.63 & 19.70 & \textbf{23.60} \\
+    OOD & 20  & 3.14 & \textbf{3.79} & 11.51 & \textbf{11.59} & 35.20 & \textbf{41.70} \\
+    OOD & 32  & 3.24 & \textbf{3.94} & 11.59 & \textbf{11.64} & 45.70 & \textbf{53.10} \\
+    OOD & 64  & 3.32 & \textbf{3.87} & \textbf{11.73} & 11.58 & 61.60 & \textbf{68.00} \\
+    OOD & 128 & 3.36 & \textbf{3.88} & \textbf{11.76} & 11.55 & 75.40 & \textbf{81.80} \\
+    OOD & 256 & 3.39 & \textbf{3.87} & \textbf{11.76} & 11.61 & 87.60 & \textbf{91.90} \\
     \bottomrule
   \end{tabular}
 \end{table*}

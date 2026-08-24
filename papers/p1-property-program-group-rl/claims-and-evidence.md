@@ -15,7 +15,7 @@ satisfied.
 | C7 | P1 fine-tunes an LLM with Group-RL | False | Method/code audit | State that Qwen is frozen and RL updates the SMILES decoder |
 | C8 | P1 uses natural-language property programs alone | False | Method/code audit | State that deterministic numerical program tokens are appended to text features |
 | C9 | P1 beats Graph DiT or GeLLM3O | Not established | Same dataset, oracle, and candidate protocol | Related-work comparison only; no SOTA claim |
-| C10 | P1 demonstrates 2p-to-7p compositional extrapolation | Pending | Full paired 6,000-condition table and curves | Keep as hypothesis until finalizer completes |
+| C10 | P1 demonstrates 2p-to-7p compositional scaling | Supported for seed 7 | Full paired 6,000-condition table and ordered-prefix curves | May state that GRPO improves all property counts at k=8/20 and all aggregate budgets through k=256 |
 
 ## Frozen preliminary evidence
 
@@ -41,11 +41,12 @@ satisfied.
 
 ## Required before submission
 
-1. Replace every preliminary number from the synchronized machine-readable
-   `p1_paper_main_table.csv`.
-2. Fill the 2p-to-7p complexity table from the complete paired finalizer.
-3. Generate the budget-scaling and complexity-scaling figures from the same
-   CSV, not by manual transcription.
+1. Keep every budget-scaling number synchronized with the machine-readable
+   `p1_scaling_summary.csv`.
+2. Keep the 2p-to-7p complexity table synchronized with the complete paired
+   finalizer.
+3. Generate the budget-scaling figure from its checked-in CSV export rather
+   than manually transcribing values into plotting code.
 4. Include the validity audit with raw candidate validity, selected
    validity@k, empty decode rate, and nonempty RDKit-invalid rate.
 5. Add train/evaluation exact-target and exact-condition overlap audits.
@@ -62,4 +63,3 @@ These are ordered by expected paper value per unit of runtime:
 3. Group-RL with versus without the numerical property program;
 4. reward decomposition: validity, strict fraction, and distance term;
 5. matched-budget comparison against historical SketchMol at k=40.
-

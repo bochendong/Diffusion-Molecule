@@ -70,6 +70,10 @@ def main() -> None:
                     offset = (9, 3) if method == "SFT" else (9, 13)
                     horizontal_alignment = "left"
                     vertical_alignment = "bottom"
+                elif y_value < 18:
+                    offset = (-6, 6) if method == "SFT" else (6, 6)
+                    horizontal_alignment = "right" if method == "SFT" else "left"
+                    vertical_alignment = "bottom"
                 else:
                     offset = (0, 5 if method == "GRPO" else -10)
                     horizontal_alignment = "center"
@@ -86,10 +90,11 @@ def main() -> None:
                 )
 
         ax.set_xscale("log", base=2)
-        ax.xaxis.set_major_locator(FixedLocator([1, 4, 8, 20]))
+        budgets = sorted({int(row["k"]) for row in panel_rows})
+        ax.xaxis.set_major_locator(FixedLocator(budgets))
         ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{int(value)}"))
-        ax.set_xlim(0.82, 24)
-        ax.set_ylim(0, 70)
+        ax.set_xlim(0.82, 310)
+        ax.set_ylim(0, 102)
         ax.set_title(title, pad=4)
         ax.set_xlabel("Candidate budget, $k$")
         ax.grid(axis="y", color="#D1D5DB", linewidth=0.6, alpha=0.8)
