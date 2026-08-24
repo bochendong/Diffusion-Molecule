@@ -60,6 +60,11 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--temperature", type=float, default=0.8)
     parser.add_argument("--top-k", type=int, default=32)
     parser.add_argument("--top-p", type=float, default=0.95)
+    parser.add_argument(
+        "--validity-preserving",
+        action="store_true",
+        help="Additionally mask invalid construction bonds and disallow STOP until the graph sanitizes.",
+    )
     parser.add_argument("--limit", type=int, default=0)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--device", default="auto")
@@ -147,6 +152,85 @@ def source_site_tokens(initial_smiles: str, op: str, *, first_site: str = "") ->
     elif op == "<REPLACE_ATOM>":
         atoms = [atom for atom in atoms if not atom.GetIsAromatic()]
     return {f"<SITE_{atom.GetIdx():03d}>" for atom in atoms}
+
+
+def construction_mol(actions: Sequence[p6.TransitionAction]) -> Chem.Mol | None:
+    rw = Chem.RWMol()
+    try:
+        for action in actions:
+            if action.op == "init_atom" and action.atom is not None:
+                rw.AddAtom(p6.make_atom(action.atom))
+            elif action.op == "add_atom" and action.atom is not None and action.site is not None:
+                if not 0 <= int(action.site) < rw.GetNumAtoms():
+                    return None
+                new_index = rw.AddAtom(p6.make_atom(action.atom))
+                rw.AddBond(int(action.site), new_index, p6.ORDER_TO_RDKIT[action.bond_order])
+            elif action.op == "add_bond" and action.site is not None and action.site_b is not None:
+                if not (0 <= int(action.site) < rw.GetNumAtoms() and 0 <= int(action.site_b) < rw.GetNumAtoms()):
+                    return None
+                if rw.GetBondBetweenAtoms(int(action.site), int(action.site_b)) is not None:
+                    return None
+                rw.AddBond(int(action.site), int(action.site_b), p6.ORDER_TO_RDKIT[action.bond_order])
+            else:
+                return None
+        return rw.GetMol()
+    except Exception:
+        return None
+
+
+def property_sanitizable(mol: Chem.Mol | None) -> bool:
+    if mol is None:
+        return False
+    try:
+        probe = Chem.Mol(mol)
+        Chem.SanitizeMol(probe, sanitizeOps=Chem.SanitizeFlags.SANITIZE_PROPERTIES)
+        return True
+    except Exception:
+        return False
+
+
+def validity_preserving_allowed(tokens: Sequence[str], allowed: set[str]) -> set[str]:
+    """Refine the syntax mask with graph-state and local-valence checks."""
+    actions = completed_actions(tokens)
+    mol = construction_mol(actions)
+    tail = action_tail(tokens)
+    refined = set(allowed)
+    if p6.STOP in refined and not p6.execute_program("", actions):
+        refined.remove(p6.STOP)
+    if mol is None:
+        return refined
+
+    if tail and tail[0] == p6.ADD_BOND:
+        if len(tail) == 1:
+            refined = {
+                token
+                for token in refined
+                if any(
+                    other != p6.parse_site(token)
+                    and mol.GetBondBetweenAtoms(p6.parse_site(token), other) is None
+                    for other in range(mol.GetNumAtoms())
+                )
+            }
+        elif len(tail) == 2:
+            first = p6.parse_site(tail[1])
+            refined = {
+                token
+                for token in refined
+                if mol.GetBondBetweenAtoms(first, p6.parse_site(token)) is None
+            }
+
+    if tail and tail[0] in {p6.ADD_ATOM, p6.ADD_BOND} and refined & ORDER_TOKENS:
+        feasible: set[str] = set()
+        for order in refined & ORDER_TOKENS:
+            try:
+                candidate_tokens = [*tokens, order, p6.ACTION_END, p6.STOP]
+                candidate_actions = p6.parse_program(candidate_tokens, tolerate_incomplete_suffix=False)
+                if property_sanitizable(construction_mol(candidate_actions)):
+                    feasible.add(order)
+            except Exception:
+                continue
+        refined = (refined - ORDER_TOKENS) | feasible
+    return refined
 
 
 def allowed_next_tokens(
@@ -249,6 +333,7 @@ def constrained_generate(
     temperature: float,
     top_k: int,
     top_p: float,
+    validity_preserving: bool,
 ) -> torch.Tensor:
     batch = condition.shape[0]
     generated = torch.full((batch, 1), vocab.bos_id, dtype=torch.long, device=condition.device)
@@ -270,6 +355,12 @@ def constrained_generate(
                 vocab_tokens=vocab_tokens,
                 observed=observed,
             )
+            if validity_preserving and not initial_smiles:
+                allowed = validity_preserving_allowed(decoded, allowed)
+            if not allowed:
+                # This should only occur at a hard max-valence dead end. Keep
+                # the failure explicit instead of silently opening the grammar.
+                allowed = {p6.STOP}
             allowed_ids = [vocab.eos_id if token == "<EOS>" else vocab.token_to_id[token] for token in allowed]
             mask = torch.ones(logits.shape[-1], dtype=torch.bool, device=logits.device)
             mask[allowed_ids] = False
@@ -329,6 +420,7 @@ def sample(args: argparse.Namespace) -> int:
             temperature=float(args.temperature),
             top_k=int(args.top_k),
             top_p=float(args.top_p),
+            validity_preserving=bool(args.validity_preserving),
         )
         row_valid = 0
         for sample_index, generated in enumerate(generated_batch.tolist()):
@@ -371,6 +463,7 @@ def sample(args: argparse.Namespace) -> int:
     summary = {
         "protocol": "p7_frozen_p6_state_constrained_sampling",
         "checkpoint_changed": False,
+        "validity_preserving": bool(args.validity_preserving),
         "eval_rows": len(rows),
         "rows_with_valid_candidate": valid_rows,
         "row_validity": valid_rows / max(len(rows), 1),
