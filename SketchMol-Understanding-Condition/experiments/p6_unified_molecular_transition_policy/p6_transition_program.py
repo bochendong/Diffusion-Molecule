@@ -210,10 +210,14 @@ def graph_edit_to_transition(action: graph.GraphEditAction) -> TransitionAction:
     if action.op == "add_atom":
         atom = Chem.Atom(str(action.atom or "C"))
         return TransitionAction("add_atom", site=action.site, atom=atom_spec(atom))
+    first_site = action.site
+    second_site = None
+    if action.bond:
+        first_site, second_site = action.bond
     return TransitionAction(
         action.op,
-        site=action.site,
-        site_b=(action.bond[1] if action.bond else None),
+        site=first_site,
+        site_b=second_site,
         atom=(atom_spec(Chem.Atom(str(action.atom))) if action.atom else None),
         bond_order=str(action.bond_order or "single"),
         fragment=str(action.fragment or ""),

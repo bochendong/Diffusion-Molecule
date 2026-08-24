@@ -43,6 +43,15 @@ def test_p6_is_single_seed_and_reports_honest_low_budget_metrics() -> None:
     assert "evaluate_moledit_table1_anyk.py" in source
 
 
+def test_p6_expands_legacy_position_capacity_for_transition_programs() -> None:
+    policy = (ROOT / "experiments" / "unified_smiles_generator" / "umtp_graph_action_policy.py").read_text(
+        encoding="utf-8"
+    )
+    assert "max_sequence_length: int | None = None" in policy
+    assert 'config["max_length"] = max(' in policy
+    assert "max_sequence_length=int(args.max_smiles_length) + 2" in policy
+
+
 def test_p6_preregistration_is_bounded() -> None:
     payload = json.loads((P6 / "p6_preregistration.json").read_text(encoding="utf-8"))
     assert payload["seed"] == 7

@@ -683,6 +683,7 @@ def expand_checkpoint_model(
     checkpoint: Mapping[str, object],
     *,
     max_site_index: int,
+    max_sequence_length: int | None = None,
     device: torch.device,
 ) -> tuple[unified.ConditionedSmilesDecoder, unified.SmilesVocabulary, dict[str, object], int]:
     vocab = unified.SmilesVocabulary.from_dict(checkpoint["vocab"])
@@ -690,6 +691,14 @@ def expand_checkpoint_model(
     vocab.update([action_vocabulary(max_site_index=int(max_site_index))])
     config = dict(checkpoint["model_config"])
     config["vocab_size"] = len(vocab.token_to_id)
+    if max_sequence_length is not None:
+        # Positional encodings are non-persistent buffers, so increasing their
+        # extent preserves every learned checkpoint parameter while allowing
+        # longer typed transition programs than the legacy SMILES contract.
+        config["max_length"] = max(
+            int(config.get("max_length", 0) or 0),
+            int(max_sequence_length),
+        )
     model = unified.ConditionedSmilesDecoder(**config).to(device)
     target_state = model.state_dict()
     source_state = checkpoint["model_state"]
@@ -834,6 +843,7 @@ def train_command(args: argparse.Namespace) -> int:
     model, vocab, config, old_vocab_size = expand_checkpoint_model(
         checkpoint,
         max_site_index=int(args.max_site_index),
+        max_sequence_length=int(args.max_smiles_length) + 2,
         device=device,
     )
     teacher = load_teacher(checkpoint, device)
