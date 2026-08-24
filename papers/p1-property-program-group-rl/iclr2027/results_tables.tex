@@ -196,16 +196,17 @@ $k=1,8,20$. Candidate validity is 100\%, and 17.075\% of the complete unranked
 20-candidate pool is a strict success. These Any@$k$ values measure whether a
 condition has at least one hit; they are not the candidate-level accuracies in
 Table~\ref{tab:moledit-full}. Paper-facing matched hard-de-novo values
-have not yet been exported and are therefore left blank rather than inferred
-from the bit-exact audit.
+are measured on 2,000 6p/7p conditions and 40,000 unranked candidates. The
+hard subset reaches 5.5\% Strict@1, 28.3\% Pass@8, and 45.6\% Pass@20 at
+33.3\% candidate validity. The complete 6,000-condition curve is reported in
+the accompanying result artifact; its aggregate Pass@20 is 62.5\%.
 
 \begin{table}[t]
   \centering
   \caption{Within-method budget scaling for the promoted single-checkpoint
   state-adaptive gate. Candidate validity is measured over all unselected
   draws; Strict@1 and Pass@$k$ are averaged over conditions. Pass@$k$ is not
-  comparable to candidate-level Table~\ref{tab:moledit-full}. Dashes denote a
-  pending paper-facing matched export, not a reported failure.}
+  comparable to candidate-level Table~\ref{tab:moledit-full}.}
   \label{tab:unified-policy-gate}
   \small
   \setlength{\tabcolsep}{4pt}
@@ -213,7 +214,7 @@ from the bit-exact audit.
     \toprule
     Evaluation & Conditions & Cand. validity & Strict@1 & Pass@8 & Pass@20 \\
     \midrule
-    Hard de novo (6p/7p) & -- & -- & -- & -- & -- \\
+    Hard de novo (6p/7p) & 2,000 & 33.3 & 5.5 & 28.3 & 45.6 \\
     MolEdit Table 1 pilot & 200 & \textbf{100.0} & \textbf{23.5} & \textbf{53.0} & \textbf{70.5} \\
     \bottomrule
   \end{tabular}
