@@ -1,0 +1,36 @@
+{
+  "protocol": "p8_1_7_source_clamped_full_smiles_v1",
+  "seed": 7,
+  "hypothesis": "Amplifying the learned source residual inside a shared full-SMILES decoder increases nontrivial source-faithful editing while its null-source gate leaves de-novo generation exactly unchanged.",
+  "checkpoint": "outputs/p8_1_4_full_smiles_multitask_r1/seed_7/policy/unified_smiles_generator.pt",
+  "unified_contract": {
+    "checkpoint_count": 1,
+    "decoder_count": 1,
+    "output_head_count": 1,
+    "output_language": "full molecule SMILES",
+    "source_state": "learned source encoder residual gated by source_present",
+    "de_novo_state": "empty source makes the residual clamp exactly zero",
+    "external_router": false,
+    "external_materializer": false,
+    "property_rerank": false,
+    "source_copy_candidate": false
+  },
+  "r1": {
+    "source_clamp_scale": 1.0,
+    "role": "diagnostic checkpoint-native source residual"
+  },
+  "r2": {
+    "source_clamp_scale": 2.0,
+    "single_changed_factor": "source residual clamp scale",
+    "must_run_policy": "afterany R1"
+  },
+  "shared_evaluation": {
+    "denovo": "P6 hard 2p-7p subset",
+    "edit": "P6 frozen MolEdit Table1 subset",
+    "candidate_budgets": [1, 8, 20],
+    "raw_order": true,
+    "candidate_level": true,
+    "metrics": ["raw_success_fraction", "pass_at_k", "validity", "unique", "identity_fraction", "strict_nonidentity_fraction", "source_tanimoto"]
+  },
+  "failure_interpretation": "A gain in similarity or validity without strict nonidentity success is copy-biased clamping, not successful editing."
+}
