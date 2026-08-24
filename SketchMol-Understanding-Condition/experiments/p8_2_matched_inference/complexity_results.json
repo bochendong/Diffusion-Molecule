@@ -1,0 +1,285 @@
+{
+  "protocol": "p8_2_complete_2p7p_raw_curve_v1",
+  "records": [
+    {
+      "any_valid_at_k": 0.33216666666666667,
+      "candidate_validity": 0.33216666666666667,
+      "conditions": 6000,
+      "k": 1,
+      "pass_at_k": 0.09016666666666667,
+      "property_count": "all",
+      "raw_success_fraction": 0.09016666666666667,
+      "unique_fraction": 0.33216666666666667
+    },
+    {
+      "any_valid_at_k": 0.748,
+      "candidate_validity": 0.33658333333333335,
+      "conditions": 6000,
+      "k": 4,
+      "pass_at_k": 0.2786666666666667,
+      "property_count": "all",
+      "raw_success_fraction": 0.09166666666666666,
+      "unique_fraction": 0.3365416666666667
+    },
+    {
+      "any_valid_at_k": 0.8998333333333334,
+      "candidate_validity": 0.33670833333333333,
+      "conditions": 6000,
+      "k": 8,
+      "pass_at_k": 0.42733333333333334,
+      "property_count": "all",
+      "raw_success_fraction": 0.09264583333333333,
+      "unique_fraction": 0.33660416666666665
+    },
+    {
+      "any_valid_at_k": 0.9826666666666667,
+      "candidate_validity": 0.33863333333333334,
+      "conditions": 6000,
+      "k": 20,
+      "pass_at_k": 0.6251666666666666,
+      "property_count": "all",
+      "raw_success_fraction": 0.09338333333333333,
+      "unique_fraction": 0.3385416666666667
+    },
+    {
+      "any_valid_at_k": 0.345,
+      "candidate_validity": 0.345,
+      "conditions": 1000,
+      "k": 1,
+      "pass_at_k": 0.159,
+      "property_count": 2,
+      "raw_success_fraction": 0.159,
+      "unique_fraction": 0.345
+    },
+    {
+      "any_valid_at_k": 0.763,
+      "candidate_validity": 0.34875,
+      "conditions": 1000,
+      "k": 4,
+      "pass_at_k": 0.474,
+      "property_count": 2,
+      "raw_success_fraction": 0.17425,
+      "unique_fraction": 0.34875
+    },
+    {
+      "any_valid_at_k": 0.92,
+      "candidate_validity": 0.35225,
+      "conditions": 1000,
+      "k": 8,
+      "pass_at_k": 0.66,
+      "property_count": 2,
+      "raw_success_fraction": 0.1785,
+      "unique_fraction": 0.35225
+    },
+    {
+      "any_valid_at_k": 0.981,
+      "candidate_validity": 0.34825,
+      "conditions": 1000,
+      "k": 20,
+      "pass_at_k": 0.857,
+      "property_count": 2,
+      "raw_success_fraction": 0.17615,
+      "unique_fraction": 0.34815
+    },
+    {
+      "any_valid_at_k": 0.33,
+      "candidate_validity": 0.33,
+      "conditions": 1000,
+      "k": 1,
+      "pass_at_k": 0.115,
+      "property_count": 3,
+      "raw_success_fraction": 0.115,
+      "unique_fraction": 0.33
+    },
+    {
+      "any_valid_at_k": 0.74,
+      "candidate_validity": 0.331,
+      "conditions": 1000,
+      "k": 4,
+      "pass_at_k": 0.37,
+      "property_count": 3,
+      "raw_success_fraction": 0.1175,
+      "unique_fraction": 0.33075
+    },
+    {
+      "any_valid_at_k": 0.903,
+      "candidate_validity": 0.336625,
+      "conditions": 1000,
+      "k": 8,
+      "pass_at_k": 0.549,
+      "property_count": 3,
+      "raw_success_fraction": 0.119125,
+      "unique_fraction": 0.3365
+    },
+    {
+      "any_valid_at_k": 0.981,
+      "candidate_validity": 0.34185,
+      "conditions": 1000,
+      "k": 20,
+      "pass_at_k": 0.743,
+      "property_count": 3,
+      "raw_success_fraction": 0.12095,
+      "unique_fraction": 0.3418
+    },
+    {
+      "any_valid_at_k": 0.32,
+      "candidate_validity": 0.32,
+      "conditions": 1000,
+      "k": 1,
+      "pass_at_k": 0.082,
+      "property_count": 4,
+      "raw_success_fraction": 0.082,
+      "unique_fraction": 0.32
+    },
+    {
+      "any_valid_at_k": 0.751,
+      "candidate_validity": 0.333,
+      "conditions": 1000,
+      "k": 4,
+      "pass_at_k": 0.271,
+      "property_count": 4,
+      "raw_success_fraction": 0.0855,
+      "unique_fraction": 0.333
+    },
+    {
+      "any_valid_at_k": 0.902,
+      "candidate_validity": 0.327875,
+      "conditions": 1000,
+      "k": 8,
+      "pass_at_k": 0.425,
+      "property_count": 4,
+      "raw_success_fraction": 0.08525,
+      "unique_fraction": 0.327625
+    },
+    {
+      "any_valid_at_k": 0.985,
+      "candidate_validity": 0.3351,
+      "conditions": 1000,
+      "k": 20,
+      "pass_at_k": 0.667,
+      "property_count": 4,
+      "raw_success_fraction": 0.09005,
+      "unique_fraction": 0.335
+    },
+    {
+      "any_valid_at_k": 0.34,
+      "candidate_validity": 0.34,
+      "conditions": 1000,
+      "k": 1,
+      "pass_at_k": 0.075,
+      "property_count": 5,
+      "raw_success_fraction": 0.075,
+      "unique_fraction": 0.34
+    },
+    {
+      "any_valid_at_k": 0.743,
+      "candidate_validity": 0.3325,
+      "conditions": 1000,
+      "k": 4,
+      "pass_at_k": 0.23,
+      "property_count": 5,
+      "raw_success_fraction": 0.07175,
+      "unique_fraction": 0.3325
+    },
+    {
+      "any_valid_at_k": 0.891,
+      "candidate_validity": 0.338,
+      "conditions": 1000,
+      "k": 8,
+      "pass_at_k": 0.365,
+      "property_count": 5,
+      "raw_success_fraction": 0.071125,
+      "unique_fraction": 0.338
+    },
+    {
+      "any_valid_at_k": 0.988,
+      "candidate_validity": 0.3405,
+      "conditions": 1000,
+      "k": 20,
+      "pass_at_k": 0.572,
+      "property_count": 5,
+      "raw_success_fraction": 0.0746,
+      "unique_fraction": 0.34045000000000003
+    },
+    {
+      "any_valid_at_k": 0.336,
+      "candidate_validity": 0.336,
+      "conditions": 1000,
+      "k": 1,
+      "pass_at_k": 0.057,
+      "property_count": 6,
+      "raw_success_fraction": 0.057,
+      "unique_fraction": 0.336
+    },
+    {
+      "any_valid_at_k": 0.743,
+      "candidate_validity": 0.33725,
+      "conditions": 1000,
+      "k": 4,
+      "pass_at_k": 0.171,
+      "property_count": 6,
+      "raw_success_fraction": 0.05425,
+      "unique_fraction": 0.33725
+    },
+    {
+      "any_valid_at_k": 0.885,
+      "candidate_validity": 0.330375,
+      "conditions": 1000,
+      "k": 8,
+      "pass_at_k": 0.298,
+      "property_count": 6,
+      "raw_success_fraction": 0.05475,
+      "unique_fraction": 0.330375
+    },
+    {
+      "any_valid_at_k": 0.975,
+      "candidate_validity": 0.32665,
+      "conditions": 1000,
+      "k": 20,
+      "pass_at_k": 0.466,
+      "property_count": 6,
+      "raw_success_fraction": 0.0531,
+      "unique_fraction": 0.3265
+    },
+    {
+      "any_valid_at_k": 0.322,
+      "candidate_validity": 0.322,
+      "conditions": 1000,
+      "k": 1,
+      "pass_at_k": 0.053,
+      "property_count": 7,
+      "raw_success_fraction": 0.053,
+      "unique_fraction": 0.322
+    },
+    {
+      "any_valid_at_k": 0.748,
+      "candidate_validity": 0.337,
+      "conditions": 1000,
+      "k": 4,
+      "pass_at_k": 0.156,
+      "property_count": 7,
+      "raw_success_fraction": 0.04675,
+      "unique_fraction": 0.337
+    },
+    {
+      "any_valid_at_k": 0.898,
+      "candidate_validity": 0.335125,
+      "conditions": 1000,
+      "k": 8,
+      "pass_at_k": 0.267,
+      "property_count": 7,
+      "raw_success_fraction": 0.047125,
+      "unique_fraction": 0.334875
+    },
+    {
+      "any_valid_at_k": 0.986,
+      "candidate_validity": 0.33945,
+      "conditions": 1000,
+      "k": 20,
+      "pass_at_k": 0.446,
+      "property_count": 7,
+      "raw_success_fraction": 0.045450000000000004,
+      "unique_fraction": 0.33935
+    }
+  ]
+}

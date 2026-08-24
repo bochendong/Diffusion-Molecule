@@ -1,0 +1,63 @@
+{
+  "arm_checkpoint_hashes": [
+    "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+    "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+    "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+    "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+    "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+    "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+    "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+    "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+    "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f"
+  ],
+  "both_arms_checkpoint_sha_exact": true,
+  "checkpoint_sha256": "9a95fb9dc4056bbca04f9a9681b9b0d1c11b5cf5d73f5c01643a95ad6f22ad6f",
+  "denovo_candidate_rows": 120000,
+  "denovo_conditions": 6000,
+  "denovo_property_count_candidates": {
+    "2": 20000,
+    "3": 20000,
+    "4": 20000,
+    "5": 20000,
+    "6": 20000,
+    "7": 20000
+  },
+  "denovo_structural_target_columns_present": [],
+  "edit_target_molecule_used_at_inference": false,
+  "p811_legacy_denovo_parameters_bit_exact": true,
+  "p811_source_aware_single_decoder": true,
+  "property_reranking": false,
+  "property_reranking_flags": [
+    false,
+    false,
+    false,
+    false,
+    false,
+    false,
+    false
+  ],
+  "protocol": "p8_2_matched_inference_audit_v1",
+  "support_eval_target_molecule_used_at_inference": false,
+  "table1_candidate_rows": 4000,
+  "table1_candidate_validity": 1.0,
+  "table1_conditions": 200,
+  "table1_identity_fraction": 0.0,
+  "table1_relaxed_any": {
+    "1": 0.24,
+    "20": 0.71,
+    "8": 0.535
+  },
+  "table1_relaxed_candidate_fraction": 0.18025,
+  "table1_strict_any": {
+    "1": 0.235,
+    "20": 0.705,
+    "8": 0.53
+  },
+  "table1_strict_candidate_fraction": 0.17075,
+  "table1_unique_fraction": 1.0,
+  "table1_validity_any": {
+    "1": 1.0,
+    "20": 1.0,
+    "8": 1.0
+  }
+}
