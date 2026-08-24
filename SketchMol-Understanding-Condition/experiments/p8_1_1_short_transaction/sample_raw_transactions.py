@@ -82,6 +82,8 @@ def main() -> int:
     rows = [row for row in policy.read_rows(args.eval_csv) if unified.task_mode_for_row(row) == unified.EDIT_MODE]
     output: list[dict[str, object]] = []
     pool_sizes: list[int] = []
+    normalized_entropies: list[float] = []
+    maximum_probabilities: list[float] = []
     for row_index, row in enumerate(rows):
         candidates = source_only_candidates(row, site_limit=args.site_limit, limit=args.max_actions)
         pool_sizes.append(len(candidates))
@@ -97,6 +99,9 @@ def main() -> int:
         )
         logits = torch.tensor(scores, dtype=torch.float64) / max(float(args.temperature), 1e-6)
         probs = torch.softmax(logits, dim=0)
+        entropy = float(-(probs * probs.clamp_min(1e-300).log()).sum())
+        normalized_entropies.append(entropy / max(math.log(max(len(candidates), 2)), 1e-12))
+        maximum_probabilities.append(float(probs.max()))
         take = min(int(args.num_samples), len(candidates))
         sampled = torch.multinomial(probs, take, replacement=False, generator=generator).tolist()
         for rank, candidate_index in enumerate(sampled, start=1):
@@ -128,6 +133,12 @@ def main() -> int:
         "temperature": float(args.temperature),
         "mean_candidate_pool": sum(pool_sizes) / max(len(pool_sizes), 1),
         "min_candidate_pool": min(pool_sizes, default=0),
+        "mean_normalized_policy_entropy": (
+            sum(normalized_entropies) / max(len(normalized_entropies), 1)
+        ),
+        "mean_maximum_transaction_probability": (
+            sum(maximum_probabilities) / max(len(maximum_probabilities), 1)
+        ),
         "source_only_support": True,
         "property_reranking": False,
         "target_molecule_used_at_inference": False,
@@ -140,4 +151,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
