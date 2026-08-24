@@ -16,3 +16,9 @@ mandatory and separately restart from the same full-SMILES base checkpoint.
 positive CSV. It only re-enumerates the counterfactual failures that P8.1.12
 did not preserve. `submit_queue.sh` accepts `P8112_PRE_JOB_ID` when that shared
 artifact is still queued, avoiding a duplicate P8.1.12 precompute.
+
+The repaired mandatory chain completed on Nibi (PRE `20393441`, R1
+`20393442`, R2 `20393443`).  Confidence weighting substantially increases
+chemical validity, but neither round produces a strict or relaxed editing
+success.  See [RESULTS.md](RESULTS.md) for the paired raw-order evaluation and
+diagnosis.

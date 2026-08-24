@@ -1,4 +1,4 @@
-# P8.1.1--P8.1.12 mandatory two-round audit
+# P8.1.1--P8.1.13 mandatory two-round audit
 
 Audit date: 2026-08-24 (Asia/Shanghai).  This ledger treats R1 as a diagnostic
 arm, never as an accuracy gate.  A direction is round-complete when its R2 has
@@ -21,6 +21,7 @@ shown only when they clarify the final successful job lineage.
 | P8.1.10 | Clean source reconstruction curriculum before identical edit SFT | `20391513` **Complete** | Delete one contiguous approximately 12% source-token span only in reconstruction | `20391514` **Complete** | No |
 | P8.1.11 | Group-relative REINFORCE with `joint_bottleneck` reward | `20391565` **Complete** | Reward aggregation `joint_bottleneck -> dense_softmin` | `20391566` **Complete** | No |
 | P8.1.12 | Uniform distillation of train-only verified-success outcomes | PRE `20392190`, R1 `20392191`, both **Complete** | Success-set teacher-likelihood confidence weighting | `20392192` **Complete** (7m20s, exit 0) | No |
+| P8.1.13 | Uniform length-normalized DPO on verified-positive/hard-negative pairs | PRE `20393441`, R1 `20393442`, both **Complete** | Teacher-confidence pair-loss weighting only | `20393443` **Complete** (5m36s, exit 0) | No |
 
 ## Accounting notes
 
@@ -48,10 +49,16 @@ shown only when they clarify the final successful job lineage.
 - P8.1.12 has exactly one submission chain:
   `20392190 -> 20392191 -> 20392192`.  No duplicate P8.1.12 submission was
   made during this audit.
+- P8.1.13 first exposed a completion-marker contract bug: PRE `20393348`
+  failed before training because a valid zero-byte marker was tested with
+  `-s`; dependent R1 `20393349` and R2 `20393350` were cancelled without
+  training.  Commit `f55ac63` changed marker existence checks to `-e`, after
+  which the single successful chain `20393441 -> 20393442 -> 20393443`
+  completed.  The failed launcher chain is not an extra scientific arm.
 
 ## Verdict
 
-No P8.1.1--P8.1.12 number is missing its mandatory R2; all twelve R2 arms have
+No P8.1.1--P8.1.13 number is missing its mandatory R2; all thirteen R2 arms have
 completed.  This is a queue-completeness verdict, not a positive scientific
 verdict: negative R1 and R2 metrics remain negative and were not used to
 eliminate or redefine a round.
