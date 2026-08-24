@@ -4,28 +4,55 @@
 \subsection{Raw validity across candidate budgets}
 \label{sec:appendix-validity}
 
-Table~\ref{tab:raw-validity} reports raw candidate validity separately from
-strict property success. GRPO improves in-distribution validity by roughly
-five points, but OOD validity remains close to 12\% for both policies. Nearly
-every valid draw is unique, indicating that invalid SMILES syntax rather than
-conventional mode collapse is the primary sample-efficiency bottleneck.
+Table~\ref{tab:budget-scaling-exact} reports the exact values behind
+Figure~\ref{fig:budget-scaling}, keeping candidate-level strict success and
+validity separate from condition-level Pass@$k$. GRPO improves
+in-distribution validity by roughly five points, but OOD validity remains close
+to 12\% for both policies. Nearly every valid draw is unique, indicating that
+invalid SMILES syntax rather than conventional mode collapse is the primary
+sample-efficiency bottleneck.
 
-\begin{table}[h]
+\begin{table*}[h]
   \centering
-  \caption{Raw candidate validity (\%) at matched generation prefixes.}
-  \label{tab:raw-validity}
-  \small
-  \begin{tabular}{llrrr}
+  \caption{Exact ordered-prefix diagnostics (\%). Raw strict and validity
+  average every candidate in the prefix; Pass@$k$ is the fraction of property
+  programs with at least one strict solution.}
+  \label{tab:budget-scaling-exact}
+  \scriptsize
+  \setlength{\tabcolsep}{4.5pt}
+  \begin{tabular}{llrrrrrrrrrrrr}
     \toprule
-    Evaluation & Method & $k=1$ & $k=8$ & $k=20$ \\
+    & & \multicolumn{3}{c}{$k=1$} & \multicolumn{3}{c}{$k=4$}
+      & \multicolumn{3}{c}{$k=8$} & \multicolumn{3}{c}{$k=20$} \\
+    \cmidrule(lr){3-5}\cmidrule(lr){6-8}\cmidrule(lr){9-11}\cmidrule(lr){12-14}
+    Evaluation & Method
+      & Raw & Valid & Pass
+      & Raw & Valid & Pass
+      & Raw & Valid & Pass
+      & Raw & Valid & Pass \\
     \midrule
-    2p--7p & SFT & 29.20 & 28.85 & 29.04 \\
-    2p--7p & GRPO & \textbf{33.53} & \textbf{33.86} & \textbf{34.25} \\
-    OOD & SFT & \textbf{12.50} & \textbf{11.92} & 11.51 \\
-    OOD & GRPO & 12.10 & 11.63 & \textbf{11.60} \\
+    2p--7p & SFT
+      & 7.02 & 29.20 & 7.02 & 7.21 & 28.78 & 22.58
+      & 7.26 & 28.85 & 35.37 & 7.30 & 29.04 & 54.88 \\
+    2p--7p & GRPO
+      & \textbf{8.93} & \textbf{33.53} & \textbf{8.93}
+      & \textbf{9.15} & \textbf{33.89} & \textbf{27.60}
+      & \textbf{9.28} & \textbf{33.86} & \textbf{41.72}
+      & \textbf{9.41} & \textbf{34.25} & \textbf{62.52} \\
+    \midrule
+    OOD & SFT
+      & \textbf{3.50} & \textbf{12.50} & \textbf{3.50}
+      & 3.25 & \textbf{11.97} & 11.70
+      & 3.20 & \textbf{11.92} & 19.70
+      & 3.14 & 11.51 & 35.20 \\
+    OOD & GRPO
+      & 3.20 & 12.10 & 3.20
+      & \textbf{3.80} & 11.87 & \textbf{13.90}
+      & \textbf{3.77} & 11.63 & \textbf{23.60}
+      & \textbf{3.79} & \textbf{11.59} & \textbf{41.70} \\
     \bottomrule
   \end{tabular}
-\end{table}
+\end{table*}
 
 \subsection{Larger rollout groups are not sufficient}
 \label{sec:appendix-g64}

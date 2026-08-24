@@ -87,7 +87,7 @@ budget, and property count.
 \subsection{Group-relative post-training improves low-budget de novo design}
 \label{sec:results-budget}
 
-Table~\ref{tab:budget-scaling} compares supervised fine-tuning (SFT) and
+Figure~\ref{fig:budget-scaling} compares supervised fine-tuning (SFT) and
 GRPO on 6,000 two-to-seven-property programs and 1,000
 out-of-distribution (OOD) programs. The improvement is already visible at
 small candidate budgets. On 2p--7p, strict success on the first draw increases
@@ -96,33 +96,20 @@ points. The OOD first draw is deliberately reported as a negative result: SFT
 is 0.30 points better. GRPO nevertheless overtakes SFT by $k=8$ and raises
 Pass@20 from 35.20\% to 41.70\%. The observed advantage is therefore not a
 $k=256$-only effect, but neither is it a uniform improvement in one-shot
-generation.
+generation. Exact raw-success, validity, and Pass@$k$ values are retained in
+Appendix~\ref{sec:appendix-validity}.
 
-\begin{table}[t]
+\begin{figure*}[t]
   \centering
-  \caption{Budget-transparent direct de novo generation. Raw strict is the
-  candidate-level strict-success fraction; Pass@$k$ is the percentage of
-  property programs solved at least once within the first $k$ model draws.
-  Both variants use MolProgram's direct-SMILES transition operator.}
-  \label{tab:budget-scaling}
-  \scriptsize
-  \setlength{\tabcolsep}{3.5pt}
-  \begin{tabular}{lrrrrrr}
-    \toprule
-    Evaluation & $k$ & \multicolumn{2}{c}{Raw strict (\%)} & \multicolumn{3}{c}{Pass@$k$ (\%)} \\
-    \cmidrule{3-4}\cmidrule{5-7}
-    & & SFT & GRPO & SFT & GRPO & $\Delta$ \\
-    \midrule
-    2p--7p & 1  & 7.02 & \textbf{8.93} & 7.02 & \textbf{8.93} & +1.91 \\
-    2p--7p & 8  & 7.26 & \textbf{9.28} & 35.37 & \textbf{41.72} & +6.35 \\
-    2p--7p & 20 & 7.30 & \textbf{9.41} & 54.88 & \textbf{62.52} & +7.64 \\
-    \midrule
-    OOD & 1  & \textbf{3.50} & 3.20 & \textbf{3.50} & 3.20 & -0.30 \\
-    OOD & 8  & 3.20 & \textbf{3.78} & 19.70 & \textbf{23.60} & +3.90 \\
-    OOD & 20 & 3.14 & \textbf{3.79} & 35.20 & \textbf{41.70} & +6.50 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
+  \includegraphics[width=\textwidth]{figures/budget_scaling.pdf}
+  \caption{Ordered-prefix candidate-budget scaling for direct de novo
+  generation. Each point is the percentage of property programs solved at
+  least once within the first $k$ raw model draws; no property-aware reranking
+  is applied. GRPO improves every evaluated practical budget on 2p--7p and
+  overtakes SFT from $k=4$ on OOD, despite the honest OOD regression at $k=1$.
+  Both panels use the same frozen single seed.}
+  \label{fig:budget-scaling}
+\end{figure*}
 
 Raw validity explains part, but not all, of this change. Across the matched
 2p--7p stream, GRPO raises candidate validity from 29.04\% to 34.25\% at
