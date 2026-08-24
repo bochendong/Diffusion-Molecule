@@ -82,9 +82,9 @@ def load_features(path: Path):
     return index, query, pooled, lookup
 
 
-def merge_features(output: Path, rows: list[dict[str, str]], dirs: list[Path]) -> None:
+def merge_features(output: Path, rows: list[dict[str, str]], dirs: list[Path]) -> list[str]:
     stores = [load_features(path) for path in dirs]
-    index_rows, queries, pooled = [], [], []
+    index_rows, queries, pooled, missing = [], [], [], []
     for row in rows:
         hit = None
         for store in stores:
@@ -93,11 +93,16 @@ def merge_features(output: Path, rows: list[dict[str, str]], dirs: list[Path]) -
                 if value and value in store[3]: hit = store, store[3][value]; break
             if hit: break
         if not hit:
-            raise SystemExit(f"Missing frozen feature for {next((row.get(k) for k in IDS if row.get(k)), '?')}")
+            # This exactly matches P8.1.2-R1 training: FeatureStore falls back
+            # to deterministic structured condition features when a synthetic
+            # transduction row has no frozen VLM id.
+            missing.append(str(next((row.get(k) for k in IDS if row.get(k)), "?")))
+            continue
         store, idx = hit; record = dict(store[0][idx]); record["row_index"] = str(len(index_rows))
         index_rows.append(record); queries.append(np.asarray(store[1][idx])); pooled.append(np.asarray(store[2][idx]))
     output.mkdir(parents=True, exist_ok=True); write(output / "index.csv", index_rows)
     np.save(output / "query_tokens.npy", np.stack(queries)); np.save(output / "pooled.npy", np.stack(pooled))
+    return missing
 
 
 def main() -> int:
@@ -114,13 +119,15 @@ def main() -> int:
         if idx < len(denovo): rows.append(denovo[idx])
         if idx < len(edit): rows.append(edit[idx])
     write(args.output_dir / "train_rows.csv", rows)
-    merge_features(args.output_dir / "features", rows, [args.denovo_features, args.edit_features])
+    missing_features = merge_features(args.output_dir / "features", rows, [args.denovo_features, args.edit_features])
     payload = {
         "protocol": "p8_1_11_train_only_support_v1", "seed": args.seed, "rows": len(rows),
         "denovo_6p": sum(row["p811_train_origin"] == "train_denovo_6p" for row in rows),
         "denovo_7p": sum(row["p811_train_origin"] == "train_denovo_7p" for row in rows),
         "edit_nonassay": sum(row["p811_train_origin"] == "train_edit_nonassay" for row in rows),
         "eval_rows_used": 0, "eval_targets_used": 0,
+        "deterministic_feature_fallback_rows": len(missing_features),
+        "deterministic_feature_fallback_ids": missing_features,
         "sha256": hashlib.sha256((args.output_dir / "train_rows.csv").read_bytes()).hexdigest(),
     }
     (args.output_dir / "support_audit.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
