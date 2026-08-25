@@ -20,6 +20,7 @@ Frozen streams:
 The Nibi sweep evaluates D3 at K=1/2/4/5/10/20 and P19 at K=1/2/4/5/8 under both
 aggregations. `analyze_protocol_sweep.py` compares every completed summary with the
 ten task-level MolEditRL values and reports macro distance plus task-vector RMSE.
+The completed audit and job provenance are recorded in `RESULTS.md`.
 
 No result in this directory should be described as an official MolEditRL code
 reproduction: the authors have not released the training or evaluation implementation.
