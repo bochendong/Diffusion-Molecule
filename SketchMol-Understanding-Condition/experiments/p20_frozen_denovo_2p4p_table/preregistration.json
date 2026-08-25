@@ -1,0 +1,25 @@
+{
+  "protocol": "p20_frozen_denovo_2p4p_paired_pilot_v1",
+  "status_label": "superseded R1 @1 ablation; corrected fair-budget primary protocol is r2_preregistration.json",
+  "seed": 2020,
+  "models": ["p17", "p18"],
+  "property_counts": [2, 3, 4],
+  "conditions_per_property_count": 100,
+  "raw_candidates_per_condition": 8,
+  "candidate_budgets": [1, 4, 8],
+  "candidate_order": "candidate 0 greedy; candidates 1-7 sampled once; K uses the raw prefix",
+  "primary_table_metric": "superseded: K1 is an ablation and is not the paper-style fill-table metric",
+  "superseded_by": "p20_r2_frozen_denovo_2p4p_fair_budget40_v1 / best_of_40",
+  "diagnostics": ["validity", "uniqueness_in_valid", "pass_at_4", "pass_at_8"],
+  "selection": "stable SHA256 rank by seed and condition_id after training-target overlap exclusion",
+  "tuning_on_pilot": false,
+  "property_reranking": false,
+  "static_candidate_pool": false,
+  "training_or_parameter_updates": false,
+  "official_full_contract": {
+    "conditions_per_property_count": 1000,
+    "property_counts": [2, 3, 4, 5, 6, 7],
+    "main_columns": ["validity all", "2p strict", "3p strict", "4p strict", "5p strict", "6p strict", "7p strict"],
+    "strict_tolerances": {"MW": 35.0, "LogP": 1.0, "QED": 0.1, "TPSA": 20.0, "HBD": 1.0, "HBA": 1.0, "RB": 1.0, "SA": 1.0}
+  }
+}

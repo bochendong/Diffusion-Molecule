@@ -1,0 +1,69 @@
+{
+  "protocol": "p19_frozen_expanded_unified_benchmark_v1",
+  "created_before_expanded_generation": true,
+  "training_or_parameter_updates": false,
+  "status_label": "expanded paired pilot estimate; not full MolEdit Table1 or full hard de-novo benchmark",
+  "models": {
+    "p17": "frozen P17 adapter",
+    "p18": "outputs/p18_validity_aware_multinegative_unified/seed_1818_race12/model/p18/adapter"
+  },
+  "subset": {
+    "seed": 1717,
+    "table1": {
+      "rows_per_task": 10,
+      "task_count": 10,
+      "total_rows": 100,
+      "must_include_all_p17_pilot_rows": true,
+      "completion_rule": "same stable SHA256 rank as P17 after leakage filtering"
+    },
+    "hard_denovo": {
+      "6p_rows": 20,
+      "7p_rows": 20,
+      "total_rows": 40,
+      "must_include_all_p17_pilot_rows": true,
+      "completion_rule": "same stable SHA256 rank as P17 after leakage filtering"
+    },
+    "training_source_overlap": 0,
+    "training_target_overlap": 0,
+    "lock_reference_and_prompt_hashes_before_generation": true
+  },
+  "generation": {
+    "paired_identical_prompts": true,
+    "paired_identical_raw_seeds": true,
+    "candidates_per_condition": 8,
+    "candidate_zero": "greedy",
+    "candidates_one_to_seven": "sampled once at temperature 0.8 and top_p 0.95",
+    "candidate_prefix_budgets": [1, 4, 8],
+    "property_reranking": false,
+    "static_candidate_pool": false,
+    "target_access": false
+  },
+  "reporting": {
+    "reuse_frozen_id_ood_validation": true,
+    "table1_macro": [
+      "validity",
+      "property_anyk",
+      "acc_0.15",
+      "strict_acc_0.65",
+      "mean_best_source_similarity"
+    ],
+    "table1_strict_by_task": true,
+    "drd2_n_and_paired_difference": true,
+    "table1_uncertainty": {
+      "paired_condition_bootstrap_seed": 1919,
+      "paired_condition_bootstrap_replicates": 10000,
+      "paired_condition_bootstrap_ci": "95% percentile, stratified within task",
+      "drd2_interval": "95% Wilson interval, exact n=10 per model"
+    },
+    "hard_denovo_strata": ["all", "6p", "7p"],
+    "hard_denovo_metrics": [
+      "raw_success_fraction",
+      "pass_at_k",
+      "validity_fraction",
+      "unique_fraction",
+      "mean_best_property_fraction"
+    ],
+    "compare_direction_with_p18_20_row_pilot": true
+  },
+  "benchmark_tuning_allowed": false
+}

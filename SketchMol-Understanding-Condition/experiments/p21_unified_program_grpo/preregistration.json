@@ -1,0 +1,75 @@
+{
+  "protocol": "p21_unified_program_grpo_v1",
+  "frozen_before_training": true,
+  "question": "Can verifier-aligned group-relative optimization move P18 probability mass from partial or best-of-many solutions toward raw strict molecular success while retaining validity in one unified checkpoint?",
+  "initialization": {
+    "base_model": "/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct",
+    "adapter": "outputs/p18_validity_aware_multinegative_unified/seed_1818_race12/model/p18/adapter",
+    "adapter_sha256": "7b3e1736bac49b7b2e35eceeed11fde199e0403a948e4dae08fd4fb9b89a0827",
+    "base_count": 1,
+    "adapter_count": 1,
+    "mode_router": false,
+    "mode_specific_head": false
+  },
+  "training": {
+    "source": "exact P17 train.paired.jsonl only",
+    "target_access": "chosen completion only for the SFT anchor; never used by the verifier reward",
+    "max_prompts": 128,
+    "prompts_per_mode": 64,
+    "selection": "deterministic property-count-balanced selection before generation",
+    "group_size": 4,
+    "advantage": "within-condition population z-score clipped to [-3,3]",
+    "policy_objective": "negative group-normalized advantage times mean sampled completion log probability",
+    "critic": false,
+    "ppo_ratio_clipping": false,
+    "sft_anchor_weight": 0.20,
+    "reference_kl_weight": 0.0,
+    "learning_rate": 1e-6,
+    "epochs": 1,
+    "temperature": 0.8,
+    "top_p": 0.95,
+    "max_new_tokens": 128,
+    "seed": 2121
+  },
+  "reward": {
+    "shared": [
+      "strict response schema and RDKit validity",
+      "mean clause satisfaction",
+      "soft minimum clause margin",
+      "all-clause success bonus"
+    ],
+    "editing_only": [
+      "continuous source Tanimoto",
+      "Tanimoto>=0.65 gate bonus",
+      "strict all-clause-and-similarity bonus",
+      "small identity-copy penalty"
+    ],
+    "target_smiles_used": false,
+    "output_property_oracle_training_only": true
+  },
+  "frozen_evaluation": {
+    "development": "exact P17 ID and strict-family-OOD views",
+    "table1": "exact P19 locked 100-row subset, 10 rows per task",
+    "hard_denovo": "exact P19 locked 20 six-property plus 20 seven-property conditions",
+    "raw_budgets": [1, 4, 8],
+    "candidate_order": "greedy first followed by seven raw samples",
+    "selection": "none"
+  },
+  "promotion_gate": {
+    "id_denovo_greedy_validity": ">=0.95",
+    "id_edit_greedy_validity": ">=0.84",
+    "id_denovo_any_at_3_validity": ">=0.9375",
+    "id_edit_any_at_3_validity": ">=0.9375",
+    "table1_strict_acc_0.65_at_8": ">=P18",
+    "primary_success": "positive P21-minus-P18 strict Acc@0.65 at K=1 or K=8 with no validity-gate failure"
+  },
+  "forbidden": [
+    "benchmark-row training",
+    "development or benchmark target access in reward",
+    "static candidate pool",
+    "property-aware inference reranking",
+    "mode router",
+    "mode-specific adapter, head, tokenizer, or schema",
+    "post-evaluation tuning of this checkpoint"
+  ]
+}

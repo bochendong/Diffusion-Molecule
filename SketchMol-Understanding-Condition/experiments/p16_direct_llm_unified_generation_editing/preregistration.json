@@ -1,0 +1,30 @@
+{
+  "protocol": "p16_direct_llm_unified_generation_editing_v1",
+  "question": "Can ordinary causal-LM mixed SFT learn one direct molecular language for de-novo generation and source editing without a mode router?",
+  "base_model": "/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct",
+  "model_contract": {
+    "base_and_tokenizer_count": 1,
+    "unified_checkpoint_count": 1,
+    "mode_router": false,
+    "mode_specific_output_head": false,
+    "vision_inputs": false,
+    "mode_expression": "source=<EMPTY> versus canonical source SMILES",
+    "response_schema": "{\"plan\":\"BUILD|MODIFY\",\"smiles\":\"CANONICAL_SMILES\"}"
+  },
+  "round_1": {
+    "training": "balanced mixed SFT with matched de-novo-only and edit-only LoRA controls",
+    "train_source": "train CSV only",
+    "split": "development condition hashes and nonempty source hashes are removed from training",
+    "decoding": ["one greedy raw decode", "three raw temperature-0.8 top-p-0.95 decodes"],
+    "metrics": ["assistant token NLL", "strict parse", "RDKit validity", "canonical form", "canonical exact", "edit noncopy", "edit source Tanimoto"],
+    "negative_transfer": "mixed minus matched-single token NLL <= 0.50 and greedy validity loss <= 0.10 per mode"
+  },
+  "advance_gate": {
+    "mixed_greedy_validity_each_mode": ">=0.50",
+    "mixed_any_at_3_validity_each_mode": ">=0.75",
+    "mixed_edit_greedy_noncopy": ">=0.50",
+    "negative_transfer": "pass"
+  },
+  "round_2": "No DPO or ORPO unless the SFT gate passes; any later preferences must be train-derived.",
+  "forbidden": ["inference target access", "static candidate pool", "property reranking", "official test", "mode router", "different tokenizer/schema by mode"]
+}

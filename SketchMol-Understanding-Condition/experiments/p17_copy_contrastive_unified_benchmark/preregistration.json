@@ -1,0 +1,70 @@
+{
+  "protocol": "p17_copy_contrastive_unified_pilot_v1",
+  "frozen_before_training": true,
+  "question": "Can train-derived source-copy negatives move probability mass toward valid non-identity edits without materially harming de-novo generation in one direct causal-LM checkpoint?",
+  "model_contract": {
+    "base_model": "/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct",
+    "initial_adapter": "outputs/p16_direct_llm_unified_generation_editing/seed_1616/model/mixed/adapter",
+    "base_count": 1,
+    "adapter_count": 1,
+    "tokenizer_count": 1,
+    "mode_router": false,
+    "mode_specific_head": false,
+    "schema": "{\"plan\":\"BUILD|MODIFY\",\"smiles\":\"CANONICAL_SMILES\"}",
+    "mode_expression": "source=<EMPTY> versus a canonical source SMILES"
+  },
+  "training": {
+    "source": "training CSVs only",
+    "initialization": "continue the frozen P16 mixed LoRA adapter",
+    "rows_per_mode": 160,
+    "capacity_note": "pre-training CPU isolation left 173 eligible edit rows; fixed at 160 per mode before any model training",
+    "objective": "chosen completion CE plus edit-only pairwise source-copy margin loss",
+    "pairwise_margin": 0.20,
+    "pairwise_weight": 0.35,
+    "edit_weight": 1.25,
+    "de_novo_rehearsal": true,
+    "preference_optimizer": false,
+    "target_of_edit_chosen": "canonical non-identity training target",
+    "target_of_edit_rejected": "canonical source-copy response"
+  },
+  "validation": {
+    "id_condition_source_isolated_per_mode": 32,
+    "condition_and_source_ood_diagnostic_per_mode": 32,
+    "id_condition_definition": "same condition family (active property names plus directions/around marker), disjoint exact row and nonempty source",
+    "ood_definition": "deterministically take all available strict condition-family-OOD rows first, then fill to 32 with exact-condition-OOD rows in known families; nonempty sources and targets remain training-isolated; report strict and fallback counts separately",
+    "comparators": ["frozen P16 mixed adapter", "frozen P17 optimized adapter"],
+    "decoding": ["greedy", "three raw temperature-0.8 top-p-0.95 samples"],
+    "selection": "none",
+    "gate_view": "ID-condition source-isolated only; OOD is diagnostic because strict family-OOD may be sparse"
+  },
+  "relaxed_operational_gate": {
+    "applied_subset": "ID-condition source-isolated development",
+    "de_novo_greedy_validity": ">=0.80",
+    "de_novo_greedy_validity_delta_vs_p16": ">=-0.10",
+    "edit_greedy_validity": ">=0.60",
+    "edit_greedy_validity_delta_vs_p16": ">=-0.15",
+    "edit_greedy_noncopy": ">=0.35",
+    "edit_greedy_noncopy_delta_vs_p16": ">=0.00",
+    "any_at_3_validity_each_mode": ">=0.90"
+  },
+  "pilot_benchmark": {
+    "status_label": "pilot estimate; not full Table1 or full de-novo benchmark",
+    "table1_source": "outputs/p6_unified_transition_policy_v1/seed_7/data/edit_table1_gate.csv",
+    "table1_subset": "deterministic SHA256 rank, 2 rows per each of 10 moledit_task_key strata, total 20",
+    "denovo_source": "outputs/p6_unified_transition_policy_v1/seed_7/data/denovo_hard_gate.csv",
+    "denovo_subset": "deterministic SHA256 rank stratified 10 rows from 6-property and 10 rows from 7-property, total 20",
+    "raw_budgets": [1, 4, 8],
+    "checkpoint_rule": "P17 if expanded gate passes; otherwise the same frozen P17 checkpoint is evaluated once as a negative diagnostic",
+    "selection": "raw generation order only",
+    "tuning_after_benchmark": false
+  },
+  "forbidden": [
+    "inference target access",
+    "static candidate pool",
+    "property reranking",
+    "benchmark-row training",
+    "post-benchmark tuning",
+    "mode router",
+    "mode-specific tokenizer or response schema"
+  ]
+}

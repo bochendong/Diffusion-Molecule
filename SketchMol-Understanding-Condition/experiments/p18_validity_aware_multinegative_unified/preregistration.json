@@ -1,0 +1,91 @@
+{
+  "protocol": "p18_validity_aware_multinegative_unified_v1",
+  "frozen_before_training": true,
+  "question": "Can weaker source-copy pressure plus train-only invalid and condition-mismatch negatives recover edit validity while preserving noncopy behavior and de-novo generation in one direct causal-LM checkpoint?",
+  "model_contract": {
+    "base_model": "/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct",
+    "initial_adapter": "outputs/p16_direct_llm_unified_generation_editing/seed_1616/model/mixed/adapter",
+    "base_count": 1,
+    "adapter_count": 1,
+    "tokenizer_count": 1,
+    "mode_router": false,
+    "mode_specific_head": false,
+    "schema": "{\"plan\":\"BUILD|MODIFY\",\"smiles\":\"CANONICAL_SMILES\"}",
+    "mode_expression": "source=<EMPTY> versus a canonical source SMILES"
+  },
+  "training": {
+    "initialization": "continue the frozen P16 mixed LoRA adapter, not P17",
+    "data": "exact P17 frozen 160 de-novo plus 160 edit train rows",
+    "epochs": 1.0,
+    "learning_rate": 2e-5,
+    "chosen_completion_ce_weight": 1.0,
+    "edit_weight": 1.0,
+    "de_novo_rehearsal": true,
+    "objective": "chosen completion CE plus three independently evaluated train-derived margin losses",
+    "source_copy_negative": {
+      "modes": ["edit"],
+      "margin": 0.10,
+      "weight": 0.12
+    },
+    "invalid_corruption_negative": {
+      "modes": ["de_novo", "edit"],
+      "construction": "append one unmatched open parenthesis to the canonical chosen SMILES inside the unchanged JSON schema",
+      "margin": 0.15,
+      "weight": 0.20
+    },
+    "condition_mismatch_negative": {
+      "modes": ["de_novo", "edit"],
+      "construction": "deterministic valid target from another training row in the same mode with a different condition hash",
+      "margin": 0.10,
+      "weight": 0.10
+    },
+    "negative_forward_strategy": "one negative forward at a time",
+    "preference_optimizer": false,
+    "name": "multi-negative contrastive SFT; ORPO-like margins, not ORPO"
+  },
+  "validation": {
+    "id_view": "exact P17 dev.id_condition_source_isolated.jsonl",
+    "ood_view": "exact P17 dev.condition_source_ood.jsonl; all 64 rows are strict condition-family OOD",
+    "comparators": ["frozen P16 mixed adapter", "frozen P17 adapter", "frozen P18 adapter"],
+    "decoding": ["greedy", "three raw temperature-0.8 top-p-0.95 samples"],
+    "selection": "none",
+    "gate_view": "P17 ID-condition source-isolated development only; OOD is diagnostic"
+  },
+  "operational_gate": {
+    "de_novo_greedy_validity": ">=0.90",
+    "edit_greedy_validity": ">=0.875",
+    "edit_greedy_validity_delta_vs_p16": ">=-0.10",
+    "edit_greedy_noncopy": ">=0.70",
+    "de_novo_any_at_3_validity": ">=0.9375",
+    "edit_any_at_3_validity": ">=0.9375"
+  },
+  "pilot_benchmark": {
+    "status_label": "paired pilot estimate; not full Table1 or full de-novo benchmark",
+    "table1_subset": "exact P17 frozen 20-row subset, two rows per each of ten task keys",
+    "denovo_subset": "exact P17 frozen 20-row subset, ten 6-property and ten 7-property rows",
+    "raw_budgets": [1, 4, 8],
+    "generation_seeds": {"table1": 2717, "denovo": 3717},
+    "checkpoint_rule": "freeze P18 before pilot; if gate fails, evaluate exactly once as a negative diagnostic",
+    "selection": "greedy first then seven raw samples; prefix budgets only",
+    "tuning_after_benchmark": false
+  },
+  "locked_p17_input_sha256": {
+    "train": "6d92e05a8a5c5ae8351fa4d2887942fc10d2cf4dfd5e81512784d8bb0d95a6dd",
+    "id_dev": "5994e5c582bd4006bc55f349014092c43862c4316b59fa2e68790aaae60be194",
+    "ood_dev": "9282563cfccf7210c298a11273d10f7b5493c21cbcf9ecd957e49194bd8fd665",
+    "table1_prompts": "89573c98782fd902124250e5a8ea7d0a44aec232f1412bc0c321583ad006494e",
+    "denovo_prompts": "f059bfacbbfce67d30099ddd8d2e50c9fba2020a1ae95eb1bea762f05033aa1f",
+    "table1_reference": "2094b838edc2605026db1f324d51bf267b1c151f2c75e5fd783b5f7873700e54",
+    "denovo_reference": "2ebeba635c887b61f8dda77177775671be05398869547aab77d207bbec7a590b"
+  },
+  "forbidden": [
+    "development or benchmark targets in negative construction",
+    "inference target access",
+    "static candidate pool",
+    "property reranking",
+    "post-benchmark tuning",
+    "mode router",
+    "mode-specific head, adapter, tokenizer, or response schema",
+    "post-hoc gate changes"
+  ]
+}

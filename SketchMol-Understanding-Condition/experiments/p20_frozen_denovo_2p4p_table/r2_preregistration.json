@@ -1,0 +1,23 @@
+{
+  "protocol": "p20_r2_frozen_denovo_2p4p_fair_budget40_v1",
+  "correction": "K1 is an ablation; paper-style fair-budget main result is best_of_40",
+  "locked_subset_reference_sha256": "ce8732266e156a59efc97a1be2466037343661188f838f6938340e3d20398739",
+  "locked_prompts_sha256": "afb6947ddba9ef559abc1056c5c379edc2b5520168f548aca3c91842945a4302",
+  "locked_r1_prefix_sha256": {
+    "p17": "931de0c47cccdd476101917daeb7715c19565b484fcde5d49ac3462d7ff24aed",
+    "p18": "13e7d62be1ca6903424ea259da25ab30193a94d3a87866a129d0adef2862d6d6"
+  },
+  "conditions": 300,
+  "conditions_per_property_count": 100,
+  "property_counts": [2, 3, 4],
+  "candidate_budget": 40,
+  "preserved_prefix": "ranks 1-8 byte-identical to completed P20 R1 raw CSV",
+  "extension": "ranks 9-40 sampled once with frozen seed 9040",
+  "budgets": [1, 4, 8, 20, 40],
+  "primary_fill_table_setting": "best_of_40",
+  "secondary_settings": ["average_of_40", "raw_at_1", "best_of_4", "best_of_8", "best_of_20"],
+  "finalizer": "SketchMolBenchmark property-aware finalizer, applied only after generation",
+  "generation_target_access": false,
+  "training_or_parameter_updates": false,
+  "benchmark_tuning": false
+}
