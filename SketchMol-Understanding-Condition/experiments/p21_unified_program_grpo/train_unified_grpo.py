@@ -101,7 +101,9 @@ def scorer_row(payload: Mapping[str, object], mode: str) -> dict[str, str]:
         if not isinstance(item, Mapping):
             continue
         prop = str(item.get("property", "") or "")
-        if prop not in protocol.PROPERTIES:
+        # P17 intentionally reuses the P16 prompt contract without re-exporting
+        # its property vocabulary.
+        if prop not in protocol.p16.PROPERTIES:
             continue
         goal = item.get("goal")
         selected.append(prop)
