@@ -1,0 +1,82 @@
+{
+  "protocol": "p23_explicit_task_stage1_v2",
+  "status": "frozen_before_cluster_data_build_or_training",
+  "seed": 2323,
+  "scientific_scope": {
+    "stage": "Stage 1 only",
+    "p18_p19_modified": false,
+    "rl_used": false,
+    "primary_claim_if_successful": "expanded explicit-task contrastive SFT improves raw candidate-level de-novo and edit results"
+  },
+  "model_contract": {
+    "base_model": "Qwen2.5-VL-7B-Instruct",
+    "initial_adapter": "frozen P16 mixed adapter",
+    "base_count": 1,
+    "adapter_count_at_inference": 1,
+    "mode_router": false,
+    "mode_expression": "source=<EMPTY> versus canonical source SMILES",
+    "vision_inputs_used": false
+  },
+  "data_contract": {
+    "de_novo_rows": 12000,
+    "edit_rows": 12000,
+    "unique_mode_weighting": "1:1",
+    "edit_source": "MolEdit-Instruct enhanced_v1 train split",
+    "edit_condition_source": "instruction_tasks or instruction_task_* only",
+    "target_derived_condition_fallback": false,
+    "minimum_edit_source_tanimoto": 0.65,
+    "required_native_properties": ["GSK3B", "DRD2", "JNK3"],
+    "heldout_isolation": "canonical source and target hashes against eval_balanced and available frozen P19/P20 references"
+  },
+  "optimization": {
+    "positive_sft_epochs": 0.5,
+    "positive_sft_learning_rate": 2e-05,
+    "contrastive_epochs": 0.25,
+    "contrastive_learning_rate": 1e-05,
+    "gradient_accumulation": 16,
+    "chosen_ce_weight_per_unique_row": 1.0,
+    "negative_types": [
+      "source_copy",
+      "invalid_corruption",
+      "condition_mismatch",
+      "opposite_program_target",
+      "partial_program_target"
+    ]
+  },
+  "amendment_before_training": {
+    "trigger": "first data-only manifest showed approximately 200 exact edit programs and only about 16 rows per paper task",
+    "change": "reserve 60 percent of edit rows for the ten Table2 task families, matching a family when its required clauses are a subset of the explicit program",
+    "target_or_model_output_access": false,
+    "gpu_training_started_before_amendment": false
+  },
+  "aligned_24k_amendment_before_training": {
+    "trigger": "completed 6k manifest showed only six of ten paper buckets and extremely sparse exact programs despite the subset-matching reserve",
+    "effective_run": "seed_2323_full24k_aligned",
+    "change": "replace the 7200-row paper reserve with ten exact 720-row task quotas projected from train-only source-target pairs that pass every requested benchmark direction; keep 4800 explicit-instruction broad edit rows",
+    "label_source": "training source-target property differences only",
+    "pinned_assay_properties": ["GSK3B", "DRD2"],
+    "prompt_contains_oracle_values": false,
+    "generation_or_candidate_selection_oracle_access": false,
+    "pair_reuse_across_paper_quotas": false,
+    "heldout_source_or_target_allowed": false,
+    "fail_closed_if_any_exact_task_quota_is_missing": true,
+    "gpu_training_started_before_amendment": false
+  },
+  "denovo_pool_repair_before_training": {
+    "trigger": "strict frozen-reference exclusion removed one 2p row from the otherwise exact 12000-row de-novo pool",
+    "failed_prepare_job": "20496020",
+    "change": "append one seeded leakage-free donor from the same train-candidate molecular pool and project its seven declared numeric targets to an exact MW+QED 2p program",
+    "heldout_row_restored": false,
+    "resulting_quota_target": "2000 rows for each property count 2p through 7p",
+    "gpu_training_started_before_repair": false
+  },
+  "evaluation_contract": {
+    "prompts_must_be_rebuilt_with": "p23_protocol.py",
+    "frozen_p19_prompts_reusable": false,
+    "primary_selection": "raw candidate 0 / K=1",
+    "any_at_k_primary": false,
+    "table1_de_novo": "strict success by 2p-7p property count plus validity",
+    "table2_edit": "candidate-level validity, strict property success, and Tanimoto>=0.65",
+    "paper_row_replacement_before_evaluation": false
+  }
+}
