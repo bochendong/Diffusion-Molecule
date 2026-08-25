@@ -9,8 +9,8 @@
 \usepackage{multirow}
 \usepackage{amssymb}
 
-\title{MolProgram: Compositional Property Programs for Molecular Construction\\
-and Editing with Group-Relative Reinforcement Learning}
+\title{MolProgram: Group-Relative Post-Training of a Unified\\
+Molecular Language Model for Construction and Editing}
 
 % Keep anonymous for ICLR 2027 submission.
 \author{Anonymous authors}
@@ -20,150 +20,316 @@ and Editing with Group-Relative Reinforcement Learning}
 \maketitle
 
 \begin{abstract}
-Goal-directed molecular design is central to drug discovery and materials
-development, where a request may combine several numerical objectives and
-require either constructing a new molecule or modifying an existing one.
-Current systems commonly treat these regimes separately, express multiple
-objectives as flat vectors or unconstrained text, and evaluate them through
-property-selected best-of-many outputs. We introduce \emph{MolProgram}, a
-unified molecular design framework in which each request is compiled into a
-variable-length program of property identities, targets, tolerances, and
-directions. MolProgram shares the program representation, programmatic
-verifier, and group-relative reinforcement principle across two
-state-appropriate transition operators: an empty initial graph invokes a
-direct SMILES constructor, whereas a populated graph invokes a source-anchored
-graph-event editor. This choice is fixed by the molecular boundary condition,
-not predicted by a learned task router. The construction branch augments
-explicit numerical program tokens with frozen LLM-derived instruction features
-and a property-count curriculum; both branches learn from groups of raw
-molecular outcomes without an external molecule library or
-property-aware inference-time reranking. On two-to-seven-property de novo
-programs, group-relative post-training raises Pass@8 from 35.37\% to 41.72\%
-and Pass@20 from 54.88\% to 62.52\%; on out-of-distribution programs, Pass@20
-rises from 35.20\% to 41.70\%. On MolEdit-Instruct, it improves strict
-candidate-level accuracy from 43.35\% to 46.12\%, exceeding MolEditRL's
-reported 45.0\% macro under the same criterion, with 97.51\% candidate
-validity. Relaxed accuracy remains lower than MolEditRL (61.90\% versus
-72.70\%), delimiting the claim. These results support unification at the level
-of compositional objectives and reinforcement learning while preserving the
-distinct transition geometry required by molecular construction and editing.
+Property-guided molecular design asks either for a new molecule satisfying a
+specification or for a source molecule to be modified under the same kind of
+constraints. Although these regimes share an objective language, they are
+usually handled by separate generators, while property-aware best-of-many
+selection can obscure how much strict success is assigned by the model itself.
+We introduce \emph{MolProgram}, a unified molecular language model conditioned
+on a variable-length property program and an optional source molecule. One
+Qwen2.5-VL-7B base, LoRA adapter, tokenizer, prompt template, and JSON response
+schema performs both de novo construction and source-conditioned editing; an
+empty source requests construction and a canonical source SMILES requests
+editing, without a learned router or mode-specific head. We first stabilize the
+shared policy with validity-aware multi-negative supervision. We then apply a
+critic-free group-relative update that compares four raw molecules for the same
+request using a programmatic reward for validity, clause satisfaction, the
+worst-satisfied clause, and, only for editing, source fidelity. An SFT anchor
+limits drift, while target molecules, external molecule libraries, benchmark
+rows, and property-aware inference-time reranking are excluded from the policy
+update. Before group-relative post-training, the frozen unified checkpoint
+raises MolEdit-Instruct strict
+$\operatorname{AnyAcc}_{\rm all}^{@8}(.65)$ from 0.21 to 0.36 and obtains
+best-of-40 de novo success of 0.79, 0.65, and 0.46 on two-, three-, and
+four-property programs. At the same time, its raw candidate success remains
+low and its six-/seven-property results expose substantial headroom---the
+specific gap targeted by group-relative post-training. MolProgram therefore
+turns construction and editing into one auditable policy-learning problem,
+while keeping benchmark-specific verification and sampling budgets explicit.
 \end{abstract}
 
 \section{Introduction}
 Goal-directed molecular design is widely used in drug discovery and materials
-development to construct or modify molecules toward desired physicochemical
-and biological profiles. The task can be formulated as a conditional molecular
-transition problem: given a property program
-$P=\{(j,y_j,\tau_j,d_j)\}_{j=1}^{m}$ and an initial molecular graph $G_0$,
-find a terminal graph $G_T$ that maximizes a verifier
-$V(P,G_T;G_0)$ over the transition family permitted by $G_0$. Each clause in
-$P$ specifies a property identity $j$, target $y_j$, tolerance $\tau_j$, and
-optional direction $d_j$; $G_0=\varnothing$ defines de novo construction,
-whereas $G_0=G_{\mathrm{src}}$ additionally requires source-preserving editing.
-A general solution samples actions
-$a_t\sim\pi_{\theta_{b}}(a_t\mid P,G_t,a_{<t})$ from a legal support
-$\mathcal A_b(G_t)$, applies $G_{t+1}=\mathcal I_b(G_t,a_t)$, and stops at a
-candidate molecule, where the boundary index
-$b=\mathbf{1}[G_0\neq\varnothing]$ distinguishes construction from editing.
+development to construct new compounds or modify existing ones toward desired
+physicochemical and biological profiles. These regimes differ in their boundary
+conditions but share the same semantic question: which molecular structure
+satisfies a requested set of constraints? Given a property specification
+$P=\{(j_\ell,g_\ell)\}_{\ell=1}^{m}$, an optional initial molecular graph
+$G_0$, and an external evaluation contract $B$, we seek
+\begin{equation}
+  G^\star\in\argmax_{G\in\mathcal F(G_0)} V_B(P,G;G_0),
+  \label{eq:intro-design-problem}
+\end{equation}
+where each $j_\ell$ identifies a property, $g_\ell$ is a numerical or
+directional goal, $V_B$ measures satisfaction under benchmark-defined
+tolerances and source-fidelity rules, and
+$\mathcal F(G_0)$ is the family of chemically admissible outcomes reachable
+from the initial state. The variable-length list $P$ is serialized directly in
+the model input; benchmark tolerances remain part of $B$ rather than being
+silently absorbed into the model. $G_0=\varnothing$ defines de novo
+construction, whereas $G_0=G_{\mathrm{src}}$ additionally imposes a
+source-preserving editing boundary. In this work, both cases use one molecular
+language model,
+$s\sim\pi_\theta(s\mid P,G_0)$, which emits a complete molecular string. The
+boundary is expressed in the input rather than by selecting a separate model:
+the source field contains either an explicit empty symbol or a canonical source
+SMILES. The verifier $V_B$, however, remains boundary-aware because editing must
+also measure fidelity to $G_{\mathrm{src}}$. This distinction---one shared
+generative model with benchmark-specific external verification---defines the
+scope of unification studied here.
 
-Existing approaches instantiate this iteration through several broad
-paradigms. Sequence generators decode molecular strings token by token and
-provide a compact route to conditional construction \citep{bagal2022molgpt}.
-Graph and image diffusion models iteratively denoise structural states and can
-inject numerical or categorical guidance throughout generation
-\citep{liu2024graphdit,wang2025sketchmol}. Arbitrary-subset conditional models
-use property masking, classifier-free guidance, or self-criticism to address
-different subsets of available objectives
-\citep{jolicoeurmartineau2024stggplus}. Instruction-tuned molecular language
-models transfer natural-language specifications across properties and molecular
-operations \citep{dey2025gellm3o,dey2025controllable}. Verifier-guided sampling
-and reinforcement learning instead turn molecular predictors or deterministic
-property functions into outcome-level feedback
-\citep{wang2025sketchmol,gao2026cmoral,shao2024deepseekmath}.
+Research on this problem has developed several complementary solution
+paradigms.  Autoregressive molecular generators factorize the conditional
+distribution into token-level decisions, giving a compact and efficient route
+to global construction \citep{bagal2022molgpt}.  Graph and image diffusion
+methods instead refine a noisy structural state through repeated denoising,
+allowing property information to guide both local structure and global layout
+\citep{liu2024graphdit,wang2025sketchmol}.  Arbitrary-subset conditional models
+use property masking, guidance, or self-criticism to vary which objectives are
+active without training a separate generator for every subset
+\citep{jolicoeurmartineau2024stggplus}.  Source-conditioned optimization
+methods cast design as molecular translation, latent-space movement, or local
+graph transformation, thereby biasing the transition toward preservation of a
+given molecule \citep{irwin2022chemformer,zhuang2026moleditrl}.  Instruction
+tuning replaces a fixed task interface with natural-language specifications,
+supporting transfer across property combinations and molecular operations
+\citep{dey2025gellm3o,dey2025controllable}.  Verifier-guided sampling and
+reinforcement learning instead turn molecular predictors or deterministic
+property functions into outcome-level feedback for non-differentiable design
+objectives \citep{wang2025sketchmol,gao2026cmoral}.
 
-Despite their different representations, these methods all optimize
-condition-dependent molecular transitions. However, their usual interfaces
-obscure the specific generalization problem. A flat property vector hides the
-length and clause structure of a variable objective set, making high-order
-composition difficult to separate from interpolation among correlated
-properties. Free-form text is semantically expressive but underspecifies
-numerical targets, tolerances, reversed directions, and extreme values. At the
-operation level, direct string decoding is efficient for global construction
-but fragile when most of a source molecule must be retained, whereas local
-graph events preserve source structure but create an unnecessarily long horizon
-from an empty state. Consequently, separate generation and editing systems
-discard a shared objective language, while a universal decoder forces two
-incompatible transition geometries into one action space. Large candidate
-budgets and property-aware selection can then conceal these weaknesses by
-increasing search rather than the probability assigned to a strict solution
-\citep{gao2022sampleefficiency}.
+Despite their different representations, these paradigms all learn a
+condition-dependent distribution over molecular outcomes. However, a flat
+property vector suppresses the length and clause structure of the objective,
+making genuine high-order composition difficult to distinguish from
+interpolation among correlated properties.  Free-form instructions provide a
+flexible interface but do not by themselves specify numerical targets,
+tolerances, reversed directions, or extreme values precisely. At the system
+level, construction and editing are therefore often implemented with separate
+models, adapters, action spaces, or routing rules. This makes it difficult to
+determine whether knowledge learned for one regime transfers to the other, and
+it multiplies deployment and maintenance costs. At the opposite extreme,
+calling an entire pipeline ``unified'' can hide task-specific property oracles,
+source-similarity checks, and best-of-many selection behind the model boundary.
+Property-selected evaluation is especially important: success can rise simply
+by increasing inference-time search, even when the probability of a strict raw
+solution remains small \citep{gao2022sampleefficiency}.
 
-Our key observation is that the natural locus of unification is the
-compositional objective, not the surface geometry of every molecular action.
-The same property program can define success for both an empty and a populated
-initial graph, and the same verifier can convert groups of candidates into
-relative learning signals. The initial graph already provides the necessary
-boundary condition: an empty state requires global construction, while a
-populated state requires local source-anchored change. Deterministically
-selecting the corresponding transition family therefore preserves a unified
-optimization problem without introducing a learned router or pretending that
-construction and editing have identical error geometry.
+Our key observation is that a useful first step toward unification is narrower
+and more testable than a fully end-to-end system: construction and editing can
+share the \emph{same learned molecular distribution} while retaining explicit,
+auditable task boundaries around verification and candidate selection. The
+same compositional property program specifies the requested outcome in both
+regimes, and an optional source molecule supplies the additional editing
+context. This formulation tests whether one set of language-model parameters
+can acquire both construction and source-conditioned modification behavior,
+without requiring the property oracle or benchmark protocol to become part of
+the neural model.
 
-Thus, we present \textbf{MolProgram}, which combines LLM-derived instruction
-conditioning, explicit property-program tokens, state-appropriate molecular
-transitions, and group-relative policy optimization (GRPO). MolProgram first
-compiles each request into deterministic tokens for its active property clauses.
-For an empty initial graph, a compact autoregressive Transformer combines these
-tokens with frozen LLM-derived instruction features, emits a complete SMILES
-string, and follows a property-count curriculum. For a populated graph, a
-validity-preserving event kernel proposes local transitions anchored to the
-source. A common programmatic interface evaluates property satisfaction and,
-when applicable, source similarity; within-condition candidate groups provide
-relative advantages for both operators. Source occupancy fixes the operator
-before inference, and neither an LLM router nor an output-side property ranker
-selects among models or candidates.
+Following this view, we present \textbf{MolProgram}, a single-checkpoint
+molecular language model for de novo generation and source-conditioned editing.
+The implementation uses one Qwen2.5-VL-7B base model, one LoRA adapter, one
+tokenizer, one prompt template, and one response schema of the form
+\texttt{\{"plan":"BUILD|MODIFY", "smiles":"..."\}}. De novo examples
+provide \texttt{source=<EMPTY>}; editing examples provide a canonical source
+SMILES. There is no learned router, mode-specific adapter, or mode-specific
+output head. Both regimes are mixed in the same supervised continuation, with
+balanced chosen-completion likelihood and shared molecular syntax.
+
+Simple mixed supervision is not sufficient because the two regimes expose
+different failure modes. In particular, an editing model may learn to copy its
+source, while stronger anti-copy pressure can reduce chemical validity. We
+therefore use validity-aware multi-negative contrastive supervision. For both
+regimes, the model compares the chosen molecule with an invalid-SMILES
+corruption and with a valid molecule paired to the wrong condition. Editing
+examples additionally include the unchanged source as a weak negative. These
+small margins train one checkpoint to recognize chemical validity, condition
+compatibility, and nontrivial modification without introducing separate task
+heads. We describe this objective as contrastive SFT with ORPO-like margins,
+not as a full preference-optimization algorithm.
+
+Contrastive supervision addresses representation-level failures, but it does
+not directly optimize the joint event used at evaluation. This matters in the
+current checkpoint: strict solutions often appear only after several samples,
+indicating that the policy already contains useful molecules but assigns too
+little probability to them. Our second insight is to turn this best-of-$K$
+headroom into a within-request learning signal. For each property program, we
+sample a group of four raw completions and score them with one programmatic
+reward. The shared part rewards chemical validity, average clause satisfaction,
+the least-satisfied clause, and joint success; the editing boundary adds source
+similarity and penalizes an unchanged copy. Group-normalized rewards weight the
+completion log probabilities, and a chosen-completion SFT anchor limits drift.
+No target molecule is exposed to the reward, and no benchmark row or static
+molecule pool enters training.
+
+Thus, MolProgram combines an optional-source property language with
+verifier-aligned group-relative post-training of one molecular policy. The
+update is critic-free and uses within-group standardized advantages, but does
+not use PPO ratio clipping or a reference-model KL term; we therefore call it a
+\emph{group-relative policy update} rather than claiming an exact reproduction
+of every GRPO implementation. This distinction leaves the central hypothesis
+precise: outcome-level relative feedback should move probability mass from
+partially satisfying or rare best-of-many molecules toward raw strict success,
+without sacrificing the shared checkpoint or chemical validity.
+
+Our evaluation keeps the system boundary visible. The model generates an
+ordered raw candidate stream without target access. De novo candidates are
+then scored by deterministic property functions; the matched SketchMol result
+uses its declared 40-candidate, property-aware finalizer. Editing candidates
+are assessed with property direction and source-similarity criteria native to
+MolEdit-Instruct. We report raw and selected metrics separately and do not pool
+the two benchmark families into a synthetic unified score. Thus, ``unified''
+in this paper refers to the learned checkpoint and interface, not to an
+end-to-end replacement of benchmark-specific verification.
+
+The results show both the value and the cost of this intermediate design point.
+Before the group-relative update, the validity-aware unified continuation
+improves strict editing
+$\operatorname{AnyAcc}_{\rm all}^{@8}(.65)$ from 0.21 to 0.36, with a
+paired-bootstrap 95\% interval of $[0.07,0.24]$ for the improvement. On a
+locked pilot of 100 conditions per property count, the same
+checkpoint reaches 0.79, 0.65, and 0.46 strict success for two-, three-, and
+four-property de novo programs under the matched 40-candidate finalizer. It is
+slightly worse than its predecessor on the first two strata and better on the
+four-property stratum; neither checkpoint establishes an advantage on the
+expanded hard six-/seven-property audit. Single-checkpoint sharing is therefore
+feasible, but raw candidate success and hard-composition success remain low.
+These frozen results establish the pre-RL baseline and motivate the
+group-relative continuation; its preregistered row is left unfilled until the
+locked evaluation completes.
 
 The main contributions of this work are as follows:
 \begin{enumerate}
-  \item We formulate de novo generation and molecular editing as one
-  initial-state-conditioned transition problem and introduce MolProgram, a
-  framework that shares a variable-length property language, verifier contract,
-  and group-relative learning principle across a direct molecular constructor
-  and a source-anchored event editor. It requires neither a learned task router,
-  an external molecular library, nor property-aware inference-time selection.
-  \item We develop a property-count curriculum and a budget-transparent
-  evaluation that separates candidate accuracy from Pass@$k$. GRPO improves
-  de novo Pass@20 from 54.88\% to 62.52\% on 2p--7p programs and from 35.20\%
-  to 41.70\% on OOD programs; on MolEdit-Instruct, it raises strict
-  candidate-level accuracy from 43.35\% to 46.12\%, compared with MolEditRL's
-  reported 45.0\%, while the relaxed-threshold deficit is reported explicitly.
+  \item We formulate molecular construction and source-conditioned editing as
+  one optional-source property-program problem and instantiate it with a single
+  molecular language-model checkpoint and strict output interface, without a
+  learned task router, mode-specific head, or external molecule materializer.
+  \item We combine validity-aware multi-negative initialization with a
+  verifier-aligned group-relative policy update and a budget-transparent
+  evaluation. The design directly targets raw joint property success while
+  making source fidelity, external verification, and best-of-many selection
+  visible rather than folding them into the unification claim.
 \end{enumerate}
 
 The remainder of the paper is organized as follows. Section 2 reviews
 conditional molecular generation, editing, and reinforcement post-training.
-Section 3 formalizes compositional property programs and the unified molecular
-transition problem. Section 4 presents MolProgram and its training objectives.
-Section 5 reports de novo, editing, complexity-scaling, and
-out-of-distribution results. Section 6 discusses limitations and broader
+Section 3 formalizes property programs and optional-source modeling. Section 4
+presents contrastive initialization and group-relative post-training. Section 5
+reports the frozen editing and de novo results at explicit sampling budgets.
+Section 6 discusses limitations and broader
 implications, and Section 7 concludes the paper.
 
 \section{Related Work}
-% To be written.
+\subsection{Conditional Molecular Construction}
+Conditional molecular generation constructs a molecule from an empty state
+under one or more desired properties. Autoregressive models condition SMILES
+decoders on property values or scaffolds \citep{bagal2022molgpt}, while SPMM
+learns a bidirectional interface between molecular strings and property vectors
+\citep{chang2024spmm}. More recent sequence approaches use richer latent
+conditions: the Latent Prompt Transformer jointly models molecules and target
+properties and performs posterior sampling over a learned prompt
+\citep{kong2024lpt}. Structure-aware alternatives operate on graphs, spanning
+trees, three-dimensional geometry, or molecular images. Graph DiT injects
+numerical and categorical conditions into graph diffusion
+\citep{liu2024graphdit}; Diffusion Twigs co-evolves structural and property
+processes \citep{mercatali2024twigs}; STGG+ combines arbitrary-property masking
+with self-criticism \citep{jolicoeurmartineau2024stggplus}; and GeoRCG uses an
+intermediate geometric representation to guide equivariant generation
+\citep{li2025georcg}. SketchMol instead unifies construction and mask-based
+editing through molecular images and expert feedback \citep{wang2025sketchmol}.
+These methods establish strong conditional generators, but their objectives are
+usually represented as fixed vectors, masked property sets, latent prompts, or
+free-form instructions. MolProgram makes the number and internal structure of
+the requested controls explicit through variable-length property--goal clauses,
+while the benchmark contract supplies tolerances. Its ordered-budget
+evaluation also separates compositional difficulty from the additional search
+provided by best-of-many sampling.
 
-\section{Problem Formulation}
-% To be written.
+\subsection{Source-Conditioned Molecular Editing}
+Molecular editing starts from a source graph and seeks property improvement
+without discarding its useful structure. Rule-based methods apply matched
+molecular-pair transformations, fragment substitutions, or bond-edit templates;
+they are chemically interpretable but are limited by the coverage of their
+transformation libraries \citep{hussain2010mmp}. Latent and hierarchical graph
+models instead encode a molecule and decode a nearby structure. JT-VAE builds
+molecules from valid substructures, hierarchical graph-to-graph models decode
+motifs from coarse to fine, and Modof restricts optimization to a learned
+fragment modification \citep{jin2018jtvae,jin2020hierarchical,chen2021modof}.
+Such structural biases improve locality, although latent compression and a
+fixed edit vocabulary can restrict precise control over diverse objectives.
+Sequence and language models formulate editing as molecular translation or
+instruction following. Chemformer pretrains a SMILES-to-SMILES Transformer
+\citep{irwin2022chemformer}; MolGen uses SELFIES pretraining and chemical
+feedback \citep{fang2024molgen}; and MoleculeSTM aligns structures and text for
+open-vocabulary retrieval and zero-shot editing \citep{liu2023moleculestm}.
+Prompt-MolOpt and DrugAssist learn prompt- or dialogue-conditioned molecular
+transformations \citep{wu2024promptmolopt,ye2025drugassist}. GeLLM3O and
+GeLLM4O-C scale instruction tuning to multi-property and property-specific
+objectives \citep{dey2025gellm3o,dey2025controllable}, while AgentDrug places an
+LLM inside a toolkit-validated refinement loop \citep{le2025agentdrug}. These
+interfaces are flexible, but token-level proximity is not equivalent to
+graph-level fidelity. MolEditRL directly addresses this mismatch with
+source-conditioned discrete graph diffusion and editing-aware reinforcement
+learning \citep{zhuang2026moleditrl}. MolProgram instead supplies the source
+SMILES to the same causal language model used for de novo construction. Its
+locality bias is learned from paired targets and a weak anti-copy contrastive
+term rather than from a separate graph-edit action space.
 
-\section{Method}
-% To be written.
+\subsection{Verifier-Guided Optimization and Reinforcement Learning}
+Reinforcement learning provides a direct interface to non-differentiable
+chemical objectives. REINVENT adapts a pretrained SMILES policy with a
+property-scoring function \citep{olivecrona2017reinvent}, whereas GCPN casts
+atom and bond additions as graph actions optimized by policy gradients under
+chemical rules \citep{you2018gcpn}. Later systems incorporate chemical
+feedback while improving use of expensive evaluations. Augmented Memory
+combines experience replay with SMILES augmentation
+\citep{guo2024augmentedmemory}, and genetic-guided GFlowNets distill an
+evolutionary search policy for sample-efficient optimization
+\citep{kim2024geneticgflownets}. SketchMol uses molecular-expert reinforcement
+for generation and editing, whereas MolEditRL jointly optimizes property
+alignment and source preservation. MolMem adds long-term exemplar and skill
+memories to an agentic editing policy \citep{wang2026molmem}. Concurrent
+preprints explore group-relative alignment for multi-objective language models
+and multi-step tool-using edit agents \citep{gao2026cmoral,yang2025molact}.
+MolProgram uses the verifier differently from an inference-time search method:
+it standardizes outcome rewards only within candidate groups sampled from one
+training request and updates the same optional-source policy for both regimes.
+We separately report raw-prefix editing and the property-selected de novo
+protocol. This follows the broader lesson that optimization quality depends on
+the allowed evaluation budget \citep{gao2022sampleefficiency}, and prevents
+property-aware selection from being conflated with improvement of the molecular
+policy itself.
 
-% Results combine the frozen direct policy and source-anchored event-kernel evidence.
+\input{method_unified.tex}
+
 \input{results_tables.tex}
 
 \section{Discussion and Limitations}
-% To be written.
+The experiments establish weight sharing, not universal task improvement. The
+pre-RL checkpoint improves editing at small sampling budgets but gives up
+two- and three-property de novo success relative to the strong anti-copy
+continuation; the four-property stratum improves modestly. The hard 6p/7p
+audit is small and shows no overall strict advantage. Moreover, the reported
+editing and de novo sets contain 100 conditions per task or stratum, so they
+are frozen pilot estimates rather than full-benchmark replacements. Finally,
+the property verifiers and the de novo finalizer remain external. The
+group-relative continuation is deliberately small and critic-free; its locked
+single-seed comparison can identify a signal but cannot establish robustness.
+Future work should scale the evaluation and training groups, add independent
+seeds, and study stronger drift control while retaining the same
+single-checkpoint contract.
 
 \section{Conclusion}
-% To be written.
+MolProgram shows that molecular construction and source-conditioned editing
+can share one causal language-model checkpoint and one strict interface. A
+validity-aware multi-negative objective improves editing without introducing a
+router or mode-specific head, while a verifier-aligned group-relative update
+directly targets the gap between raw and best-of-many success. The completed
+pre-RL results reveal measurable interference rather than uniform transfer;
+the locked post-training comparison determines whether relative outcome
+feedback reduces that interference. This explicit boundary makes
+single-checkpoint molecular design a testable step toward a more fully unified
+system.
 
 \appendix
 \input{appendix_results.tex}

@@ -1,270 +1,180 @@
 \section{Results}
 \label{sec:results}
 
-We organize the results around three questions. First, does group-relative
-post-training improve compositional property control at practical candidate
-budgets rather than only under large best-of-$k$ search? Second, does the gain
-persist as property programs become longer and move out of distribution? Third,
-can de novo generation and source-conditioned editing share a property-program
-and reinforcement interface while using transition operators appropriate to
-their different molecular states?
-Unless stated otherwise, all
-candidate streams preserve generation order, Raw@1 is exactly the first model
-draw, and property-reranked selection is never reported as one-shot generation.
-All experiments use the frozen single seed specified before evaluation.
+\subsection{Evaluation contract}
+We freeze the P17 strong anti-copy continuation and the P18 validity-aware
+multi-negative continuation before evaluation. P21 starts from the exact P18
+adapter and applies the group-relative update in
+Equation~\eqref{eq:group-policy-objective}; its training set and protocol are
+locked before any P21 evaluation. All three checkpoints use the same
+Qwen2.5-VL-7B base, prompt, tokenizer, response schema, and generation seeds.
+The MolEdit-Instruct pilot contains 100 conditions, ten from each of ten tasks.
+The de novo pilot contains 100 locked conditions for each of 2p, 3p, and 4p;
+the hard audit contains 20 six-property and 20 seven-property conditions.
+Training-source and training-target overlap with the evaluation sets is zero.
 
-Tables~\ref{tab:main-denovo} and~\ref{tab:main-editing} give the main external
-comparisons for the two initial-state regimes. The former uses the matched
-SketchMol de novo protocol; the latter reports strict candidate-level accuracy
-for all ten MolEdit-Instruct tasks. Their values are not numerically pooled:
-each table compares MolProgram with published methods under the metric native
-to that benchmark. Subsequent tables isolate the effect of GRPO, candidate
-budget, and property count.
+All editing budgets are ordered raw prefixes: one greedy candidate followed by
+seven sampled candidates. No target access or property reranking is used.
+De novo generation likewise has no target access, but its matched headline
+metric applies the SketchMol property-aware finalizer after 40 candidates.
+Because these endpoints answer different questions, we display them side by
+side but never average them.
 
+% Frozen headline table. Keep its columns and values stable; place new
+% experiments in subsequent tables or the appendix.
 \begin{table*}[t]
   \centering
-  \caption{De novo molecular construction under the matched protocol of
-  \citet{wang2025sketchmol}. Strict success (\%) uses 1,000 targets per
-  property count and 40 candidates per target. Dashes reserve rows for methods
-  that still require matched evaluation; they are not zero scores. MolProgram
-  uses no external molecule library or property-aware inference-time reranking.}
-  \label{tab:main-denovo}
-  \scriptsize
-  \setlength{\tabcolsep}{4.2pt}
-  \begin{tabular}{llrrrrrrr}
+  \caption{\textbf{Frozen headline comparison for one-checkpoint construction
+  and editing.} Editing reports condition-level strict
+  $\operatorname{AnyAcc}_{\rm all}^{@K}(.65)$ on 100 MolEdit-Instruct
+  conditions. De novo reports strict success after the matched property-aware
+  best-of-40 finalizer on 100 conditions per property count. The two metric
+  blocks are not pooled. Bold marks the best completed checkpoint within each
+  column; ``--'' denotes a value not yet available.}
+  \label{tab:main-unified}
+  \small
+  \setlength{\tabcolsep}{7pt}
+  \begin{tabular}{lcccccc}
     \toprule
-    Method & Representation & Avg. & 2p & 3p & 4p & 5p & 6p & 7p \\
+    & \multicolumn{3}{c}{Editing: raw prefix}
+    & \multicolumn{3}{c}{De novo: best of 40} \\
+    \cmidrule(lr){2-4}\cmidrule(lr){5-7}
+    Checkpoint & $K=1$ & $K=4$ & $K=8$ & 2p & 3p & 4p \\
     \midrule
-    SPMM & property vector + SMILES & -- & -- & -- & -- & -- & -- & -- \\
-    STGG+ & spanning-tree sequence & -- & -- & -- & -- & -- & -- & -- \\
-    Graph DiT & molecular graph & -- & -- & -- & -- & -- & -- & -- \\
-    SketchMol & molecular image
-      & \textbf{73.1} & 80.4 & 76.8 & \textbf{73.6} & \textbf{71.6} & \textbf{67.8} & \textbf{68.5} \\
-    \midrule
-    MolProgram (direct GRPO) & direct SMILES
-      & 68.1 & \textbf{91.7} & \textbf{83.2} & 72.7 & 63.6 & 51.0 & 46.5 \\
+    Strong anti-copy continuation (P17)
+      & 0.17 & 0.19 & 0.21 & \textbf{0.82} & \textbf{0.71} & 0.43 \\
+    MolProgram multi-negative (P18)
+      & \textbf{0.18} & \textbf{0.29} & \textbf{0.36}
+      & 0.79 & 0.65 & \textbf{0.46} \\
+    MolProgram group-relative (P21)
+      & -- & -- & -- & -- & -- & -- \\
     \bottomrule
   \end{tabular}
 \end{table*}
 
+\subsection{The shared checkpoint improves budgeted editing}
+Table~\ref{tab:editing-budget} expands the editing half of
+Table~\ref{tab:main-unified}. At $K=1$, the strict difference is only $+0.01$
+and its paired-bootstrap interval crosses zero. At $K=4$ and $K=8$, P18
+improves strict success by $+0.10$ and $+0.15$, with task-stratified paired
+bootstrap 95\% intervals $[0.02,0.18]$ and $[0.07,0.24]$. Best source
+similarity also rises at both budgets. Property-only Any@$K$ is not higher,
+which indicates that the strict gain comes from a better property--fidelity
+balance rather than from property success alone.
+
 \begin{table*}[t]
   \centering
-  \caption{Source-conditioned molecular editing on MolEdit-Instruct. Each task
-  cell is candidate-level strict $\operatorname{Acc}_{\rm all}(.65)$ (\%);
-  Avg. is the unweighted ten-task macro. Published values are transcribed from
-  Table~1 of \citet{zhuang2025moleditrl}. MolProgram evaluates every unranked
-  candidate without property-aware inference-time selection. Bold denotes the
-  best completed value in a column. HA and Rot abbreviate Haccept and
-  Rotbonds.}
-  \label{tab:main-editing}
-  \scriptsize
-  \setlength{\tabcolsep}{2.4pt}
-  \resizebox{\textwidth}{!}{%
-  \begin{tabular}{lrrrrrrrrrrrr}
-    \toprule
-    Method & Valid. & Avg.
-      & GSK3$\beta$$\uparrow$ & Rot$\downarrow$ & MW$\uparrow$ & SA$\downarrow$
-      & \shortstack{HA$\downarrow$\\SA$\downarrow$}
-      & \shortstack{QED$\uparrow$\\SA$\downarrow$}
-      & \shortstack{HA$\downarrow$\\LogP$\uparrow$}
-      & \shortstack{HA$\downarrow$\\MW$\downarrow$}
-      & \shortstack{DRD2$\downarrow$\\MW$\downarrow$\\SA$\downarrow$}
-      & \shortstack{HA$\uparrow$\\MW$\uparrow$\\QED$\downarrow$} \\
-    \midrule
-    BioT5 & \textbf{100.00} & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 & 0.00 \\
-    MolGen & \textbf{100.00} & 3.25 & 2.40 & 2.20 & 3.60 & 1.60 & 1.50 & 1.70 & 7.20 & 5.10 & 3.90 & 3.30 \\
-    REINVENT4 & 64.05 & 12.53 & 13.00 & 43.00 & 6.80 & 1.00 & 9.80 & 14.30 & 17.30 & 9.10 & 9.30 & 1.70 \\
-    DrugAssist & 97.94 & 34.86 & 23.60 & 44.58 & 31.66 & 53.71 & 24.25 & 53.20 & 30.20 & 22.24 & 42.20 & 23.00 \\
-    GeLLM$^3$O$_{\rm M}$ & 90.18 & 15.24 & 16.40 & 5.40 & 32.20 & 35.00 & 13.20 & 1.20 & 22.40 & 17.60 & 8.00 & 1.00 \\
-    GeLLM$^3$O$_{\rm L}$ & 90.14 & 14.52 & 11.40 & 13.80 & 23.20 & 23.80 & 11.80 & 20.60 & 13.00 & 12.80 & 10.80 & 4.00 \\
-    MolEditRL & 96.62 & 45.02 & \textbf{34.20} & 63.40 & \textbf{40.40} & 62.80 & 34.60 & \textbf{63.20} & 31.60 & 25.20 & \textbf{51.80} & \textbf{43.00} \\
-    \midrule
-    MolProgram (event GRPO) & 97.51 & \textbf{46.12} & 15.45 & \textbf{86.92} & 7.45 & \textbf{63.10} & \textbf{51.10} & 59.60 & \textbf{61.87} & \textbf{56.05} & 45.45 & 14.19 \\
-    \bottomrule
-  \end{tabular}}
-\end{table*}
-
-\subsection{Group-relative post-training improves low-budget de novo design}
-\label{sec:results-budget}
-
-Figure~\ref{fig:budget-scaling} compares supervised fine-tuning (SFT) and
-GRPO on 6,000 two-to-seven-property programs and 1,000
-out-of-distribution (OOD) programs. The improvement is already visible at
-small candidate budgets. On 2p--7p, strict success on the first draw increases
-from 7.02\% to 8.93\%; Pass@8 and Pass@20 increase by 6.35 and 7.64 percentage
-points. The OOD first draw is deliberately reported as a negative result: SFT
-is 0.30 points better. GRPO nevertheless overtakes SFT by $k=4$ and raises
-Pass@20 from 35.20\% to 41.70\%. The observed advantage is therefore not a
-$k=256$-only effect, but neither is it a uniform improvement in one-shot
-generation. At $k=256$, the advantage remains positive but narrows to 3.76
-points on 2p--7p (94.88\% versus 91.12\%) and 4.30 points on OOD (91.90\%
-versus 87.60\%). Exact raw-success, validity, and Pass@$k$ values are retained in
-Appendix~\ref{sec:appendix-validity}.
-
-\begin{figure*}[t]
-  \centering
-  \includegraphics[width=\textwidth]{figures/budget_scaling.pdf}
-  \caption{Ordered-prefix candidate-budget scaling from $k=1$ to $k=256$ for direct de novo
-  generation. Each point is the percentage of property programs solved at
-  least once within the first $k$ raw model draws; no property-aware reranking
-  is applied. GRPO improves every evaluated budget on 2p--7p and
-  overtakes SFT from $k=4$ on OOD, despite the honest OOD regression at $k=1$.
-  Both panels use the same frozen single seed.}
-  \label{fig:budget-scaling}
-\end{figure*}
-
-Raw validity explains part, but not all, of this change. Across the matched
-2p--7p stream, GRPO raises candidate validity from 29.04\% to 34.25\% at
-$k=20$ while also increasing the fraction of valid molecules that satisfy all
-active clauses. OOD validity remains low and nearly unchanged (11.51\% versus
-11.60\%), even though OOD Pass@20 improves by 6.50 points. Thus the OOD gain
-comes from reallocating probability among the small valid subset, rather than
-from solving molecular syntax in general. Full validity and uniqueness
-diagnostics are reported in Appendix~\ref{sec:appendix-validity}.
-
-\subsection{The gain persists as programs become more compositional}
-\label{sec:results-complexity}
-
-Absolute success decreases with program length for both policies, confirming
-that property count defines a genuine compositional difficulty axis.
-Table~\ref{tab:complexity-scaling} shows, however, that GRPO improves every
-property count at both practical budgets. At $k=20$, the gain is 4.9 points on
-6p programs and 8.4 points on 7p programs; the largest increase, 11.8 points,
-occurs at 5p. The aggregate improvement therefore cannot be explained by easy
-two-property requests dominating the benchmark.
-
-\begin{table}[t]
-  \centering
-  \caption{Compositional scaling on the 2p--7p benchmark. Values are the
-  percentage of programs solved within the indicated candidate budget.}
-  \label{tab:complexity-scaling}
+  \caption{Expanded MolEdit-Instruct pilot ($n=100$). Validity, property
+  Any@$K$, and both accuracy columns are condition-level prefix events; best
+  source similarity is the mean best similarity within the same prefix.
+  $\operatorname{Acc}_{\rm all}(.65)$ is the strict property-plus-fidelity
+  endpoint.}
+  \label{tab:editing-budget}
   \small
   \setlength{\tabcolsep}{5pt}
-  \begin{tabular}{crrrrrr}
+  \begin{tabular}{llrrrrr}
     \toprule
-    & \multicolumn{3}{c}{Pass@8} & \multicolumn{3}{c}{Pass@20} \\
-    \cmidrule{2-4}\cmidrule{5-7}
-    Properties & SFT & GRPO & $\Delta$ & SFT & GRPO & $\Delta$ \\
+    $K$ & Checkpoint & Validity & Property Any@$K$
+      & $\operatorname{Acc}_{\rm all}(.15)$
+      & $\operatorname{Acc}_{\rm all}(.65)$ & Best source sim. \\
     \midrule
-    2 & 58.6 & \textbf{68.1} & +9.5 & 78.6 & \textbf{85.6} & +7.0 \\
-    3 & 45.4 & \textbf{52.6} & +7.2 & 66.0 & \textbf{73.7} & +7.7 \\
-    4 & 35.7 & \textbf{42.9} & +7.2 & 60.3 & \textbf{66.3} & +6.0 \\
-    5 & 30.2 & \textbf{36.1} & +5.9 & 48.7 & \textbf{60.5} & +11.8 \\
-    6 & 23.1 & \textbf{27.1} & +4.0 & 42.6 & \textbf{47.5} & +4.9 \\
-    7 & 19.2 & \textbf{23.5} & +4.3 & 33.1 & \textbf{41.5} & +8.4 \\
+    1 & P17 & \textbf{0.84} & \textbf{0.39} & \textbf{0.36} & 0.17 & 0.513 \\
+    1 & P18 & 0.83 & 0.36 & 0.35 & \textbf{0.18} & \textbf{0.553} \\
+    \midrule
+    4 & P17 & 1.00 & \textbf{0.75} & 0.68 & 0.19 & 0.625 \\
+    4 & P18 & 1.00 & 0.71 & 0.68 & \textbf{0.29} & \textbf{0.692} \\
+    \midrule
+    8 & P17 & 1.00 & 0.84 & 0.79 & 0.21 & 0.671 \\
+    8 & P18 & 1.00 & 0.84 & \textbf{0.82} & \textbf{0.36} & \textbf{0.731} \\
     \bottomrule
   \end{tabular}
-\end{table}
+\end{table*}
 
-The OOD split contains reversed directions, extreme targets, and property
-combinations that are rare or absent during training. GRPO improves the
-aggregate OOD stream from $k=8$ onward, but the improvement is not uniform
-across OOD strata. In particular, a syntax-safe decoder raises overall OOD
-validity and Pass@20 but regresses on the small OOD 7p subset. We therefore
-interpret the completed evidence as improved compositional sampling, not as a
-claim that high-order extrapolation or validity has been solved.
+The task-level breakdown in Table~\ref{tab:editing-by-task} shows that the
+macro improvement is not uniform. P18 is especially helpful for MW-up and the
+HBA-down/SA-down task, but is weaker on the three-property DRD2 task at small
+budgets. On the expanded ten-condition stratum, this deficit disappears at
+$K=8$ (both checkpoints reach 0.40), while GSK3B-up remains unsolved. We
+therefore claim improved budgeted editing on the frozen macro, not dominance
+on every task or at greedy decoding.
 
-\subsection{Comparison with matched de novo generation}
-\label{sec:results-denovo-external}
-
-Table~\ref{tab:main-denovo} places the direct MolProgram
-policy in the SketchMol multi-property protocol. Each method receives 40 attempts for each
-of 1,000 held-out target vectors at every complexity, and a condition succeeds
-when at least one valid molecule satisfies every active tolerance. We include
-only SketchMol because other published methods use different targets, oracles,
-or candidate budgets and therefore require matched reruns. MolProgram is
-stronger on 2p and 3p and is within 0.9 points at 4p. SketchMol leads from 5p
-onward and by 5.0 points on the overall average. The comparison identifies
-high-order generation as the primary remaining de novo gap and does not support
-an overall state-of-the-art claim.
-
-\subsection{Shared programs benefit from state-appropriate transition operators}
-\label{sec:results-transition-audit}
-
-Forcing construction and editing through one checkpoint is attractive but not
-supported by the matched evidence. The single-checkpoint ablation preserves
-the direct de novo policy yet reaches only 17.075\% strict
-candidate-level accuracy on its 200-condition editing gate. We therefore share
-the property-program and verifier layers while assigning the empty and
-populated boundary conditions different transition operators. The promoted
-editor is a source-anchored, validity-preserving graph-event kernel; it samples
-exactly 20 raw trajectories per condition without a task router, molecular
-ranker, inference oracle, second edit, or MCS glue.
-
-Table~\ref{tab:operator-split} reports strict candidate-level accuracy and
-strict Any@20 rather than conflating them. On 997 held-out conditions and 19,940 raw
-candidates, the supervised event editor reaches 43.35\% strict candidate
-accuracy. Applying
-the same group-relative learning principle used by the direct constructor
-raises strict accuracy by 2.77 points to 46.12\%, exceeding MolEditRL's
-reported 45.0\% task macro. The relaxed result remains lower than MolEditRL
-(61.90\% versus 72.7\%), so the gain is specific to source-preserving strict
-editing rather than an across-the-board state-of-the-art claim.
+\subsection{De novo transfer is mixed under the fair 40-candidate budget}
+Table~\ref{tab:denovo-2p4p} reports the corrected matched-budget de novo
+result. P18 reaches 0.79, 0.65, and 0.46 on 2p, 3p, and 4p. Relative to P17,
+it loses three points on 2p and six points on 3p, but gains three points on 4p.
+The overall 2p--4p mean falls from 0.653 to 0.633. Thus, the editing gain is
+accompanied by measurable but limited de novo interference.
 
 \begin{table}[t]
   \centering
-  \caption{Strict editing aggregation audit. Candidate accuracy averages every
-  unranked output and is directly comparable to the published MolEditRL task
-  macro; Any@20 instead asks whether a condition has at least one hit.
-  MolProgram uses one frozen seed and exactly 20 raw candidates per condition.}
-  \label{tab:operator-split}
+  \caption{De novo strict success under the SketchMol-style property-aware
+  best-of-40 protocol. Our rows are frozen pilots with 100 conditions per
+  stratum; the SketchMol reference uses the paper's 1,000 conditions per
+  stratum. Selected validity is 1.00 for both MolProgram-family rows.}
+  \label{tab:denovo-2p4p}
   \small
-  \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{lrrr}
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{lrrrr}
     \toprule
-    Editor & Validity & Cand. strict & Any@20 strict \\
+    Method & 2p & 3p & 4p & Mean \\
     \midrule
-    Single-checkpoint ablation & 100.00 & 17.08 & 70.50 \\
-    MolProgram event SFT & 97.38 & 43.35 & 76.52 \\
-    MolProgram event GRPO & \textbf{97.51} & \textbf{46.12} & \textbf{78.83} \\
-    MolEditRL (published task macro) & 96.62 & 45.02 & -- \\
+    SketchMol (paper reference) & 0.804 & \textbf{0.768} & \textbf{0.736} & \textbf{0.769} \\
+    Strong anti-copy continuation (P17) & \textbf{0.820} & 0.710 & 0.430 & 0.653 \\
+    MolProgram multi-negative (P18) & 0.790 & 0.650 & 0.460 & 0.633 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-\subsection{Source-conditioned editing against published baselines}
-\label{sec:results-editing}
+The comparison is budget-matched but not sample-size matched, so it is a pilot
+placement rather than a replacement for the full SketchMol table. Across all
+12,000 raw P18 candidates, validity is 0.884 and candidate-level strict
+success is 0.064; selected validity becomes 1.00 only after the declared
+best-of-40 finalizer. Table~\ref{tab:denovo-budget} retains the full budget
+sweep so this selection gain is explicit.
 
-Table~\ref{tab:main-editing} gives the primary strict endpoint separately for
-all ten MolEdit-Instruct tasks. Published rows retain their reported
-candidate-level metrics; our event-editor row averages exactly 20 generated
-trajectories per condition over the complete unranked pool. This is
-intentionally different from Pass@$k$, Any@$k$, or a property-selected output.
-The complete strict/relaxed and valid-conditional audit is deferred to
-Appendix~\ref{sec:appendix-moledit}; FCD is omitted because it is not part of
-our evaluation contract.
+\subsection{High-order construction remains unresolved}
+On the expanded 40-condition hard audit, both P17 and P18 solve exactly one of
+20 six-property conditions by $K=8$ and neither solves a seven-property
+condition. P18 has higher K=8 validity (0.894 versus 0.856 overall), but lower
+mean-best property satisfaction (0.586 versus 0.616). The full audit appears
+in Table~\ref{tab:hard-denovo}. It does not support a hard de novo improvement
+claim and motivates balancing or group-relative post-training rather than
+post-hoc selection of a favorable stratum.
 
-The per-task table exposes a heterogeneous gain. Event GRPO is strongest on
-Rotbonds$\downarrow$, SA$\downarrow$, and four two-property tasks, but remains
-weak on GSK3B$\uparrow$, MW$\uparrow$, and the final three-property request.
-Macro $\operatorname{Acc}_{\rm all}(.65)$ nevertheless reaches 46.12\%, 1.12
-points above MolEditRL. Candidate validity is 97.51\%. Under the secondary
-relaxed threshold, reported in the appendix, MolProgram reaches 61.90\%, 10.80
-points below MolEditRL. The same
-raw stream reaches 78.83\% strict Any@20, but this answers whether a condition
-has at least one hit and is never substituted for candidate-level accuracy.
+\subsection{Locked test of group-relative post-training}
+Table~\ref{tab:group-relative-gate} isolates the question introduced by the
+P18 diagnostics: can training on relative outcomes increase strict raw-prefix
+success without losing validity? The primary editing endpoint is strict
+$\operatorname{AnyAcc}_{\rm all}^{@8}(.65)$ on the same 100 locked conditions.
+The high-order endpoint uses the same 40 locked 6p/7p programs and no
+property-aware reranking. P21 is promoted only if it improves strict editing at
+$K=1$ or $K=8$ without violating the preregistered greedy-validity gates; hard
+de novo behavior is reported regardless of direction. Values remain blank
+until the frozen job chain completes.
 
-\subsection{MuMOInstruct IND and OOD task families}
-\label{sec:results-mumo}
+\begin{table}[t]
+  \centering
+  \caption{Preregistered P21 group-relative gate. All entries are computed from
+  ordered raw prefixes without target access or property-aware selection.
+  ``--'' denotes a running locked evaluation.}
+  \label{tab:group-relative-gate}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{lrrrr}
+    \toprule
+    Checkpoint & Edit strict @1 & Edit strict @8
+      & Hard 6p @8 & Hard 7p @8 \\
+    \midrule
+    Multi-negative SFT (P18) & 0.18 & 0.36 & 0.05 & 0.00 \\
+    Group-relative (P21) & -- & -- & -- & -- \\
+    \bottomrule
+  \end{tabular}
+\end{table}
 
-Tables~\ref{tab:mumo-ind-full} and~\ref{tab:mumo-ood-full} preserve the five IND
-and five OOD MuMOInstruct task families and their three complementary metrics:
-success rate (SR), similarity among successful outputs (Sim), and relative
-improvement among successes (RI) \citep{dey2025gellm3o}. This fuller layout is
-necessary because a high property SR can coexist with very low source
-similarity. The MolProgram cells remain blank until all official
-oracles and source-fidelity metrics are exported from the same 20-candidate
-run.
-
-\input{mumo_tables.tex}
-
-Taken together, the completed results support two bounded conclusions.
-GRPO increases the probability that a modest direct
-sample set solves a compositional property program, including at 6p, 7p, and
-on aggregate OOD requests. Sharing the property-program and verifier layers
-while specializing the molecular transition operator avoids the severe editing
-loss of a forced single-checkpoint design. The source-anchored operator exceeds
-MolEditRL under strict candidate-level accuracy after GRPO, but not under
-the relaxed threshold. We therefore claim a unified request and learning
-framework with state-appropriate solvers, not a universal decoder or uniform
-dominance across editing criteria.
+Taken together, the frozen evidence supports a narrow conclusion: one
+checkpoint can improve source-conditioned editing while retaining useful de
+novo behavior, but sharing creates nonuniform interference. The locked P21
+comparison tests whether verifier-aligned relative feedback reduces this gap.
+Until that row is populated, the completed evidence supports model-level
+unification, not a claim that group-relative post-training improves both
+regimes or that the complete pipeline is end-to-end unified.

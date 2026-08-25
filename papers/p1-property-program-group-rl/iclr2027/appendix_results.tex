@@ -1,202 +1,132 @@
-\section{Additional Results and Diagnostics}
+\section{Additional Results and Audits}
 \label{sec:appendix-results}
 
-\subsection{Raw validity across candidate budgets}
-\label{sec:appendix-validity}
+\subsection{Task-level editing results}
+\label{sec:appendix-editing}
 
-Table~\ref{tab:budget-scaling-exact} reports the exact values behind
-Figure~\ref{fig:budget-scaling}, keeping candidate-level strict success and
-validity separate from condition-level Pass@$k$. GRPO improves
-in-distribution validity by roughly five points, but OOD validity remains close
-to 12\% for both policies. Nearly every valid draw is unique, indicating that
-invalid SMILES syntax rather than conventional mode collapse is the primary
-sample-efficiency bottleneck.
+Table~\ref{tab:editing-by-task} contains the ten tasks behind the editing macro
+in Tables~\ref{tab:main-unified} and~\ref{tab:editing-budget}. Each cell uses
+exactly ten conditions and therefore changes in increments of 0.10. The table
+reports condition-level strict success within the raw ordered prefix, not
+candidate-level accuracy.
+
+\input{moledit_table1.tex}
+
+\subsection{De novo candidate-budget sweep}
+\label{sec:appendix-denovo-budget}
+
+Table~\ref{tab:denovo-budget} applies the same repository finalizer to ordered
+prefixes of the locked 40-candidate stream. Raw@1 is the first candidate;
+Best@$K$ uses property-aware selection within the prefix. It is therefore an
+evaluation-budget curve, not a claim about raw one-shot generation.
 
 \begin{table*}[h]
   \centering
-  \caption{Exact ordered-prefix diagnostics (\%). Raw strict and validity
-  average every candidate in the prefix; Pass@$k$ is the fraction of property
-  programs with at least one strict solution.}
-  \label{tab:budget-scaling-exact}
-  \scriptsize
-  \setlength{\tabcolsep}{4.5pt}
-  \begin{tabular}{lrrrrrrr}
+  \caption{De novo strict success across candidate budgets on 100 locked
+  conditions per stratum. Validity is the validity of the selected output.}
+  \label{tab:denovo-budget}
+  \small
+  \setlength{\tabcolsep}{5pt}
+  \begin{tabular}{llrrrrr}
     \toprule
-    Evaluation & $k$ & \multicolumn{2}{c}{Raw strict}
-      & \multicolumn{2}{c}{Validity} & \multicolumn{2}{c}{Pass@$k$} \\
-    \cmidrule(lr){3-4}\cmidrule(lr){5-6}\cmidrule(lr){7-8}
-    & & SFT & GRPO & SFT & GRPO & SFT & GRPO \\
+    Checkpoint & Setting & Validity & 2p & 3p & 4p & Mean \\
     \midrule
-    2p--7p & 1   & 7.02 & \textbf{8.93} & 29.20 & \textbf{33.53} & 7.02 & \textbf{8.93} \\
-    2p--7p & 4   & 7.21 & \textbf{9.15} & 28.78 & \textbf{33.89} & 22.58 & \textbf{27.60} \\
-    2p--7p & 8   & 7.26 & \textbf{9.28} & 28.85 & \textbf{33.86} & 35.37 & \textbf{41.72} \\
-    2p--7p & 20  & 7.30 & \textbf{9.41} & 29.04 & \textbf{34.25} & 54.88 & \textbf{62.52} \\
-    2p--7p & 32  & 7.32 & \textbf{9.43} & 29.26 & \textbf{34.17} & 63.50 & \textbf{71.58} \\
-    2p--7p & 64  & 7.30 & \textbf{9.51} & 29.27 & \textbf{34.06} & 76.18 & \textbf{83.42} \\
-    2p--7p & 128 & 7.34 & \textbf{9.48} & 29.28 & \textbf{34.06} & 85.12 & \textbf{90.87} \\
-    2p--7p & 256 & 7.32 & \textbf{9.47} & 29.25 & \textbf{34.06} & 91.12 & \textbf{94.88} \\
+    P17 & Raw@1    & 1.00 & 0.10 & 0.04 & 0.00 & 0.047 \\
+    P17 & Best@4   & 1.00 & 0.36 & 0.15 & 0.10 & 0.203 \\
+    P17 & Best@8   & 1.00 & 0.51 & 0.25 & 0.15 & 0.303 \\
+    P17 & Best@20  & 1.00 & 0.74 & 0.52 & 0.24 & 0.500 \\
+    P17 & Best@40  & 1.00 & 0.82 & 0.71 & 0.43 & 0.653 \\
     \midrule
-    OOD & 1   & \textbf{3.50} & 3.20 & \textbf{12.50} & 12.10 & \textbf{3.50} & 3.20 \\
-    OOD & 4   & 3.25 & \textbf{3.80} & \textbf{11.97} & 11.87 & 11.70 & \textbf{13.90} \\
-    OOD & 8   & 3.20 & \textbf{3.77} & \textbf{11.92} & 11.63 & 19.70 & \textbf{23.60} \\
-    OOD & 20  & 3.14 & \textbf{3.79} & 11.51 & \textbf{11.59} & 35.20 & \textbf{41.70} \\
-    OOD & 32  & 3.24 & \textbf{3.94} & 11.59 & \textbf{11.64} & 45.70 & \textbf{53.10} \\
-    OOD & 64  & 3.32 & \textbf{3.87} & \textbf{11.73} & 11.58 & 61.60 & \textbf{68.00} \\
-    OOD & 128 & 3.36 & \textbf{3.88} & \textbf{11.76} & 11.55 & 75.40 & \textbf{81.80} \\
-    OOD & 256 & 3.39 & \textbf{3.87} & \textbf{11.76} & 11.61 & 87.60 & \textbf{91.90} \\
+    P18 & Raw@1    & 1.00 & 0.11 & 0.02 & 0.02 & 0.050 \\
+    P18 & Best@4   & 1.00 & 0.33 & 0.13 & 0.08 & 0.180 \\
+    P18 & Best@8   & 1.00 & 0.50 & 0.29 & 0.15 & 0.313 \\
+    P18 & Best@20  & 1.00 & 0.68 & 0.47 & 0.30 & 0.483 \\
+    P18 & Best@40  & 1.00 & 0.79 & 0.65 & 0.46 & 0.633 \\
     \bottomrule
   \end{tabular}
 \end{table*}
 
-\subsection{Larger rollout groups are not sufficient}
-\label{sec:appendix-g64}
+When every candidate is scored independently instead of selected, P17/P18
+validity is 0.854/0.884 and mean strict success is 0.062/0.064. Thus P18's
+higher raw validity does not translate into a higher best-of-40 mean because
+the distribution of property-matched candidates also matters.
 
-Table~\ref{tab:g64-ablation} compares the main group-16 policy with a
-hard-only continuation using 64 rollouts per program on a fixed 6p/7p subset.
-The larger group improves validity but reduces Pass@20 from 50.78\% to 45.31\%,
-driven by a large 7p regression. We therefore retain group 16 and report group
-64 as a negative ablation rather than selecting it on raw validity.
+\subsection{Expanded hard de novo audit}
+\label{sec:appendix-hard}
 
-\begin{table}[h]
-  \centering
-  \caption{Hard-program rollout-group ablation (\%). G64 continues training
-  from the G16 checkpoint using only 6p/7p programs.}
-  \label{tab:g64-ablation}
-  \scriptsize
-  \setlength{\tabcolsep}{3.5pt}
-  \begin{tabular}{lrrrrrr}
-    \toprule
-    Method & $k$ & Raw strict & Pass@$k$ & 6p Pass@$k$ & 7p Pass@$k$ & Validity \\
-    \midrule
-    SFT & 8 & 3.47 & 21.88 & 21.88 & 21.88 & 28.27 \\
-    GRPO G16 & 8 & \textbf{4.74} & \textbf{28.12} & 31.25 & \textbf{25.00} & 32.91 \\
-    GRPO G64 & 8 & 4.44 & 25.78 & \textbf{32.81} & 18.75 & \textbf{36.38} \\
-    \midrule
-    SFT & 20 & 3.63 & 37.11 & 39.84 & 34.38 & 29.00 \\
-    GRPO G16 & 20 & 4.75 & \textbf{50.78} & \textbf{50.78} & \textbf{50.78} & 33.26 \\
-    GRPO G64 & 20 & \textbf{5.02} & 45.31 & \textbf{50.78} & 39.84 & \textbf{35.63} \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\subsection{MolEdit-Instruct comparison}
-\label{sec:appendix-moledit}
-
-The complete ten-task comparison is reported in
-Table~\ref{tab:moledit-full} rather than compressed into a macro-average.
-This exposes task-level failures under the matched 20-candidate, candidate-wise
-protocol. Raw@1 and pass@$k$ remain separate budget diagnostics. The completed
-P4 single-checkpoint distillation pilot also reaches zero strict
-$\operatorname{Acc}_{\mathrm{all}}(.65)$ across its 20 inputs per task. Its
-candidate-level mean validity is 32.5\% and its relaxed-threshold
-$\operatorname{Acc}_{\mathrm{all}}(.15)$ is 7.5\%, below the frozen base
-checkpoint's 36.8\% and 11.8\%, respectively. Teacher coverage reaches 77\%,
-and the checkpoint audit confirms that both SFT and GRPO leave the de novo
-path bit-identical; the failure is therefore localized to the attempted
-source-conditioned editing transfer. Because the pilot uses a smaller
-evaluation set than the published comparison, these values do not populate
-Table~\ref{tab:moledit-full}.
-
-\input{moledit_table1.tex}
-
-\subsection{MuMO source-fidelity diagnostic}
-\label{sec:appendix-mumo}
-
-Under the official 20-candidate MuMO oracle, the direct-constructor transfer
-ablation reaches 50.4\% overall
-property SR, with 32.3\% IND and 68.8\% OOD SR. However, mean source
-similarity among successful outputs is only 0.098, and no input passes the
-additional 0.4 source-similarity diagnostic. The policy therefore often finds
-a molecule with the desired properties by changing the molecular identity
-rather than editing the input locally. MuMO SR is useful evidence for property
-control, but it must not be presented as source-preserving editing success.
+Table~\ref{tab:hard-denovo} reports the full K=8 endpoint of the frozen hard
+audit: 20 six-property and 20 seven-property conditions. Mean-best is the
+largest fraction of satisfied clauses in the raw prefix and is diagnostic
+only; it is not used to choose the reported strict candidate.
 
 \begin{table}[h]
   \centering
-  \caption{MolProgram on MuMOInstruct under the official property SR and an
-  additional source-fidelity diagnostic.}
-  \label{tab:mumo-fidelity}
-  \small
-  \begin{tabular}{lrrrrr}
-    \toprule
-    Method & Overall SR & IND SR & OOD SR & Sim(success) & Sim$\geq .4$ \\
-    \midrule
-    Direct constructor (GRPO transfer) & 50.4 & 32.3 & 68.8 & 0.098 & 0.0 \\
-    \bottomrule
-  \end{tabular}
-\end{table}
-
-\subsection{Executable actions improve editing reachability}
-\label{sec:appendix-actions}
-
-A source-similarity reward applied to free-form direct SMILES GRPO did not
-produce any candidates above the required source-similarity threshold.
-Replacing free-form editing with executable GraphEditDSL actions makes every
-raw first candidate valid and gives 26.5\%
-$\operatorname{Acc}_{\mathrm{all}}(.65)$ on the paired repair evaluation.
-This large gain in reachability motivates action-based editing, but it is a
-separate validation result rather than part of the main MolProgram claim.
-
-\subsection{Syntax-safe decoding and source-consistency repair}
-\label{sec:appendix-repair}
-
-We next evaluate two frozen, single-seed repairs. Syntax-safe decoding changes
-the autoregressive decoder itself rather than filtering invalid outputs after
-generation. Source-consistency ranking uses only the input molecule,
-scaffold retention, and local edit magnitude; it never observes a target
-molecule or output-property oracle.
-
-\begin{table}[h]
-  \centering
-  \caption{Paired syntax-safe decoding evaluation (\%). Each row uses the
-  same frozen condition subset for the legacy and repaired decoders.}
-  \label{tab:validity-repair}
+  \caption{Hard de novo audit at $K=8$. Strict Pass@8 is condition-level;
+  validity and uniqueness average the 320 raw candidates per checkpoint.}
+  \label{tab:hard-denovo}
   \small
   \setlength{\tabcolsep}{4pt}
-  \begin{tabular}{llrrrrr}
+  \begin{tabular}{llrrrr}
     \toprule
-    Evaluation & Decoder & Valid@1 & Strict@1 & Pass@8 & Valid@20 & Pass@20 \\
+    Stratum & Checkpoint & Strict Pass@8 & Validity & Uniqueness & Mean-best \\
     \midrule
-    2p--7p & Legacy & 34.9 & 10.2 & 43.8 & 34.5 & 60.2 \\
-    2p--7p & Syntax-safe & \textbf{48.2} & 10.2 & \textbf{51.6} & \textbf{50.5} & \textbf{68.5} \\
-    OOD & Legacy & 12.0 & 3.3 & 26.7 & 13.1 & 46.3 \\
-    OOD & Syntax-safe & \textbf{29.0} & \textbf{9.7} & \textbf{42.7} & \textbf{30.1} & \textbf{61.7} \\
+    6p & P17 & 0.050 & 0.875 & 0.875 & \textbf{0.625} \\
+    6p & P18 & 0.050 & \textbf{0.894} & \textbf{0.894} & 0.600 \\
+    \midrule
+    7p & P17 & 0.000 & 0.838 & 0.838 & \textbf{0.607} \\
+    7p & P18 & 0.000 & \textbf{0.894} & \textbf{0.894} & 0.571 \\
+    \midrule
+    All & P17 & 0.025 & 0.856 & 0.856 & \textbf{0.616} \\
+    All & P18 & 0.025 & \textbf{0.894} & \textbf{0.894} & 0.586 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Syntax-safe decoding raises first-draw validity by 13.3 points on 2p--7p and
-17.0 points on OOD, while improving Pass@8 by 7.8 and 16.0 points,
-respectively. It nevertheless misses the preregistered $+20$-point validity
-promotion gate. Moreover, the aggregate OOD gain is driven mainly by the
-forward- and reverse-direction subsets: on the small OOD 7p subset,
-Pass@20 falls from 18.2\% to 4.5\%. We therefore report the repair as a
-positive decoder ablation, not as evidence that high-order extrapolation has
-been solved.
+\subsection{Frozen validation diagnostics}
+\label{sec:appendix-validation}
+
+The training-time operational gate uses source- and target-isolated
+development views and is separate from the benchmark pilots. Table
+\ref{tab:frozen-validation} retains only the diagnostics needed to audit the
+validity/noncopy tradeoff. P18 improves P17 on both editing validity and
+noncopy in the ID and strict condition-family OOD views while leaving de novo
+validity at one.
 
 \begin{table}[h]
   \centering
-  \caption{Source-consistent executable editing (\%). ``Finalizer@8'' is an
-  explicitly assisted source-only selection protocol and is not one-shot.}
-  \label{tab:edit-repair}
-  \scriptsize
-  \setlength{\tabcolsep}{3pt}
-  \begin{tabular}{llrrr}
+  \caption{Frozen development diagnostics. Any@3 uses three raw samples.
+  OOD contains unseen condition families with zero source and target overlap.}
+  \label{tab:frozen-validation}
+  \small
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{llrr}
     \toprule
-    Edit policy & Protocol & Validity & $\operatorname{Acc}_{\mathrm{all}}(.65)$ & $\operatorname{Acc}_{\mathrm{all}}(.15)$ \\
+    View & Metric & P17 & P18 \\
     \midrule
-    Protected action & Raw@1 & 100.0 & \textbf{26.5} & \textbf{26.5} \\
-    Source-consistent & Raw@1 & 100.0 & 26.0 & 26.0 \\
-    Strong consistent & Raw@1 & 100.0 & 23.0 & 23.0 \\
-    Protected action & Finalizer@8 & 100.0 & 62.0 & 62.0 \\
-    Source-consistent & Finalizer@8 & 100.0 & \textbf{66.0} & \textbf{66.0} \\
-    Strong consistent & Finalizer@8 & 100.0 & 64.0 & 64.0 \\
+    ID & de novo greedy validity & 1.000 & 1.000 \\
+    ID & edit greedy validity & 0.812 & \textbf{0.875} \\
+    ID & edit greedy noncopy & 0.812 & \textbf{0.875} \\
+    ID & edit Any@3 validity & 0.938 & \textbf{0.969} \\
+    ID & edit Any@3 noncopy & 0.938 & \textbf{0.969} \\
+    \midrule
+    OOD & de novo greedy validity & 1.000 & 1.000 \\
+    OOD & edit greedy validity & 0.812 & \textbf{0.844} \\
+    OOD & edit greedy noncopy & 0.812 & \textbf{0.844} \\
+    OOD & edit Any@3 validity & 0.969 & 0.969 \\
+    OOD & edit Any@3 noncopy & 0.969 & 0.969 \\
     \bottomrule
   \end{tabular}
 \end{table}
 
-Consistency ranking does not improve the raw first candidate: the protected
-policy remains best by 0.5 points. The source-consistent finalizer does reach
-66.0\% at $k=8$, four points above the protected-policy finalizer, but this is
-an assisted-selection result. The preregistered raw-edit gate therefore fails,
-and we do not promote this variant as a new editing policy.
+\subsection{Reproducibility boundary}
+\label{sec:appendix-reproducibility}
+
+P18 uses one cached base model, one tokenizer, and one LoRA adapter. Its frozen
+adapter SHA256 is
+\texttt{7b3e1736bac49b7b2e35eceeed11fde199e0403a948e4dae08fd4fb9b89a0827}.
+The expanded editing comparison uses byte-identical prompts and matching seeds
+for P17 and P18, with a task-stratified paired condition bootstrap (10,000
+replicates, seed 1919). The de novo extension generates only ranks 9--40 after
+verifying that ranks 1--8 are byte-identical to the earlier locked run. No
+training, threshold change, or benchmark-driven tuning occurs after freezing
+either checkpoint.

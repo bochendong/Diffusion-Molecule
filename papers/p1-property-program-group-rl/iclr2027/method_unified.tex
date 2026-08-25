@@ -1,0 +1,154 @@
+\section{Problem Formulation}
+\subsection{Optional-source molecular language modeling}
+Let $\mathcal G$ be the space of molecular graphs and let a property program
+be a variable-length list
+\begin{equation}
+  P=\{(j_\ell,g_\ell)\}_{\ell=1}^{m},
+  \label{eq:property-program-unified}
+\end{equation}
+where $j_\ell$ names a property and $g_\ell$ is either a numerical target or a
+directional goal. A request is $x=(P,S)$, where $S=\texttt{<EMPTY>}$ denotes de
+novo construction and otherwise contains a canonical source SMILES for
+editing. Both regimes are modeled by the same conditional distribution
+\begin{equation}
+  y=(z,s)\sim p_\theta(y\mid P,S),
+  \label{eq:single-policy}
+\end{equation}
+where $z\in\{\texttt{BUILD},\texttt{MODIFY}\}$ and $s$ is a complete SMILES
+string. The source field is an observed part of the request, not the output of
+a learned router.
+
+We call a system \emph{model-level unified} when the two regimes share the
+same base weights, trainable adapter, tokenizer, prompt template, and output
+schema. This definition excludes a router, a mode-specific adapter, and a
+mode-specific output head. It does not require the external evaluator or
+candidate-selection rule to be identical across benchmarks. The latter
+distinction matters because editing includes source fidelity whereas de novo
+construction does not.
+
+\subsection{External verification and budgeted success}
+Let $B$ denote a benchmark contract and
+$V_B(P,G;S)\in\{0,1\}$ its strict verifier. It combines chemical validity and
+joint property satisfaction; for editing it additionally requires source
+Tanimoto similarity above the declared threshold. For an ordered prefix of
+$K$ raw candidates, the editing endpoint is
+\begin{equation}
+  \operatorname{AnyAcc}^{@K}_{B}
+  =\frac{1}{n}\sum_{i=1}^{n}
+  \mathbf 1\!\left[\max_{1\le r\le K}
+  V_B(P_i,G_i^{(r)};S_i)=1\right].
+  \label{eq:any-accuracy}
+\end{equation}
+We use the more explicit notation
+$\operatorname{AnyAcc}^{@K}_{\rm all}(.65)$ for the strict
+MolEdit-Instruct endpoint. This is condition-level success within a budget and
+must not be compared directly with candidate-level accuracy.
+
+The matched SketchMol protocol instead draws 40 candidates and applies its
+declared property-aware finalizer. We denote the resulting endpoint
+$\operatorname{Best}_{B}^{@40}$. Targets and output properties are unavailable
+during generation and enter only this external post-generation selection. We
+therefore never pool the editing and de novo values into one numerical score.
+
+\section{MolProgram}
+\subsection{One serialization and one checkpoint}
+MolProgram uses Qwen2.5-VL-7B-Instruct with a single LoRA adapter. The system
+message instructs one molecular causal language model to infer the requested
+operation only from the source field. The user message is deterministic JSON,
+\begin{equation}
+  \texttt{\{"conditions":[...],"source":S\}},
+  \label{eq:input-schema}
+\end{equation}
+and the response must match exactly
+\begin{equation}
+  \texttt{\{"plan":"BUILD|MODIFY","smiles":"CANONICAL\_SMILES"\}}.
+  \label{eq:output-schema}
+\end{equation}
+Only an allowlist of eight controls (MW, LogP, QED, TPSA, HBD, HBA, RB, and
+SA) is serialized. Target molecules, target scaffolds, and oracle outputs are
+excluded from the prompt. De novo and editing examples use the same chat
+template and causal-LM output vocabulary; the plan token is supervised but
+does not select another network.
+
+The supervised checkpoint continues a frozen mixed de novo/editing LoRA. Its
+training set contains 160 de novo and 160 editing examples, balanced at the
+level of chosen-completion likelihood. Training uses one epoch at learning
+rate $2\times10^{-5}$. The 320 unique examples expand to 800 logical
+chosen--negative pairs, but each unique chosen completion contributes total
+weight one regardless of how many negative types it has.
+
+\subsection{Validity-aware multi-negative contrastive SFT}
+For example $i$, let $\ell_i^+$ be the mean token negative log-likelihood of
+the chosen completion and let $\ell_{in}^-$ be that of negative type $n$. Up
+to a constant minibatch scaling, the implemented objective is
+\begin{equation}
+  \mathcal L_i=\ell_i^+
+  +\sum_{n\in\mathcal N_i}\lambda_n
+  \left[m_n+\ell_i^+-\ell_{in}^-\right]_+ .
+  \label{eq:multinegative-objective}
+\end{equation}
+Each negative is forwarded separately. The hinge term is active when the
+chosen completion is not preferred by at least margin $m_n$.
+
+We use three train-only negative constructions. First, every example receives
+an invalid corruption formed by appending one unmatched parenthesis to the
+chosen SMILES ($m=0.15$, $\lambda=0.20$). Second, every example receives a
+valid same-mode target from a different condition ($m=0.10$,
+$\lambda=0.10$). Third, editing examples receive the unchanged source as a
+weak copy negative ($m=0.10$, $\lambda=0.12$). The invalid strings retain the
+strict JSON wrapper but are RDKit-invalid; mismatch donors never share the
+same target and never equal the edit source. All negatives are constructed
+from training rows only. This is multi-negative contrastive SFT with
+ORPO-like margins, not ORPO and not reinforcement learning.
+
+\subsection{Inference and benchmark boundary}
+At inference, the model receives $(P,S)$ and emits an ordered stream from the
+same checkpoint. No target molecule, target property value, static molecule
+pool, or learned task router is available during decoding. For editing, we
+report prefix Any@$K$ at $K\in\{1,4,8\}$ using the benchmark-native property
+direction and source-similarity verifier. For de novo construction, we report
+both raw-prefix diagnostics and the matched property-aware best-of-40
+finalizer. Keeping the finalizer outside the model is why the present system
+is model-level unified rather than fully end-to-end unified.
+
+\subsection{Verifier-aligned group-relative post-training}
+The supervised checkpoint exhibits a large gap between raw candidate success
+and best-of-many success. We use this gap as evidence that useful molecules are
+present in the policy support but underweighted, and continue the same adapter
+with a critic-free group-relative policy update. We select 128 training
+requests, balanced between construction and editing and across observed
+property counts. For each request $x_i$, the current policy samples a group of
+$K=4$ raw completions. Let $R_{ir}$ denote the terminal program reward for
+completion $r$. We form within-request advantages
+\begin{equation}
+  A_{ir}=\frac{R_{ir}-\overline R_i}
+  {\operatorname{Std}(R_{i1},\ldots,R_{iK})+\epsilon}
+  \quad\text{with}\quad A_{ir}\in[-3,3],
+  \label{eq:group-advantage}
+\end{equation}
+and minimize
+\begin{equation}
+  \mathcal L_{\rm post}
+  =-\frac{1}{K}\sum_{r=1}^{K}A_{ir}
+  \log p_\theta(y_{ir}\mid x_i)
+  +\lambda_{\rm SFT}\mathcal L_{\rm SFT},
+  \qquad \lambda_{\rm SFT}=0.20.
+  \label{eq:group-policy-objective}
+\end{equation}
+The sampled-completion term uses mean completion log probability, and the SFT
+anchor uses the training chosen completion. We perform one epoch at learning
+rate $10^{-6}$. The update uses neither a learned critic nor PPO probability
+ratios, clipping, or a reference-model KL penalty. It is therefore a
+GRPO-style group-relative policy update, not an exact reproduction of the
+clipped GRPO objective in DeepSeekMath \citep{shao2024deepseekmath}.
+
+The reward exposes the same property-program structure in both regimes. An
+invalid or schema-violating response receives $-1$. A valid response is scored
+by canonicality, the fraction and mean degree of satisfied clauses, a smooth
+bottleneck term derived from the least-satisfied clause, and an all-clause
+bonus. Editing additionally receives continuous Morgan-fingerprint Tanimoto
+reward, a bonus at similarity $\geq0.65$, a strict property-and-similarity
+bonus, and a small exact-copy penalty. Target SMILES are never read by the
+reward; they are used only by the SFT anchor. The post-training split contains
+no benchmark rows, and inference retains the same one-checkpoint interface and
+ordered raw candidate stream.

@@ -1,117 +1,41 @@
-\begin{table*}[t]
+\begin{table*}[h]
   \centering
-  \caption{Comparison on the ten MolEdit-Instruct molecular-editing tasks.
-  Arrows indicate the requested property direction. Published baseline values
-  are transcribed from Table~1 of \citet{zhuang2025moleditrl}.
-  $\operatorname{Acc}_{\mathrm{all}}(t)$ requires both property success and
-  source Tanimoto similarity of at least $t$;
-  $\operatorname{Acc}_{\mathrm{valid}}(t)$ conditions on valid generations.
-  Published rows retain their reported candidate-level evaluation protocol.
-  MolProgram metrics are computed over 997 conditions and 19,940 raw outputs,
-  with exactly 20 unranked candidates per condition; they are neither a
-  selected output nor an Any@20 event. MolProgram uses its source-anchored
-  graph-event operator followed by GRPO.
-  Bold denotes the best completed accuracy value under the displayed task
-  metric.}
-  \label{tab:moledit-full}
-  \setlength{\tabcolsep}{2.2pt}
-  \renewcommand{\arraystretch}{0.88}
-  \resizebox{\textwidth}{!}{%
-  \begin{tabular}{llrrrrrlrrrrr}
+  \caption{Strict
+  $\operatorname{AnyAcc}_{\rm all}^{@K}(.65)$ by MolEdit-Instruct task
+  ($n=10$ each). Bold marks the better checkpoint at a fixed budget; ties are
+  left unbolded. HBA and RB correspond to the benchmark's Haccept and Rotbonds
+  controls.}
+  \label{tab:editing-by-task}
+  \scriptsize
+  \setlength{\tabcolsep}{4pt}
+  \begin{tabular}{lrrrrrr}
     \toprule
-    Model & Task & Valid. & \shortstack{$\operatorname{Acc}_{\rm all}$\\$(.65)$}
-      & \shortstack{$\operatorname{Acc}_{\rm valid}$\\$(.65)$}
-      & \shortstack{$\operatorname{Acc}_{\rm all}$\\$(.15)$}
-      & \shortstack{$\operatorname{Acc}_{\rm valid}$\\$(.15)$}
-      & Task & Valid. & \shortstack{$\operatorname{Acc}_{\rm all}$\\$(.65)$}
-      & \shortstack{$\operatorname{Acc}_{\rm valid}$\\$(.65)$}
-      & \shortstack{$\operatorname{Acc}_{\rm all}$\\$(.15)$}
-      & \shortstack{$\operatorname{Acc}_{\rm valid}$\\$(.15)$} \\
+    Task & P17 @1 & P18 @1 & P17 @4 & P18 @4 & P17 @8 & P18 @8 \\
     \midrule
-    BioT5 & \multirow{8}{*}{GSK3$\beta\uparrow$} & 1 & 0 & 0 & .328 & .328
-      & \multirow{8}{*}{Rotbonds$\downarrow$} & 1 & 0 & 0 & .304 & .304 \\
-    MolGen & & 1 & .024 & .024 & .315 & .315
-      & & 1 & .022 & .022 & .312 & .312 \\
-    REINVENT4 & & .722 & .130 & .180 & .272 & .377
-      & & .784 & .430 & .549 & .582 & .7423 \\
-    DrugAssist & & .976 & .236 & .2418 & .304 & .3115
-      & & .9779 & .4458 & .4559 & .5321 & .5441 \\
-    GeLLM$^3$O$_{\rm M}$ & & .924 & .164 & .1775 & .354 & .3831
-      & & .896 & .054 & .0603 & .306 & .3415 \\
-    GeLLM$^3$O$_{\rm L}$ & & .902 & .114 & .1264 & .294 & .3259
-      & & .876 & .138 & .1575 & .506 & .5776 \\
-    MolEditRL & & .952 & \textbf{.342} & \textbf{.3592} & \textbf{.514} & \textbf{.5399}
-      & & .984 & .634 & .6443 & .830 & .8435 \\
-    MolProgram (event GRPO, ours) & & .9389 & .1545 & .1646 & .3616 & .3852
-      & & .9955 & \textbf{.8692} & \textbf{.8732} & \textbf{.9389} & \textbf{.9432} \\
+    DRD2$\downarrow$ + MW$\downarrow$ + SA$\downarrow$
+      & \textbf{0.4} & 0.1 & \textbf{0.4} & 0.2 & 0.4 & 0.4 \\
+    GSK3B$\uparrow$
+      & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 \\
+    HBA$\downarrow$ + LogP$\uparrow$
+      & 0.2 & 0.2 & 0.2 & \textbf{0.3} & 0.2 & \textbf{0.4} \\
+    HBA$\downarrow$ + MW$\downarrow$
+      & 0.2 & 0.2 & 0.2 & \textbf{0.3} & 0.2 & \textbf{0.3} \\
+    HBA$\downarrow$ + SA$\downarrow$
+      & 0.1 & \textbf{0.3} & 0.2 & \textbf{0.6} & 0.3 & \textbf{0.6} \\
+    HBA$\uparrow$ + MW$\uparrow$ + QED$\downarrow$
+      & 0.2 & 0.2 & 0.2 & 0.2 & 0.3 & 0.3 \\
+    MW$\uparrow$
+      & 0.3 & \textbf{0.4} & 0.4 & \textbf{0.7} & 0.4 & \textbf{0.9} \\
+    QED$\uparrow$ + SA$\downarrow$
+      & 0.2 & 0.2 & 0.2 & \textbf{0.3} & 0.2 & \textbf{0.3} \\
+    RB$\downarrow$
+      & 0.0 & 0.0 & 0.0 & 0.0 & 0.0 & \textbf{0.1} \\
+    SA$\downarrow$
+      & 0.1 & \textbf{0.2} & 0.1 & \textbf{0.3} & 0.1 & \textbf{0.3} \\
     \midrule
-    BioT5 & \multirow{8}{*}{MW$\uparrow$} & 1 & 0 & 0 & .354 & .354
-      & \multirow{8}{*}{SA$\downarrow$} & 1 & 0 & 0 & .428 & .428 \\
-    MolGen & & 1 & .036 & .036 & .362 & .362
-      & & 1 & .016 & .016 & .306 & .306 \\
-    REINVENT4 & & .654 & .068 & .104 & .340 & .5199
-      & & .582 & .010 & .0172 & .024 & .0412 \\
-    DrugAssist & & .980 & .3166 & .3231 & .4068 & .4151
-      & & .988 & .5371 & .5436 & .6092 & .6166 \\
-    GeLLM$^3$O$_{\rm M}$ & & .906 & .322 & .3554 & .572 & .6313
-      & & .916 & .350 & .3821 & .662 & .7227 \\
-    GeLLM$^3$O$_{\rm L}$ & & .884 & .232 & .2624 & .472 & .5339
-      & & .888 & .238 & .268 & .640 & .7207 \\
-    MolEditRL & & .960 & \textbf{.404} & \textbf{.4208} & \textbf{.856} & \textbf{.8917}
-      & & .988 & .628 & .6356 & .828 & .8381 \\
-    MolProgram (event GRPO, ours) & & .9665 & .0745 & .0771 & .1490 & .1542
-      & & .9885 & \textbf{.6310} & \textbf{.6383} & \textbf{.8440} & \textbf{.8538} \\
-    \midrule
-    BioT5 & \multirow{8}{*}{\shortstack{Haccept$\downarrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .306 & .306
-      & \multirow{8}{*}{\shortstack{QED$\uparrow$\\SA$\downarrow$}} & 1 & 0 & 0 & .272 & .272 \\
-    MolGen & & 1 & .015 & .015 & .196 & .196
-      & & 1 & .017 & .017 & .254 & .254 \\
-    REINVENT4 & & .659 & .098 & .179 & .218 & .2781
-      & & .701 & .143 & .2411 & .279 & .3491 \\
-    DrugAssist & & .988 & .2425 & .2454 & .2725 & .2759
-      & & .980 & .532 & .5429 & .578 & .5898 \\
-    GeLLM$^3$O$_{\rm M}$ & & .872 & .132 & .1514 & .304 & .3486
-      & & .882 & .012 & .0136 & .224 & .254 \\
-    GeLLM$^3$O$_{\rm L}$ & & .920 & .118 & .1283 & .388 & .4217
-      & & .904 & .206 & .2279 & .586 & .6482 \\
-    MolEditRL & & .972 & .346 & .356 & .510 & .5247
-      & & .974 & \textbf{.632} & \textbf{.6489} & \textbf{.788} & \textbf{.809} \\
-    MolProgram (event GRPO, ours) & & .9805 & \textbf{.5110} & \textbf{.5212} & \textbf{.7265} & \textbf{.7409}
-      & & .9795 & .5960 & .6085 & .7630 & .7790 \\
-    \midrule
-    BioT5 & \multirow{8}{*}{\shortstack{Haccept$\downarrow$\\LogP$\uparrow$}} & 1 & 0 & 0 & .360 & .360
-      & \multirow{8}{*}{\shortstack{Haccept$\downarrow$\\MW$\downarrow$}} & 1 & 0 & 0 & .342 & .342 \\
-    MolGen & & 1 & .072 & .072 & .125 & .125
-      & & 1 & .051 & .051 & .109 & .109 \\
-    REINVENT4 & & .581 & .173 & .197 & .305 & .3854
-      & & .562 & .091 & .1474 & .179 & .2381 \\
-    DrugAssist & & .984 & .302 & .308 & .430 & .437
-      & & .984 & .2224 & .2261 & .2465 & .2505 \\
-    GeLLM$^3$O$_{\rm M}$ & & .906 & .224 & .2472 & .486 & .5364
-      & & .910 & .176 & .1934 & .370 & .4066 \\
-    GeLLM$^3$O$_{\rm L}$ & & .904 & .130 & .1438 & .354 & .3916
-      & & .932 & .128 & .1373 & .432 & .4635 \\
-    MolEditRL & & .946 & .316 & .334 & \textbf{.800} & \textbf{.8457}
-      & & .942 & .252 & .2675 & .660 & .7006 \\
-    MolProgram (event GRPO, ours) & & .9863 & \textbf{.6187} & \textbf{.6273} & .7181 & .7281
-      & & .9850 & \textbf{.5605} & \textbf{.5690} & \textbf{.8195} & \textbf{.8320} \\
-    \midrule
-    BioT5 & \multirow{8}{*}{\shortstack{DRD2$\downarrow$\\MW$\downarrow$, SA$\downarrow$}} & 1 & 0 & 0 & .136 & .136
-      & \multirow{8}{*}{\shortstack{Haccept$\uparrow$\\MW$\uparrow$, QED$\downarrow$}} & 1 & 0 & 0 & .088 & .088 \\
-    MolGen & & 1 & .039 & .039 & .128 & .128
-      & & 1 & .033 & .033 & .117 & .117 \\
-    REINVENT4 & & .522 & .093 & .2302 & .173 & .283
-      & & .638 & .017 & .163 & .131 & .2057 \\
-    DrugAssist & & .980 & .422 & .4306 & .464 & .4735
-      & & .956 & .230 & .2406 & .270 & .2824 \\
-    GeLLM$^3$O$_{\rm M}$ & & .900 & .080 & .0889 & .186 & .2067
-      & & .906 & .010 & .011 & .076 & .0839 \\
-    GeLLM$^3$O$_{\rm L}$ & & .918 & .108 & .1176 & .288 & .3137
-      & & .886 & .040 & .0451 & .084 & .0948 \\
-    MolEditRL & & .986 & \textbf{.518} & \textbf{.5254} & \textbf{.724} & \textbf{.7343}
-      & & .958 & \textbf{.430} & \textbf{.4489} & \textbf{.756} & \textbf{.7891} \\
-    MolProgram (event GRPO, ours) & & .9945 & .4545 & .4570 & .6610 & .6647
-      & & .9359 & .1419 & .1516 & .2081 & .2223 \\
+    Macro
+      & 0.17 & \textbf{0.18} & 0.19 & \textbf{0.29}
+      & 0.21 & \textbf{0.36} \\
     \bottomrule
-  \end{tabular}}
+  \end{tabular}
 \end{table*}
