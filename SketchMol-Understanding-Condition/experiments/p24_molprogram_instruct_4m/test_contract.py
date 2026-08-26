@@ -27,6 +27,10 @@ def test_submission_pins_corrected_gate_and_accelerated_full_contract():
     runner = (HERE / "run_train.sh").read_text()
     assert 'output="$OUTPUT_ROOT/gate_13k"' in runner
     assert '--per-device-batch-size "$batch_size"' in runner
+    smoke = (HERE / "submit_batch5_smoke.sh").read_text()
+    assert "P24_BATCH5_SMOKE_STEPS" in smoke
+    assert "P24_BATCH5_SMOKE_WALLTIME" in smoke
+    assert 'P24_MAX_STEPS="$SMOKE_STEPS"' in smoke
 
 
 def test_training_summary_counts_physical_batch_in_example_budget():
