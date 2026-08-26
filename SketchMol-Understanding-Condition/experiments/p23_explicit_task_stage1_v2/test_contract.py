@@ -140,7 +140,8 @@ def test_stratum_counts_respect_reserved_projected_pairs(tmp_path: Path):
 
 
 def test_edit500_runner_exports_and_checks_required_assay_oracles():
-    runner = (HERE / "run_edit500_prepare.sh").read_text(encoding="utf-8")
-    assert 'export SUCC_GSK3B_ORACLE_PATH=' in runner
-    assert 'export SUCC_DRD2_ORACLE_PATH=' in runner
-    assert '"$SUCC_GSK3B_ORACLE_PATH" "$SUCC_DRD2_ORACLE_PATH"' in runner
+    for name in ("run_edit500_prepare.sh", "run_edit500_score.sh"):
+        runner = (HERE / name).read_text(encoding="utf-8")
+        assert 'export SUCC_GSK3B_ORACLE_PATH=' in runner
+        assert 'export SUCC_DRD2_ORACLE_PATH=' in runner
+        assert '"$SUCC_GSK3B_ORACLE_PATH" "$SUCC_DRD2_ORACLE_PATH"' in runner
