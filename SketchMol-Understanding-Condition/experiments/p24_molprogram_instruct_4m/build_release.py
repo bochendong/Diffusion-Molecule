@@ -78,6 +78,23 @@ def ordered_subset(items: list[str], size: int, material: str) -> list[str]:
     )
 
 
+def balanced_quotas(total: int, buckets: list[int]) -> dict[int, int]:
+    base, remainder = divmod(total, len(buckets))
+    return {bucket: base + int(index < remainder) for index, bucket in enumerate(buckets)}
+
+
+def assigned_bucket(
+    feasible: list[int], counts: Counter[int], material: str,
+) -> int:
+    """Choose the least-populated feasible task bucket with deterministic ties."""
+    return min(
+        feasible,
+        key=lambda bucket: (
+            counts[bucket], hashlib.sha256(f"{material}:bucket:{bucket}".encode()).hexdigest(),
+        ),
+    )
+
+
 def messages(source: str, program: list[dict[str, object]], target: str, mode: str):
     user = json.dumps(
         {"conditions": program, "source": source}, sort_keys=True, separators=(",", ":")
@@ -130,11 +147,13 @@ class ShardWriter:
         }
 
 
-def de_novo_record(row: Mapping[str, object], seed: int) -> dict[str, object]:
+def de_novo_record(
+    row: Mapping[str, object], seed: int, property_count: int | None = None,
+) -> dict[str, object]:
     target = str(row["target_smiles"])
     rank = str(row["selection_rank"])
     values = dict(row["descriptor_values"])
-    count = 2 + rank64(f"{seed}:count:{rank}") % 6
+    count = property_count if property_count is not None else 2 + rank64(f"{seed}:count:{rank}") % 6
     properties = ordered_subset(list(DESCRIPTOR_PROPERTIES), count, f"{seed}:{rank}")
     program = [
         {"property": prop, "goal": {"around": values[prop]}}
@@ -183,11 +202,14 @@ def edit_fields(row: Mapping[str, object]) -> tuple[str, str, list[str]] | None:
     return (source, target, active) if active else None
 
 
-def edit_record(row: Mapping[str, object], source: str, target: str, active: list[str], seed: int):
+def edit_record(
+    row: Mapping[str, object], source: str, target: str, active: list[str], seed: int,
+    property_count: int | None = None,
+):
     raw_id = str(row.get("example_id", "") or row.get("sample_id", ""))
     material = f"{seed}:{raw_id}:{source}:{target}"
     rank = hashlib.sha256(material.encode()).hexdigest()
-    count = 1 + rank64(f"{seed}:count:{material}") % min(7, len(active))
+    count = property_count if property_count is not None else 1 + rank64(f"{seed}:count:{material}") % min(7, len(active))
     properties = ordered_subset(active, count, material)
     program = [
         {"property": prop, "goal": protocol.canonical_direction(row.get(f"{prop}_direction", ""))}
@@ -228,7 +250,9 @@ def edit_record(row: Mapping[str, object], source: str, target: str, active: lis
 
 def build_denovo(args: argparse.Namespace) -> dict[str, object]:
     frozen = heldout_hashes(args.heldout)
-    ranks = array.array("Q")
+    buckets = list(range(2, 8))
+    quotas = balanced_quotas(args.target_rows, buckets)
+    ranks = {bucket: array.array("Q") for bucket in buckets}
     seen: set[int] = set()
     audit: Counter[str] = Counter()
     for row in read_jsonl(args.input):
@@ -242,9 +266,10 @@ def build_denovo(args: argparse.Namespace) -> dict[str, object]:
             audit["duplicate_target"] += 1
             continue
         seen.add(unique)
-        ranks.append(int(str(row["selection_rank"])[:16], 16))
+        bucket = 2 + rank64(f"{args.seed}:task:{target_hash}") % 6
+        ranks[bucket].append(int(str(row["selection_rank"])[:16], 16))
         audit["eligible_unique"] += 1
-    cutoff = select_cutoff(ranks, args.target_rows)
+    cutoffs = {bucket: select_cutoff(ranks[bucket], quotas[bucket]) for bucket in buckets}
     writer = ShardWriter(args.output_dir, "de_novo", args.shards)
     seen.clear()
     distribution: Counter[str] = Counter()
@@ -256,9 +281,10 @@ def build_denovo(args: argparse.Namespace) -> dict[str, object]:
         if unique in seen:
             continue
         seen.add(unique)
-        if int(str(row["selection_rank"])[:16], 16) > cutoff:
+        bucket = 2 + rank64(f"{args.seed}:task:{target_hash}") % 6
+        if int(str(row["selection_rank"])[:16], 16) > cutoffs[bucket]:
             continue
-        record = de_novo_record(row, args.seed)
+        record = de_novo_record(row, args.seed, bucket)
         writer.write(record)
         distribution[f"{record['property_count']}p"] += 1
         if writer.total == args.target_rows:
@@ -266,8 +292,16 @@ def build_denovo(args: argparse.Namespace) -> dict[str, object]:
     files = writer.close()
     if writer.total != args.target_rows:
         raise AssertionError(f"wrote {writer.total} de novo rows, expected {args.target_rows}")
+    expected_distribution = {f"{key}p": value for key, value in quotas.items()}
+    if dict(sorted(distribution.items())) != expected_distribution:
+        raise AssertionError(
+            f"de novo task distribution is not exactly balanced: {dict(distribution)}"
+        )
     return {
-        "mode": "de_novo", "target_rows": args.target_rows, "cutoff_uint64": cutoff,
+        "mode": "de_novo", "target_rows": args.target_rows,
+        "task_balance": "exact_property_count_buckets",
+        "target_bucket_quotas": {f"{key}p": value for key, value in quotas.items()},
+        "cutoff_uint64_by_bucket": {f"{key}p": value for key, value in cutoffs.items()},
         "heldout_hashes": len(frozen), "audit": dict(audit),
         "property_count_distribution": dict(sorted(distribution.items())), "output": files,
     }
@@ -275,7 +309,10 @@ def build_denovo(args: argparse.Namespace) -> dict[str, object]:
 
 def build_edit(args: argparse.Namespace) -> dict[str, object]:
     frozen = heldout_hashes(args.heldout)
-    ranks = array.array("Q")
+    buckets = list(range(1, 8))
+    quotas = balanced_quotas(args.target_rows, buckets)
+    ranks = {bucket: array.array("Q") for bucket in buckets}
+    assignments: Counter[int] = Counter()
     seen: set[int] = set()
     audit: Counter[str] = Counter()
     with args.input_csv.open(newline="", encoding="utf-8") as handle:
@@ -285,7 +322,7 @@ def build_edit(args: argparse.Namespace) -> dict[str, object]:
             if fields is None:
                 audit["ineligible"] += 1
                 continue
-            source, target, _active = fields
+            source, target, active = fields
             source_hash = hashlib.sha256(source.encode()).hexdigest()
             target_hash = hashlib.sha256(target.encode()).hexdigest()
             if source_hash in frozen or target_hash in frozen:
@@ -297,11 +334,16 @@ def build_edit(args: argparse.Namespace) -> dict[str, object]:
                 continue
             seen.add(pair)
             raw_id = str(row.get("example_id", "") or row.get("sample_id", ""))
-            ranks.append(rank64(f"{args.seed}:{raw_id}:{source}:{target}"))
+            material = f"{args.seed}:{raw_id}:{source}:{target}"
+            bucket = assigned_bucket(list(range(1, min(7, len(active)) + 1)), assignments, material)
+            assignments[bucket] += 1
+            ranks[bucket].append(rank64(material))
             audit["eligible_unique"] += 1
-    cutoff = select_cutoff(ranks, args.target_rows)
+    cutoffs = {bucket: select_cutoff(ranks[bucket], quotas[bucket]) for bucket in buckets}
+    assignment_capacity = dict(assignments)
     writer = ShardWriter(args.output_dir, "edit", args.shards)
     seen.clear()
+    assignments.clear()
     distribution: Counter[str] = Counter()
     similarity: Counter[str] = Counter()
     with args.input_csv.open(newline="", encoding="utf-8") as handle:
@@ -319,9 +361,12 @@ def build_edit(args: argparse.Namespace) -> dict[str, object]:
                 continue
             seen.add(pair)
             raw_id = str(row.get("example_id", "") or row.get("sample_id", ""))
-            if rank64(f"{args.seed}:{raw_id}:{source}:{target}") > cutoff:
+            material = f"{args.seed}:{raw_id}:{source}:{target}"
+            bucket = assigned_bucket(list(range(1, min(7, len(active)) + 1)), assignments, material)
+            assignments[bucket] += 1
+            if rank64(material) > cutoffs[bucket]:
                 continue
-            record = edit_record(row, source, target, active, args.seed)
+            record = edit_record(row, source, target, active, args.seed, bucket)
             writer.write(record)
             distribution[f"{record['property_count']}p"] += 1
             similarity["strict_ge_0.65" if record["source_tanimoto"] >= 0.65 else "relaxed_0.15_0.65"] += 1
@@ -330,8 +375,19 @@ def build_edit(args: argparse.Namespace) -> dict[str, object]:
     files = writer.close()
     if writer.total != args.target_rows:
         raise AssertionError(f"wrote {writer.total} edit rows, expected {args.target_rows}")
+    expected_distribution = {f"{key}p": value for key, value in quotas.items()}
+    if dict(sorted(distribution.items())) != expected_distribution:
+        raise AssertionError(
+            f"edit task distribution is not exactly balanced: {dict(distribution)}"
+        )
     return {
-        "mode": "edit", "target_rows": args.target_rows, "cutoff_uint64": cutoff,
+        "mode": "edit", "target_rows": args.target_rows,
+        "task_balance": "exact_property_count_buckets",
+        "target_bucket_quotas": {f"{key}p": value for key, value in quotas.items()},
+        "eligible_assignments_by_bucket": {
+            f"{key}p": assignment_capacity.get(key, 0) for key in buckets
+        },
+        "cutoff_uint64_by_bucket": {f"{key}p": value for key, value in cutoffs.items()},
         "heldout_hashes": len(frozen), "audit": dict(audit),
         "property_count_distribution": dict(sorted(distribution.items())),
         "similarity_distribution": dict(similarity), "output": files,

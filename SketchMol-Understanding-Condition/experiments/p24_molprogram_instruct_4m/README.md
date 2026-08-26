@@ -34,6 +34,12 @@ difference. Original MolEdit-Instruct text and inferred task metadata are kept
 as provenance, but unverified bioactivity clauses are not silently promoted to
 training labels.
 
+The release is task-balanced by property-program arity. The six de novo buckets
+(2p--7p) and seven edit buckets (1p--7p) receive equal quotas, with at most one
+extra row in the first buckets when a total is not divisible. Edit pairs remain
+unique: high-arity scarcity causes the build to fail visibly instead of filling
+a bucket by copying lower-arity examples.
+
 ## Leakage boundary
 
 - PubChem molecules overlapping any frozen de novo target are excluded during
