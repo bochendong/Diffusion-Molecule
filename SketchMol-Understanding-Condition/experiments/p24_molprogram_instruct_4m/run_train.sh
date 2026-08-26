@@ -22,7 +22,7 @@ if [[ "$MODE" == gate ]]; then
   accumulation="${P24_GRADIENT_ACCUMULATION:-32}"
   output="$OUTPUT_ROOT/gate"
 elif [[ "$MODE" == full ]]; then
-  steps="${P24_MAX_STEPS:-15625}"
+  steps="${P24_MAX_STEPS:-10039}"
   accumulation="${P24_GRADIENT_ACCUMULATION:-64}"
   output="$OUTPUT_ROOT/full"
 else
@@ -38,4 +38,3 @@ compgen -G "$output/checkpoint-*" >/dev/null && resume+=(--resume-from-checkpoin
   --gradient-accumulation "$accumulation" --learning-rate "${P24_LEARNING_RATE:-1e-5}" \
   --save-steps "${P24_SAVE_STEPS:-500}" --seed 24003 "${resume[@]}"
 echo "P24 $MODE training complete: $output"
-

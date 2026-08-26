@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import array
 import bisect
 import json
 import os
@@ -27,6 +28,7 @@ class IndexedChatDataset:
         self.paths: list[Path] = []
         self.indices: list[object] = []
         self.cumulative = [0]
+        self.bucket_indices: dict[str, array.array] = {}
         self._handles: dict[str, object] = {}
         for mode in ("de_novo", "edit"):
             for path in sorted((release_root / mode).glob("*.jsonl")):
@@ -38,9 +40,25 @@ class IndexedChatDataset:
                 offsets = np.memmap(index, dtype="<u8", mode="r")
                 self.paths.append(path)
                 self.indices.append(offsets)
+                base_index = self.cumulative[-1]
+                with path.open(encoding="utf-8") as handle:
+                    for local_index, line in enumerate(handle):
+                        row = json.loads(line)
+                        bucket = f"{row['task_mode']}:{row['property_count']}p"
+                        self.bucket_indices.setdefault(bucket, array.array("Q")).append(
+                            base_index + local_index
+                        )
                 self.cumulative.append(self.cumulative[-1] + len(offsets))
         if not self.paths or not self.cumulative[-1]:
             raise ValueError(f"no indexed release shards under {release_root}")
+        expected = {
+            *{f"de_novo:{count}p" for count in range(2, 8)},
+            *{f"edit:{count}p" for count in range(1, 8)},
+        }
+        if set(self.bucket_indices) != expected:
+            raise ValueError(
+                f"task buckets differ: expected={sorted(expected)} actual={sorted(self.bucket_indices)}"
+            )
 
     def __len__(self) -> int:
         return self.cumulative[-1]
@@ -89,6 +107,33 @@ class IndexedChatDataset:
             "attention_mask": [1] * len(full_ids),
             "labels": labels,
         }
+
+
+class TaskBalancedSampler:
+    """Deterministic round-robin sampling with an equal count for all tasks."""
+
+    def __init__(self, dataset: IndexedChatDataset, seed: int):
+        self.dataset = dataset
+        self.seed = seed
+        self.keys = sorted(dataset.bucket_indices)
+        self.per_bucket = min(len(dataset.bucket_indices[key]) for key in self.keys)
+
+    def __len__(self) -> int:
+        return self.per_bucket * len(self.keys)
+
+    def __iter__(self):
+        import torch
+
+        generator = torch.Generator()
+        generator.manual_seed(self.seed)
+        permutations = {
+            key: torch.randperm(len(self.dataset.bucket_indices[key]), generator=generator)[: self.per_bucket]
+            for key in self.keys
+        }
+        for position in range(self.per_bucket):
+            for key in self.keys:
+                local = int(permutations[key][position])
+                yield int(self.dataset.bucket_indices[key][local])
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -164,7 +209,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     training_args = transformers.TrainingArguments(
         **{key: value for key, value in values.items() if key in signature.parameters}
     )
-    trainer = transformers.Trainer(
+    class BalancedTrainer(transformers.Trainer):
+        def _get_train_sampler(self, train_dataset=None):
+            selected = train_dataset if train_dataset is not None else self.train_dataset
+            return TaskBalancedSampler(selected, args.seed)
+
+    trainer = BalancedTrainer(
         model=model, args=training_args, train_dataset=dataset,
         data_collator=common.CompletionCollator(tokenizer),
     )
@@ -186,6 +236,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         "protocol": "p24_molprogram_instruct_4m_indexed_sft_v1",
         "base_model": args.base_model, "input_adapter": str(args.input_adapter),
         "loader_kind": loader_kind, "train_rows": len(dataset),
+        "task_bucket_rows": {
+            key: len(value) for key, value in sorted(dataset.bucket_indices.items())
+        },
+        "balanced_sampler_rows_per_task": min(map(len, dataset.bucket_indices.values())),
         "max_steps": args.max_steps, "gradient_accumulation": args.gradient_accumulation,
         "effective_examples": args.max_steps * args.gradient_accumulation,
         "learning_rate": args.learning_rate, "resume_checkpoint": resume,

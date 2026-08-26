@@ -24,9 +24,9 @@ done
   --heldout "$PROJECT/outputs/direct_smiles_denovo_2p7p_v2_mixed_condition/denovo_2p7p_eval_rows.csv" \
   --manifest "$release/manifests/de_novo.json"
 "$PY" "$SCRIPT_DIR/build_release.py" edit \
-  --input-csv "$EDIT_ROOT/train.csv" --output-dir "$release" --target-rows 2000000 --shards 128 \
+  --input-csv "$EDIT_ROOT/train.csv" --output-dir "$release" --target-rows 569919 --shards 128 \
   --heldout "$EDIT_ROOT/eval_balanced.csv" --manifest "$release/manifests/edit.json"
 "$PY" "$SCRIPT_DIR/finalize_release.py" \
-  --release-root "$release" --output-manifest "$release/MolProgramInstruct-4M-v1.manifest.json"
+  --release-root "$release" --de-novo-rows 2000000 --edit-rows 569919 \
+  --output-manifest "$release/MolProgramInstruct-Balanced-v1.manifest.json"
 echo "P24 release complete: $release"
-

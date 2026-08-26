@@ -92,11 +92,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--release-root", required=True, type=Path)
     parser.add_argument("--de-novo-rows", type=int, default=2_000_000)
-    parser.add_argument("--edit-rows", type=int, default=2_000_000)
+    parser.add_argument("--edit-rows", type=int, default=569_919)
     parser.add_argument("--output-manifest", required=True, type=Path)
     args = parser.parse_args()
     result = {
-        "dataset": "MolProgramInstruct-4M", "release_version": "1.0",
+        "dataset": "MolProgramInstruct-Balanced", "release_version": "1.0",
         "protocol": "molprogram_instruct_4m_release_v1",
         "total_instruction_examples": args.de_novo_rows + args.edit_rows,
         "count_semantics": "instruction examples; unique structures and pairs reported separately",

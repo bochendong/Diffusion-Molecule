@@ -61,6 +61,7 @@ def main() -> int:
         "target_rows": args.target_rows,
         "target_bucket_quotas": {f"{key}p": value for key, value in quotas.items()},
         "assigned_capacity": capacity,
+        "max_exact_balanced_rows": min(assignments.values()) * 7,
         "shortfall": shortfalls,
         "can_build_exact_balanced_release": not any(shortfalls.values()),
         "counts": dict(counts),

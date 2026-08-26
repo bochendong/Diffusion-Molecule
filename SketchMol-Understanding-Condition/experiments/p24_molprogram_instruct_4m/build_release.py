@@ -161,7 +161,7 @@ def de_novo_record(
     ]
     target_hash = str(row["target_hash"])
     return {
-        "dataset": "MolProgramInstruct-4M",
+        "dataset": "MolProgramInstruct-Balanced",
         "release_version": "1.0",
         "example_id": f"mpi4m:de_novo:{target_hash[:24]}",
         "task_mode": "de_novo",
@@ -221,7 +221,7 @@ def edit_record(
     target_hash = hashlib.sha256(target.encode()).hexdigest()
     pair_hash = hashlib.sha256(f"{source}\n{target}".encode()).hexdigest()
     return {
-        "dataset": "MolProgramInstruct-4M",
+        "dataset": "MolProgramInstruct-Balanced",
         "release_version": "1.0",
         "example_id": f"mpi4m:edit:{pair_hash[:24]}",
         "task_mode": "edit",
