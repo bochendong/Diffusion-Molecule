@@ -64,11 +64,14 @@ a bucket by copying lower-arity examples.
    molecule records, selects exactly 2M de novo and 569,919 edit rows, and builds
    byte-offset indices.
 2. `submit_train.sh gate` continues the frozen aligned-24k adapter for a short
-   token-budgeted gate.
-3. Training uses a deterministic round-robin sampler over all 13 task buckets,
-   so every prefix differs by at most one example per task. After the gate
-   passes validity and non-copy checks, `submit_train.sh full` continues the
-   balanced schedule and supports Slurm checkpoint resume.
-4. The frozen Table 1 and Table 2 protocols are rerun. Paper prose is updated
+   gate of exactly 1,000 examples per broad task.
+3. Training uses a deterministic round-robin sampler over all 13 broad task
+   buckets. After the gate passes validity and non-copy checks,
+   `submit_train.sh full` consumes 81,415 examples per task and supports Slurm
+   checkpoint resume.
+4. `submit_alignment_refresh.sh FULL_JOB_ID` applies one low-rate epoch over
+   720 rows for each of six de novo arities and ten frozen Table 2 edit tasks.
+   This preserves scarce GSK3B, DRD2, and SA supervision after broad scaling.
+5. The frozen Table 1 and Table 2 protocols are rerun. Paper prose is updated
    only after those results are frozen; the existing table structures are not
    changed by this experiment.

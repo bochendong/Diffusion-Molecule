@@ -1,0 +1,141 @@
+\section{Experiments}
+\label{sec:experiments}
+
+Our experiments separate three questions that are often confounded in
+molecular generation: whether construction and editing can share one policy,
+whether the training distribution covers the requested property programs, and
+whether an apparent gain comes only from a larger inference budget. We freeze
+the data boundary before training, balance optimization by task rather than by
+raw corpus frequency, and retain the sampling unit of each external benchmark.
+
+\subsection{Training data and leakage-controlled capacity}
+\paragraph{De novo supervision.}
+We stream the first four million records from the official PubChem bulk SDF
+archive and canonicalize them with RDKit. We retain single-fragment molecules
+containing common drug-like elements and compute MW, LogP, QED, TPSA, HBD, HBA,
+and RB. After validity, descriptor-range, duplicate, and held-out-target
+filters, 3,290,815 unique molecules remain eligible. A seeded hash selects
+2,000,000 targets. Each target is paired with one 2p--7p numerical property
+program derived from its computed descriptors; the six arity strata contain
+333,334/333,334/333,333/333,333/333,333/333,333 examples. The numerical values
+are inputs during training but the target molecule is present only as the
+assistant completion.
+
+\paragraph{Editing supervision.}
+The isolated MolEdit-Instruct training split contains 2,984,459 rows, but row
+count is not edit-pair capacity: 1,548,544 rows repeat a canonical
+source--target pair under another instruction view. We additionally remove
+767,651 rows whose canonical source or target molecule occurs in the frozen
+50k editing split or a paper reference. This molecule-level boundary prevents
+memorizing a held-out target through another source. It leaves 668,262 valid,
+non-identity unique pairs with at least one verified descriptor change. We form
+directional programs only from source--target descriptor differences that pass
+the train-only activity rule; unverified assay text is retained as provenance
+but is not promoted to a label.
+
+We next allocate unique pairs to edit arities 1p--7p. The 7p stratum is the
+limiting stratum, with 81,417 assignable pairs after isolation and
+deduplication. Consequently, the leakage-controlled release contains exactly
+81,417 pairs per edit arity, or 569,919 edit examples. We do not inflate this
+number to two million by repeating pairs: doing so would make frequent
+instruction views, rather than independent molecular transformations, define
+the effective objective. The resulting release, \emph{MolProgramInstruct-
+Balanced}, contains 2,569,919 examples and separately reports instruction,
+unique-molecule, and unique-pair counts.
+
+\paragraph{Why task balance, not row balance.}
+The release is intentionally larger on the de novo side because PubChem
+provides more independent structures. Optimization does not inherit this
+imbalance. We define thirteen broad task buckets---six de novo arities (2p--7p)
+and seven editing arities (1p--7p)---and use deterministic round-robin sampling
+without replacement within a bucket. The common non-replacement capacity is
+\begin{equation}
+ n_{\rm bal}=13\min_b |\mathcal D_b|
+ =13\times81{,}417=1{,}058{,}421.
+ \label{eq:balanced-training-capacity}
+\end{equation}
+Every prefix differs by at most one example across tasks. This gives editing
+seven thirteenths of the updates even though it contributes fewer released
+rows, and prevents easy low-order programs from dominating high-order control.
+
+\subsection{Training schedule and checkpoint policy}
+MolProgram uses Qwen2.5-VL-7B-Instruct and one trainable LoRA adapter for both
+modes. We initialize the scale continuation from the frozen aligned-24k
+checkpoint, which already establishes the optional-source interface and the
+multi-negative preference objective. The large-corpus stage is positive SFT
+with BF16, maximum sequence length 448, microbatch size one, learning rate
+$10^{-5}$, seed 24003, and checkpoints every 500 optimizer steps. Its
+operational gate uses 500 steps with gradient accumulation 26, corresponding
+to exactly 1,000 examples from each of the thirteen tasks. The gate checks
+finite adapter weights, parse validity, non-identity edits, and source-copy
+rate; benchmark accuracy is not used for model selection.
+
+After the gate passes, the full broad stage uses 16,283 optimizer steps and
+gradient accumulation 65. Because 65 is five complete thirteen-task cycles,
+the run observes exactly 81,415 examples per task (1,058,395 total), leaving
+only two examples per bucket unused for batch divisibility. Checkpoint resume
+preserves the sampler seed and byte-offset indices, so a Slurm timeout changes
+neither data order nor task counts.
+
+\paragraph{Low-rate task-alignment refresh.}
+The large corpus supplies broad physicochemical control but cannot manufacture
+reliable GSK3B, DRD2, or SA labels from descriptor deltas. Replacing these
+scarce objectives with unrelated properties would contradict the claimed task
+alignment. We therefore finish with an explicitly separated refresh drawn from
+the frozen aligned-24k training split. It contains 720 examples for each of the
+six de novo arities and each of the ten Table~2 edit families (11,520 rows
+total), selected by frozen hash rank and interleaved with equal quotas. Starting
+from the broad-stage adapter, the refresh runs for one epoch at
+$5\times10^{-6}$. Broad scale therefore teaches the common molecular language,
+while the low-rate refresh restores rare benchmark semantics without claiming
+that they exist at PubChem scale.
+
+We freeze the final adapter hash before paper evaluation. The aligned-24k
+checkpoint remains a controlled small-data diagnostic; the balanced-scale
+checkpoint uses identical prompts, generation code, and scorers so that a
+change cannot be attributed to a revised test contract.
+
+\subsection{Frozen evaluation sets}
+The multi-property de novo benchmark contains 6,000 SketchMol conditions, with
+1,000 conditions for each arity from 2p through 7p
+\citep{wang2025sketchmol}. The main 2p--4p comparison and separate 6p/7p stress
+test are selected by seeded hash rank from this frozen pool. Editing is
+evaluated on the ten MolEdit-Instruct task families
+\citep{zhuang2026moleditrl}; no training source or target molecule occurs in
+the evaluation references. The OOD set contains the twelve numerical targets
+from SketchMol Supplementary Table~3: LogP $\{8,9,10\}$, TPSA
+$\{160,170,180\}$, HBA $\{11,12,13\}$, and RB $\{11,12,13\}$. These targets
+are outside the training range and are never used for checkpoint selection.
+All reference files, prompts, adapter weights, and generation manifests are
+hash-locked before scoring.
+
+\subsection{Generation budgets and fair comparison}
+At inference, MolProgram receives only the property program and optional source
+molecule. It never observes a target molecule, target property values, a
+property oracle, or a static candidate pool. De novo evaluation draws 40
+candidates per condition and applies the declared SketchMol-compatible
+property finalizer; 40 matches the official SketchMol conditional sampling
+budget. Editing emits eight candidates in raw order and applies no
+property-aware reranking. The external comparison treats all eight editing
+outputs as candidate-level observations. Raw@1 and Any@$K$ are reported only
+as within-model diagnostics and are never substituted for candidate-level
+accuracy. OOD evaluation likewise scores 40 raw candidates per target without
+property-aware selection.
+
+\subsection{Metrics and reporting conventions}
+For de novo design, strict success requires every active property clause to
+pass under the frozen benchmark tolerances. For editing, we report validity and
+$\operatorname{Acc}^{\rm cand@8}_{\rm all}(t)$ and
+$\operatorname{Acc}^{\rm cand@8}_{\rm valid}(t)$ at source-Tanimoto thresholds
+$t\in\{.65,.15\}$. The former counts invalid outputs as failures; the latter
+conditions on validity. $\operatorname{AnyAcc}^{@K}_{\rm all}(t)$ is a
+condition-level prefix statistic and is not compared with the output-level
+MolEditRL endpoint.
+
+For OOD extrapolation, Validity is the fraction of raw candidates that decode
+to molecules, Success-valid conditions property success on valid molecules,
+and Strict-all counts invalid generations as failures. The SketchMol Strict-all
+macro average is reconstructed from the twelve per-target products of validity
+and Success-valid, rather than from the product of their macro averages. All
+external rows retain their published metrics and sample counts. A dash denotes
+an unavailable matched experiment, not a zero.

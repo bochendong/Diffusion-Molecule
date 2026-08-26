@@ -19,11 +19,13 @@ export PYTHONPATH="$DEP:$SCRIPT_DIR:$PROJECT/experiments/unified_constraint_agen
 export HF_HOME="${HF_HOME:-/scratch/bdong/hf_cache/uca_common_llm}" HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 TOKENIZERS_PARALLELISM=false
 if [[ "$MODE" == gate ]]; then
   steps="${P24_MAX_STEPS:-500}"
-  accumulation="${P24_GRADIENT_ACCUMULATION:-32}"
+  # 500 x 26 = 13,000 examples = 1,000 per each of 13 tasks.
+  accumulation="${P24_GRADIENT_ACCUMULATION:-26}"
   output="$OUTPUT_ROOT/gate"
 elif [[ "$MODE" == full ]]; then
-  steps="${P24_MAX_STEPS:-10039}"
-  accumulation="${P24_GRADIENT_ACCUMULATION:-64}"
+  # 16,283 x 65 = 1,058,395 examples = 81,415 per each of 13 tasks.
+  steps="${P24_MAX_STEPS:-16283}"
+  accumulation="${P24_GRADIENT_ACCUMULATION:-65}"
   output="$OUTPUT_ROOT/full"
 else
   echo "ERROR: P24_TRAIN_MODE must be gate or full" >&2
