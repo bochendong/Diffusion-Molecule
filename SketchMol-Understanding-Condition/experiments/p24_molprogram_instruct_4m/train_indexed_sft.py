@@ -110,13 +110,19 @@ class IndexedChatDataset:
 
 
 class TaskBalancedSampler:
-    """Deterministic round-robin sampling with an equal count for all tasks."""
+    """Deterministic, task-homogeneous batches with equal task counts."""
 
-    def __init__(self, dataset: IndexedChatDataset, seed: int):
+    def __init__(self, dataset: IndexedChatDataset, seed: int, batch_size: int = 1):
         self.dataset = dataset
         self.seed = seed
+        self.batch_size = batch_size
         self.keys = sorted(dataset.bucket_indices)
         self.per_bucket = min(len(dataset.bucket_indices[key]) for key in self.keys)
+        if self.per_bucket % self.batch_size:
+            raise ValueError(
+                f"balanced rows per task {self.per_bucket} must be divisible by "
+                f"physical batch size {self.batch_size}"
+            )
 
     def __len__(self) -> int:
         return self.per_bucket * len(self.keys)
@@ -130,10 +136,11 @@ class TaskBalancedSampler:
             key: torch.randperm(len(self.dataset.bucket_indices[key]), generator=generator)[: self.per_bucket]
             for key in self.keys
         }
-        for position in range(self.per_bucket):
+        for start in range(0, self.per_bucket, self.batch_size):
             for key in self.keys:
-                local = int(permutations[key][position])
-                yield int(self.dataset.bucket_indices[key][local])
+                for position in range(start, start + self.batch_size):
+                    local = int(permutations[key][position])
+                    yield int(self.dataset.bucket_indices[key][local])
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -217,7 +224,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     class BalancedTrainer(transformers.Trainer):
         def _get_train_sampler(self, train_dataset=None):
             selected = train_dataset if train_dataset is not None else self.train_dataset
-            return TaskBalancedSampler(selected, args.seed)
+            return TaskBalancedSampler(selected, args.seed, args.per_device_batch_size)
 
     trainer = BalancedTrainer(
         model=model, args=training_args, train_dataset=dataset,
@@ -245,6 +252,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             key: len(value) for key, value in sorted(dataset.bucket_indices.items())
         },
         "balanced_sampler_rows_per_task": min(map(len, dataset.bucket_indices.values())),
+        "sampler_physical_batches_task_homogeneous": True,
         "max_steps": args.max_steps,
         "per_device_batch_size": args.per_device_batch_size,
         "gradient_accumulation": args.gradient_accumulation,
