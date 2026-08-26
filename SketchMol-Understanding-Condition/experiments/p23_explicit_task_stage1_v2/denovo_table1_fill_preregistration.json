@@ -1,0 +1,41 @@
+{
+  "protocol": "p23_paper_table1_denovo_missing_cells_v1",
+  "status": "locked before generation",
+  "paper_target": {
+    "table": "Table 1 de-novo block",
+    "aligned_24k_missing_cells": ["5p"],
+    "legacy_160_160_missing_cells": ["5p", "6p", "7p"]
+  },
+  "models": {
+    "aligned_24k": "outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned/model/stage1_v2/adapter",
+    "legacy_160_160": "outputs/p18_validity_aware_multinegative_unified/seed_1818_race12/model/p18/adapter"
+  },
+  "evaluation": {
+    "candidate_budget": 40,
+    "selection": "property-aware best-of-40 finalizer",
+    "conditions_5p": 100,
+    "conditions_6p": 20,
+    "conditions_7p": 20,
+    "generation_target_access": false,
+    "post_hoc_tuning": false
+  },
+  "frozen_data": {
+    "5p_source": "outputs/direct_smiles_denovo_2p7p_v2_mixed_condition/denovo_2p7p_eval_rows.csv",
+    "5p_selection_seed": 2025,
+    "5p_excludes_training_targets_for_both_models": true,
+    "legacy_6p_7p_reference": "outputs/p19_frozen_expanded_unified_benchmark/seed_1919/data/denovo_expanded.reference.csv",
+    "legacy_6p_7p_ranks_1_8": "outputs/p19_frozen_expanded_unified_benchmark/seed_1919/generated/p18/denovo.raw.csv"
+  },
+  "generation_seeds": {
+    "aligned_5p_ranks_1_8": 23233,
+    "aligned_5p_ranks_9_40": 232340,
+    "legacy_5p_ranks_1_8": 4020,
+    "legacy_5p_ranks_9_40": 9040,
+    "legacy_6p_7p_ranks_9_40": 9040
+  },
+  "reuse": {
+    "legacy_2p_4p": "P20 R2 frozen best-of-40 summary",
+    "aligned_2p_4p": "P23 paper-protocol frozen best-of-40 summary",
+    "aligned_6p_7p": "P23 paper-protocol frozen best-of-40 summary"
+  }
+}

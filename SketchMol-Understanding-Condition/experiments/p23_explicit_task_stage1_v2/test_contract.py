@@ -145,3 +145,16 @@ def test_edit500_runner_exports_and_checks_required_assay_oracles():
         assert 'export SUCC_GSK3B_ORACLE_PATH=' in runner
         assert 'export SUCC_DRD2_ORACLE_PATH=' in runner
         assert '"$SUCC_GSK3B_ORACLE_PATH" "$SUCC_DRD2_ORACLE_PATH"' in runner
+
+
+def test_denovo_table1_fill_targets_only_missing_paper_cells():
+    generation = (HERE / "run_denovo_table1_fill_generate.sh").read_text(encoding="utf-8")
+    finalizer = (HERE / "run_denovo_table1_fill_finalize.sh").read_text(encoding="utf-8")
+    submitter = (HERE / "submit_denovo_table1_fill.sh").read_text(encoding="utf-8")
+    assert "denovo_5p.prompts.jsonl" in generation
+    assert "denovo_6p7p.ranks_9_40.csv" in generation
+    assert "p23_aligned24k" in generation
+    assert "p18_legacy160" in generation
+    assert "P19/generated/p18/denovo.raw.csv" in finalizer
+    assert "collect_denovo_table1_fill.py" in finalizer
+    assert "edit500" not in generation + finalizer + submitter
