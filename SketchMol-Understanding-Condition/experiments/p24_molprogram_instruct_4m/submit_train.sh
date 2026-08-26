@@ -15,19 +15,21 @@ dep_args=()
 if [[ "$mode" == gate ]]; then
   walltime="04:00:00"
   max_steps=500
+  batch_size=1
   accumulation=26
   job_name=p24-gate13k
 else
-  # The corrected gate measured about 5.5 seconds per optimizer step at
-  # accumulation 32. Full accumulation 65 therefore needs roughly 50 hours.
-  walltime="3-00:00:00"
+  # Batch 5 uses the available H100 memory more efficiently while preserving
+  # the exact effective batch and example budget: 5 x 13 = 65.
+  walltime="2-00:00:00"
   max_steps=16283
-  accumulation=65
+  batch_size=5
+  accumulation=13
   job_name=p24-full
 fi
 job=$(sbatch --parsable --account="$ACCOUNT" --job-name="$job_name" --time="$walltime" \
   --cpus-per-task=6 --mem=64G --gres="$GRES" "${dep_args[@]}" \
   --output="$LOG_DIR/train-$mode-%j.log" \
-  --export=ALL,P24_SCRIPT_DIR="$SCRIPT_DIR",P24_TRAIN_MODE="$mode",P24_MAX_STEPS="$max_steps",P24_GRADIENT_ACCUMULATION="$accumulation" \
+  --export=ALL,P24_SCRIPT_DIR="$SCRIPT_DIR",P24_TRAIN_MODE="$mode",P24_MAX_STEPS="$max_steps",P24_BATCH_SIZE="$batch_size",P24_GRADIENT_ACCUMULATION="$accumulation" \
   "$SCRIPT_DIR/run_train.sh")
 printf '%s_job=%s\n' "$mode" "$job"

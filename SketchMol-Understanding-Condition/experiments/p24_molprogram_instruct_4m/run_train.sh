@@ -20,14 +20,16 @@ export HF_HOME="${HF_HOME:-/scratch/bdong/hf_cache/uca_common_llm}" HF_HUB_OFFLI
 if [[ "$MODE" == gate ]]; then
   steps="${P24_MAX_STEPS:-500}"
   # 500 x 26 = 13,000 examples = 1,000 per each of 13 tasks.
+  batch_size="${P24_BATCH_SIZE:-1}"
   accumulation="${P24_GRADIENT_ACCUMULATION:-26}"
   # Keep the corrected gate separate from the superseded 16k-example gate so
   # checkpoint auto-resume cannot silently preserve the wrong contract.
   output="$OUTPUT_ROOT/gate_13k"
 elif [[ "$MODE" == full ]]; then
-  # 16,283 x 65 = 1,058,395 examples = 81,415 per each of 13 tasks.
+  # 16,283 x 5 x 13 = 1,058,395 examples = 81,415 per each of 13 tasks.
   steps="${P24_MAX_STEPS:-16283}"
-  accumulation="${P24_GRADIENT_ACCUMULATION:-65}"
+  batch_size="${P24_BATCH_SIZE:-5}"
+  accumulation="${P24_GRADIENT_ACCUMULATION:-13}"
   output="$OUTPUT_ROOT/full"
 else
   echo "ERROR: P24_TRAIN_MODE must be gate or full" >&2
@@ -39,6 +41,7 @@ compgen -G "$output/checkpoint-*" >/dev/null && resume+=(--resume-from-checkpoin
 "$PY" "$SCRIPT_DIR/train_indexed_sft.py" \
   --release-root "$RELEASE" --output-dir "$output" --base-model "$BASE" \
   --input-adapter "$INPUT_ADAPTER" --max-steps "$steps" \
+  --per-device-batch-size "$batch_size" \
   --gradient-accumulation "$accumulation" --learning-rate "${P24_LEARNING_RATE:-1e-5}" \
   --save-steps "${P24_SAVE_STEPS:-500}" --seed 24003 "${resume[@]}"
 echo "P24 $MODE training complete: $output"

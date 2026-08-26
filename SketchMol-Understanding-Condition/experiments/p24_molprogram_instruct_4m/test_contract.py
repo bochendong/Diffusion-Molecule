@@ -16,12 +16,23 @@ def load(name: str):
     return module
 
 
-def test_submission_pins_corrected_gate_and_long_full_walltime():
+def test_submission_pins_corrected_gate_and_accelerated_full_contract():
     text = (HERE / "submit_train.sh").read_text()
-    assert "max_steps=500" in text and "accumulation=26" in text
-    assert 'walltime="3-00:00:00"' in text
+    assert "max_steps=500" in text and "batch_size=1" in text and "accumulation=26" in text
+    assert 'walltime="2-00:00:00"' in text
+    assert "max_steps=16283" in text and "batch_size=5" in text and "accumulation=13" in text
+    assert 16283 * 5 * 13 == 1_058_395
+    assert "P24_BATCH_SIZE=\"$batch_size\"" in text
     assert "P24_GRADIENT_ACCUMULATION=\"$accumulation\"" in text
-    assert 'output="$OUTPUT_ROOT/gate_13k"' in (HERE / "run_train.sh").read_text()
+    runner = (HERE / "run_train.sh").read_text()
+    assert 'output="$OUTPUT_ROOT/gate_13k"' in runner
+    assert '--per-device-batch-size "$batch_size"' in runner
+
+
+def test_training_summary_counts_physical_batch_in_example_budget():
+    trainer = (HERE / "train_indexed_sft.py").read_text()
+    assert '"per_device_batch_size": args.per_device_batch_size' in trainer
+    assert "args.max_steps * args.per_device_batch_size * args.gradient_accumulation" in trainer
 
 
 def test_gate_validation_is_target_blind_and_fail_closed():

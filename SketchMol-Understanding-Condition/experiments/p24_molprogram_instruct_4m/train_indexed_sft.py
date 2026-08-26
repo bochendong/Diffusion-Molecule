@@ -144,6 +144,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--input-adapter", required=True, type=Path)
     parser.add_argument("--max-length", type=int, default=448)
     parser.add_argument("--max-steps", type=int, required=True)
+    parser.add_argument("--per-device-batch-size", type=int, default=1)
     parser.add_argument("--gradient-accumulation", type=int, default=64)
     parser.add_argument("--learning-rate", type=float, default=1e-5)
     parser.add_argument("--warmup-steps", type=int, default=100)
@@ -152,6 +153,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--seed", type=int, default=24003)
     parser.add_argument("--resume-from-checkpoint", action="store_true")
     args = parser.parse_args(argv)
+    if args.per_device_batch_size < 1:
+        raise SystemExit("--per-device-batch-size must be positive")
+    if args.gradient_accumulation < 1:
+        raise SystemExit("--gradient-accumulation must be positive")
 
     import inspect
     import peft
@@ -194,7 +199,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     dataset = IndexedChatDataset(args.release_root, tokenizer, args.max_length)
     values = {
         "output_dir": str(args.output_dir), "max_steps": args.max_steps,
-        "per_device_train_batch_size": 1,
+        "per_device_train_batch_size": args.per_device_batch_size,
         "gradient_accumulation_steps": args.gradient_accumulation,
         "learning_rate": args.learning_rate, "warmup_steps": args.warmup_steps,
         "weight_decay": 0.01, "max_grad_norm": 1.0,
@@ -240,8 +245,13 @@ def main(argv: Sequence[str] | None = None) -> int:
             key: len(value) for key, value in sorted(dataset.bucket_indices.items())
         },
         "balanced_sampler_rows_per_task": min(map(len, dataset.bucket_indices.values())),
-        "max_steps": args.max_steps, "gradient_accumulation": args.gradient_accumulation,
-        "effective_examples": args.max_steps * args.gradient_accumulation,
+        "max_steps": args.max_steps,
+        "per_device_batch_size": args.per_device_batch_size,
+        "gradient_accumulation": args.gradient_accumulation,
+        "effective_batch_size": args.per_device_batch_size * args.gradient_accumulation,
+        "effective_examples": (
+            args.max_steps * args.per_device_batch_size * args.gradient_accumulation
+        ),
         "learning_rate": args.learning_rate, "resume_checkpoint": resume,
         "adapter_nonfinite_parameters": nonfinite,
         "train_metrics": dict(result.metrics), "adapter": str(adapter),
