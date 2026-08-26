@@ -7,7 +7,7 @@ PY="${P23_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 OUT="${P23_DENOVO_FILL_OUTPUT_ROOT:-$PROJECT/outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned/eval_denovo_table1_fill}"
 P19="$PROJECT/outputs/p19_frozen_expanded_unified_benchmark/seed_1919"
 P20="$PROJECT/outputs/p20_frozen_denovo_2p4p_table/seed_2020/r2/results/budget_sweep/p18/budget_sweep_summary.csv"
-ALIGNED_PAPER="$PROJECT/outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned/eval_paper_protocol/results"
+ALIGNED_PAPER="$PROJECT/outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned/eval_corrected_prompts/results"
 test -f "$OUT/DENOVO_FILL_GENERATED"
 module purge >/dev/null 2>&1 || true
 module load StdEnv/2023 python/3.11 rdkit/2025.09.4
