@@ -1,0 +1,65 @@
+{
+  "aggregation": "output_level_candidate_pool",
+  "alignment": {
+    "alignment": "train_only_source_target_oracle_projection",
+    "candidate_pool_per_task": 5000,
+    "requested_rows_per_task": 500,
+    "scan": {
+      "eligible": 50000,
+      "input": 50000
+    },
+    "selected_exact_task_rows": {
+      "DRD2:decrease+MW:decrease+SA:decrease": 500,
+      "GSK3B:increase": 500,
+      "HBA:decrease+LogP:increase": 500,
+      "HBA:decrease+MW:decrease": 500,
+      "HBA:decrease+SA:decrease": 500,
+      "HBA:increase+MW:increase+QED:decrease": 500,
+      "MW:increase": 500,
+      "QED:increase+SA:decrease": 500,
+      "RB:decrease": 500,
+      "SA:decrease": 500
+    },
+    "unique_scored_smiles_properties": 148713,
+    "verified_candidates": {
+      "DRD2:decrease+MW:decrease+SA:decrease": 3389,
+      "GSK3B:increase": 2040,
+      "HBA:decrease+LogP:increase": 5000,
+      "HBA:decrease+MW:decrease": 5000,
+      "HBA:decrease+SA:decrease": 4103,
+      "HBA:increase+MW:increase+QED:decrease": 5000,
+      "MW:increase": 5000,
+      "QED:increase+SA:decrease": 4833,
+      "RB:decrease": 5000,
+      "SA:decrease": 2529
+    }
+  },
+  "any_at_k": false,
+  "greedy_candidate": false,
+  "heldout_csv": "/scratch/bdong/datasets/Diffusion-Molecule/processed/moledit-instruct/enhanced_v1/splits/eval_balanced.csv",
+  "outputs_per_source": 1,
+  "outputs_per_task": 500,
+  "prompt_target_access": false,
+  "prompts_sha256": "2514209214e72bb98835cc6c04432c0cff0f7906c1a543aafd5cbbff35b81272",
+  "property_reranking": false,
+  "protocol": "p23_moledit_table1_sampled_once_500_per_task_v1",
+  "reference_sha256": "6a4f88e1bf800b5cf561ba8dfed7f59f26ed17c2b64c0f66f28621724e973ebc",
+  "seed": 23500,
+  "tasks": {
+    "DRD2:decrease+MW:decrease+SA:decrease": 500,
+    "GSK3B:increase": 500,
+    "HBA:decrease+LogP:increase": 500,
+    "HBA:decrease+MW:decrease": 500,
+    "HBA:decrease+SA:decrease": 500,
+    "HBA:increase+MW:increase+QED:decrease": 500,
+    "MW:increase": 500,
+    "QED:increase+SA:decrease": 500,
+    "RB:decrease": 500,
+    "SA:decrease": 500
+  },
+  "total_outputs": 5000,
+  "training_overlap": {
+    "source": 0,
+    "target": 0
+  }
+}

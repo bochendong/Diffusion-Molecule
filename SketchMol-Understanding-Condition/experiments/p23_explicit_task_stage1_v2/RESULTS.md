@@ -2,8 +2,8 @@
 
 ## Aligned 24k follow-up
 
-Status: repaired preparation chain submitted on Nibi; no result is claimed until
-the manifest, adapter, and matched evaluation are frozen.
+Status: aligned 24k training and the sampled-once 500-output-per-task edit
+evaluation are complete. The pinned-oracle score below is the frozen result.
 
 - output: `outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned`;
 - first data preparation: job `20496020`, failed before writing data because
@@ -23,8 +23,55 @@ the manifest, adapter, and matched evaluation are frozen.
 - fail-closed gate: any missing paper quota, held-out source/target overlap, or
   missing pinned assay oracle stops the chain before GPU training.
 
-The aligned follow-up is an amended Stage-1 data protocol, not a GRPO run. Its
-paper cells remain dashes while this status is pending.
+The aligned follow-up is an amended Stage-1 data protocol, not a GRPO run.
+
+## Aligned 24k sampled-once edit500
+
+The frozen edit evaluation uses one sampled output per source, 500 sources per
+task and ten Table 1 task families. Candidate generation has no target access,
+property reranking, greedy selection, or any@K selection. Canonical overlap with
+the aligned 24k training set is zero for both sources and targets.
+
+- preparation: job `20555931`, `COMPLETED 0:0`, 5,000 prompts, exact 500/task;
+- generation: job `20555932`, `COMPLETED 0:0`, 5,000 sampled-once outputs;
+- superseded score: job `20555933`; completed but silently used fallback TDC
+  assay models and is not the frozen result;
+- pinned-oracle score: job `20558133`, `COMPLETED 0:0`;
+- GSK3B oracle SHA-256:
+  `cd8ee8a58beb14a924de72d6366456069dec599b514db1219198c6be08f0e1f6`;
+- DRD2 oracle SHA-256:
+  `dbc473fca922c834dbaee6eaba832caaff26d4f891734078fb1af359a111100f`.
+
+Macro averages over the ten equal-size task cells are:
+
+| Validity | Acc_all@0.65 | Acc_valid@0.65 | Acc_all@0.15 | Acc_valid@0.15 | Property success | Mean source similarity |
+|---:|---:|---:|---:|---:|---:|---:|
+| 87.56% | 24.54% | 27.96% | 62.94% | 71.76% | 64.16% | 0.539 |
+
+Strict candidate-level K=1 results are:
+
+| Task | Validity | Acc_all@0.65 | Acc_all@0.15 | Property success | Mean source similarity |
+|---|---:|---:|---:|---:|---:|
+| GSK3B increase | 84.2% | 20.8% | 49.8% | 51.0% | 0.544 |
+| RB decrease | 85.8% | 26.2% | 70.6% | 72.0% | 0.546 |
+| MW increase | 90.6% | 31.6% | 82.2% | 84.2% | 0.549 |
+| SA decrease | 88.8% | 26.8% | 70.8% | 72.6% | 0.528 |
+| HBA decrease + SA decrease | 87.8% | 28.0% | 66.4% | 67.2% | 0.534 |
+| QED increase + SA decrease | 86.6% | 21.0% | 64.8% | 65.8% | 0.511 |
+| HBA decrease + LogP increase | 89.6% | 19.2% | 51.4% | 52.8% | 0.549 |
+| HBA decrease + MW decrease | 88.8% | **32.4%** | 69.4% | 70.4% | **0.561** |
+| DRD2 decrease + MW decrease + SA decrease | 88.6% | 24.8% | 56.8% | 57.4% | 0.549 |
+| HBA increase + MW increase + QED decrease | 84.8% | 14.6% | 47.2% | 48.2% | 0.521 |
+
+The compact frozen evidence is mirrored under
+`experiment-reports/understanding-condition/assets/p23-edit500-20558133/`.
+
+The 24k result is best read as a scale confirmation, not a demonstrated gain
+over the 100-row fast gate: macro strict accuracy is essentially unchanged
+(24.54% versus 25%), while validity rises from 86% to 87.56%. The references
+and sampling seeds differ, so this is not a paired checkpoint comparison. The
+larger evaluation also exposes lower mean source similarity (0.539 versus
+0.620), which remains the main weakness despite nontrivial property success.
 
 Status: completed fast Stage-1 v2 gate on Nibi, seed `2323_fast`.
 

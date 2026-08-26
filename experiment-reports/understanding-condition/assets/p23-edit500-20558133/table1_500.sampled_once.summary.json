@@ -1,0 +1,14 @@
+{
+  "adapter": "/scratch/bdong/projects/Diffusion-Molecule/SketchMol-Understanding-Condition/outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned/model/stage1_v2/adapter",
+  "greedy": false,
+  "outputs": 5000,
+  "outputs_per_source": 1,
+  "property_reranking": false,
+  "protocol": "p23_moledit_table1_sampled_once_v1",
+  "sampling": {
+    "seed": 23501,
+    "temperature": 0.8,
+    "top_p": 0.95
+  },
+  "target_access": false
+}

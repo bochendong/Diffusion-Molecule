@@ -1,0 +1,11 @@
+model,task,task_key,status,reference_n,prediction_n,missing_prediction_rows,n,valid_n,Validity,Acc_all(0.65),Acc_valid(0.65),Acc_all(0.15),Acc_valid(0.15),FCD,missing_oracle_skipped_rows,mean_best_source_tanimoto,property_anyk,selection
+P23-aligned24k-sampled-once,GSK3B↑,GSK3B:increase,measured,500,500,0,500,421,0.842,0.208,0.24703087885985747,0.498,0.5914489311163895,,0,0.5444864479323785,0.51,candidate-level@n=1
+P23-aligned24k-sampled-once,Rotbonds↓,RB:decrease,measured,500,500,0,500,429,0.858,0.262,0.30536130536130535,0.706,0.8228438228438228,,0,0.5457148933744396,0.72,candidate-level@n=1
+P23-aligned24k-sampled-once,MW↑,MW:increase,measured,500,500,0,500,453,0.906,0.316,0.3487858719646799,0.822,0.9072847682119205,,0,0.5487297807177749,0.842,candidate-level@n=1
+P23-aligned24k-sampled-once,SA↓,SA:decrease,measured,500,500,0,500,444,0.888,0.268,0.30180180180180183,0.708,0.7972972972972973,,0,0.5277204734882115,0.726,candidate-level@n=1
+P23-aligned24k-sampled-once,Haccept↓ SA↓,HBA:decrease+SA:decrease,measured,500,500,0,500,439,0.878,0.28,0.31890660592255127,0.664,0.7562642369020501,,0,0.5336994971820739,0.672,candidate-level@n=1
+P23-aligned24k-sampled-once,QED↑ SA↓,QED:increase+SA:decrease,measured,500,500,0,500,433,0.866,0.21,0.24249422632794457,0.648,0.7482678983833718,,0,0.5112874202175428,0.658,candidate-level@n=1
+P23-aligned24k-sampled-once,Haccept↓ LogP↑,HBA:decrease+LogP:increase,measured,500,500,0,500,448,0.896,0.192,0.21428571428571427,0.514,0.5736607142857143,,0,0.5486113481167336,0.528,candidate-level@n=1
+P23-aligned24k-sampled-once,Haccept↓ MW↓,HBA:decrease+MW:decrease,measured,500,500,0,500,444,0.888,0.324,0.36486486486486486,0.694,0.7815315315315315,,0,0.561016753921408,0.704,candidate-level@n=1
+P23-aligned24k-sampled-once,DRD2↓ MW↓ SA↓,DRD2:decrease+MW:decrease+SA:decrease,measured,500,500,0,500,443,0.886,0.248,0.2799097065462754,0.568,0.6410835214446953,,0,0.5494859495159862,0.574,candidate-level@n=1
+P23-aligned24k-sampled-once,Haccept↑ MW↑ QED↓,HBA:increase+MW:increase+QED:decrease,measured,500,500,0,500,424,0.848,0.146,0.1721698113207547,0.472,0.5566037735849056,,0,0.5209970776064774,0.482,candidate-level@n=1
