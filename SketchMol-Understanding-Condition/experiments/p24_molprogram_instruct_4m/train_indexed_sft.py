@@ -117,12 +117,10 @@ class TaskBalancedSampler:
         self.seed = seed
         self.batch_size = batch_size
         self.keys = sorted(dataset.bucket_indices)
-        self.per_bucket = min(len(dataset.bucket_indices[key]) for key in self.keys)
-        if self.per_bucket % self.batch_size:
-            raise ValueError(
-                f"balanced rows per task {self.per_bucket} must be divisible by "
-                f"physical batch size {self.batch_size}"
-            )
+        available_per_bucket = min(len(dataset.bucket_indices[key]) for key in self.keys)
+        self.per_bucket = available_per_bucket - (available_per_bucket % self.batch_size)
+        if not self.per_bucket:
+            raise ValueError("physical batch size exceeds the smallest task bucket")
 
     def __len__(self) -> int:
         return self.per_bucket * len(self.keys)
@@ -251,7 +249,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         "task_bucket_rows": {
             key: len(value) for key, value in sorted(dataset.bucket_indices.items())
         },
-        "balanced_sampler_rows_per_task": min(map(len, dataset.bucket_indices.values())),
+        "balanced_sampler_rows_per_task": (
+            min(map(len, dataset.bucket_indices.values()))
+            - min(map(len, dataset.bucket_indices.values())) % args.per_device_batch_size
+        ),
+        "balanced_sampler_dropped_rows_per_task": (
+            min(map(len, dataset.bucket_indices.values())) % args.per_device_batch_size
+        ),
         "sampler_physical_batches_task_homogeneous": True,
         "max_steps": args.max_steps,
         "per_device_batch_size": args.per_device_batch_size,

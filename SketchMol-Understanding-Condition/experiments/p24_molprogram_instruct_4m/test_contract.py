@@ -36,6 +36,8 @@ def test_training_summary_counts_physical_batch_in_example_budget():
     assert "range(0, self.per_bucket, self.batch_size)" in trainer
     assert "for position in range(start, start + self.batch_size)" in trainer
     assert "TaskBalancedSampler(selected, args.seed, args.per_device_batch_size)" in trainer
+    assert "available_per_bucket - (available_per_bucket % self.batch_size)" in trainer
+    assert '"balanced_sampler_dropped_rows_per_task"' in trainer
     assert '"sampler_physical_batches_task_homogeneous": True' in trainer
 
 
