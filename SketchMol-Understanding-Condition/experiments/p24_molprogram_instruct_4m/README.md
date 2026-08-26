@@ -78,5 +78,7 @@ a bucket by copying lower-arity examples.
    This preserves scarce GSK3B, DRD2, and SA supervision after broad scaling.
 5. `submit_table1_eval.sh REFRESH_JOB_ID` evaluates the refreshed P24 adapter on
    the same frozen 2p--7p conditions and best-of-40 finalizer used by the paper.
-   Paper prose is updated only after those results are frozen; the existing
-   table structures are not changed by this experiment.
+   `submit_table2_eval.sh REFRESH_JOB_ID` independently runs the frozen ten-task,
+   500-output-per-task MolEdit sampled-once protocol with pinned assay oracles.
+   Paper prose is updated only after both results are frozen; the existing table
+   structures are not changed by this experiment.

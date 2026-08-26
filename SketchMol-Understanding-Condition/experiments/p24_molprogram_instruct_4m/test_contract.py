@@ -47,6 +47,30 @@ def test_table1_preregistration_and_chain_cover_every_cell():
     assert "collect_table1.py" in finalizer
 
 
+def test_table2_reuses_frozen_edit500_and_pins_oracles():
+    prereg = json.loads((HERE / "p24_table2_preregistration.json").read_text())
+    assert prereg["frozen_data"]["total_outputs"] == 5000
+    assert prereg["generation"] == {
+        "outputs_per_source": 1,
+        "sampling_seed": 23501,
+        "temperature": 0.8,
+        "top_p": 0.95,
+        "greedy": False,
+        "property_reranking": False,
+        "any_at_k": False,
+        "target_access": False,
+    }
+    generation = (HERE / "run_table2_generate.sh").read_text()
+    scoring = (HERE / "run_table2_score.sh").read_text()
+    assert "table1_500.prompts.jsonl" in generation
+    assert "--seed 23501" in generation
+    assert "alignment_refresh/model/adapter" in generation
+    assert "EXPECTED_GSK3B=cd8ee8a58" in scoring
+    assert "EXPECTED_DRD2=dbc473fca" in scoring
+    assert "--missing-oracle-policy fail" in scoring
+    assert "--require-exact-candidate-count" in scoring
+
+
 def test_collector_rejects_missing_cells(tmp_path: Path):
     collector = load("collect_table1")
     try:

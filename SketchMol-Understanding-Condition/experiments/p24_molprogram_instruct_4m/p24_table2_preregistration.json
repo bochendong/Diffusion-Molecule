@@ -1,0 +1,31 @@
+{
+  "protocol": "p24_frozen_moledit_table2_sampled_once_v1",
+  "status": "locked before P24 generation",
+  "paper_target": "Table 2 molecular editing block",
+  "external_protocol_source": "MolEditRL Table 1",
+  "model": "outputs/p24_molprogram_instruct_4m/seed_24003/alignment_refresh/model/adapter",
+  "frozen_data": {
+    "reference": "outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned/eval_moledit_table1_500/data/table1_500.reference.csv",
+    "prompts": "outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned/eval_moledit_table1_500/data/table1_500.prompts.jsonl",
+    "task_count": 10,
+    "outputs_per_task": 500,
+    "total_outputs": 5000
+  },
+  "generation": {
+    "outputs_per_source": 1,
+    "sampling_seed": 23501,
+    "temperature": 0.8,
+    "top_p": 0.95,
+    "greedy": false,
+    "property_reranking": false,
+    "any_at_k": false,
+    "target_access": false
+  },
+  "scoring": {
+    "aggregation": "candidate",
+    "candidate_limit": 1,
+    "missing_oracle_policy": "fail",
+    "gsk3b_oracle_sha256": "cd8ee8a58beb14a924de72d6366456069dec599b514db1219198c6be08f0e1f6",
+    "drd2_oracle_sha256": "dbc473fca922c834dbaee6eaba832caaff26d4f891734078fb1af359a111100f"
+  }
+}
