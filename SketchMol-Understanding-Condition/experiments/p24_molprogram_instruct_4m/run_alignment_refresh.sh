@@ -17,6 +17,7 @@ export HF_HOME="${HF_HOME:-/scratch/bdong/hf_cache/uca_common_llm}" HF_HUB_OFFLI
 
 input="$P23_OUT/data/train.sft.jsonl"
 refresh="$P24_OUT/alignment_refresh/data/train.sft.jsonl"
+test -f "$P24_OUT/full/TRAINING_COMPLETE"
 "$PY" "$SCRIPT_DIR/build_alignment_refresh.py" \
   --input-jsonl "$input" --output-jsonl "$refresh" \
   --summary-json "$P24_OUT/alignment_refresh/data/summary.json" --rows-per-task 720

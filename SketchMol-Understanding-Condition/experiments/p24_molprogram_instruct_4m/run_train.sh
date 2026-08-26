@@ -21,7 +21,9 @@ if [[ "$MODE" == gate ]]; then
   steps="${P24_MAX_STEPS:-500}"
   # 500 x 26 = 13,000 examples = 1,000 per each of 13 tasks.
   accumulation="${P24_GRADIENT_ACCUMULATION:-26}"
-  output="$OUTPUT_ROOT/gate"
+  # Keep the corrected gate separate from the superseded 16k-example gate so
+  # checkpoint auto-resume cannot silently preserve the wrong contract.
+  output="$OUTPUT_ROOT/gate_13k"
 elif [[ "$MODE" == full ]]; then
   # 16,283 x 65 = 1,058,395 examples = 81,415 per each of 13 tasks.
   steps="${P24_MAX_STEPS:-16283}"

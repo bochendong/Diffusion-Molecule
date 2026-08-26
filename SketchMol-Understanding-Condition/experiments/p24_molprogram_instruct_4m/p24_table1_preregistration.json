@@ -1,0 +1,37 @@
+{
+  "protocol": "p24_frozen_denovo_table1_best40_v1",
+  "status": "locked before P24 generation",
+  "model": "outputs/p24_molprogram_instruct_4m/seed_24003/alignment_refresh/model/adapter",
+  "training_examples": {
+    "de_novo": 2000000,
+    "edit": 569919,
+    "alignment_refresh_per_task": 720
+  },
+  "evaluation": {
+    "candidate_budget": 40,
+    "selection": "property-aware best-of-40 finalizer",
+    "conditions": {
+      "2p": 100,
+      "3p": 100,
+      "4p": 100,
+      "5p": 100,
+      "6p": 20,
+      "7p": 20
+    },
+    "generation_target_access": false,
+    "post_hoc_tuning": false
+  },
+  "frozen_references": {
+    "2p_4p": "outputs/p20_frozen_denovo_2p4p_table/seed_2020/data/denovo_2p4p.reference.csv",
+    "5p": "outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned/eval_denovo_table1_fill/data/denovo_5p.reference.csv",
+    "6p_7p": "outputs/p19_frozen_expanded_unified_benchmark/seed_1919/data/denovo_expanded.reference.csv"
+  },
+  "generation_seeds": {
+    "2p_4p_ranks_1_8": 24031,
+    "2p_4p_ranks_9_40": 240310,
+    "5p_ranks_1_8": 24032,
+    "5p_ranks_9_40": 240320,
+    "6p_7p_ranks_1_8": 24033,
+    "6p_7p_ranks_9_40": 240330
+  }
+}

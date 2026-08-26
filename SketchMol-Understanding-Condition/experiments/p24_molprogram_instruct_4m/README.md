@@ -63,15 +63,20 @@ a bucket by copying lower-arity examples.
 1. `submit_build.sh` downloads eight official PubChem SDF chunks, extracts valid
    molecule records, selects exactly 2M de novo and 569,919 edit rows, and builds
    byte-offset indices.
-2. `submit_train.sh gate` continues the frozen aligned-24k adapter for a short
-   gate of exactly 1,000 examples per broad task.
+2. `submit_train.sh gate` continues the frozen aligned-24k adapter in a fresh
+   `gate_13k` directory for exactly 1,000 examples per broad task. Submission
+   pins 500 steps and accumulation 26 so inherited shell variables cannot alter
+   the frozen gate contract.
 3. Training uses a deterministic round-robin sampler over all 13 broad task
-   buckets. After the gate passes validity and non-copy checks,
+   buckets. `submit_gate_validation.sh` freezes ten target-blind prompts per
+   bucket and requires overall validity, per-bucket validity, and edit non-copy
+   thresholds before full training can start. After that gate passes,
    `submit_train.sh full` consumes 81,415 examples per task and supports Slurm
    checkpoint resume.
 4. `submit_alignment_refresh.sh FULL_JOB_ID` applies one low-rate epoch over
    720 rows for each of six de novo arities and ten frozen Table 2 edit tasks.
    This preserves scarce GSK3B, DRD2, and SA supervision after broad scaling.
-5. The frozen Table 1 and Table 2 protocols are rerun. Paper prose is updated
-   only after those results are frozen; the existing table structures are not
-   changed by this experiment.
+5. `submit_table1_eval.sh REFRESH_JOB_ID` evaluates the refreshed P24 adapter on
+   the same frozen 2p--7p conditions and best-of-40 finalizer used by the paper.
+   Paper prose is updated only after those results are frozen; the existing
+   table structures are not changed by this experiment.
