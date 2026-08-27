@@ -23,6 +23,7 @@
     "checkpoint_every_paired_steps": 10
   },
   "evaluation": {
+    "denovo_pool": "frozen 6000-row direct-smiles 2p-7p eval split, filtered against P23 train target and condition hashes",
     "old_p25_gate_excluded": true,
     "dev_and_final_disjoint": true,
     "rows_per_bucket_per_gate": 20,

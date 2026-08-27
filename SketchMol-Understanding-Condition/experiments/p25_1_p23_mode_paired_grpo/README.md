@@ -12,8 +12,10 @@ groups for each exact Table 2 edit task. Each prompt samples eight candidates.
 The supervised anchor stays at 1.0 and the frozen-reference KL coefficient is
 0.05.
 
-Evaluation uses two newly constructed 260-row gates. Both exclude the old P25
-gate and are mutually disjoint. Only the dev gate is submitted initially. The
+Evaluation uses two newly constructed 260-row gates. Their de-novo rows come
+from the pre-existing 6000-row direct-SMILES eval split after filtering every
+P23 training target and condition hash. Both gates exclude the old P25 gate and
+are mutually disjoint. Only the dev gate is submitted initially. The
 final gate cannot be submitted unless the dev comparison promotes, and paper
 tables cannot be submitted unless the final comparison also promotes.
 
