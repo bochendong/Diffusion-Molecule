@@ -1,0 +1,33 @@
+{
+  "protocol": "p27_p24_checkpoint_7500_conflict_aware_joint_rl_v1",
+  "status": "preregistered_before_submission",
+  "initial_policy": "outputs/p24_molprogram_instruct_4m/seed_24003/full/checkpoint-7500",
+  "checkpoint_selection": "newest complete P24 checkpoint observed before submission",
+  "training": {
+    "recipe": "identical to P26 decoupled conflict-aware joint RL",
+    "paired_optimizer_steps": 30,
+    "groups_per_step": {"de_novo": 1, "edit": 1},
+    "group_size": 16,
+    "learning_rate": 5e-7,
+    "gradient_surgery": "symmetric two-task PCGrad on conflicts",
+    "denovo_sft_anchor_weight": 1.0,
+    "edit_sft_anchor_weight": 1.0,
+    "reference_kl_weight": 0.05,
+    "seed": 26001,
+    "reward_target_smiles_access": false
+  },
+  "evaluation": {
+    "split": "P25.1 frozen dev gate",
+    "sampling_repeats": 4,
+    "property_reranking": false,
+    "comparison": "checkpoint-7500 before RL versus the exact RL endpoint"
+  },
+  "promotion_rule": {
+    "de_novo_valid_drop_max": 0.02,
+    "edit_valid_drop_max": 0.02,
+    "de_novo_strict_non_regression": true,
+    "edit_strict_065_non_regression": true,
+    "edit_relaxed_015_drop_max": 0.01,
+    "joint_de_novo_plus_edit_strict_gain_min": 0.01
+  }
+}
