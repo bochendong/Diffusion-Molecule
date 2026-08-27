@@ -21,3 +21,7 @@ Submit on Nibi with:
 ```bash
 ./experiments/p25_p23_joint_group_rl/submit_p25.sh
 ```
+
+The saved checkpoints can be evaluated post hoc for trajectory diagnosis with
+`submit_checkpoint_diagnostics.sh`. These diagnostic results cannot be used to
+select a paper checkpoint or override the preregistered P25 stop decision.

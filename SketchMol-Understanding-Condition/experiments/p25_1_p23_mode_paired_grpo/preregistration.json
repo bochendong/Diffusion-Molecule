@@ -1,0 +1,42 @@
+{
+  "protocol": "p25_1_p23_mode_paired_grpo_v1",
+  "status": "preregistered_before_submission",
+  "motivation": {
+    "p25_edit_strict_delta_pp": 2.25,
+    "p25_denovo_strict_delta_pp": -0.4166666667,
+    "p25_mode_group_counts": {"de_novo": 9, "edit": 30},
+    "p25_parameter_penalty_scale": "approximately 1e-11 and ineffective"
+  },
+  "training": {
+    "initial_and_reference_adapter": "P23 aligned-24k Stage-1 v2",
+    "adapter_sha256": "843953150e3481c4112a64aca0225c5738853054ce3fea1bcdff99e58e099e40",
+    "paired_optimizer_steps": 30,
+    "groups_per_step": {"de_novo": 1, "edit": 1},
+    "de_novo_groups": {"5p": 10, "6p": 10, "7p": 10},
+    "edit_groups": "three per exact Table 2 task",
+    "group_size": 8,
+    "learning_rate": 5e-7,
+    "sft_anchor_weight": 1.0,
+    "reference_kl_weight": 0.05,
+    "reference_kl_estimator": "token-mean Schulman k3",
+    "reward_target_smiles_access": false,
+    "checkpoint_every_paired_steps": 10
+  },
+  "evaluation": {
+    "old_p25_gate_excluded": true,
+    "dev_and_final_disjoint": true,
+    "rows_per_bucket_per_gate": 20,
+    "sampling_repeats": 4,
+    "dev_gate_must_promote_before_final_gate_is_run": true,
+    "final_gate_must_promote_before_paper_tables_are_run": true,
+    "property_reranking": false
+  },
+  "promotion_rule": {
+    "de_novo_valid_drop_max": 0.02,
+    "edit_valid_drop_max": 0.02,
+    "de_novo_strict_non_regression": true,
+    "edit_strict_065_non_regression": true,
+    "edit_relaxed_015_drop_max": 0.01,
+    "joint_de_novo_plus_edit_strict_gain_min": 0.01
+  }
+}
