@@ -25,7 +25,7 @@ baseline=$(sbatch --parsable --account=def-hup-ab --job-name=p27-c75-base --time
 train=$(sbatch --parsable --account=def-hup-ab --job-name=p27-c75-rl --time=01:30:00 \
   --cpus-per-task=4 --mem=48G --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1 \
   --dependency="afterok:$preflight" --output="$LOG_DIR/train-%j.log" \
-  --export=ALL,P27_INPUT_ADAPTER="$P24_CHECKPOINT",P27_OUTPUT_ROOT="$OUT" \
+  --export=ALL,P27_SCRIPT_DIR="$SCRIPT_DIR",P27_INPUT_ADAPTER="$P24_CHECKPOINT",P27_OUTPUT_ROOT="$OUT" \
   "$SCRIPT_DIR/run_train.sh")
 rl_eval=$(sbatch --parsable --account=def-hup-ab --job-name=p27-c75-eval --time=00:45:00 \
   --cpus-per-task=4 --mem=48G --gres=gpu:nvidia_h100_80gb_hbm3_3g.40gb:1 \
