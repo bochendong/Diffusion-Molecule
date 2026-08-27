@@ -21,7 +21,7 @@ if [[ "$mode" == gate ]]; then
 else
   # The corrected gate measured about 4.3 seconds per optimizer step at
   # accumulation 26. Full accumulation 65 therefore needs roughly 50 hours.
-  walltime="3-00:00:00"
+  walltime="2-12:00:00"
   max_steps=16283
   batch_size=1
   accumulation=65
