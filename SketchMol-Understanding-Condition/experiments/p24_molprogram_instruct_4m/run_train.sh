@@ -26,10 +26,10 @@ if [[ "$MODE" == gate ]]; then
   # checkpoint auto-resume cannot silently preserve the wrong contract.
   output="$OUTPUT_ROOT/gate_13k"
 elif [[ "$MODE" == full ]]; then
-  # 16,283 x 5 x 13 = 1,058,395 examples = 81,415 per each of 13 tasks.
+  # 16,283 x 65 = 1,058,395 examples = 81,415 per each of 13 tasks.
   steps="${P24_MAX_STEPS:-16283}"
-  batch_size="${P24_BATCH_SIZE:-5}"
-  accumulation="${P24_GRADIENT_ACCUMULATION:-13}"
+  batch_size="${P24_BATCH_SIZE:-1}"
+  accumulation="${P24_GRADIENT_ACCUMULATION:-65}"
   output="$OUTPUT_ROOT/full"
 else
   echo "ERROR: P24_TRAIN_MODE must be gate or full" >&2

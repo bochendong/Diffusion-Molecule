@@ -16,12 +16,12 @@ def load(name: str):
     return module
 
 
-def test_submission_pins_corrected_gate_and_accelerated_full_contract():
+def test_submission_pins_corrected_gate_and_safe_full_contract():
     text = (HERE / "submit_train.sh").read_text()
     assert "max_steps=500" in text and "batch_size=1" in text and "accumulation=26" in text
-    assert 'walltime="2-00:00:00"' in text
-    assert "max_steps=16283" in text and "batch_size=5" in text and "accumulation=13" in text
-    assert 16283 * 5 * 13 == 1_058_395
+    assert 'walltime="3-00:00:00"' in text
+    assert "max_steps=16283" in text and "batch_size=1" in text and "accumulation=65" in text
+    assert 16283 * 1 * 65 == 1_058_395
     assert "P24_BATCH_SIZE=\"$batch_size\"" in text
     assert "P24_GRADIENT_ACCUMULATION=\"$accumulation\"" in text
     runner = (HERE / "run_train.sh").read_text()

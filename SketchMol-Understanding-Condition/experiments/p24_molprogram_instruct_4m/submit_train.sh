@@ -19,12 +19,12 @@ if [[ "$mode" == gate ]]; then
   accumulation=26
   job_name=p24-gate13k
 else
-  # Batch 5 uses the available H100 memory more efficiently while preserving
-  # the exact effective batch and example budget: 5 x 13 = 65.
-  walltime="2-00:00:00"
+  # The corrected gate measured about 4.3 seconds per optimizer step at
+  # accumulation 26. Full accumulation 65 therefore needs roughly 50 hours.
+  walltime="3-00:00:00"
   max_steps=16283
-  batch_size=5
-  accumulation=13
+  batch_size=1
+  accumulation=65
   job_name=p24-full
 fi
 job=$(sbatch --parsable --account="$ACCOUNT" --job-name="$job_name" --time="$walltime" \
