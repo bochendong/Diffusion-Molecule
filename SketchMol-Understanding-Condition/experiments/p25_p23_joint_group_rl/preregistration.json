@@ -1,0 +1,37 @@
+{
+  "protocol": "p25_p23_joint_group_rl_v1",
+  "status": "preregistered_before_submission",
+  "initial_policy": {
+    "name": "P23 aligned 24k Stage-1 v2",
+    "adapter_sha256": "843953150e3481c4112a64aca0225c5738853054ce3fea1bcdff99e58e099e40"
+  },
+  "training": {
+    "algorithm": "critic-free within-prompt group-relative policy gradient",
+    "target_buckets": "de novo 5p/6p/7p plus ten exact Table 2 edit tasks",
+    "rounds_per_bucket": 3,
+    "prompts": 39,
+    "group_size": 4,
+    "learning_rate": 5e-7,
+    "sft_anchor_weight": 1.0,
+    "initial_adapter_trust_region_weight": 0.05,
+    "checkpoint_every_prompts": 13,
+    "reward_target_smiles_access": false,
+    "sft_anchor_uses_training_positive": true
+  },
+  "gate": {
+    "frozen_rows_per_bucket": 20,
+    "buckets": 13,
+    "sampling_repeats": 4,
+    "same_prompts_and_seeds_for_baseline_and_rl": true,
+    "property_reranking": false,
+    "promotion_rule": {
+      "de_novo_valid_drop_max": 0.02,
+      "edit_valid_drop_max": 0.02,
+      "de_novo_strict_non_regression": true,
+      "edit_strict_065_non_regression": true,
+      "edit_relaxed_015_drop_max": 0.01,
+      "joint_de_novo_plus_edit_strict_gain_min": 0.01
+    }
+  },
+  "full_evaluation": "run only if the frozen gate promotes"
+}
