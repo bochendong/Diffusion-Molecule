@@ -1,0 +1,36 @@
+{
+  "protocol": "p26_decoupled_conflict_aware_joint_rl_v1",
+  "status": "preregistered_before_submission",
+  "initial_policy": "P23 aligned-24k Stage-1 v2",
+  "diagnostic": {
+    "p25_1_checkpoints": [10, 20],
+    "purpose": "test whether the failed 30-step endpoint overshot a Pareto-improving checkpoint"
+  },
+  "training": {
+    "paired_optimizer_steps": 30,
+    "groups_per_step": {"de_novo": 1, "edit": 1},
+    "group_size": 16,
+    "learning_rate": 5e-7,
+    "reward": "aligned mean plus smooth bottleneck plus exact bonuses",
+    "advantage": "per-mode per-channel group normalization followed by aggregate normalization",
+    "gradient_surgery": "symmetric two-task PCGrad when cosine is negative",
+    "denovo_sft_anchor_weight": 1.0,
+    "edit_sft_anchor_weight": 1.0,
+    "reference_kl_weight": 0.05,
+    "reward_target_smiles_access": false,
+    "checkpoint_every_paired_steps": 10
+  },
+  "evaluation": {
+    "gate": "exact frozen P25.1 dev gate",
+    "sampling_repeats": 4,
+    "property_reranking": false
+  },
+  "promotion_rule": {
+    "de_novo_valid_drop_max": 0.02,
+    "edit_valid_drop_max": 0.02,
+    "de_novo_strict_non_regression": true,
+    "edit_strict_065_non_regression": true,
+    "edit_relaxed_015_drop_max": 0.01,
+    "joint_de_novo_plus_edit_strict_gain_min": 0.01
+  }
+}
