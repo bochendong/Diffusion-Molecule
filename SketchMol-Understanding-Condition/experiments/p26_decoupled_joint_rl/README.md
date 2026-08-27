@@ -19,4 +19,10 @@ the experiment contract tests in the exact Nibi RDKit environment.
 ```bash
 ./experiments/p26_decoupled_joint_rl/submit_p251_trajectory.sh
 ./experiments/p26_decoupled_joint_rl/submit_dev_gate.sh
+./experiments/p26_decoupled_joint_rl/submit_final_gate.sh
 ```
+
+The final-gate submission checks the recorded dev decision before it can run,
+then evaluates the exact frozen P26 endpoint and P23 baseline on the disjoint
+P25.1 final split. Full paper-table evaluation remains blocked unless that
+comparison independently promotes.

@@ -1,0 +1,23 @@
+{
+  "protocol": "p26_decoupled_joint_rl_final_gate_v1",
+  "status": "preregistered_after_dev_promotion_before_final_submission",
+  "checkpoint": "exact frozen P26 seed-26001 endpoint that passed the dev gate",
+  "evaluation": {
+    "split": "P25.1 frozen final gate, disjoint from its dev gate",
+    "rows_per_bucket": 20,
+    "sampling_repeats": 4,
+    "generation_seed": 251251,
+    "property_reranking": false,
+    "target_access": false,
+    "baseline": "P23 aligned-24k Stage-1 v2"
+  },
+  "promotion_rule": {
+    "de_novo_valid_drop_max": 0.02,
+    "edit_valid_drop_max": 0.02,
+    "de_novo_strict_non_regression": true,
+    "edit_strict_065_non_regression": true,
+    "edit_relaxed_015_drop_max": 0.01,
+    "joint_de_novo_plus_edit_strict_gain_min": 0.01
+  },
+  "next_step": "full paper tables are authorized only if every final-gate condition passes"
+}

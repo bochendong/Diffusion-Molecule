@@ -42,3 +42,13 @@ def test_preregistration_matches_runner_and_keeps_target_out_of_reward():
     assert "--group-size 16" in runner
     assert "--gradient-surgery pcgrad" in runner
     assert "gradient_cosine" in (HERE / "train_decoupled_joint_rl.py").read_text()
+
+
+def test_final_gate_is_disjoint_and_dev_gated():
+    prereg = json.loads((HERE / "final_gate_preregistration.json").read_text())
+    submit = (HERE / "submit_final_gate.sh").read_text()
+    evaluator = (HERE / "run_gate_eval.sh").read_text()
+    assert prereg["evaluation"]["split"] == "P25.1 frozen final gate, disjoint from its dev gate"
+    assert "full_table_evaluation_authorized" in submit
+    assert "P26_GATE_SPLIT=final" in submit
+    assert 'case "$SPLIT" in dev|final)' in evaluator
