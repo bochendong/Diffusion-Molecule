@@ -1,0 +1,55 @@
+{
+  "protocol": "p28_p24_checkpoint_11000_alternative_rl_sweep_v1",
+  "status": "preregistered_before_submission",
+  "initial_policy": "outputs/p24_molprogram_instruct_4m/seed_24003/full/checkpoint-11000",
+  "checkpoint_selection": "newest complete P24 checkpoint observed before submission",
+  "shared_training": {
+    "paired_optimizer_steps": 30,
+    "primary_evaluation_endpoint": 20,
+    "endpoint_reason": "locked from the prior checkpoint-7500 trajectory before this sweep",
+    "groups_per_step": {"de_novo": 1, "edit": 1},
+    "group_size": 16,
+    "seed": 28001,
+    "reward_target_smiles_access": false
+  },
+  "variants": {
+    "vanilla_paired_grpo": {
+      "advantage": "zscore of scalar verifier reward within each mode group",
+      "learning_rate": 5e-7,
+      "sft_anchor_weight": 1.0,
+      "reference_kl_weight": 0.05,
+      "gradient_surgery": "none"
+    },
+    "decoupled_no_pcgrad": {
+      "advantage": "per-mode per-channel zscore then aggregate renormalization",
+      "learning_rate": 5e-7,
+      "denovo_sft_anchor_weight": 1.0,
+      "edit_sft_anchor_weight": 1.0,
+      "reference_kl_weight": 0.05,
+      "gradient_surgery": "none"
+    },
+    "editing_protected_pcgrad": {
+      "advantage": "per-mode per-channel zscore then aggregate renormalization",
+      "learning_rate": 2.5e-7,
+      "denovo_sft_anchor_weight": 1.0,
+      "edit_sft_anchor_weight": 2.0,
+      "reference_kl_weight": 0.1,
+      "gradient_surgery": "pcgrad"
+    }
+  },
+  "evaluation": {
+    "split": "P25.1 frozen dev gate",
+    "sampling_repeats": 4,
+    "property_reranking": false,
+    "baseline": "exact checkpoint-11000 adapter"
+  },
+  "promotion_rule": {
+    "de_novo_valid_drop_max": 0.02,
+    "edit_valid_drop_max": 0.02,
+    "de_novo_strict_non_regression": true,
+    "edit_strict_065_non_regression": true,
+    "edit_relaxed_015_drop_max": 0.01,
+    "joint_de_novo_plus_edit_strict_gain_min": 0.01,
+    "winner_if_multiple_promote": "largest joint strict gain"
+  }
+}
