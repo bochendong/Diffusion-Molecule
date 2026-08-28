@@ -11,12 +11,14 @@ DEP="${P24_DEP_OVERLAY:-/scratch/bdong/venvs/uca_common_llm_overlay}"
 P17="$PROJECT/experiments/p17_copy_contrastive_unified_benchmark"
 P19="$PROJECT/experiments/p19_frozen_expanded_unified_benchmark"
 P20="$PROJECT/experiments/p20_frozen_denovo_2p4p_table"
-OUT="$P24_OUT/eval_table1"
-ADAPTER="$P24_OUT/alignment_refresh/model/adapter"
+OUT="${P24_TABLE1_OUT:-$P24_OUT/eval_table1}"
+ADAPTER="${P24_EVAL_ADAPTER:-$P24_OUT/alignment_refresh/model/adapter}"
+REQUIRED="${P24_EVAL_REQUIRED:-$P24_OUT/alignment_refresh/ALIGNMENT_REFRESH_COMPLETE}"
+MODEL_LABEL="${P24_EVAL_LABEL:-p24_balanced_refresh}"
 PROMPTS_2P4P="$P23_OUT/eval_corrected_prompts/prompts/denovo_2p4p_p20.jsonl"
 PROMPTS_5P="$P23_OUT/eval_denovo_table1_fill/data/denovo_5p.prompts.jsonl"
 PROMPTS_6P7P="$P23_OUT/eval_corrected_prompts/prompts/denovo_6p7p_p19.jsonl"
-test -f "$P24_OUT/alignment_refresh/ALIGNMENT_REFRESH_COMPLETE"
+test -f "$REQUIRED"
 for path in "$ADAPTER/adapter_model.safetensors" "$PROMPTS_2P4P" "$PROMPTS_5P" "$PROMPTS_6P7P"; do
   test -f "$path"
 done
@@ -30,10 +32,10 @@ generate_pool() {
   local name="$1" prompts="$2" prefix_seed="$3" extension_seed="$4"
   "$PY" "$P17/generate_pilot.py" --prompts-jsonl "$prompts" --base-model "$BASE" \
     --adapter-dir "$ADAPTER" --output-csv "$OUT/generated/${name}.raw8.csv" --seed "$prefix_seed"
-  "$PY" "$P19/relabel_generated.py" --csv "$OUT/generated/${name}.raw8.csv" --label p24_balanced_refresh
+  "$PY" "$P19/relabel_generated.py" --csv "$OUT/generated/${name}.raw8.csv" --label "$MODEL_LABEL"
   "$PY" "$P20/generate_extension.py" --prompts-jsonl "$prompts" --base-model "$BASE" \
     --adapter-dir "$ADAPTER" --output-csv "$OUT/generated/${name}.ranks_9_40.csv" \
-    --model-label p24_balanced_refresh --seed "$extension_seed"
+    --model-label "$MODEL_LABEL" --seed "$extension_seed"
 }
 
 generate_pool denovo_2p4p "$PROMPTS_2P4P" 24031 240310

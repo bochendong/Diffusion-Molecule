@@ -100,3 +100,16 @@ def test_collector_rejects_missing_cells(tmp_path: Path):
         pass
     else:
         raise AssertionError("missing summary must fail closed")
+
+
+def test_checkpoint_audit_keeps_native_table_protocols_separate():
+    audit = (HERE / "submit_checkpoint_audit.sh").read_text()
+    table1_generation = (HERE / "run_table1_generate.sh").read_text()
+    table2_generation = (HERE / "run_table2_generate.sh").read_text()
+    table2_scoring = (HERE / "run_table2_score.sh").read_text()
+    assert "checkpoint_audits/checkpoint-$step" in audit
+    assert "P24_TABLE1_OUT" in audit and "P24_TABLE2_OUT" in audit
+    assert "run_table1_generate.sh" in audit and "run_table2_generate.sh" in audit
+    assert "P24_EVAL_ADAPTER" in table1_generation
+    assert "P24_EVAL_ADAPTER" in table2_generation
+    assert "--candidate-limit 1 --aggregation candidate" in table2_scoring

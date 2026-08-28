@@ -10,10 +10,12 @@ P19="$PROJECT/experiments/p19_frozen_expanded_unified_benchmark"
 BASE="${P24_BASE_MODEL:-/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct}"
 PY="${P24_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 DEP="${P24_DEP_OVERLAY:-/scratch/bdong/venvs/uca_common_llm_overlay}"
-ADAPTER="$P24_OUT/alignment_refresh/model/adapter"
+ADAPTER="${P24_EVAL_ADAPTER:-$P24_OUT/alignment_refresh/model/adapter}"
+REQUIRED="${P24_EVAL_REQUIRED:-$P24_OUT/alignment_refresh/ALIGNMENT_REFRESH_COMPLETE}"
+MODEL_LABEL="${P24_EVAL_LABEL:-p24_balanced_refresh_sampled_once}"
 FROZEN="$P23_OUT/eval_moledit_table1_500/data"
-OUT="$P24_OUT/eval_table2"
-test -f "$P24_OUT/alignment_refresh/ALIGNMENT_REFRESH_COMPLETE"
+OUT="${P24_TABLE2_OUT:-$P24_OUT/eval_table2}"
+test -f "$REQUIRED"
 for path in "$ADAPTER/adapter_model.safetensors" "$FROZEN/table1_500.prompts.jsonl" \
   "$FROZEN/table1_500.reference.csv" "$FROZEN/table1_500.manifest.json"; do
   test -f "$path"
@@ -27,6 +29,6 @@ mkdir -p "$OUT/generated"
   --base-model "$BASE" --adapter-dir "$ADAPTER" \
   --output-csv "$OUT/generated/table2_500.sampled_once.csv" --seed 23501 --batch-size 8
 "$PY" "$P19/relabel_generated.py" --csv "$OUT/generated/table2_500.sampled_once.csv" \
-  --label p24_balanced_refresh_sampled_once
+  --label "$MODEL_LABEL"
 touch "$OUT/TABLE2_GENERATION_COMPLETE"
 echo "P24 Table 2 generation complete: $OUT"

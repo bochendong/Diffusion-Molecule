@@ -12,7 +12,8 @@ export SUCC_DRD2_ORACLE_PATH="$ORACLE_DIR/drd2_graph2graph_svc_py36.pkl"
 EXPECTED_GSK3B=cd8ee8a58beb14a924de72d6366456069dec599b514db1219198c6be08f0e1f6
 EXPECTED_DRD2=dbc473fca922c834dbaee6eaba832caaff26d4f891734078fb1af359a111100f
 FROZEN="$P23_OUT/eval_moledit_table1_500/data"
-OUT="$P24_OUT/eval_table2"
+OUT="${P24_TABLE2_OUT:-$P24_OUT/eval_table2}"
+MODEL_NAME="${P24_TABLE2_MODEL_NAME:-P24-balanced-refresh-sampled-once}"
 for path in "$OUT/TABLE2_GENERATION_COMPLETE" "$FROZEN/table1_500.reference.csv" \
   "$OUT/generated/table2_500.sampled_once.csv" "$SUCC_GSK3B_ORACLE_PATH" "$SUCC_DRD2_ORACLE_PATH"; do
   test -f "$path"
@@ -26,7 +27,7 @@ mkdir -p "$OUT/results"
   --reference "$FROZEN/table1_500.reference.csv" \
   --candidates "$OUT/generated/table2_500.sampled_once.csv" \
   --output-dir "$OUT/results" --candidate-limit 1 --aggregation candidate \
-  --require-exact-candidate-count --model-name P24-balanced-refresh-sampled-once \
+  --require-exact-candidate-count --model-name "$MODEL_NAME" \
   --task-filter table1 --missing-oracle-policy fail
 touch "$OUT/TABLE2_COMPLETE"
 echo "P24 Table 2 scoring complete: $OUT"

@@ -25,6 +25,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--summary", action="append", required=True, type=Path)
     parser.add_argument("--output-dir", required=True, type=Path)
+    parser.add_argument("--model-name", default="MolProgram P24 balanced refresh")
+    parser.add_argument("--train-data", default="2,000,000/569,919")
+    parser.add_argument("--protocol", default="p24_frozen_denovo_table1_best40_v1")
     args = parser.parse_args()
     merged: dict[int, dict[str, str]] = {}
     for path in args.summary:
@@ -41,9 +44,9 @@ def main() -> int:
         raise AssertionError(f"P24 condition counts {counts} != {expected}")
     values = {f"{count}p": float(merged[count]["strict_success_rate"]) for count in range(2, 8)}
     result = {
-        "protocol": "p24_frozen_denovo_table1_best40_v1",
-        "model": "MolProgram P24 balanced refresh",
-        "train_data": "2,000,000/569,919",
+        "protocol": args.protocol,
+        "model": args.model_name,
+        "train_data": args.train_data,
         "setting": "best_of_40",
         "conditions": counts,
         "strict_success": values,
@@ -56,7 +59,7 @@ def main() -> int:
         "# P24 frozen de-novo Table 1 row", "",
         "| Model | Train data | Avg 2p-7p | 2p | 3p | 4p | 5p | 6p | 7p |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
-        f"| MolProgram P24 balanced refresh | 2M/569,919 | {100 * result['average_2p_7p']:.1f} | {cells_text} |",
+        f"| {args.model_name} | {args.train_data} | {100 * result['average_2p_7p']:.1f} | {cells_text} |",
     ]) + "\n"
     (args.output_dir / "p24_table1.md").write_text(markdown)
     print(markdown)

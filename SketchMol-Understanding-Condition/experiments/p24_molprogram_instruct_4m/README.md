@@ -82,3 +82,11 @@ a bucket by copying lower-arity examples.
    500-output-per-task MolEdit sampled-once protocol with pinned assay oracles.
    Paper prose is updated only after both results are frozen; the existing table
    structures are not changed by this experiment.
+
+For an intermediate-checkpoint audit, `submit_checkpoint_audit.sh STEP` runs
+those two native protocols into `checkpoint_audits/checkpoint-STEP/` without
+touching the final alignment-refresh outputs. Table 1 uses property-aware
+best-of-40 strict success; Table 2 uses one sampled output for each of 500
+sources in each of ten tasks and reports output-level MolEdit metrics. The
+smaller four-repeat joint gate remains a checkpoint-selection diagnostic and
+must not be substituted for either paper table.

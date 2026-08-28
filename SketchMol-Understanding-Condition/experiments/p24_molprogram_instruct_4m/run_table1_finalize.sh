@@ -8,7 +8,10 @@ P24_OUT="${P24_OUTPUT_ROOT:-$PROJECT/outputs/p24_molprogram_instruct_4m/seed_240
 P23_OUT="$PROJECT/outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned"
 PY="${P24_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
 P23="$PROJECT/experiments/p23_explicit_task_stage1_v2"
-OUT="$P24_OUT/eval_table1"
+OUT="${P24_TABLE1_OUT:-$P24_OUT/eval_table1}"
+MODEL_NAME="${P24_TABLE1_MODEL_NAME:-MolProgram P24 balanced refresh}"
+TRAIN_DATA="${P24_TABLE1_TRAIN_DATA:-2,000,000/569,919}"
+PROTOCOL="${P24_TABLE1_PROTOCOL:-p24_frozen_denovo_table1_best40_v1}"
 test -f "$OUT/TABLE1_GENERATION_COMPLETE"
 module purge >/dev/null 2>&1 || true
 module load StdEnv/2023 python/3.11 rdkit/2025.09.4
@@ -40,6 +43,7 @@ merge_and_score denovo_6p7p 40 \
   --summary "$OUT/results/denovo_2p4p/budget_sweep_summary.csv" \
   --summary "$OUT/results/denovo_5p/budget_sweep_summary.csv" \
   --summary "$OUT/results/denovo_6p7p/budget_sweep_summary.csv" \
-  --output-dir "$OUT/results/table1"
+  --output-dir "$OUT/results/table1" --model-name "$MODEL_NAME" \
+  --train-data "$TRAIN_DATA" --protocol "$PROTOCOL"
 touch "$OUT/TABLE1_COMPLETE"
 echo "P24 Table 1 scoring complete: $OUT"
