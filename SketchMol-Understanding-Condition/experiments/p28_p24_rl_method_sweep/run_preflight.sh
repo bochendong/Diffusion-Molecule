@@ -11,5 +11,6 @@ export PYTHONPATH="$DEP:$PROJECT/experiments/p26_decoupled_joint_rl:$PROJECT/exp
   "$PROJECT/experiments/p26_decoupled_joint_rl/train_decoupled_joint_rl.py" \
   "$PROJECT/experiments/p25_1_p23_mode_paired_grpo/train_mode_paired_grpo.py"
 "$PY" -m pytest -q \
-  "$PROJECT/experiments/p26_decoupled_joint_rl/test_contract.py" \
+  "$PROJECT/experiments/p26_decoupled_joint_rl/test_contract.py"
+"$PY" -m pytest -q \
   "$PROJECT/experiments/p25_1_p23_mode_paired_grpo/test_contract.py"
