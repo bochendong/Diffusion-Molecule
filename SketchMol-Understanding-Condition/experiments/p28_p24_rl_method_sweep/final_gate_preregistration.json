@@ -1,0 +1,25 @@
+{
+  "protocol": "p28_editing_protected_pcgrad_final_gate_v1",
+  "status": "preregistered_after_dev_promotion_before_final_submission",
+  "checkpoint": "editing_protected_pcgrad saved step-20 adapter from P24 checkpoint 11000",
+  "dev_evidence": {
+    "decision": "PROMOTE_FULL_EVAL",
+    "comparison": "outputs/p28_p24_rl_method_sweep/checkpoint_11000_seed_28001/gate/dev/comparison_editing_protected_pcgrad.json"
+  },
+  "evaluation": {
+    "split": "P25.1 frozen final gate, disjoint from dev",
+    "sampling_repeats": 4,
+    "generation_seed": 251251,
+    "property_reranking": false,
+    "baseline": "exact P24 checkpoint-11000 adapter"
+  },
+  "promotion_rule": {
+    "de_novo_valid_drop_max": 0.02,
+    "edit_valid_drop_max": 0.02,
+    "de_novo_strict_non_regression": true,
+    "edit_strict_065_non_regression": true,
+    "edit_relaxed_015_drop_max": 0.01,
+    "joint_de_novo_plus_edit_strict_gain_min": 0.01
+  },
+  "next_step": "full Table 1 and Table 2 evaluation only if every final gate passes"
+}
