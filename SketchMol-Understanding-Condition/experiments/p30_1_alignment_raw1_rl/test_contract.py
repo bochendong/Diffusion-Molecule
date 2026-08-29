@@ -47,3 +47,13 @@ def test_contract_starts_from_alignment_refresh_and_stops_after_small_gate():
     assert "best_of_40" not in submit
     assert "run_small_gate.sh" in submit
 
+
+def test_checkpoint_screen_only_evaluates_saved_early_steps():
+    submit = (HERE / "submit_checkpoint_screens.sh").read_text()
+    selector = (HERE / "select_small_gate_checkpoint.py").read_text()
+    runner = (HERE / "run_small_gate.sh").read_text()
+    assert "for step in 010 020" in submit
+    assert '30: "rl"' in selector
+    assert 'P301_EVAL_ADAPTER' in runner
+    assert "RUN_FULL_BUDGET_CURVE" in selector
+    assert "best_of_40" not in submit
