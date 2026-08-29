@@ -198,10 +198,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         "informative_updates": 0,
         "skipped_all_success": 0,
         "skipped_all_failure": 0,
+        "skipped_nonfinite_groups": 0,
         "bucket_updates": {},
     }
     if resume:
         state.update(json.loads((resume / "state.json").read_text()))
+    state.setdefault("skipped_nonfinite_groups", 0)
 
     base = loader.from_pretrained(
         args.base_model, config=config, dtype=torch.bfloat16,
@@ -292,14 +294,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             loss = -float(advantage) * sequence_sum.mean() / len(advantages)
             loss.backward()
             loss_value += float(loss.detach())
-        unclipped = torch.nn.utils.clip_grad_norm_(trainable, args.grad_clip)
-        optimizer.step()
-
-        state["informative_updates"] = int(state["informative_updates"]) + 1
-        bucket_updates[bucket] += 1
-        state["bucket_updates"] = dict(sorted(bucket_updates.items()))
+        gradients_finite = all(
+            parameter.grad is None or bool(torch.isfinite(parameter.grad).all())
+            for parameter in trainable
+        )
+        if gradients_finite:
+            unclipped = torch.sqrt(sum(
+                parameter.grad.float().pow(2).sum()
+                for parameter in trainable if parameter.grad is not None
+            ))
+        else:
+            unclipped = torch.tensor(float("nan"), device=model.device)
         record.update({
-            "update": int(state["informative_updates"]),
+            "prospective_update": int(state["informative_updates"]) + 1,
             "loss": loss_value,
             "gradient_norm": float(unclipped),
             "advantage_min": min(advantages),
@@ -307,8 +314,22 @@ def main(argv: Sequence[str] | None = None) -> int:
             "advantage_sum": sum(advantages),
             "sampled_kl_per_token_mean": float(per_token_log_ratio.mean()),
         })
-        if not math.isfinite(loss_value) or not math.isfinite(float(unclipped)):
-            raise FloatingPointError(f"non-finite P31.1 update: {record}")
+        if not math.isfinite(loss_value):
+            raise FloatingPointError(f"non-finite P31.1 loss: {record}")
+        if not gradients_finite or not math.isfinite(float(unclipped)):
+            state["skipped_nonfinite_groups"] = int(state["skipped_nonfinite_groups"]) + 1
+            optimizer.zero_grad(set_to_none=True)
+            with live_log.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps({"stage": "numerical_skip", **record}, sort_keys=True) + "\n")
+            print(json.dumps({"stage": "numerical_skip", **record}, sort_keys=True), flush=True)
+            continue
+
+        torch.nn.utils.clip_grad_norm_(trainable, args.grad_clip)
+        optimizer.step()
+        state["informative_updates"] = int(state["informative_updates"]) + 1
+        bucket_updates[bucket] += 1
+        state["bucket_updates"] = dict(sorted(bucket_updates.items()))
+        record["update"] = int(state["informative_updates"])
         with live_log.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, sort_keys=True) + "\n")
         print(json.dumps({"stage": "update", **record}, sort_keys=True), flush=True)

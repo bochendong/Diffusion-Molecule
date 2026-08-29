@@ -1,0 +1,18 @@
+{
+  "protocol": "p31_1_frontier_conditioned_online_rloo_v1_amendment_02",
+  "trigger_job": 20773862,
+  "trigger": "MODIFY prospective informative update 89 had finite reward and loss but a NaN pre-clipping gradient norm",
+  "last_complete_finite_checkpoint": 50,
+  "corrupt_checkpoint_written": false,
+  "build_training_repeated": false,
+  "change": "if any accumulated policy gradient is non-finite, discard the entire sampled group before clipping and optimizer.step, increment a numerical-skip counter, and continue with the next fresh online group",
+  "unchanged": [
+    "initial P24 policy",
+    "online sampling distribution",
+    "RLOO objective",
+    "reward",
+    "learning rate",
+    "promotion thresholds",
+    "evaluation checkpoints"
+  ]
+}

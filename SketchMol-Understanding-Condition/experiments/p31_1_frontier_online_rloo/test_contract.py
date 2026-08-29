@@ -55,6 +55,9 @@ def test_strict_reward_ordering_and_invalid_floor():
 def test_preregistered_online_rl_contract():
     prereg = json.loads((HERE / "preregistration.json").read_text())
     amendment = json.loads((HERE / "amendment_01_gate_feasibility.json").read_text())
+    numerical_amendment = json.loads(
+        (HERE / "amendment_02_nonfinite_gradient_guard.json").read_text()
+    )
     trainer = (HERE / "train_online_rloo.py").read_text()
     submit = (HERE / "submit_frontier_rloo.sh").read_text()
     assert prereg["training"]["online_fresh_rollouts"] is True
@@ -64,11 +67,14 @@ def test_preregistered_online_rl_contract():
     assert amendment["recorded_before"] == "any P31.1 GPU training"
     assert amendment["gpu_training_started_before_amendment"] is False
     assert "20 conditions per arity" in amendment["amended_de_novo_gate"]
+    assert numerical_amendment["corrupt_checkpoint_written"] is False
+    assert numerical_amendment["last_complete_finite_checkpoint"] == 50
     assert "completion token log-probability sum" in prereg["training"]["policy_log_probability"]
     assert "decoupled_advantages" not in trainer
     assert "chosen_sft_loss" not in trainer
     assert "temperature=1.0" in trainer
     assert "top_p=1.0" in trainer
     assert "top_k=0" in trainer
+    assert trainer.index("if not gradients_finite") < trainer.index("optimizer.step()")
     assert "for mode in de_novo edit" in submit
     assert "for step in 025 050 100" in submit

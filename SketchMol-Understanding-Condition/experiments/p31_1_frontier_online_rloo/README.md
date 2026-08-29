@@ -28,6 +28,13 @@ uses the largest balanced feasible subset, 20 conditions per arity (120 total),
 rather than the preregistered 100 per arity.  See
 `amendment_01_gate_feasibility.json`; no training or promotion threshold changed.
 
+Protocol amendment 02 adds a numerical safety guard after one MODIFY group
+produced finite rewards/loss but non-finite gradients at prospective update 89.
+The guard discards that entire group before `optimizer.step`, records it, and
+continues online sampling.  The resumed run starts from the last complete,
+finite checkpoint (update 50); BUILD is not repeated.  See
+`amendment_02_nonfinite_gradient_guard.json`.
+
 ```bash
 ./experiments/p31_1_frontier_online_rloo/submit_frontier_rloo.sh
 ```
