@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+SCRIPT_DIR="${P30_SCRIPT_DIR:?P30_SCRIPT_DIR must be exported}"
+PROJECT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+PY="${P30_PYTHON_BIN:-/home/bdong/.venvs/molscribe_overlay/bin/python}"
+P26_DIR="$PROJECT/experiments/p26_decoupled_joint_rl"
+OUT="${P30_OUTPUT_ROOT:-$PROJECT/outputs/p30_balanced_shared_policy_rl/seed_30001}"
+SELECTION="$OUT/gate/dev/selection.json"
+test -f "$OUT/DEV_SELECTION_COMPLETE"
+ADAPTER="$($PY -c 'import json,sys; print(json.load(open(sys.argv[1]))["selected_adapter"])' "$SELECTION")"
+test -f "$ADAPTER/adapter_model.safetensors"
+export P26_SCRIPT_DIR="$P26_DIR"
+export P26_OUTPUT_ROOT="$OUT"
+export P26_EVAL_TAG="selected"
+export P26_EVAL_ADAPTER="$ADAPTER"
+export P26_EVAL_REQUIRED="$OUT/DEV_SELECTION_COMPLETE"
+export P26_GATE_SPLIT="final"
+exec "$P26_DIR/run_gate_eval.sh"

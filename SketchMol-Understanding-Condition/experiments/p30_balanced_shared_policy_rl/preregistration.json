@@ -1,0 +1,34 @@
+{
+  "protocol": "p30_balanced_shared_policy_group_relative_rl_v1",
+  "status": "preregistered_before_submission",
+  "initial_policy": "completed P24 MolProgramInstruct-Balanced adapter",
+  "training": {
+    "paired_optimizer_steps": 60,
+    "groups_per_step": {"de_novo": 1, "edit": 1},
+    "group_size": 16,
+    "de_novo_schedule": "ten groups for each arity 2p through 7p",
+    "edit_schedule": "six groups for each exact Table 2 task family",
+    "learning_rate": 1.5e-7,
+    "denovo_sft_anchor_weight": 1.5,
+    "edit_sft_anchor_weight": 1.5,
+    "reference_kl_weight": 0.1,
+    "gradient_merge": "equal-norm bisector of the two mode gradients",
+    "checkpoint_steps": [10, 20, 30, 40, 50, 60],
+    "reward_target_smiles_access": false,
+    "sft_anchor_uses_training_positive": true,
+    "seed": 30001
+  },
+  "selection": {
+    "split": "P25.1 frozen dev gate",
+    "eligible_steps": [10, 20, 30, 40, 50, 60],
+    "primary_rule": "all joint promotion constraints, then maximize the minimum of de novo and edit strict deltas",
+    "tie_breakers": "joint strict gain, then earlier step",
+    "final_split_access": false
+  },
+  "confirmation": {
+    "split": "P25.1 frozen final gate disjoint from dev",
+    "sampling_repeats": 4,
+    "property_reranking": false,
+    "native_tables_only_if_dev_and_final_promote": true
+  }
+}
