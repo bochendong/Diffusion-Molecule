@@ -1,0 +1,32 @@
+{
+  "protocol": "p30_3_joint_multinegative_refinement_v1",
+  "status": "locked_before_submission",
+  "initial_policy": "P30.1 step-30 RL adapter",
+  "refinement": {
+    "source": "P23 held-out-disjoint train.contrastive.jsonl",
+    "negative_type": "invalid_corruption only",
+    "de_novo_pairs_per_arity": 100,
+    "edit_pairs_per_exact_task": 60,
+    "total_pairs": 1200,
+    "chosen_ce_weight": 1.0,
+    "negative_weight": 0.2,
+    "margin": 0.15,
+    "epochs": 0.5,
+    "learning_rate": 2e-6,
+    "gradient_accumulation": 16,
+    "seed": 30301
+  },
+  "evaluation": {
+    "de_novo": "frozen 120-condition 2p-7p greedy Raw@1 gate",
+    "editing": "frozen P25.1 final gate with 20 rows per task and four sampled Raw@1 trials",
+    "editing_property_reranking": false,
+    "baseline": "P24 alignment-refresh adapter"
+  },
+  "promotion": {
+    "de_novo_small_gate": "must return RUN_FULL_BUDGET_CURVE",
+    "edit_strict_delta_min": 0.0,
+    "edit_relaxed_delta_min": -0.01,
+    "edit_validity_delta_min": -0.01,
+    "full_budget_evaluation": "manual only after joint promotion"
+  }
+}
