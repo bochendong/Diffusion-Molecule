@@ -1,0 +1,57 @@
+{
+  "protocol": "p29_shared_initialization_unified_vs_specialists_v1",
+  "status": "frozen before specialist training",
+  "question": "Does joint large-scale continuation match two task-specific continuations from the same aligned policy?",
+  "shared_initialization": "outputs/p23_explicit_task_stage1_v2/seed_2323_full24k_aligned/model/stage1_v2/adapter",
+  "arms": {
+    "unified": {
+      "status": "already trained",
+      "adapter": "outputs/p24_molprogram_instruct_4m/seed_24003/full/adapter",
+      "construction_examples": 488490,
+      "editing_examples": 569905,
+      "active_buckets": "six construction buckets and seven editing buckets"
+    },
+    "construction_specialist": {
+      "construction_examples": 488490,
+      "editing_examples": 0,
+      "active_buckets": "construction 2p through 7p"
+    },
+    "editing_specialist": {
+      "construction_examples": 0,
+      "editing_examples": 569905,
+      "active_buckets": "editing 1p through 7p"
+    }
+  },
+  "matched_training": {
+    "rows_per_active_bucket": 81415,
+    "row_selection": "exact mode-specific subset of the frozen unified sampler permutations",
+    "replacement": false,
+    "base_model": "Qwen2.5-VL-7B-Instruct",
+    "trainable_parameters": "same inherited LoRA configuration",
+    "learning_rate": 1e-05,
+    "per_device_batch_size": 1,
+    "gradient_accumulation": 65,
+    "effective_batch_size": 65,
+    "epochs": 1.0,
+    "seed": 24003,
+    "calibration": false,
+    "checkpoint_selection": "final adapter only; no benchmark-based selection"
+  },
+  "evaluation": {
+    "construction": "frozen Table 1 Best-of-40 protocol on 2p through 7p",
+    "editing": "frozen Table 2 sampled-once Raw@1 protocol on 500 sources for each of ten tasks",
+    "primary_metrics": [
+      "de novo macro strict success over 2p through 7p",
+      "editing macro Acc_all(0.65)"
+    ],
+    "secondary_metrics": [
+      "de novo per-arity strict success",
+      "editing Validity",
+      "editing Acc_valid(0.65)",
+      "editing Acc_all(0.15)",
+      "editing Acc_valid(0.15)"
+    ],
+    "composite_cross_task_score": false
+  },
+  "interpretation_boundary": "This is a shared-initialization continuation ablation, not two specialists trained independently from the base model."
+}
