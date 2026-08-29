@@ -1,0 +1,48 @@
+{
+  "protocol": "p31_1_frontier_conditioned_online_rloo_v1",
+  "status": "locked_before_submission",
+  "initial_policy": "P24 alignment-refresh adapter",
+  "policy": {
+    "interface": "one MolProgram BUILD/MODIFY interface",
+    "routing": "declared task mode selects a mode-conditioned LoRA adapter",
+    "build_adapter": "online RLOO on de_novo prompts",
+    "modify_adapter": "online RLOO on edit prompts"
+  },
+  "training": {
+    "online_fresh_rollouts": true,
+    "target_molecule_access": false,
+    "group_size": 16,
+    "temperature": 1.0,
+    "top_p": 1.0,
+    "top_k": 0,
+    "advantage": "leave-one-out return baseline (RLOO)",
+    "policy_log_probability": "completion token log-probability sum",
+    "reward": "single strict-aligned scalar reward",
+    "reference_regularization": "sampled P24 per-token reverse-KL penalty",
+    "reference_kl_weight": 0.05,
+    "sft_anchor_during_rl": false,
+    "informative_group": "at least one strict success and one strict failure",
+    "informative_updates_per_mode": 100,
+    "maximum_attempted_groups_per_mode": 1200,
+    "checkpoint_updates": [25, 50, 100],
+    "learning_rate": 2e-7,
+    "seed": 31101
+  },
+  "evaluation": {
+    "checkpoints": [25, 50, 100],
+    "de_novo": "frozen greedy Raw@1 gate, 100 conditions per arity for 2p-7p",
+    "editing": "frozen P25.1 final gate, 20 rows per exact task and four sampled Raw@1 trials",
+    "both_modes_at_every_checkpoint": true,
+    "property_reranking": false,
+    "baseline": "P24 alignment-refresh adapter"
+  },
+  "promotion": {
+    "de_novo_raw1_delta_min": 0.02,
+    "de_novo_validity_delta_min": -0.01,
+    "edit_strict_delta_min": 0.0,
+    "edit_relaxed_delta_min": -0.01,
+    "edit_validity_delta_min": -0.01,
+    "next_if_promoted": "extend to 200/300 informative updates, run three seeds, then full 1/4/8/20/40",
+    "next_if_not_promoted": "stop token-level SMILES RL and move to multi-step verifier-guided graph-edit repair RL"
+  }
+}
