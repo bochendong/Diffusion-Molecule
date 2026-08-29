@@ -1,0 +1,30 @@
+{
+  "protocol": "p31_p24_reward_support_audit_v1",
+  "status": "locked_before_submission",
+  "policy": "P24 alignment-refresh adapter",
+  "data": {
+    "source": "P24 alignment-refresh train.sft.jsonl",
+    "frozen_evaluation_rows_used": 0,
+    "de_novo_buckets": ["2p", "3p", "4p", "5p", "6p", "7p"],
+    "editing_buckets": "ten exact Table 2 tasks",
+    "prompts_per_bucket": 60,
+    "total_prompts": 960,
+    "selection_seed": 31001
+  },
+  "generation": {
+    "greedy_candidates_per_prompt": 1,
+    "sampled_candidates_per_prompt": 16,
+    "temperature": 0.8,
+    "top_p": 0.95,
+    "max_new_tokens": 128,
+    "property_reranking_during_generation": false
+  },
+  "audit": {
+    "reward": "P30 decoupled reward channels and advantages",
+    "target_smiles_access": false,
+    "support_limited_any16_threshold": 0.2,
+    "distillation_gap_threshold": 0.15,
+    "reward_top_strict_threshold": 0.7
+  },
+  "training": "none"
+}
