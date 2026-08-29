@@ -1,0 +1,31 @@
+{
+  "protocol": "p30_2_validity_stable_raw1_rl_v1",
+  "status": "locked_before_submission",
+  "motivation": "P30.1 step 30 gained 2.5 Raw@1 points but lost 1.7 validity points on the frozen small gate",
+  "initial_policy": "P24 alignment-refresh adapter",
+  "training": {
+    "paired_optimizer_steps": 30,
+    "group_size": 16,
+    "learning_rate": 1e-7,
+    "denovo_validity_weight": 1.5,
+    "denovo_canonical_weight": 0.25,
+    "denovo_sft_anchor_weight": 2.0,
+    "edit_sft_anchor_weight": 1.5,
+    "reference_kl_weight": 0.2,
+    "gradient_merge": "equal-norm bisector",
+    "seed": 30201
+  },
+  "screen": {
+    "source": "exact frozen P30.1 120-condition gate",
+    "decoding": "greedy",
+    "candidates": 120,
+    "property_reranking": false,
+    "promotion": {
+      "raw1_macro_delta_min": 0.02,
+      "validity_macro_delta_min": -0.01,
+      "per_arity_strict_delta_min": -0.1
+    }
+  },
+  "full_budget_evaluation": "manual follow-up only after screen promotion"
+}
+
