@@ -54,12 +54,16 @@ def test_strict_reward_ordering_and_invalid_floor():
 
 def test_preregistered_online_rl_contract():
     prereg = json.loads((HERE / "preregistration.json").read_text())
+    amendment = json.loads((HERE / "amendment_01_gate_feasibility.json").read_text())
     trainer = (HERE / "train_online_rloo.py").read_text()
     submit = (HERE / "submit_frontier_rloo.sh").read_text()
     assert prereg["training"]["online_fresh_rollouts"] is True
     assert prereg["training"]["advantage"].startswith("leave-one-out")
     assert prereg["training"]["sft_anchor_during_rl"] is False
     assert prereg["evaluation"]["both_modes_at_every_checkpoint"] is True
+    assert amendment["recorded_before"] == "any P31.1 GPU training"
+    assert amendment["gpu_training_started_before_amendment"] is False
+    assert "20 conditions per arity" in amendment["amended_de_novo_gate"]
     assert "completion token log-probability sum" in prereg["training"]["policy_log_probability"]
     assert "decoupled_advantages" not in trainer
     assert "chosen_sft_loss" not in trainer

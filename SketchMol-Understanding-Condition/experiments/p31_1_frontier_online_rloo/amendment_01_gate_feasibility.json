@@ -1,0 +1,19 @@
+{
+  "protocol": "p31_1_frontier_conditioned_online_rloo_v1_amendment_01",
+  "recorded_after": "CPU preflight and gate-build feasibility check",
+  "recorded_before": "any P31.1 GPU training",
+  "trigger": "the matched historical P24 evaluation pool contains only 20 usable 6p conditions",
+  "original_de_novo_gate": "100 conditions per arity for 2p-7p",
+  "amended_de_novo_gate": "20 conditions per arity for 2p-7p (120 total)",
+  "rationale": "use the largest balanced frozen gate supported by every arity without creating new conditions or changing the P24 baseline",
+  "unchanged": [
+    "training algorithm",
+    "training data",
+    "reward",
+    "checkpoint updates",
+    "editing gate",
+    "promotion thresholds"
+  ],
+  "failed_feasibility_job": 20773793,
+  "gpu_training_started_before_amendment": false
+}

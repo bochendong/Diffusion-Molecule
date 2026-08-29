@@ -13,5 +13,5 @@ OUT="${P311_OUTPUT_ROOT:-$PROJECT/outputs/p31_1_frontier_online_rloo/seed_31101}
   --baseline-detail "$P24/eval_table1/results/denovo_2p4p/budget_sweep_condition_detail.csv" \
   --baseline-detail "$P24/eval_table1/results/denovo_5p/budget_sweep_condition_detail.csv" \
   --baseline-detail "$P24/eval_table1/results/denovo_6p7p/budget_sweep_condition_detail.csv" \
-  --output-dir "$OUT/gate/data" --per-arity 100 --seed 31131
+  --output-dir "$OUT/gate/data" --per-arity 20 --seed 31131
 touch "$OUT/GATE_DATA_COMPLETE"

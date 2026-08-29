@@ -22,6 +22,12 @@ gates at 25, 50, and 100 updates.  Each checkpoint bundle is evaluated on both
 de-novo construction and editing.  Extension to 200/300 updates and the full
 1/4/8/20/40 curve is manual and allowed only after joint promotion.
 
+Protocol amendment 01 was recorded before any GPU training began: the matched
+historical P24 pool contains only 20 usable 6p conditions, so the de-novo gate
+uses the largest balanced feasible subset, 20 conditions per arity (120 total),
+rather than the preregistered 100 per arity.  See
+`amendment_01_gate_feasibility.json`; no training or promotion threshold changed.
+
 ```bash
 ./experiments/p31_1_frontier_online_rloo/submit_frontier_rloo.sh
 ```
