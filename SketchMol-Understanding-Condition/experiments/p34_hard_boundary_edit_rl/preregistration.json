@@ -1,0 +1,46 @@
+{
+  "protocol": "p34_hard_boundary_edit_online_rloo_v1",
+  "status": "frozen before GPU training",
+  "question": "Does a hard source-feasibility boundary improve strict editing Raw@1 where P32.4's soft similarity reward did not?",
+  "initialization": {
+    "editing_policy": "outputs/p29_unified_vs_specialist_ablation/seed_24003/editing_specialist/adapter",
+    "construction_policy": "frozen and unchanged",
+    "base_model": "/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct"
+  },
+  "training": {
+    "algorithm": "online sequence RLOO",
+    "online_fresh_rollouts": true,
+    "mode": "edit only",
+    "group_size": 16,
+    "informative_updates": 20,
+    "maximum_attempted_groups": 600,
+    "sampling": {"temperature": 1.0, "top_p": 1.0, "top_k": 0},
+    "learning_rate": 1e-7,
+    "reference_kl_weight": 0.1,
+    "reference_policy": "frozen P29 editing specialist",
+    "gradient_clip": 0.5,
+    "checkpoints": [5, 10, 20],
+    "seed": 34001
+  },
+  "reward": {
+    "eligible": "valid and non-copy and Morgan similarity >= 0.65",
+    "ineligible_reward": -4.0,
+    "ineligible_dense_similarity_credit": false,
+    "eligible_property_terms": ["canonical", "mean satisfaction", "bottleneck", "success fraction", "property-strict bonus"],
+    "strict_terminal_bonus": 4.0,
+    "guarantee": "in every updated mixed-strict group, an ineligible candidate is below the group mean and therefore has negative RLOO advantage"
+  },
+  "small_gate": {
+    "baseline": "reuse the exact P32.4 step-000 P29-specialist evaluation",
+    "data": "frozen P25.1 final editing gate: 20 conditions for each of 10 editing tasks",
+    "decoding": "sampled Raw@1, one repeat, temperature 0.8, top-p 0.95, seed 23501",
+    "promotion": {
+      "strict_macro_delta_min": 0.02,
+      "relaxed_macro_delta_min": -0.01,
+      "valid_macro_delta_min": -0.01,
+      "nonnegative_strict_task_buckets_min": 7
+    },
+    "full_evaluation": "not launched unless the small gate promotes a checkpoint"
+  },
+  "scope": "one-seed small gate; no full Table 2 job is submitted initially"
+}
