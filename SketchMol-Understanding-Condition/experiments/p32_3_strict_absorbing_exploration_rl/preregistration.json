@@ -1,0 +1,49 @@
+{
+  "protocol": "p32_3_strict_absorbing_exploration_rl_v1",
+  "status": "locked_before_submission",
+  "hypothesis": "P32.2 loses credit by editing verifier-confirmed strict states and undersamples the sparse editing strict-support tree",
+  "fixed_inputs": {
+    "records": "P32.1 pinned-oracle train and frozen gate",
+    "initial_adapter": "P32.2 checkpoint 30",
+    "routing": "hard accept strict direct; residual policy only on direct failures",
+    "target_molecule_access": false
+  },
+  "support_curriculum": {
+    "scope": "training records only",
+    "oracle": "target-blind property verifier",
+    "search": "complete first-action support followed by beam-16 second-action support",
+    "minimum_unique_edit_rows": 5,
+    "gate": "stop before GPU training if the minimum is not met"
+  },
+  "training": {
+    "paired_updates": 20,
+    "de_novo_trajectories": "8 distinct first actions with one sampled second action",
+    "editing_trajectories": "all first actions with 4 distinct policy-sampled second actions",
+    "strict_success": "absorbing terminal state",
+    "terminal_return": {
+      "strict": 1.0,
+      "relaxed_non_strict": 0.2,
+      "valid_changed_non_strict": 0.02,
+      "failed_stop_or_invalid": 0.0
+    },
+    "credit_assignment": "group-relative terminal-return policy gradient over sampled trajectories",
+    "gradient_merge": "paired symmetric PCGrad",
+    "temperature": 1.5,
+    "learning_rate": 0.000001,
+    "checkpoints": [5, 10, 20],
+    "seed": 32301
+  },
+  "evaluation": {
+    "gate_records": "unchanged P32.1 frozen gate",
+    "checkpoints": [0, 5, 10, 20],
+    "strict_success": "absorbing terminal state",
+    "decoding": "greedy typed residual action without property reranking"
+  },
+  "promotion": {
+    "editing_strict_above_checkpoint_0": true,
+    "de_novo_strict_no_regression_from_checkpoint_0": true,
+    "both_modes_strict_above_pinned_direct": true,
+    "editing_minimum_strict_rescues": 1,
+    "validity_drop_from_checkpoint_0_max": 0.0
+  }
+}
