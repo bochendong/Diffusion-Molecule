@@ -32,6 +32,7 @@ def test_preregistration_locks_residual_routing_before_submission():
 def test_protocol_hard_accepts_strict_direct_and_starts_failures_from_direct():
     source = (ROOT / "residual_protocol.py").read_text()
     assert "def hard_accept_direct" in source
+    assert "return direct_feedback(record).strict_success" in source
     assert 'return direct_smiles(record) or "C"' in source
     assert '"kind": "hard_accept_direct"' in source
     assert "initial_verifier_feedback" in source
@@ -72,7 +73,7 @@ def test_gate_requires_rl_gain_in_both_modes():
 
 
 def test_runners_pin_both_benchmark_oracles():
-    for name in ("run_audit.sh", "run_train.sh", "run_eval.sh"):
+    for name in ("run_prepare.sh", "run_audit.sh", "run_train.sh", "run_eval.sh"):
         source = (ROOT / name).read_text()
         assert "gsk3b_legacy_sklearn_compatible.pkl" in source
         assert "drd2_graph2graph_svc_py36.pkl" in source

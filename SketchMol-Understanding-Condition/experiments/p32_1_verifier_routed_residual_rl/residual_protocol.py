@@ -40,8 +40,7 @@ def direct_feedback(record: Mapping[str, object]) -> CandidateFeedback:
 
 
 def hard_accept_direct(record: Mapping[str, object]) -> bool:
-    details = record.get("direct_details", {})
-    return bool(isinstance(details, Mapping) and details.get("strict"))
+    return direct_feedback(record).strict_success
 
 
 def initial_smiles(record: Mapping[str, object]) -> str:

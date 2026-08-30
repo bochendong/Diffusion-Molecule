@@ -88,6 +88,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     for row in [*prepared_train, *prepared_gate]:
         row["protocol"] = protocol.PROTOCOL
         row["initial_smiles"] = str(row.get("direct_smiles", "") or "") or "C"
+        row["direct_details"] = protocol.direct_feedback(row).details
 
     by_mode_train = {
         mode: [row for row in prepared_train if row["task_mode"] == mode]
@@ -107,7 +108,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "protocol": protocol.PROTOCOL,
         "train": {mode: failure_summary(rows) for mode, rows in by_mode_train.items()},
         "gate": {mode: failure_summary(rows) for mode, rows in by_mode_gate.items()},
-        "p32_gate_reused_unchanged": True,
+        "p32_gate_conditions_and_proposals_reused": True,
+        "direct_labels_recomputed_with_pinned_oracles": True,
         "target_molecules_used_for_policy_input": False,
     }
     (args.output_dir / "manifest.json").write_text(

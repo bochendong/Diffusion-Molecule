@@ -61,6 +61,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     evaluated = []
     records = protocol.read_jsonl(args.gate_jsonl)
     for index, record in enumerate(records):
+        frozen_direct = protocol.direct_feedback(record)
         final_smiles, trace = protocol.greedy_rollout(
             model,
             tokenizer,
@@ -79,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             "task_mode": record["task_mode"],
             "bucket": record["bucket"],
             "direct_smiles": record.get("direct_smiles", ""),
-            "direct_details": record["direct_details"],
+            "direct_details": frozen_direct.details,
             "policy_smiles": final_smiles,
             "policy_details": feedback.details,
             "policy_reward": feedback.reward,
