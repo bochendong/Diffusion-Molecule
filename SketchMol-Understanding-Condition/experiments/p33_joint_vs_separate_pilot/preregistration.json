@@ -1,0 +1,48 @@
+{
+  "protocol": "p33_clean_joint_vs_separate_pilot_v1",
+  "status": "frozen before GPU training",
+  "question": "Does a single jointly trained policy show positive transfer or parameter efficiency relative to two task-specific policies?",
+  "common_initialization": {
+    "base_model": "/scratch/bdong/checkpoints/Qwen2.5-VL-7B-Instruct",
+    "prior_molecular_adapter": null,
+    "prior_joint_training": false,
+    "lora_rank": 16,
+    "lora_alpha": 32,
+    "lora_target_modules": ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+  },
+  "arms": {
+    "joint": {"de_novo_rows": 3000, "editing_rows": 3000, "adapters": 1},
+    "denovo_specialist": {"de_novo_rows": 3000, "editing_rows": 0, "adapters": 1},
+    "editing_specialist": {"de_novo_rows": 0, "editing_rows": 3000, "adapters": 1}
+  },
+  "matching": {
+    "same_examples_for_each_task": true,
+    "same_base_model": true,
+    "same_lora_configuration": true,
+    "same_optimizer": true,
+    "same_epochs": 1.0,
+    "same_per_task_exposure": true,
+    "joint_compute_compared_with_sum_of_specialists": true
+  },
+  "training": {
+    "learning_rate": 8e-5,
+    "physical_batch_size": 1,
+    "gradient_accumulation": 32,
+    "seed": 33001
+  },
+  "evaluation": {
+    "de_novo": "20 held-out requests per arity for 2p through 7p",
+    "editing": "20 held-out requests for each of ten editing tasks",
+    "decoding": {"samples_per_request": 1, "temperature": 0.8, "top_p": 0.95, "seed": 33051},
+    "property_reranking": false,
+    "primary": ["de novo strict Raw@1 macro", "editing strict Acc_all(0.65) macro"],
+    "secondary": ["validity", "editing Acc_all(0.15)"]
+  },
+  "decision": {
+    "noninferiority_margin": -0.02,
+    "positive_transfer_threshold": 0.02,
+    "support_unified": "joint is non-inferior on both modes and either improves one mode by 2pp or uses one adapter instead of two",
+    "stop_or_reframe": "joint loses more than 2pp on either primary metric"
+  },
+  "scope": "one-seed screening pilot; a positive result must be confirmed at larger scale"
+}
