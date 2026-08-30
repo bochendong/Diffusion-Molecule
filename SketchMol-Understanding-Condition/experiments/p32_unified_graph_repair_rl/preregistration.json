@@ -1,0 +1,43 @@
+{
+  "protocol": "p32_unified_graph_repair_rl_v1",
+  "status": "locked_before_submission",
+  "system": {
+    "initial_proposal": "frozen P24 alignment-refresh greedy output",
+    "shared_policy": "one Qwen2.5-1.5B common-LLM LoRA",
+    "action_space": "property-agnostic executable GraphEditDSL plus accept_direct_proposal and stop",
+    "build_initial_state": "P24 direct proposal, or methane fallback only when the direct proposal is invalid",
+    "modify_initial_state": "source molecule"
+  },
+  "support_audit": {
+    "steps": 2,
+    "actions_per_state": 16,
+    "oracle_beam": 4,
+    "minimum_strict_opportunity_rate_per_mode": 0.03,
+    "required_before_training": true
+  },
+  "training": {
+    "train_pairs": 30,
+    "de_novo_balance": "5 rows per 2p-7p arity",
+    "editing_balance": "3 rows per exact Table-2 task",
+    "steps_per_trajectory": 2,
+    "policy_update": "exact categorical action-value policy gradient",
+    "task_gradient_merge": "paired symmetric PCGrad",
+    "temperature": 0.8,
+    "learning_rate": 0.000003,
+    "checkpoints": [10, 20, 30],
+    "seed": 32001
+  },
+  "evaluation": {
+    "checkpoints": [0, 10, 20, 30],
+    "de_novo": "frozen P31.1 120-condition greedy gate",
+    "editing": "five frozen P25.1 final-gate rows per exact task",
+    "decoding": "greedy typed action at each of at most two steps",
+    "property_reranking": false
+  },
+  "promotion": {
+    "both_modes_strict_above_P24_direct": true,
+    "both_modes_strict_above_checkpoint_0": true,
+    "validity_drop_max": 0.01,
+    "otherwise": "stop or redesign action support before scaling"
+  }
+}
