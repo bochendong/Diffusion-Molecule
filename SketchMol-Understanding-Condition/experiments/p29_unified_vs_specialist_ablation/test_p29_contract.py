@@ -151,6 +151,16 @@ def test_collector_reports_raw1_macro_without_replacing_best40(tmp_path):
                         "strict_success_rate": count / 10,
                     }
                 )
+            writer.writerow(
+                {
+                    "setting": "raw_at_1",
+                    "property_count": "all",
+                    "conditions": len(counts) * 100,
+                    "candidate_budget": 1,
+                    "validity": 0.99,
+                    "strict_success_rate": 0.45,
+                }
+            )
 
     metrics = collector.table1(results)
     assert metrics["de_novo_raw1_avg_2p_7p"] == 0.45

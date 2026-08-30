@@ -28,12 +28,14 @@ def table1(root: Path) -> dict[str, float]:
         path = root / split / "budget_sweep_summary.csv"
         with path.open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
-                count = int(row["property_count"])
                 if (
-                    row["setting"] == "raw_at_1"
-                    and 2 <= count <= 7
-                    and int(row["conditions"]) > 0
+                    row["setting"] != "raw_at_1"
+                    or row["property_count"] == "all"
+                    or int(row["conditions"]) <= 0
                 ):
+                    continue
+                count = int(row["property_count"])
+                if 2 <= count <= 7:
                     if count in raw1_by_count:
                         raise ValueError(f"duplicate Raw@1 row for {count}p in {root}")
                     raw1_by_count[count] = (
