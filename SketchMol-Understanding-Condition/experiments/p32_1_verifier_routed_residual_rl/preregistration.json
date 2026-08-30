@@ -1,0 +1,50 @@
+{
+  "protocol": "p32_1_verifier_routed_residual_rl_v1",
+  "status": "locked_before_submission",
+  "routing": {
+    "primary_output": "frozen P24 alignment-refresh greedy direct proposal",
+    "strict_direct": "hard accept and return unchanged",
+    "failed_direct": "route to one shared residual GraphEditDSL policy",
+    "target_molecule_access": false,
+    "property_aware_finalizer": true
+  },
+  "policy": {
+    "initial_adapter": "P32 checkpoint 30",
+    "initial_state_both_modes": "P24 direct proposal",
+    "observation": "property program, optional source, current proposal, and target-blind verifier feedback",
+    "action_space": "property-agnostic executable GraphEditDSL plus stop",
+    "max_steps": 2,
+    "actions_per_state": 16
+  },
+  "preparation": {
+    "de_novo_train_pool": "20 rows per 2p-7p bucket",
+    "editing_train_pool": "12 rows per exact Table-2 task",
+    "training_rows_used": "30 direct-failed proposals per mode, round-robin bucket balanced",
+    "evaluation_gate": "unchanged P32 gate: 120 de novo plus 50 editing"
+  },
+  "support_audit": {
+    "two_step_oracle_beam": 4,
+    "minimum_strict_rescues_per_mode": 1,
+    "required_before_training": true
+  },
+  "training": {
+    "paired_updates": 30,
+    "policy_update": "exact categorical action-value policy gradient",
+    "gradient_merge": "paired symmetric PCGrad",
+    "temperature": 0.8,
+    "learning_rate": 0.000002,
+    "checkpoints": [10, 20, 30],
+    "seed": 32101
+  },
+  "evaluation": {
+    "checkpoints": [0, 10, 20, 30],
+    "decoding": "hard strict-direct route, otherwise greedy typed residual action",
+    "property_reranking_within_residual_actions": false
+  },
+  "promotion": {
+    "strict_above_P24_direct_in_both_modes": true,
+    "strict_above_residual_checkpoint_0_in_both_modes": true,
+    "minimum_rescues_per_mode": 1,
+    "validity_drop_max": 0.0
+  }
+}
