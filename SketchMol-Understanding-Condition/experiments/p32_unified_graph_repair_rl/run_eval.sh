@@ -20,7 +20,7 @@ export HF_HUB_OFFLINE=1
 export TRANSFORMERS_OFFLINE=1
 export TOKENIZERS_PARALLELISM=false
 export SUCC_GSK3B_ORACLE_PATH="${SUCC_GSK3B_ORACLE_PATH:-$ORACLE_DIR/gsk3b_legacy_sklearn_compatible.pkl}"
-export SUCC_DRD2_ORACLE_PATH="${SUCC_DRD2_ORACLE_PATH:-$ORACLE_DIR/drd2_legacy_sklearn_compatible.pkl}"
+export SUCC_DRD2_ORACLE_PATH="${SUCC_DRD2_ORACLE_PATH:-$ORACLE_DIR/drd2_graph2graph_svc_py36.pkl}"
 "$PY" "$SCRIPT_DIR/evaluate_checkpoint.py" \
   --gate-jsonl "$OUT/data/gate.jsonl" \
   --base-model Qwen/Qwen2.5-1.5B-Instruct \

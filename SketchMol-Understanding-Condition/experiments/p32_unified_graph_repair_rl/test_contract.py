@@ -41,6 +41,13 @@ def test_eval_is_greedy_without_property_reranking():
     assert '"property_reranking": False' in source
 
 
+def test_runners_pin_both_benchmark_oracles():
+    for name in ("run_audit.sh", "run_train.sh", "run_eval.sh"):
+        source = (ROOT / name).read_text()
+        assert "gsk3b_legacy_sklearn_compatible.pkl" in source
+        assert "drd2_graph2graph_svc_py36.pkl" in source
+
+
 def test_gate_requires_both_modes_to_improve():
     collect = load_collect()
     direct = {

@@ -8,13 +8,16 @@ P24="$PROJECT/outputs/p24_molprogram_instruct_4m/seed_24003"
 P251="$PROJECT/outputs/p25_1_p23_mode_paired_grpo/seed_25125"
 P311="$PROJECT/outputs/p31_1_frontier_online_rloo/seed_31101"
 COMMON="$PROJECT/outputs/unified_constraint_agent_common_llm_pilot_v1/model/seed_1703/adapter"
+ORACLE_DIR="$PROJECT/inputs/tdc_oracles"
 for path in \
   "$P24/alignment_refresh/ALIGNMENT_REFRESH_COMPLETE" \
   "$P24/alignment_refresh/model/adapter/adapter_model.safetensors" \
   "$P24/alignment_refresh/data/train.sft.jsonl" \
   "$P251/data/gates/final.jsonl" \
   "$P311/gate/data/prompts.jsonl" \
-  "$COMMON/adapter_model.safetensors"; do
+  "$COMMON/adapter_model.safetensors" \
+  "$ORACLE_DIR/gsk3b_legacy_sklearn_compatible.pkl" \
+  "$ORACLE_DIR/drd2_graph2graph_svc_py36.pkl"; do
   [[ -f "$path" ]] || { echo "ERROR: missing P32 input: $path" >&2; exit 2; }
 done
 module purge >/dev/null 2>&1 || true
