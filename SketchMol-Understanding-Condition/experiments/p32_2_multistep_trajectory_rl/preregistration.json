@@ -1,0 +1,43 @@
+{
+  "protocol": "p32_2_multistep_terminal_return_rl_v1",
+  "status": "locked_before_submission",
+  "fixed_inputs": {
+    "records": "P32.1 pinned-oracle train and frozen gate",
+    "initial_adapter": "P32 checkpoint 30",
+    "routing": "hard accept strict direct; run residual policy only on direct failures",
+    "action_space": "same property-agnostic GraphEditDSL plus stop"
+  },
+  "training": {
+    "paired_updates": 30,
+    "rows": "30 direct-failed proposals per mode using P32.1 selector",
+    "trajectory_group_size": 8,
+    "first_action_sampling": "policy-weighted without replacement",
+    "second_action_sampling": "on-policy categorical",
+    "max_steps": 2,
+    "terminal_return": {
+      "strict": 1.0,
+      "relaxed_non_strict": 0.2,
+      "valid_non_stop_non_strict": 0.02,
+      "stopped_failed_direct": 0.0,
+      "invalid": 0.0
+    },
+    "credit_assignment": "same centered normalized terminal advantage on every action in the trajectory",
+    "gradient_merge": "paired symmetric PCGrad",
+    "temperature": 1.0,
+    "learning_rate": 0.000002,
+    "checkpoints": [10, 20, 30],
+    "seed": 32201
+  },
+  "evaluation": {
+    "gate": "unchanged P32.1 gate",
+    "checkpoints": [0, 10, 20, 30],
+    "decoding": "hard strict-direct route, otherwise greedy typed residual action",
+    "property_reranking_within_residual_actions": false
+  },
+  "promotion": {
+    "strict_above_pinned_direct_in_both_modes": true,
+    "strict_above_checkpoint_0_in_both_modes": true,
+    "minimum_strict_rescues_per_mode": 1,
+    "validity_drop_max": 0.0
+  }
+}
