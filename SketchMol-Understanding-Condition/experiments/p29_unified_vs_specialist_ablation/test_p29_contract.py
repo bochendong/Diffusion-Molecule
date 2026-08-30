@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import importlib.util
 import random
@@ -14,6 +15,16 @@ HERE = Path(__file__).resolve().parent
 def load_trainer():
     spec = importlib.util.spec_from_file_location(
         "p29_specialist_trainer", HERE / "train_specialist_sft.py"
+    )
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_collector():
+    spec = importlib.util.spec_from_file_location(
+        "p29_ablation_collector", HERE / "collect_ablation.py"
     )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
@@ -99,3 +110,48 @@ def test_submission_runs_only_matched_native_evaluations():
     assert "P24_EVAL_ADAPTER" in submit
     assert "P24_EVAL_REQUIRED" in submit
     assert "afterok:$unified_t1s:$unified_t2s:$construction_t1s:$editing_t2s" in submit
+
+
+def test_collector_reports_raw1_macro_without_replacing_best40(tmp_path):
+    collector = load_collector()
+    results = tmp_path / "results"
+    table = results / "table1"
+    table.mkdir(parents=True)
+    (table / "p24_table1.json").write_text(
+        json.dumps(
+            {
+                "average_2p_7p": 0.9,
+                "strict_success": {f"{count}p": 0.9 for count in range(2, 8)},
+            }
+        )
+    )
+    fields = [
+        "setting", "property_count", "conditions", "candidate_budget",
+        "validity", "strict_success_rate",
+    ]
+    split_counts = {
+        "denovo_2p4p": range(2, 5),
+        "denovo_5p": range(5, 6),
+        "denovo_6p7p": range(6, 8),
+    }
+    for split, counts in split_counts.items():
+        path = results / split / "budget_sweep_summary.csv"
+        path.parent.mkdir(parents=True)
+        with path.open("w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fields)
+            writer.writeheader()
+            for count in counts:
+                writer.writerow(
+                    {
+                        "setting": "raw_at_1",
+                        "property_count": count,
+                        "conditions": 100,
+                        "candidate_budget": 1,
+                        "validity": 0.99,
+                        "strict_success_rate": count / 10,
+                    }
+                )
+
+    metrics = collector.table1(results)
+    assert metrics["de_novo_raw1_avg_2p_7p"] == 0.45
+    assert metrics["de_novo_best40_avg_2p_7p"] == 0.9

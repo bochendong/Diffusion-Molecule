@@ -10,15 +10,56 @@ import statistics
 from pathlib import Path
 
 
-def table1(path: Path) -> dict[str, float]:
-    payload = json.loads(path.read_text())
-    return {
-        "de_novo_avg_2p_7p": float(payload["average_2p_7p"]),
+def table1(root: Path) -> dict[str, float]:
+    payload = json.loads((root / "table1/p24_table1.json").read_text())
+    result = {
+        # Preserve the preregistered native benchmark endpoint.
+        "de_novo_best40_avg_2p_7p": float(payload["average_2p_7p"]),
         **{
-            f"de_novo_{count}p": float(payload["strict_success"][f"{count}p"])
+            f"de_novo_best40_{count}p": float(
+                payload["strict_success"][f"{count}p"]
+            )
             for count in range(2, 8)
         },
     }
+
+    raw1_by_count: dict[int, tuple[float, float]] = {}
+    for split in ("denovo_2p4p", "denovo_5p", "denovo_6p7p"):
+        path = root / split / "budget_sweep_summary.csv"
+        with path.open(newline="", encoding="utf-8") as handle:
+            for row in csv.DictReader(handle):
+                count = int(row["property_count"])
+                if (
+                    row["setting"] == "raw_at_1"
+                    and 2 <= count <= 7
+                    and int(row["conditions"]) > 0
+                ):
+                    if count in raw1_by_count:
+                        raise ValueError(f"duplicate Raw@1 row for {count}p in {root}")
+                    raw1_by_count[count] = (
+                        float(row["strict_success_rate"]),
+                        float(row["validity"]),
+                    )
+    if set(raw1_by_count) != set(range(2, 8)):
+        raise ValueError(
+            f"expected Raw@1 rows for 2p through 7p in {root}, "
+            f"found {sorted(raw1_by_count)}"
+        )
+    result.update(
+        {
+            "de_novo_raw1_avg_2p_7p": statistics.fmean(
+                raw1_by_count[count][0] for count in range(2, 8)
+            ),
+            "de_novo_raw1_validity_avg_2p_7p": statistics.fmean(
+                raw1_by_count[count][1] for count in range(2, 8)
+            ),
+            **{
+                f"de_novo_raw1_{count}p": raw1_by_count[count][0]
+                for count in range(2, 8)
+            },
+        }
+    )
+    return result
 
 
 def table2(path: Path) -> dict[str, float]:
@@ -42,11 +83,11 @@ def main() -> int:
     args = parser.parse_args()
     root = args.root
     unified = {
-        **table1(root / "unified/eval_table1/results/table1/p24_table1.json"),
+        **table1(root / "unified/eval_table1/results"),
         **table2(root / "unified/eval_table2/results/moledit_table_summary.csv"),
     }
     specialists = {
-        **table1(root / "construction_specialist/eval_table1/results/table1/p24_table1.json"),
+        **table1(root / "construction_specialist/eval_table1/results"),
         **table2(root / "editing_specialist/eval_table2/results/moledit_table_summary.csv"),
     }
     payload = {
@@ -77,13 +118,14 @@ def main() -> int:
     md = [
         "# Unified versus specialist continuations",
         "",
-        "| Policy | Checkpoints | De novo Avg. | Editing Acc_all(.65) | Editing Acc_all(.15) | Editing validity |",
-        "| --- | ---: | ---: | ---: | ---: | ---: |",
+        "| Policy | Checkpoints | De novo Raw@1 | De novo Best-of-40 | Editing Acc_all(.65) | Editing Acc_all(.15) | Editing validity |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for row in rows:
         md.append(
             f"| {row['policy']} | {row['checkpoints']} | "
-            f"{100 * row['de_novo_avg_2p_7p']:.1f} | "
+            f"{100 * row['de_novo_raw1_avg_2p_7p']:.1f} | "
+            f"{100 * row['de_novo_best40_avg_2p_7p']:.1f} | "
             f"{100 * row['editing_Acc_all(0.65)']:.1f} | "
             f"{100 * row['editing_Acc_all(0.15)']:.1f} | "
             f"{100 * row['editing_Validity']:.1f} |"
