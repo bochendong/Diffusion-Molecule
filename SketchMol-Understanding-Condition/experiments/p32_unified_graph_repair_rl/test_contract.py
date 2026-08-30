@@ -68,3 +68,8 @@ def test_gate_requires_both_modes_to_improve():
     bad["edit"]["strict_macro"] = 0.41
     _checks, passed = collect.assess(bad, direct, step0)
     assert not passed
+
+
+def test_protocol_mean_accepts_generator_source():
+    source = (ROOT / "graph_repair_protocol.py").read_text()
+    assert "materialized = [float(value) for value in values]" in source

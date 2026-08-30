@@ -340,7 +340,8 @@ def greedy_rollout(
 
 
 def mean(values: Sequence[float]) -> float:
-    return sum(float(value) for value in values) / max(len(values), 1)
+    materialized = [float(value) for value in values]
+    return sum(materialized) / max(len(materialized), 1)
 
 
 def aggregate_records(rows: Sequence[Mapping[str, object]], details_key: str) -> dict[str, object]:
