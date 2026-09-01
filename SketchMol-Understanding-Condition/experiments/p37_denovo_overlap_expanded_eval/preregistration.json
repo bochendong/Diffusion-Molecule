@@ -1,0 +1,35 @@
+{
+  "status": "frozen before expanded GPU evaluation",
+  "protocol": "p37_denovo_overlap_expanded_raw1_v1",
+  "purpose": "Confirm whether the large 100k shared-only transfer signal survives a larger target-disjoint matched gate.",
+  "checkpoints": {
+    "10k_joint": "outputs/p33_joint_vs_separate_10k_single_seed/seed_33101/model/joint/adapter",
+    "10k_denovo_specialist": "outputs/p33_joint_vs_separate_10k_single_seed/seed_33101/model/denovo/adapter",
+    "100k_joint": "outputs/p35_joint_vs_separate_scale_sweep/scale_100000/seed_33101/model/joint/adapter",
+    "100k_denovo_specialist": "outputs/p35_joint_vs_separate_scale_sweep/scale_100000/seed_33101/model/denovo/adapter"
+  },
+  "gate": {
+    "source": "outputs/direct_smiles_denovo_2p7p_v2_mixed_condition/denovo_2p7p_eval_rows.csv",
+    "selection_seed": 37101,
+    "shared_properties": ["MW", "LogP", "QED", "HBA", "RB"],
+    "denovo_only_properties": ["TPSA", "HBD"],
+    "primary_2p4p_per_arity_per_group": 100,
+    "secondary_5p_per_group": 40,
+    "total_conditions": 680,
+    "exclude_prior_gate": true,
+    "exclude_100k_training_target_hashes": true
+  },
+  "decoding": {
+    "candidate_budget": 1,
+    "temperature": 0.8,
+    "top_p": 0.95,
+    "seed": 37151,
+    "property_reranking": false
+  },
+  "reporting": {
+    "primary": "paired unweighted arity macro over 2p-4p",
+    "secondary": "paired unweighted arity macro over 2p-5p",
+    "uncertainty": "stratified paired bootstrap with 100000 replicates and exact two-sided McNemar test",
+    "report_every_completed_arm": true
+  }
+}
